@@ -72,3 +72,15 @@ pytest tests/ -v
 - **x86-rocm-12gb**: AMD RX 6700 XT
 - **x86-cuda-12gb**: RTX 3060
 - **cpu-only**: Fallback, slowest
+
+## Support the Project
+
+TinyAgentOS is built by [JAN LABS](https://github.com/jaylfc) — making AI agents accessible on affordable hardware.
+
+- **Contact:** jaylfc25@gmail.com
+- **Donate:** [Buy Me a Coffee](https://buymeacoffee.com/jaylfc25)
+- **Hardware donations/loans:** We test on real hardware. If you have spare SBCs, GPUs, or dev boards and want to help expand compatibility, reach out at the email above.
+
+## License
+
+MIT
