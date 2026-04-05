@@ -574,10 +574,94 @@ The platform abstracts NPU differences behind the backend adapter layer. Current
 
 The manifest `requires_npu` field is a list of supported NPU types, making it forward-compatible. As new NPU backends get LLM support, we add them to the adapter layer and update model manifests with new variants.
 
+## Resource Budget
+
+### Real Measurements (Orange Pi 5 Plus, 16GB, April 2026)
+
+| Component | RSS (Measured) | Notes |
+|-----------|---------------|-------|
+| Base Armbian (kernel + systemd + essential) | ~200 MB | Headless, no desktop |
+| TinyAgentOS (FastAPI + uvicorn) | 67 MB | Very lean |
+| incusd (container daemon) | 67 MB | Lighter than expected |
+| qmd serve (Node.js) | 85-90 MB | Per instance |
+| rkllama (Python + model weights) | ~5.8 GB (4 processes) | Model weights loaded into system RAM for NPU transfer — dominates everything |
+
+### Platform Overhead Target: < 500MB
+
+"Platform overhead" = base OS + TinyAgentOS + container management. Does NOT include inference backends (rkllama/ollama) or agent containers.
+
+| Component | Budget |
+|-----------|--------|
+| Armbian base | 200 MB |
+| TinyAgentOS | 70 MB |
+| Container management (raw lxc tools, no incusd) | 0 MB |
+| Metrics SQLite + health monitor | ~5 MB |
+| **Platform total** | **~275 MB** |
+
+With incusd (if needed for richer container management): add 70MB → **~345 MB**.
+
+### Per-Agent Overhead
+
+| Deployment Mode | RAM per Agent | When to Use |
+|-----------------|--------------|-------------|
+| Process mode (venv + systemd) | 40-100 MB | Lightweight frameworks (PocketFlow, picoclaw, nanoclaw) |
+| LXC container (Alpine + qmd serve + framework) | 100-180 MB | Full frameworks needing isolation (OpenClaw, SmolAgents) |
+| LXC container (Debian + qmd serve + framework) | 150-260 MB | Frameworks needing glibc (agent-zero, heavy Python deps) |
+
+### Shared vs Per-Agent QMD Serve
+
+**Default: shared qmd serve on host.** One Node.js process (~90MB) serves all agents, with per-agent data isolated by database path. This saves 90MB per additional agent.
+
+**Per-agent qmd serve** available as an option for multi-host deployments where agent data must travel with the container. Adds ~90MB per agent.
+
+### Recommended Limits by Hardware Tier
+
+| RAM | Platform | Inference Backend | Agents (process) | Agents (container) | Available for Models |
+|-----|----------|-------------------|-------------------|--------------------|---------------------|
+| 4 GB | 275 MB | ~500 MB (rkllama) | 1-2 | 1 | ~2.5 GB |
+| 8 GB | 275 MB | ~500 MB | 3-5 | 2-3 | ~6 GB |
+| 16 GB | 275 MB | ~500 MB | 5-10 | 4-6 | ~14 GB |
+| 32 GB | 275 MB | ~500 MB | 10-20 | 8-12 | ~30 GB |
+| 64 GB+ | 275 MB | ~500 MB | 20+ | 16+ | ~62 GB |
+
+### Pre-Install Resource Check
+
+Before any install, deploy, or start operation, the platform checks:
+1. Current available RAM vs `requires.ram_mb` (the full deployment cost, including container overhead)
+2. Available disk vs `requires.disk_mb`
+3. If insufficient: warn the user with specific numbers, allow override
+
+### Container Memory Limits
+
+Every agent container is created with `memory.limit` set based on hardware tier:
+- 4 GB board: 512 MB per container
+- 8 GB: 1 GB per container
+- 16 GB: 2 GB per container
+- 32 GB+: 4 GB per container
+
+Prevents a single misbehaving agent from OOMing the host.
+
+### Container Base Images
+
+Two container templates, chosen per-framework:
+
+| Template | Base | Size | For |
+|----------|------|------|-----|
+| **agent-alpine** | Alpine 3.x + Node.js + Python | ~15 MB base | PocketFlow, picoclaw, nanoclaw, TinyAgent |
+| **agent-debian** | Debian bookworm-slim + Node.js + Python | ~60 MB base | OpenClaw, SmolAgents, agent-zero (need glibc) |
+
+### rkllama Memory Investigation
+
+rkllama currently loads model weights into system RAM (5.8GB RSS for 3 preloaded models) before transferring to NPU. This is the single largest consumer on the system. Investigate:
+- Whether RKLLM API supports direct-to-NPU loading without staging in system RAM
+- Whether model weights can be memory-mapped (mmap) to reduce RSS
+- rk-llama.cpp as alternative backend (may have different memory behavior)
+
 ## Security Considerations
 
 - **App manifests are reviewed** — the official catalog is curated, not an open free-for-all
-- **Container isolation** — agents run in LXC containers, not on the host
+- **Container isolation** — full agent frameworks run in LXC containers; lightweight frameworks can run as sandboxed processes
+- **Container management** — raw `lxc-*` tools by default (zero daemon overhead); incusd available as optional app for richer management
 - **Model checksums** — SHA256 verified on download
 - **No auth for MVP** — trusted LAN/Tailscale network (auth is a future spec)
 - **Install scripts run as platform user** — not root, unless container method
