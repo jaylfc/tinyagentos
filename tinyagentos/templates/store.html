@@ -1,33 +1,67 @@
 {% extends "base.html" %}
 {% block title %}App Store — TinyAgentOS{% endblock %}
 {% block content %}
-<h2>App Store</h2>
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+    <h2 style="margin-bottom: 0;">App Store</h2>
+    <button class="outline" style="padding: 0.25rem 0.75rem; font-size: 0.85rem;"
+            hx-post="/api/store/sync"
+            hx-swap="none"
+            hx-indicator="#sync-spinner"
+            hx-on::after-request="if(event.detail.successful) location.reload()">
+        Sync Catalog
+        <span id="sync-spinner" class="htmx-indicator" style="margin-left: 0.35rem;">...</span>
+    </button>
+</div>
+
+<input type="search" id="store-search" placeholder="Search apps..."
+       style="margin-bottom: 1rem;"
+       hx-get="/api/partials/app-grid"
+       hx-trigger="keyup changed delay:300ms"
+       hx-target="#app-grid"
+       hx-include="#type-filter"
+       name="q">
 
 <div class="search-modes" style="margin-bottom: 1.5rem;">
-    <button class="active" hx-get="/api/store/catalog" hx-target="#app-grid">All</button>
-    <button hx-get="/api/store/catalog?type=agent-framework" hx-target="#app-grid">Agents</button>
-    <button hx-get="/api/store/catalog?type=model" hx-target="#app-grid">Models</button>
-    <button hx-get="/api/store/catalog?type=service" hx-target="#app-grid">Services</button>
+    <input type="hidden" id="type-filter" name="type" value="">
+    <button class="active" onclick="filterType(this, '')">All</button>
+    <button onclick="filterType(this, 'agent-framework')">Agents</button>
+    <button onclick="filterType(this, 'model')">Models</button>
+    <button onclick="filterType(this, 'service')">Services</button>
 </div>
 
-<div id="app-grid" class="kpi-grid">
-{% for item in apps %}
-    <article class="kpi-card" style="text-align: left; padding: 1.25rem;">
-        <h4 style="margin-bottom: 0.25rem;">{{ item.manifest.name }}</h4>
-        <small style="color: var(--pico-muted-color);">{{ item.manifest.type }} · v{{ item.manifest.version }}</small>
-        <p style="font-size: 0.9rem; margin: 0.5rem 0;">{{ item.manifest.description }}</p>
-        {% if item.installed %}
-            <button class="outline" disabled>Installed</button>
-        {% else %}
-            <button class="outline"
-                    hx-post="/api/store/install"
+{% if installed_apps %}
+<details open style="margin-bottom: 1.5rem;">
+    <summary style="font-weight: bold;">Installed ({{ installed_apps|length }})</summary>
+    <div class="kpi-grid" style="margin-top: 0.75rem;">
+    {% for item in installed_apps %}
+        <article class="kpi-card app-card" style="text-align: left; padding: 1.25rem; border-left: 3px solid #98fb98;">
+            <h4 style="margin-bottom: 0.25rem;">{{ item.manifest.name }}</h4>
+            <small style="color: var(--pico-muted-color);">{{ item.manifest.type }} · v{{ item.manifest.version }}</small>
+            <p style="font-size: 0.9rem; margin: 0.5rem 0;">{{ item.manifest.description }}</p>
+            <button class="outline secondary" style="width: 100%;"
+                    hx-post="/api/store/uninstall"
                     hx-vals='{"app_id": "{{ item.manifest.id }}"}'
                     hx-swap="outerHTML"
-                    hx-confirm="Install {{ item.manifest.name }}?">
-                Install
+                    hx-confirm="Uninstall {{ item.manifest.name }}?">
+                Uninstall
             </button>
-        {% endif %}
-    </article>
-{% endfor %}
+        </article>
+    {% endfor %}
+    </div>
+</details>
+{% endif %}
+
+<div id="app-grid" class="kpi-grid">
+{% include "partials/app_grid.html" %}
 </div>
+
+<script>
+function filterType(btn, type) {
+    document.getElementById('type-filter').value = type;
+    document.querySelectorAll('.search-modes button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    var q = document.getElementById('store-search').value;
+    htmx.ajax('GET', '/api/partials/app-grid?type=' + encodeURIComponent(type) + '&q=' + encodeURIComponent(q), '#app-grid');
+}
+</script>
 {% endblock %}

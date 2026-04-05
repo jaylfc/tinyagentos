@@ -1,0 +1,32 @@
+{% if apps|length == 0 %}
+<p style="color: var(--pico-muted-color); text-align: center; padding: 2rem;">No apps match the current filter.</p>
+{% endif %}
+{% for item in apps %}
+<article class="kpi-card app-card" style="text-align: left; padding: 1.25rem; position: relative;">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.25rem;">
+        <h4 style="margin-bottom: 0;">{{ item.manifest.name }}</h4>
+        <span class="type-badge type-{{ item.manifest.type }}">{{ item.manifest.type }}</span>
+    </div>
+    <small style="color: var(--pico-muted-color);">v{{ item.manifest.version }}</small>
+    <p style="font-size: 0.9rem; margin: 0.5rem 0;">{{ item.manifest.description }}</p>
+    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.75rem;">
+        {% if item.manifest.requires.get('ram_mb') %}
+        <span class="hw-badge">RAM: {{ item.manifest.requires.ram_mb }}MB</span>
+        {% endif %}
+        {% if item.compat %}
+        <span class="hw-badge compat-{{ item.compat }}">{{ item.compat }}</span>
+        {% endif %}
+    </div>
+    {% if item.installed %}
+        <button class="outline" disabled style="width: 100%;">Installed</button>
+    {% else %}
+        <button class="outline" style="width: 100%;"
+                hx-post="/api/store/install"
+                hx-vals='{"app_id": "{{ item.manifest.id }}"}'
+                hx-swap="outerHTML"
+                hx-confirm="Install {{ item.manifest.name }}?">
+            Install
+        </button>
+    {% endif %}
+</article>
+{% endfor %}

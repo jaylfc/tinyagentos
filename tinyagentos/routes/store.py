@@ -21,16 +21,56 @@ class UninstallRequest(BaseModel):
 router = APIRouter()
 
 
+def _build_app_items(registry, profile_id: str, type_filter: str | None = None, query: str | None = None):
+    """Build app item dicts for templates, with compat info and optional filtering."""
+    apps = registry.list_available(type_filter=type_filter or None)
+    installed_ids = {a["id"] for a in registry.list_installed()}
+    items = []
+    for a in apps:
+        if query and query.lower() not in a.name.lower() and query.lower() not in a.description.lower():
+            continue
+        # Determine hardware compatibility
+        compat = None
+        if a.hardware_tiers:
+            tier = a.hardware_tiers.get(profile_id)
+            if tier is None:
+                compat = "unsupported"
+            elif isinstance(tier, str) and tier == "unsupported":
+                compat = "unsupported"
+            elif isinstance(tier, str) and tier in ("full", "optimal"):
+                compat = "compatible"
+            elif isinstance(tier, dict):
+                compat = "compatible"
+            else:
+                compat = "degraded"
+        items.append({"manifest": a, "installed": a.id in installed_ids, "compat": compat})
+    return items
+
+
 @router.get("/store", response_class=HTMLResponse)
 async def store_page(request: Request):
     templates = request.app.state.templates
     registry = request.app.state.registry
-    apps = registry.list_available()
-    installed_ids = {a["id"] for a in registry.list_installed()}
+    profile_id = request.app.state.hardware_profile.profile_id
+    items = _build_app_items(registry, profile_id)
+    installed_apps = [i for i in items if i["installed"]]
     return templates.TemplateResponse("store.html", {
         "request": request,
         "active_page": "store",
-        "apps": [{"manifest": a, "installed": a.id in installed_ids} for a in apps],
+        "apps": items,
+        "installed_apps": installed_apps,
+    })
+
+
+@router.get("/api/partials/app-grid", response_class=HTMLResponse)
+async def app_grid_partial(request: Request, type: str | None = None, q: str | None = None):
+    templates = request.app.state.templates
+    registry = request.app.state.registry
+    profile_id = request.app.state.hardware_profile.profile_id
+    items = _build_app_items(registry, profile_id, type_filter=type, query=q)
+    return templates.TemplateResponse("partials/app_grid.html", {
+        "request": request,
+        "apps": items,
     })
 
 
