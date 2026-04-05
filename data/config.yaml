@@ -7,11 +7,27 @@ backends:
     type: rkllama
     url: http://localhost:8080
     priority: 3
+  - name: fedora-gpu
+    type: ollama
+    url: http://100.99.131.81:11434
+    priority: 1
 
 qmd:
-  url: http://localhost:7832
+  url: http://100.78.225.80:7832
 
-agents: []
+agents:
+  - name: naira
+    host: 192.168.6.214
+    qmd_index: naira
+    color: "#98fb98"
+  - name: stanley
+    host: 192.168.6.212
+    qmd_index: stanley
+    color: "#ffd700"
+  - name: mary
+    host: 192.168.6.213
+    qmd_index: mary
+    color: "#ff7eb3"
 
 metrics:
   poll_interval: 30
