@@ -15,18 +15,21 @@ backends:
 qmd:
   url: http://100.78.225.80:7832
 
+# Agent data (memory, QMD database) always lives inside the agent's LXC.
+# TinyAgentOS accesses it via the agent's qmd_url (each agent runs qmd serve).
+# This ensures multi-host fallback works — data follows the agent, not the host.
 agents:
   - name: naira
     host: 192.168.6.214
-    qmd_index: naira
+    qmd_url: http://192.168.6.214:7832
     color: "#98fb98"
   - name: stanley
     host: 192.168.6.212
-    qmd_index: stanley
+    qmd_url: http://192.168.6.212:7832
     color: "#ffd700"
   - name: mary
     host: 192.168.6.213
-    qmd_index: mary
+    qmd_url: http://192.168.6.213:7832
     color: "#ff7eb3"
 
 metrics:
