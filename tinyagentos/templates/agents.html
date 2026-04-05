@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Agents — TinyAgentOS{% endblock %}
+{% block content %}
+<h2>Agents</h2>
+<table>
+    <thead>
+        <tr><th>Agent</th><th>Host</th><th>QMD Index</th><th>Status</th><th>Vectors</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+    {% for agent in agents %}
+    <tr>
+        <td><span class="agent-color" style="background: {{ agent.color }}"></span>{{ agent.name }}</td>
+        <td>{{ agent.host }}</td>
+        <td>{{ agent.qmd_index }}</td>
+        <td><span class="status-dot {{ agent.status }}"></span>{{ agent.status }}</td>
+        <td>{{ agent.vectors }}</td>
+        <td>
+            <button class="outline secondary" style="padding: 0.2rem 0.5rem; font-size: 0.8rem;"
+                    hx-delete="/api/agents/{{ agent.name }}" hx-confirm="Delete agent {{ agent.name }}?"
+                    hx-target="closest tr" hx-swap="outerHTML">Delete</button>
+        </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+<details>
+    <summary role="button" class="outline">Add Agent</summary>
+    <form hx-post="/api/agents" hx-target="body" hx-swap="innerHTML">
+        <div class="grid">
+            <label>Name <input type="text" name="name" required></label>
+            <label>Host <input type="text" name="host" required></label>
+        </div>
+        <div class="grid">
+            <label>QMD Index <input type="text" name="qmd_index" required></label>
+            <label>Color <input type="color" name="color" value="#98fb98"></label>
+        </div>
+        <button type="submit">Add Agent</button>
+    </form>
+</details>
+{% endblock %}
