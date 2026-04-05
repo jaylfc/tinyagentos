@@ -181,6 +181,17 @@ async def restart_agent(request: Request, name: str):
     return await restart_container(f"agent-{name}")
 
 
+@router.get("/api/partials/agent-logs/{name}", response_class=HTMLResponse)
+async def agent_logs_partial(request: Request, name: str, lines: int = 100):
+    """Agent logs as HTML partial for htmx."""
+    from tinyagentos.containers import get_container_logs
+    logs = await get_container_logs(f"agent-{name}", lines=lines)
+    templates = request.app.state.templates
+    return templates.TemplateResponse(request, "partials/agent_logs.html", {
+        "name": name, "logs": logs,
+    })
+
+
 @router.get("/api/agents/{name}/logs")
 async def agent_logs(request: Request, name: str, lines: int = 100):
     """Get recent journal logs from an agent's container."""

@@ -16,6 +16,11 @@
         <td>{{ agent.vectors }}</td>
         <td>
             <button class="outline secondary" style="padding: 0.2rem 0.5rem; font-size: 0.8rem;"
+                    aria-label="View logs for {{ agent.name }}"
+                    hx-get="/api/partials/agent-logs/{{ agent.name }}"
+                    hx-target="#logs-panel"
+                    hx-swap="innerHTML">Logs</button>
+            <button class="outline secondary" style="padding: 0.2rem 0.5rem; font-size: 0.8rem;"
                     aria-label="Delete agent {{ agent.name }}"
                     hx-delete="/api/agents/{{ agent.name }}" hx-confirm="Delete agent {{ agent.name }}?"
                     hx-target="closest tr" hx-swap="outerHTML">Delete</button>
@@ -30,6 +35,20 @@
     {% endfor %}
     </tbody>
 </table>
+
+<div style="margin: 1rem 0 0.5rem 0; display: flex; align-items: center; gap: 0.75rem;">
+    <label for="logs-lines-select" style="margin: 0; font-size: 0.9rem;">Lines:</label>
+    <select id="logs-lines-select" style="width: auto; padding: 0.2rem 0.5rem; font-size: 0.85rem;"
+            aria-label="Number of log lines to show">
+        <option value="50">50</option>
+        <option value="100" selected>100</option>
+        <option value="500">500</option>
+    </select>
+</div>
+<div id="logs-panel" aria-label="Agent logs" role="region"
+     hx-trigger="every 10s"
+     hx-swap="innerHTML"></div>
+
 <details>
     <summary role="button" class="outline">Add Agent (Manual)</summary>
     <form hx-post="/api/agents" hx-target="body" hx-swap="innerHTML">
@@ -145,6 +164,41 @@
 </dialog>
 
 <script>
+// Update logs panel hx-get when lines selector changes, and re-trigger refresh
+document.addEventListener('DOMContentLoaded', function() {
+    var linesSelect = document.getElementById('logs-lines-select');
+    if (linesSelect) {
+        linesSelect.addEventListener('change', function() {
+            var panel = document.getElementById('logs-panel');
+            var currentGet = panel.getAttribute('hx-get');
+            if (currentGet) {
+                // Replace or add lines param
+                var url = currentGet.replace(/([?&]lines=)\d+/, '$1' + linesSelect.value);
+                if (url === currentGet && !currentGet.includes('lines=')) {
+                    url += (currentGet.includes('?') ? '&' : '?') + 'lines=' + linesSelect.value;
+                }
+                panel.setAttribute('hx-get', url);
+                htmx.process(panel);
+                htmx.trigger(panel, 'load');
+            }
+        });
+    }
+
+    // Intercept Logs button clicks to set lines param and enable auto-refresh
+    document.addEventListener('htmx:configRequest', function(evt) {
+        var elt = evt.detail.elt;
+        if (elt && elt.getAttribute('aria-label') && elt.getAttribute('aria-label').startsWith('View logs for')) {
+            var linesVal = (document.getElementById('logs-lines-select') || {}).value || '100';
+            evt.detail.parameters['lines'] = linesVal;
+            // Also update panel hx-get for auto-refresh
+            var agentName = elt.getAttribute('hx-get').replace('/api/partials/agent-logs/', '');
+            var panel = document.getElementById('logs-panel');
+            panel.setAttribute('hx-get', '/api/partials/agent-logs/' + agentName + '?lines=' + linesVal);
+            htmx.process(panel);
+        }
+    });
+});
+
 var stepLabels = {
     1: "Step 1 of 5: Name & Color",
     2: "Step 2 of 5: Framework",
