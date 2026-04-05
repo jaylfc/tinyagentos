@@ -78,7 +78,7 @@ pytest tests/ -v
 TinyAgentOS is built by [JAN LABS](https://github.com/jaylfc) — making AI agents accessible on affordable hardware.
 
 - **Contact:** jaylfc25@gmail.com
-- **Donate:** [Buy Me a Coffee](https://buymeacoffee.com/jaylfc25)
+- **Donate:** [Buy Me a Coffee](https://buymeacoffee.com/jaylfc)
 - **Hardware donations/loans:** We test on real hardware. If you have spare SBCs, GPUs, or dev boards and want to help expand compatibility, reach out at the email above.
 
 ## License
