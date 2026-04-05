@@ -1,5 +1,7 @@
 # TinyAgentOS
 
+> **⚠️ Early Development** — This project is under active development and has not been tested on clean hardware yet. Do not install in production. Star/watch the repo to follow progress.
+
 Self-hosted AI agent platform for low-power hardware. Like [Umbrel](https://umbrel.com) but for AI agents — app store, model management, agent deployment, and system monitoring in a single web dashboard.
 
 Run AI agents on a $150 Orange Pi, a budget x86 PC, or anything in between. Flash an image, open the browser, deploy your first agent.
