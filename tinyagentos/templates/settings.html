@@ -95,7 +95,32 @@
   </div>
 </details>
 
-<!-- Section 4: Advanced — YAML Editor -->
+<!-- Section 4: Backup & Restore -->
+<details open>
+  <summary><strong>Backup &amp; Restore</strong></summary>
+  <div style="margin-top: 1rem;">
+    <section aria-label="Backup and Restore">
+      <h3>Backup &amp; Restore</h3>
+      <div class="grid">
+        <div>
+          <p>Download a backup of your configuration, installed apps list, and catalog.</p>
+          <form method="post" action="/api/backup">
+            <button type="submit" class="outline" aria-label="Download backup">Download Backup</button>
+          </form>
+        </div>
+        <div>
+          <p>Restore from a previous backup file.</p>
+          <form action="/api/restore" method="post" enctype="multipart/form-data">
+            <input type="file" name="file" accept=".tar.gz,.tgz" aria-label="Select backup file" required>
+            <button type="submit" class="outline" aria-label="Restore from backup">Restore</button>
+          </form>
+        </div>
+      </div>
+    </section>
+  </div>
+</details>
+
+<!-- Section 5: Advanced — YAML Editor -->
 <details>
   <summary><strong>Advanced — YAML Editor</strong></summary>
   <div style="margin-top: 1rem;">

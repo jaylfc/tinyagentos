@@ -1,13 +1,16 @@
 from __future__ import annotations
 import datetime
+import io
 import os
 import shutil
+import tarfile
+import time
 from dataclasses import asdict
 from pathlib import Path
 
 import yaml
-from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import APIRouter, Request, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from tinyagentos.config import AppConfig, save_config_locked, validate_config
 
@@ -171,3 +174,66 @@ async def save_platform_settings(request: Request, body: PlatformUpdate):
     config.metrics["retention_days"] = body.retention_days
     await save_config_locked(config, request.app.state.config_path)
     return {"status": "saved", "message": "Platform settings saved"}
+
+
+@router.post("/api/backup")
+async def create_backup(request: Request):
+    """Create a downloadable backup of configuration and app data."""
+    data_dir = request.app.state.config_path.parent
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        for name in ["config.yaml", "installed.json", "hardware.json"]:
+            path = data_dir / name
+            if path.exists():
+                tar.add(str(path), arcname=f"backup/{name}")
+        catalog_dir = data_dir.parent / "app-catalog"
+        if catalog_dir.exists():
+            tar.add(str(catalog_dir), arcname="backup/app-catalog")
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/gzip",
+        headers={"Content-Disposition": f"attachment; filename=tinyagentos-backup-{int(time.time())}.tar.gz"},
+    )
+
+
+@router.post("/api/restore")
+async def restore_backup(request: Request, file: UploadFile):
+    """Restore configuration from a backup tarball."""
+    data_dir = request.app.state.config_path.parent
+    content = await file.read()
+    buf = io.BytesIO(content)
+    try:
+        with tarfile.open(fileobj=buf, mode="r:gz") as tar:
+            for member in tar.getmembers():
+                # Strip the leading "backup/" prefix when extracting
+                if not member.name.startswith("backup/"):
+                    continue
+                relative = member.name[len("backup/"):]
+                if not relative:
+                    continue
+                dest = data_dir / relative
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                f = tar.extractfile(member)
+                if f is not None:
+                    dest.write_bytes(f.read())
+    except tarfile.TarError as e:
+        return JSONResponse({"error": f"Invalid backup file: {e}"}, status_code=400)
+    # Reload config if config.yaml was restored
+    config_path = request.app.state.config_path
+    if config_path.exists():
+        try:
+            with open(config_path) as fh:
+                data = yaml.safe_load(fh) or {}
+            new_config = AppConfig(
+                server=data.get("server", {}),
+                backends=data.get("backends", []),
+                qmd=data.get("qmd", {}),
+                agents=data.get("agents", []),
+                metrics=data.get("metrics", {}),
+                config_path=config_path,
+            )
+            request.app.state.config = new_config
+        except Exception:
+            pass
+    return {"status": "restored", "message": "Backup restored successfully"}
