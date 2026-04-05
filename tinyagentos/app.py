@@ -15,10 +15,19 @@ from tinyagentos.qmd_client import QmdClient
 PROJECT_DIR = Path(__file__).parent.parent
 
 
-def create_app(data_dir: Path | None = None) -> FastAPI:
+def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) -> FastAPI:
+    from tinyagentos.registry import AppRegistry
+    from tinyagentos.hardware import get_hardware_profile
+
     data_dir = data_dir or PROJECT_DIR / "data"
     config_path = data_dir / "config.yaml"
     config = load_config(config_path)
+
+    catalog_dir = catalog_dir or PROJECT_DIR / "app-catalog"
+    hardware_path = data_dir / "hardware.json"
+    hardware_profile = get_hardware_profile(hardware_path)
+    installed_path = data_dir / "installed.json"
+    registry = AppRegistry(catalog_dir=catalog_dir, installed_path=installed_path)
 
     metrics_store = MetricsStore(data_dir / "metrics.db")
     qmd_client = QmdClient(config.qmd.get("url", "http://localhost:7832"))
@@ -36,6 +45,8 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         # Start background health monitor
         from tinyagentos.health import HealthMonitor
         monitor = HealthMonitor(config, metrics_store, qmd_client, http_client)
+        app.state.registry = registry
+        app.state.hardware_profile = hardware_profile
         app.state.health_monitor = monitor
         await monitor.start()
         yield
@@ -52,6 +63,8 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     app.state.metrics = metrics_store
     app.state.qmd_client = qmd_client
     app.state.http_client = http_client
+    app.state.registry = registry
+    app.state.hardware_profile = hardware_profile
 
     # Mount static files
     static_dir = PROJECT_DIR / "static"
@@ -75,6 +88,9 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
 
     from tinyagentos.routes.settings import router as settings_router
     app.include_router(settings_router)
+
+    from tinyagentos.routes.store import router as store_router
+    app.include_router(store_router)
 
     return app
 

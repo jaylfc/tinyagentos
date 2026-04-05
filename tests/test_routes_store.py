@@ -1,0 +1,94 @@
+import pytest
+import pytest_asyncio
+import yaml
+from httpx import AsyncClient, ASGITransport
+from tinyagentos.app import create_app
+
+
+@pytest.fixture
+def catalog_dir(tmp_path):
+    agents = tmp_path / "catalog" / "agents" / "smolagents"
+    agents.mkdir(parents=True)
+    (agents / "manifest.yaml").write_text(yaml.dump({
+        "id": "smolagents", "name": "SmolAgents", "type": "agent-framework",
+        "version": "1.0.0", "description": "Code-based agents",
+        "requires": {"ram_mb": 256},
+        "install": {"method": "pip", "package": "smolagents"},
+        "hardware_tiers": {"arm-npu-16gb": "full", "cpu-only": "full"},
+    }))
+    models = tmp_path / "catalog" / "models" / "test-model"
+    models.mkdir(parents=True)
+    (models / "manifest.yaml").write_text(yaml.dump({
+        "id": "test-model", "name": "Test Model", "type": "model",
+        "version": "1.0.0", "description": "A test model",
+        "variants": [{"id": "small", "name": "Small", "format": "gguf", "size_mb": 100,
+                       "min_ram_mb": 512, "download_url": "https://example.com/test.gguf",
+                       "backend": ["ollama"]}],
+        "hardware_tiers": {"arm-npu-16gb": {"recommended": "small"}},
+    }))
+    return tmp_path / "catalog"
+
+
+@pytest.fixture
+def app_with_store(tmp_data_dir, catalog_dir):
+    return create_app(data_dir=tmp_data_dir, catalog_dir=catalog_dir)
+
+
+@pytest_asyncio.fixture
+async def store_client(app_with_store):
+    store = app_with_store.state.metrics
+    if store._db is not None:
+        await store.close()
+    await store.init()
+    await app_with_store.state.qmd_client.init()
+    transport = ASGITransport(app=app_with_store)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c
+    await store.close()
+    await app_with_store.state.qmd_client.close()
+    await app_with_store.state.http_client.aclose()
+
+
+@pytest.mark.asyncio
+class TestStoreAPI:
+    async def test_list_catalog(self, store_client):
+        resp = await store_client.get("/api/store/catalog")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 2
+        ids = {a["id"] for a in data}
+        assert "smolagents" in ids
+        assert "test-model" in ids
+
+    async def test_filter_catalog_by_type(self, store_client):
+        resp = await store_client.get("/api/store/catalog?type=model")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["id"] == "test-model"
+
+    async def test_list_installed_empty(self, store_client):
+        resp = await store_client.get("/api/store/installed")
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    async def test_get_app_detail(self, store_client):
+        resp = await store_client.get("/api/store/app/smolagents")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["id"] == "smolagents"
+        assert data["type"] == "agent-framework"
+
+    async def test_get_nonexistent_app(self, store_client):
+        resp = await store_client.get("/api/store/app/nonexistent")
+        assert resp.status_code == 404
+
+    async def test_hardware_profile(self, store_client):
+        resp = await store_client.get("/api/hardware")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "profile_id" in data
+        assert "ram_mb" in data
+        assert data["ram_mb"] > 0
+
+

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}App Store — TinyAgentOS{% endblock %}
+{% block content %}
+<h2>App Store</h2>
+
+<div class="search-modes" style="margin-bottom: 1.5rem;">
+    <button class="active" hx-get="/api/store/catalog" hx-target="#app-grid">All</button>
+    <button hx-get="/api/store/catalog?type=agent-framework" hx-target="#app-grid">Agents</button>
+    <button hx-get="/api/store/catalog?type=model" hx-target="#app-grid">Models</button>
+    <button hx-get="/api/store/catalog?type=service" hx-target="#app-grid">Services</button>
+</div>
+
+<div id="app-grid" class="kpi-grid">
+{% for item in apps %}
+    <article class="kpi-card" style="text-align: left; padding: 1.25rem;">
+        <h4 style="margin-bottom: 0.25rem;">{{ item.manifest.name }}</h4>
+        <small style="color: var(--pico-muted-color);">{{ item.manifest.type }} · v{{ item.manifest.version }}</small>
+        <p style="font-size: 0.9rem; margin: 0.5rem 0;">{{ item.manifest.description }}</p>
+        {% if item.installed %}
+            <button class="outline" disabled>Installed</button>
+        {% else %}
+            <button class="outline"
+                    hx-post="/api/store/install"
+                    hx-vals='{"app_id": "{{ item.manifest.id }}"}'
+                    hx-swap="outerHTML"
+                    hx-confirm="Install {{ item.manifest.name }}?">
+                Install
+            </button>
+        {% endif %}
+    </article>
+{% endfor %}
+</div>
+{% endblock %}
