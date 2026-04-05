@@ -34,10 +34,20 @@ One-click install for agent frameworks, AI models, and services. Hardware-aware 
 ### Agent Deployment
 5-step wizard: pick framework → choose model → configure → deploy into isolated LXC container. Each agent gets its own memory system.
 
+### Dynamic Capabilities
+Features unlock automatically based on your hardware and cluster. Solo Pi sees core features. Add a GPU worker and image generation, video, and training appear. No configuration — the platform just knows what's possible.
+
 ### AI Generation
-- **Images** — Stable Diffusion via NPU, GPU, or CPU
-- **Video** — WanGP, LTX Video (6GB+ GPU)
+- **Images** — Stable Diffusion via NPU, GPU, or CPU (multi-backend auto-discovery)
+- **Video** — WanGP, LTX Video (unlocks with 6GB+ GPU worker)
 - **Audio** — Kokoro TTS, Chatterbox, Piper, Whisper STT, MusicGPT
+
+### Training & Fine-Tuning
+- **LoRA Training** — train agent-specific adapters from the web UI (8GB+ GPU)
+- **Agent Retrain** — one-click: agent audits itself, finds knowledge gaps, trains improvement
+- **Per-agent LoRAs** — each agent gets its own specialisation on a shared base model
+- **Smart routing** — GPU workers get instant LoRA hot-swap, NPU uses time-shared merged models
+- **Deployment** — auto-converts and deploys to all backends in the cluster
 
 ### Agent Management
 - **Communication Channels** — Telegram, Discord, Slack, web chat, email, webhooks (Easy/Advanced setup)
