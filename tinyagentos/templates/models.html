@@ -6,12 +6,12 @@
 <section id="downloaded-section">
     <h3>Downloaded Models</h3>
     <div id="downloaded-models" hx-get="/api/models" hx-trigger="load" hx-target="#models-content" hx-swap="innerHTML">
-        <p>Loading...</p>
+        <article aria-busy="true">Loading...</article>
     </div>
 </section>
 
 <div id="models-content">
-    <p style="color: var(--pico-muted-color);">Loading model catalog...</p>
+    <article aria-busy="true">Loading model catalog...</article>
 </div>
 
 <template id="models-template">
@@ -29,7 +29,7 @@ document.addEventListener('htmx:afterRequest', function(evt) {
     let downloadedHtml = '';
     const downloadedFiles = data.downloaded_files || [];
     if (downloadedFiles.length === 0) {
-        downloadedHtml = '<p style="color: var(--pico-muted-color);">No models downloaded yet.</p>';
+        downloadedHtml = '<p style="color: var(--pico-muted-color);">No models downloaded yet. Browse the catalog to get started.</p>';
     } else {
         downloadedHtml = '<div class="kpi-grid">';
         downloadedFiles.forEach(f => {

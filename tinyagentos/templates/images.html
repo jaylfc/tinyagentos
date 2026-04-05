@@ -55,7 +55,7 @@
 <section>
     <h3>Gallery</h3>
     <div id="image-gallery" hx-get="/api/images" hx-trigger="load" hx-target="#gallery-content" hx-swap="innerHTML">
-        <p>Loading gallery...</p>
+        <article aria-busy="true">Loading gallery...</article>
     </div>
     <div id="gallery-content"></div>
 </section>
@@ -100,7 +100,7 @@ document.addEventListener('htmx:afterRequest', function(evt) {
             const container = document.getElementById('gallery-content');
             const images = data.images || [];
             if (images.length === 0) {
-                container.innerHTML = '<p style="color: var(--pico-muted-color); text-align: center; padding: 2rem;">No images generated yet.</p>';
+                container.innerHTML = '<p style="color: var(--pico-muted-color); text-align: center; padding: 2rem;">No images generated yet. Try entering a prompt above.</p>';
                 return;
             }
             let html = '<div class="kpi-grid">';

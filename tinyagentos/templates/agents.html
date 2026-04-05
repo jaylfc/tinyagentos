@@ -20,6 +20,12 @@
                     hx-target="closest tr" hx-swap="outerHTML">Delete</button>
         </td>
     </tr>
+    {% else %}
+    <tr>
+        <td colspan="6" style="text-align: center; color: var(--pico-muted-color); padding: 2rem;">
+            No agents deployed. Use the wizard above to create your first agent.
+        </td>
+    </tr>
     {% endfor %}
     </tbody>
 </table>

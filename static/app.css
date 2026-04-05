@@ -96,6 +96,11 @@ nav a.active {
 .compat-compatible { background: rgba(152, 251, 152, 0.15); color: #98fb98; }
 .compat-degraded { background: rgba(255, 215, 0, 0.15); color: #ffd700; }
 .compat-unsupported { background: rgba(255, 107, 107, 0.15); color: #ff6b6b; }
+@media (max-width: 768px) {
+    .memory-layout {
+        grid-template-columns: 1fr;
+    }
+}
 .error-alert {
     background: rgba(255, 107, 107, 0.1);
     border: 1px solid rgba(255, 107, 107, 0.3);

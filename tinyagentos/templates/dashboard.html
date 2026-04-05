@@ -4,22 +4,20 @@
 <h2>Dashboard</h2>
 
 <div id="kpi-cards" hx-get="/api/partials/kpi-cards" hx-trigger="load, every 30s" hx-swap="innerHTML">
-    <div class="kpi-grid">
-        <article class="kpi-card"><div class="value">—</div><div class="label">Loading...</div></article>
-    </div>
+    <article aria-busy="true">Loading...</article>
 </div>
 
 <div class="grid">
     <div>
         <h3>Backends</h3>
         <div id="backend-status" hx-get="/api/partials/backend-status" hx-trigger="load, every 30s" hx-swap="innerHTML">
-            <p>Loading...</p>
+            <article aria-busy="true">Loading...</article>
         </div>
     </div>
     <div>
         <h3>Agents</h3>
         <div id="agent-summary" hx-get="/api/partials/agent-summary" hx-trigger="load, every 30s" hx-swap="innerHTML">
-            <p>Loading...</p>
+            <article aria-busy="true">Loading...</article>
         </div>
     </div>
 </div>

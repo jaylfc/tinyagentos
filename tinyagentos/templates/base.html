@@ -26,5 +26,23 @@
     <main class="container">
         {% block content %}{% endblock %}
     </main>
+    <footer class="container" style="text-align: center; padding: 2rem 0; color: var(--pico-muted-color); font-size: 0.85rem;">
+        TinyAgentOS v0.1.0 · <a href="https://github.com/jaylfc/tinyagentos">GitHub</a> · <a href="https://buymeacoffee.com/jaylfc">Support</a>
+    </footer>
+    <div id="toast" style="display:none; position:fixed; bottom:20px; right:20px; padding:1rem 1.5rem; border-radius:8px; z-index:1000; background:var(--pico-primary-background); color:var(--pico-primary-inverse);"></div>
+    <script>
+    function showToast(msg, type='success') {
+        const t = document.getElementById('toast');
+        t.textContent = msg;
+        t.style.display = 'block';
+        t.style.background = type === 'error' ? '#ff6b6b' : 'var(--pico-primary-background)';
+        setTimeout(() => t.style.display = 'none', 3000);
+    }
+    document.body.addEventListener('htmx:afterRequest', function(evt) {
+        if (evt.detail.xhr.status >= 400) {
+            try { showToast(JSON.parse(evt.detail.xhr.response).error, 'error'); } catch(e) {}
+        }
+    });
+    </script>
 </body>
 </html>
