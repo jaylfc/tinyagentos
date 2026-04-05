@@ -37,9 +37,9 @@ YAML editor with validation, hardware profile display, catalog sync.
 
 | Type | Apps |
 |------|------|
-| **Agent Frameworks** | SmolAgents, PocketFlow, OpenClaw |
+| **Agent Frameworks** | SmolAgents, PocketFlow, OpenClaw, Swarm, OpenAI Agents SDK, Langroid |
 | **Models** | Qwen3 Embedding 0.6B, Reranker 0.6B, 1.7B, 4B, 8B |
-| **Services** | Gitea (Git server), Code Server (web IDE) |
+| **Services** | Gitea, Code Server, Open WebUI, n8n, Dify |
 
 Models include RKLLM variants for Rockchip NPU and GGUF for CPU/GPU. Community can contribute apps via PR to the catalog repo.
 
@@ -55,6 +55,9 @@ Models include RKLLM variants for Rockchip NPU and GGUF for CPU/GPU. Community c
 | [TinyAgent](https://github.com/SqueezeAILab/TinyAgent) | Edge tool calling | 1-3B models with LLMCompiler |
 | [Hermes](https://github.com/NousResearch/Hermes-Function-Calling) | Function calling | Nous Research |
 | [Agent Zero](https://github.com/frdel/agent-zero) | Autonomous agent | Self-correcting workflows |
+| [Swarm](https://github.com/openai/swarm) | Multi-agent handoffs | OpenAI, lightweight, experimental |
+| [OpenAI Agents SDK](https://github.com/openai/openai-agents-python) | Multi-agent orchestration | Provider-agnostic, tracing, guardrails |
+| [Langroid](https://github.com/langroid/langroid) | Message-passing agents | Built-in vector store, local LLM support |
 
 ## Supported Backends
 
