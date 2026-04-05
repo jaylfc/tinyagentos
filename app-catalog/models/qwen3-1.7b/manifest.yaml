@@ -1,0 +1,32 @@
+id: qwen3-1.7b
+name: Qwen 3 1.7B
+type: model
+version: 3.0.0
+description: "Tiny chat model — ideal for setup agent, tool calling on low-power devices"
+homepage: https://huggingface.co/Qwen/Qwen3-1.7B
+capabilities: [chat, tool-calling]
+
+variants:
+  - id: rkllm-w8a8
+    name: "RKLLM W8A8 (2.3GB, NPU)"
+    format: rkllm
+    size_mb: 2300
+    min_ram_mb: 0
+    download_url: https://huggingface.co/jaylfc/qwen3-1.7b-rkllm/resolve/main/qwen3-1.7b-w8a8.rkllm
+    backend: [rkllama]
+    requires_npu: [rk3588, rk3576]
+  - id: q4_k_m
+    name: "Q4_K_M (1.1GB)"
+    format: gguf
+    size_mb: 1100
+    min_ram_mb: 2048
+    download_url: https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/resolve/main/qwen3-1.7b-q4_k_m.gguf
+    backend: [ollama, llama-cpp]
+
+hardware_tiers:
+  arm-npu-16gb: {recommended: rkllm-w8a8, fallback: q4_k_m}
+  arm-npu-32gb: {recommended: rkllm-w8a8}
+  x86-cuda-12gb: {recommended: q4_k_m}
+  x86-vulkan-8gb: {recommended: q4_k_m}
+  x86-vulkan-4gb: {recommended: q4_k_m}
+  cpu-only: {recommended: q4_k_m}
