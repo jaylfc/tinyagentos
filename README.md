@@ -2,9 +2,9 @@
 
 > **⚠️ Early Development** — This project is under active development and has not been tested on clean hardware yet. Do not install in production. Star/watch the repo to follow progress.
 
-Self-hosted AI agent platform for low-power hardware. Run AI agents on a $150 Orange Pi, a gaming PC, a Raspberry Pi, or combine them all into one distributed compute cluster.
+Self-hosted AI agent platform that runs on whatever hardware you have. An old laptop, a Raspberry Pi, a gaming PC, an SBC gathering dust — or all of them at once. TinyAgentOS turns your spare hardware into a distributed AI compute cluster.
 
-App store with 52+ apps, live model browser (167k+ models), agent deployment, image/video/audio generation, and full system monitoring — all from a web dashboard.
+52+ apps, 167k+ searchable models, agent deployment, image/video/audio generation, and full system monitoring — all from a single web dashboard.
 
 ## Quick Start
 
