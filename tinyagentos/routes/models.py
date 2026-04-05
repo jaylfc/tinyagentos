@@ -141,7 +141,7 @@ async def get_model(request: Request, model_id: str):
 
 @router.post("/api/models/download")
 async def download_model(request: Request, body: DownloadRequest):
-    """Download a specific model variant."""
+    """Start a background download for a specific model variant."""
     registry = request.app.state.registry
     manifest = registry.get(body.app_id)
     if not manifest or manifest.type != "model":
@@ -151,21 +151,68 @@ async def download_model(request: Request, body: DownloadRequest):
     if not variant:
         return JSONResponse({"error": f"Variant '{body.variant_id}' not found"}, status_code=404)
 
-    from tinyagentos.installers.base import get_installer
-    try:
-        installer = get_installer(manifest.install.get("method", "download"))
-    except ValueError as e:
-        return JSONResponse({"error": str(e)}, status_code=400)
+    url = variant.get("download_url", "")
+    if not url:
+        return JSONResponse({"error": "No download URL for variant"}, status_code=400)
 
     models_dir = _models_dir(request)
-    if hasattr(installer, "models_dir"):
-        installer.models_dir = models_dir
+    fmt = variant.get("format", "bin")
+    filename = f"{body.app_id}-{body.variant_id}.{fmt}"
+    dest = models_dir / filename
 
-    result = await installer.install(body.app_id, manifest.install, variant=variant)
-    if result["success"]:
-        registry.mark_installed(body.app_id, manifest.version)
-        return {"status": "downloaded", "app_id": body.app_id, "variant_id": body.variant_id, "path": result.get("path")}
-    return JSONResponse({"error": result.get("error", "Download failed")}, status_code=500)
+    download_id = f"{body.app_id}-{body.variant_id}"
+    dm = request.app.state.download_manager
+    dm.start_download(
+        download_id=download_id,
+        url=url,
+        dest=dest,
+        expected_sha256=variant.get("sha256"),
+    )
+
+    return {
+        "status": "started",
+        "download_id": download_id,
+        "app_id": body.app_id,
+        "variant_id": body.variant_id,
+    }
+
+
+@router.get("/api/models/downloads")
+async def list_downloads(request: Request):
+    """List all downloads with progress information."""
+    dm = request.app.state.download_manager
+    tasks = dm.list_all()
+    return {
+        "downloads": [_task_to_dict(t) for t in tasks],
+    }
+
+
+@router.get("/api/models/downloads/{download_id}")
+async def get_download_progress(request: Request, download_id: str):
+    """Get progress for a specific download."""
+    dm = request.app.state.download_manager
+    task = dm.get_progress(download_id)
+    if not task:
+        return JSONResponse({"error": f"Download '{download_id}' not found"}, status_code=404)
+    return _task_to_dict(task)
+
+
+def _task_to_dict(task) -> dict:
+    pct = 0
+    if task.total_bytes > 0:
+        pct = round(task.downloaded_bytes / task.total_bytes * 100, 1)
+    return {
+        "id": task.id,
+        "url": task.url,
+        "dest": str(task.dest),
+        "total_bytes": task.total_bytes,
+        "downloaded_bytes": task.downloaded_bytes,
+        "percent": pct,
+        "status": task.status,
+        "error": task.error,
+        "started_at": task.started_at,
+        "completed_at": task.completed_at,
+    }
 
 
 @router.delete("/api/models/{model_id}")

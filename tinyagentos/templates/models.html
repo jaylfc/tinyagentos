@@ -61,12 +61,16 @@ document.addEventListener('htmx:afterRequest', function(evt) {
                                v.compatibility === 'yellow' ? '#ff9800' : '#f44336';
                 const backends = (v.backend || []).join(', ');
                 const ramReq = v.min_ram_mb ? v.min_ram_mb + ' MB RAM' : 'No RAM requirement';
+                const dlId = `${m.id}-${v.id}`;
                 const dlLabel = v.downloaded
                     ? '<mark>Downloaded</mark>'
                     : `<button class="outline" style="padding: 0.25rem 0.75rem; font-size: 0.8rem;"
-                         hx-post="/api/models/download"
-                         hx-vals='${JSON.stringify({app_id: m.id, variant_id: v.id}).replace(/'/g, "&#39;")}'
-                         hx-confirm="Download ${v.name}?">Download</button>`;
+                         onclick="startDownload('${m.id}', '${v.id}', this)"
+                         >Download</button>
+                       <div id="progress-${dlId}" style="display:none; margin-top:0.25rem;">
+                           <progress id="bar-${dlId}" value="0" max="100" style="width:100%;"></progress>
+                           <small id="label-${dlId}">Starting...</small>
+                       </div>`;
                 variantsHtml += `<li style="margin-bottom: 0.5rem;">
                     <span style="color: ${vColor};">&#9679;</span>
                     <strong>${v.name}</strong> &mdash; ${v.size_mb} MB, ${(v.format || '').toUpperCase()}
@@ -108,5 +112,64 @@ document.addEventListener('htmx:afterRequest', function(evt) {
     htmx.process(container);
     htmx.process(document.getElementById('downloaded-models'));
 });
+
+async function startDownload(appId, variantId, btn) {
+    btn.disabled = true;
+    btn.textContent = 'Starting...';
+    const dlId = appId + '-' + variantId;
+    try {
+        const resp = await fetch('/api/models/download', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({app_id: appId, variant_id: variantId}),
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+            btn.disabled = false;
+            btn.textContent = 'Download';
+            alert(data.error || 'Download failed');
+            return;
+        }
+        const progressDiv = document.getElementById('progress-' + dlId);
+        if (progressDiv) progressDiv.style.display = 'block';
+        btn.style.display = 'none';
+        pollProgress(data.download_id);
+    } catch (e) {
+        btn.disabled = false;
+        btn.textContent = 'Download';
+    }
+}
+
+function pollProgress(downloadId) {
+    const bar = document.getElementById('bar-' + downloadId);
+    const label = document.getElementById('label-' + downloadId);
+    if (!bar || !label) return;
+
+    const interval = setInterval(async () => {
+        try {
+            const resp = await fetch('/api/models/downloads/' + downloadId);
+            const data = await resp.json();
+            bar.value = data.percent || 0;
+            if (data.status === 'downloading') {
+                const mb = (data.downloaded_bytes / 1048576).toFixed(1);
+                const totalMb = data.total_bytes ? (data.total_bytes / 1048576).toFixed(1) : '?';
+                label.textContent = mb + ' / ' + totalMb + ' MB (' + data.percent + '%)';
+            } else if (data.status === 'complete') {
+                clearInterval(interval);
+                bar.value = 100;
+                label.textContent = 'Complete';
+                // Refresh model list
+                htmx.trigger('#downloaded-models', 'load');
+            } else if (data.status === 'error') {
+                clearInterval(interval);
+                label.textContent = 'Error: ' + (data.error || 'unknown');
+                label.style.color = '#ff6b6b';
+            }
+        } catch (e) {
+            clearInterval(interval);
+            label.textContent = 'Connection error';
+        }
+    }, 2000);
+}
 </script>
 {% endblock %}

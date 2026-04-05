@@ -12,6 +12,7 @@ data/hardware.json
 data/installed.json
 data/.setup_complete
 data/images/
+data/secrets.db
 
 # Environment
 .env
