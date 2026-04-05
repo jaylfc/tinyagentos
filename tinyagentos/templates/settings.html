@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}Settings — TinyAgentOS{% endblock %}
+{% block content %}
+<h2>Settings</h2>
+
+<!-- Section 1: System Information -->
+<details open>
+  <summary><strong>System Information</strong></summary>
+  <div style="margin-top: 1rem;">
+    <span class="badge" style="display: inline-block; background: var(--pico-primary); color: var(--pico-primary-inverse); padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.85rem; margin-bottom: 1rem;">
+      Profile: {{ hardware.profile_id }}
+    </span>
+    <div class="overflow-auto">
+      <table>
+        <tbody>
+          <tr><td><strong>CPU Architecture</strong></td><td>{{ hardware.cpu.arch or "unknown" }}</td></tr>
+          <tr><td><strong>CPU Model</strong></td><td>{{ hardware.cpu.model or "unknown" }}</td></tr>
+          <tr><td><strong>CPU Cores</strong></td><td>{{ hardware.cpu.cores }}</td></tr>
+          {% if hardware.cpu.soc %}<tr><td><strong>SoC</strong></td><td>{{ hardware.cpu.soc }}</td></tr>{% endif %}
+          <tr><td><strong>RAM</strong></td><td>{{ hardware.ram_mb }} MB ({{ (hardware.ram_mb / 1024) | round(1) }} GB)</td></tr>
+          <tr><td><strong>NPU</strong></td><td>{{ hardware.npu.type }}{% if hardware.npu.tops %} ({{ hardware.npu.tops }} TOPS){% endif %}</td></tr>
+          <tr><td><strong>GPU</strong></td><td>{{ hardware.gpu.type }}{% if hardware.gpu.model %} — {{ hardware.gpu.model }}{% endif %}</td></tr>
+          <tr><td><strong>Disk</strong></td><td>{{ hardware.disk.total_gb }} GB total, {{ hardware.disk.free_gb }} GB free{% if hardware.disk.type %} ({{ hardware.disk.type }}){% endif %}</td></tr>
+          <tr><td><strong>OS</strong></td><td>{{ hardware.os.distro }}{% if hardware.os.version %} {{ hardware.os.version }}{% endif %}</td></tr>
+          <tr><td><strong>Kernel</strong></td><td>{{ hardware.os.kernel or "unknown" }}</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <button type="button" class="outline secondary"
+            hx-post="/api/hardware/detect"
+            hx-target="#hw-detect-status" hx-swap="innerHTML">
+      Re-detect Hardware
+    </button>
+    <span id="hw-detect-status"></span>
+  </div>
+</details>
+
+<!-- Section 2: Storage Usage -->
+<details open>
+  <summary><strong>Storage Usage</strong></summary>
+  <div style="margin-top: 1rem;">
+    <div class="overflow-auto">
+      <table>
+        <thead>
+          <tr><th>Directory</th><th>Path</th><th>Size</th></tr>
+        </thead>
+        <tbody>
+          {% for item in storage %}
+          <tr>
+            <td>{{ item.label }}</td>
+            <td><code>{{ item.path }}</code></td>
+            <td>{{ item.size }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</details>
+
+<!-- Section 3: Platform Settings -->
+<details open>
+  <summary><strong>Platform Settings</strong></summary>
+  <div style="margin-top: 1rem;">
+    <form id="platform-settings-form">
+      <label for="catalog_repo">Catalog Repo URL</label>
+      <input type="text" id="catalog_repo" name="catalog_repo"
+             value="{{ platform_settings.catalog_repo }}" placeholder="https://github.com/...">
+
+      <div class="grid">
+        <div>
+          <label for="poll_interval">Metrics Poll Interval (seconds)</label>
+          <input type="number" id="poll_interval" name="poll_interval"
+                 value="{{ platform_settings.poll_interval }}" min="5" max="3600">
+        </div>
+        <div>
+          <label for="retention_days">Metrics Retention (days)</label>
+          <input type="number" id="retention_days" name="retention_days"
+                 value="{{ platform_settings.retention_days }}" min="1" max="365">
+        </div>
+      </div>
+
+      <div id="platform-save-status"></div>
+      <button type="button"
+              hx-put="/api/settings/platform"
+              hx-target="#platform-save-status" hx-swap="innerHTML"
+              hx-vals='js:{
+                "poll_interval": parseInt(document.getElementById("poll_interval").value),
+                "retention_days": parseInt(document.getElementById("retention_days").value),
+                "catalog_repo": document.getElementById("catalog_repo").value
+              }'>
+        Save Platform Settings
+      </button>
+    </form>
+  </div>
+</details>
+
+<!-- Section 4: Advanced — YAML Editor -->
+<details>
+  <summary><strong>Advanced — YAML Editor</strong></summary>
+  <div style="margin-top: 1rem;">
+    <div id="config-status"></div>
+    <form id="config-form">
+      <textarea id="config-editor" name="yaml" rows="25"
+                style="font-family: monospace; font-size: 0.9rem;">{{ config_yaml }}</textarea>
+      <div class="grid" style="margin-top: 1rem;">
+        <button type="button" class="outline"
+                hx-put="/api/config?validate_only=true"
+                hx-target="#config-status" hx-swap="innerHTML"
+                hx-vals='js:{"yaml": document.getElementById("config-editor").value}'>
+          Validate
+        </button>
+        <button type="button"
+                hx-put="/api/config"
+                hx-target="#config-status" hx-swap="innerHTML"
+                hx-vals='js:{"yaml": document.getElementById("config-editor").value}'>
+          Save
+        </button>
+      </div>
+    </form>
+    {% if last_saved %}
+    <p style="color: var(--pico-muted-color); font-size: 0.85rem;">Last saved: {{ last_saved }}</p>
+    {% endif %}
+  </div>
+</details>
+{% endblock %}
