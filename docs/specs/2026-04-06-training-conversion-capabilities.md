@@ -127,9 +127,21 @@ agents:
 ```
 
 At inference time:
-- ollama: `--lora /path/to/adapter.gguf`
-- llama.cpp: `--lora /path/to/adapter.gguf`
-- rkllama: LoRA must be merged before RKLLM conversion (baked in)
+- **ollama:** `--lora /path/to/adapter.gguf` — hot-swap per request, instant
+- **llama.cpp:** `--lora /path/to/adapter.gguf` — hot-swap per request, instant
+- **rkllama (NPU):** LoRA must be merged into base before RKLLM conversion (baked in)
+
+### LoRA Strategy for NPU (rkllama)
+
+The NPU can't hot-swap LoRA adapters — each RKLLM model has weights baked in. Strategy:
+
+1. **Default: LoRAs route to GPU workers** — NPU handles shared models (embed, rerank, expand) for all agents. Agent-specific LoRA chat routes to GPU workers where swapping is free. Solo NPU users get the base model — still good, not specialised.
+
+2. **Advanced: merged RKLLM per agent** — for stable LoRAs that don't change often, merge LoRA into base and convert to RKLLM. Creates a separate model file per agent (e.g. `naira-web-v3.rkllm`). Only one loaded at a time — pool manager time-shares by batching per-agent requests to minimise swaps (5-10s per swap).
+
+3. **Future: dynamic NPU core allocation** (issue #13) — smart scheduling that assigns NPU cores per-agent and manages model loading/unloading based on demand patterns.
+
+The capability system handles this transparently — if no GPU worker is available, per-agent LoRA training is still offered but deployment targets show NPU as "merged model (slower swap)" vs GPU as "instant swap".
 
 ### Training Data Sources
 
