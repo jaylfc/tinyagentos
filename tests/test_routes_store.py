@@ -92,3 +92,12 @@ class TestStoreAPI:
         assert data["ram_mb"] > 0
 
 
+@pytest.mark.asyncio
+class TestStoreInstallAPI:
+    async def test_install_unknown_app_fails(self, store_client):
+        resp = await store_client.post("/api/store/install", json={"app_id": "nonexistent"})
+        assert resp.status_code == 404
+
+    async def test_uninstall_not_installed_fails(self, store_client):
+        resp = await store_client.post("/api/store/uninstall", json={"app_id": "smolagents"})
+        assert resp.status_code == 404
