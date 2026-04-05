@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — TinyAgentOS{% endblock %}
+{% block content %}
+<h2>Dashboard</h2>
+
+<div id="kpi-cards" hx-get="/api/partials/kpi-cards" hx-trigger="load, every 30s" hx-swap="innerHTML">
+    <div class="kpi-grid">
+        <article class="kpi-card"><div class="value">—</div><div class="label">Loading...</div></article>
+    </div>
+</div>
+
+<div class="grid">
+    <div>
+        <h3>Backends</h3>
+        <div id="backend-status" hx-get="/api/partials/backend-status" hx-trigger="load, every 30s" hx-swap="innerHTML">
+            <p>Loading...</p>
+        </div>
+    </div>
+    <div>
+        <h3>Agents</h3>
+        <div id="agent-summary" hx-get="/api/partials/agent-summary" hx-trigger="load, every 30s" hx-swap="innerHTML">
+            <p>Loading...</p>
+        </div>
+    </div>
+</div>
+
+<h3>Query Latency</h3>
+<div>
+    <canvas id="latency-chart" height="200"></canvas>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script>
+async function loadChart() {
+    const resp = await fetch('/api/metrics/qmd.health_response_ms?range=24h');
+    const data = await resp.json();
+    if (!data.length) return;
+    const ctx = document.getElementById('latency-chart').getContext('2d');
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: data.map(d => new Date(d.timestamp * 1000).toLocaleTimeString()),
+            datasets: [{
+                label: 'QMD Response (ms)',
+                data: data.map(d => d.value),
+                borderColor: '#7ecfff',
+                fill: false,
+                tension: 0.3,
+            }]
+        },
+        options: {
+            scales: { y: { beginAtZero: true } },
+            plugins: { legend: { display: false } },
+        }
+    });
+}
+loadChart();
+</script>
+{% endblock %}
