@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}Memory Browser — TinyAgentOS{% endblock %}
+{% block content %}
+<h2>Memory Browser</h2>
+
+<div class="grid">
+    <!-- Left sidebar -->
+    <div>
+        <h3>Agents</h3>
+        <div id="agent-list">
+            {% for agent in agents %}
+            <article class="agent-card" style="border-left: 4px solid {{ agent.color }}; cursor: pointer;"
+                     onclick="selectAgent('{{ agent.name }}')">
+                <strong>{{ agent.name }}</strong>
+                <small>{{ agent.vectors }} vectors</small>
+            </article>
+            {% endfor %}
+        </div>
+
+        <h3>Collections</h3>
+        <div id="collection-list">
+            <p>Select an agent to view collections</p>
+        </div>
+    </div>
+
+    <!-- Right panel -->
+    <div>
+        <h3>Search</h3>
+        <div class="search-controls">
+            <div role="group">
+                <button class="mode-pill active" data-mode="keyword" onclick="setMode('keyword', this)">Keyword</button>
+                <button class="mode-pill" data-mode="semantic" onclick="setMode('semantic', this)">Semantic</button>
+                <button class="mode-pill" data-mode="hybrid" onclick="setMode('hybrid', this)">Hybrid</button>
+            </div>
+            <form onsubmit="doSearch(event)">
+                <fieldset role="group">
+                    <input type="text" id="search-query" placeholder="Search memory...">
+                    <button type="submit">Search</button>
+                </fieldset>
+            </form>
+        </div>
+
+        <div id="results">
+            <p>Browse or search agent memory above.</p>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentAgent = null;
+let currentCollection = null;
+let currentMode = 'keyword';
+
+function selectAgent(name) {
+    currentAgent = name;
+    currentCollection = null;
+    // Load collections
+    fetch(`/api/memory/collections/${name}`)
+        .then(r => r.json())
+        .then(data => {
+            let html = '';
+            if (data.length === 0) {
+                html = '<p>No collections found</p>';
+            } else {
+                data.forEach(c => {
+                    html += `<article class="collection-card" style="cursor:pointer" onclick="selectCollection('${c.name}')">
+                        <strong>${c.name}</strong>
+                        <small>${c.vector_count} vectors, ${c.doc_count} docs</small>
+                    </article>`;
+                });
+            }
+            document.getElementById('collection-list').innerHTML = html;
+        });
+    // Browse all chunks for this agent
+    browseAgent(name);
+}
+
+function selectCollection(name) {
+    currentCollection = name;
+    browseAgent(currentAgent, name);
+}
+
+function browseAgent(agent, collection) {
+    let url = `/api/memory/browse?agent=${agent}`;
+    if (collection) url += `&collection=${collection}`;
+    fetch(url)
+        .then(r => r.json())
+        .then(data => {
+            renderResults(data.chunks || [], data.error);
+        });
+}
+
+function setMode(mode, btn) {
+    currentMode = mode;
+    document.querySelectorAll('.mode-pill').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+}
+
+function doSearch(e) {
+    e.preventDefault();
+    const query = document.getElementById('search-query').value;
+    if (!query) return;
+    fetch('/api/memory/search', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            query: query,
+            mode: currentMode,
+            agent: currentAgent,
+            collection: currentCollection,
+            limit: 20
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        renderResults(data.results || [], data.error);
+    });
+}
+
+function renderResults(items, error) {
+    const div = document.getElementById('results');
+    if (error) {
+        div.innerHTML = `<p class="error">${error}</p>`;
+        return;
+    }
+    if (!items.length) {
+        div.innerHTML = '<p>No results found.</p>';
+        return;
+    }
+    let html = '';
+    items.forEach(item => {
+        const preview = (item.doc || '').substring(0, 200);
+        html += `<article class="result-card">
+            <header>
+                <strong>${item.title || 'Untitled'}</strong>
+                <small>${item.collection || ''} &middot; ${item.created_at || ''}</small>
+            </header>
+            <p>${preview}${item.doc && item.doc.length > 200 ? '...' : ''}</p>
+            <footer>
+                <small>Hash: ${item.hash}</small>
+                ${currentAgent ? `<button class="secondary outline" onclick="deleteChunk('${item.hash}')">Delete</button>` : ''}
+            </footer>
+        </article>`;
+    });
+    div.innerHTML = html;
+}
+
+function deleteChunk(hash) {
+    if (!currentAgent) return;
+    if (!confirm('Delete this chunk?')) return;
+    fetch(`/api/memory/chunk/${hash}?agent=${currentAgent}`, {method: 'DELETE'})
+        .then(r => r.json())
+        .then(data => {
+            if (data.status === 'deleted') {
+                browseAgent(currentAgent, currentCollection);
+            }
+        });
+}
+</script>
+{% endblock %}

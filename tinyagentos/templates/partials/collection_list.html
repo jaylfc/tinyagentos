@@ -1,0 +1,12 @@
+{% if collections %}
+{% for c in collections %}
+<article class="collection-card" style="cursor: pointer;"
+         onclick="selectCollection('{{ c.name }}')">
+    <strong>{{ c.name }}</strong>
+    <small>{{ c.vector_count }} vectors, {{ c.doc_count }} docs</small>
+    <small>Pattern: {{ c.pattern }}</small>
+</article>
+{% endfor %}
+{% else %}
+<p>No collections found.</p>
+{% endif %}
