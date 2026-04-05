@@ -93,14 +93,27 @@ Infrastructure:
 
 | Profile | Example Hardware | Notes |
 |---------|-----------------|-------|
+| **ARM + NPU** | | |
 | arm-npu-16gb | Orange Pi 5 Plus (RK3588) | Primary dev target, NPU accelerated |
 | arm-npu-32gb | RK3588 32GB boards | More concurrent models |
 | arm-npu-64gb+ | High-RAM ARM boards | Full model suite |
-| x86-cuda-12gb | Budget PC + RTX 3060 | Fast GPU inference |
-| x86-cuda-24gb | PC + RTX 3090/4090 | Large models |
-| x86-vulkan-8gb | GTX 1070/1080 | Medium models via Vulkan |
-| x86-rocm-12gb | AMD RX 6700 XT | AMD GPU support |
-| cpu-only | Any device | Smallest quantized models |
+| **NVIDIA (CUDA)** | | |
+| x86-cuda-4gb | GTX 1050 Ti | Small quantized models only |
+| x86-cuda-6gb | GTX 1060 6GB, RTX 2060 | 4-bit 7B models |
+| x86-cuda-8gb | RTX 2070, RTX 3060 Ti, RTX 4060 | Comfortable 7-8B models |
+| x86-cuda-12gb | RTX 3060, RTX 4070 | 7-14B models, fast inference |
+| x86-cuda-16gb | RTX 4070 Ti, RTX 5060 Ti | 14B+ models |
+| x86-cuda-24gb | RTX 3090, RTX 4090 | Large models, multiple concurrent |
+| **NVIDIA (Vulkan, no CUDA)** | | |
+| x86-vulkan-4gb | GTX 750 Ti, GTX 950, GTX 960 | Legacy cards, small models via Vulkan |
+| x86-vulkan-8gb | GTX 1070, GTX 1080 | Medium models via Vulkan |
+| **AMD (ROCm)** | | |
+| x86-rocm-8gb | RX 6600, RX 7600 | Entry-level AMD GPU compute |
+| x86-rocm-12gb | RX 6700 XT | Solid mid-range |
+| x86-rocm-16gb | RX 7800 XT | Comfortable for 14B models |
+| x86-rocm-24gb | RX 7900 XTX | Large models |
+| **CPU Only** | | |
+| cpu-only | Any device | Smallest quantized models, slowest |
 
 Hardware is auto-detected on first boot. The platform adapts to what's available — users with more RAM or better accelerators get access to larger models automatically.
 
@@ -137,7 +150,7 @@ pytest tests/ -v          # 123+ tests
 
 ## Support the Project
 
-TinyAgentOS is built by [JAN LABS](https://github.com/jaylfc) — making AI agents accessible on affordable hardware.
+TinyAgentOS makes AI agents accessible on affordable hardware.
 
 - **Contact:** jaylfc25@gmail.com
 - **Donate:** [Buy Me a Coffee](https://buymeacoffee.com/jaylfc)
