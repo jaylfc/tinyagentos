@@ -89,6 +89,16 @@ async def redetect_hardware(request: Request):
     return data
 
 
+@router.post("/api/store/sync")
+async def sync_store(request: Request):
+    from tinyagentos.catalog_sync import sync_catalog
+    registry = request.app.state.registry
+    result = await sync_catalog(registry.catalog_dir)
+    if result["success"]:
+        registry.reload()
+    return result
+
+
 @router.post("/api/store/install")
 async def install_app(request: Request, body: InstallRequest):
     registry = request.app.state.registry
