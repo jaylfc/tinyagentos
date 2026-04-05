@@ -24,6 +24,8 @@ def tmp_data_dir(tmp_path):
     }
     config_path = tmp_path / "config.yaml"
     config_path.write_text(yaml.dump(config))
+    # Mark setup as complete so first-boot redirect does not interfere with tests
+    (tmp_path / ".setup_complete").touch()
     return tmp_path
 
 
