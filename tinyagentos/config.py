@@ -7,7 +7,7 @@ import yaml
 VALID_BACKEND_TYPES = {"rkllama", "ollama", "llama-cpp", "vllm"}
 
 DEFAULT_CONFIG = {
-    "server": {"host": "0.0.0.0", "port": 8888},
+    "server": {"host": "127.0.0.1", "port": 8888},
     "backends": [],
     "qmd": {"url": "http://localhost:7832"},
     "agents": [],
@@ -53,9 +53,22 @@ def load_config(path: Path) -> AppConfig:
         config_path=path,
     )
 
+import re
+
+AGENT_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
+
+def validate_agent_name(name: str) -> str | None:
+    """Validate agent name for safe use in container names and paths.
+    Returns error message or None if valid."""
+    if not AGENT_NAME_RE.match(name):
+        return "Agent name must be 1-63 lowercase alphanumeric chars or hyphens, starting with alphanumeric"
+    return None
+
 def save_config(config: AppConfig, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.dump(config.to_dict(), default_flow_style=False, sort_keys=False))
+    tmp_path = path.with_suffix(".yaml.tmp")
+    tmp_path.write_text(yaml.dump(config.to_dict(), default_flow_style=False, sort_keys=False))
+    tmp_path.replace(path)
 
 async def save_config_locked(config: AppConfig, path: Path) -> None:
     async with _config_lock:

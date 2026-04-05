@@ -5,7 +5,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
 from tinyagentos.agent_db import find_agent, get_agent_summaries
-from tinyagentos.config import save_config_locked
+from tinyagentos.config import save_config_locked, validate_agent_name
 
 router = APIRouter()
 
@@ -49,6 +49,9 @@ async def get_agent_endpoint(request: Request, name: str):
 @router.post("/api/agents")
 async def add_agent(request: Request, body: AgentCreate):
     config = request.app.state.config
+    name_error = validate_agent_name(body.name)
+    if name_error:
+        return JSONResponse({"error": name_error}, status_code=400)
     if find_agent(config, body.name):
         return JSONResponse({"error": f"Agent '{body.name}' already exists"}, status_code=409)
     config.agents.append(body.model_dump())
@@ -89,9 +92,16 @@ class DeployAgentRequest(BaseModel):
     cpu_limit: int = 2
 
 
+ALLOWED_FRAMEWORKS = {"none", "smolagents", "pocketflow", "openclaw", "nanoclaw", "picoclaw", "swarm", "langroid", "openai-agents-sdk"}
+
 @router.post("/api/agents/deploy")
 async def deploy_agent_endpoint(request: Request, body: DeployAgentRequest):
     config = request.app.state.config
+    name_error = validate_agent_name(body.name)
+    if name_error:
+        return JSONResponse({"error": name_error}, status_code=400)
+    if body.framework not in ALLOWED_FRAMEWORKS:
+        return JSONResponse({"error": f"Unknown framework '{body.framework}'. Allowed: {sorted(ALLOWED_FRAMEWORKS)}"}, status_code=400)
     if find_agent(config, body.name):
         return JSONResponse({"error": f"Agent '{body.name}' already exists"}, status_code=409)
 

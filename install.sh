@@ -75,7 +75,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=$INSTALL_DIR
-ExecStart=$INSTALL_DIR/venv/bin/python -m uvicorn tinyagentos.app:create_app --factory --host 0.0.0.0 --port 8888
+ExecStart=$INSTALL_DIR/venv/bin/python -m uvicorn tinyagentos.app:create_app --factory --host 127.0.0.1 --port 8888
 Restart=on-failure
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
