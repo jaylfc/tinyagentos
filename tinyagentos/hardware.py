@@ -127,6 +127,24 @@ def _detect_cpu() -> CpuInfo:
                 soc = "bcm2711"
     except OSError:
         pass
+    # macOS / Apple Silicon detection
+    if platform.system() == "Darwin":
+        try:
+            import subprocess
+            chip_info = subprocess.run(["sysctl", "-n", "machdep.cpu.brand_string"],
+                                        capture_output=True, text=True, timeout=5).stdout.strip()
+            if chip_info:
+                model = chip_info
+            if "apple" in chip_info.lower() or arch == "arm64":
+                # Detect M-series chip
+                for m in ["m5", "m4", "m3", "m2", "m1"]:
+                    if m in chip_info.lower():
+                        soc = m
+                        break
+                if not soc and arch == "arm64":
+                    soc = "apple-silicon"
+        except Exception:
+            pass
     if not cores:
         import os
         cores = os.cpu_count() or 1
@@ -168,6 +186,22 @@ def _detect_npu() -> NpuInfo:
 
 def _detect_gpu() -> GpuInfo:
     gpu = GpuInfo()
+    # Apple Silicon — unified memory acts as VRAM, MLX-accelerated
+    if platform.system() == "Darwin" and platform.machine() == "arm64":
+        gpu.type = "apple"
+        gpu.model = "Apple Silicon (unified memory)"
+        # Unified memory = total RAM is available as VRAM for MLX
+        try:
+            import subprocess
+            mem_bytes = int(subprocess.run(["sysctl", "-n", "hw.memsize"],
+                                           capture_output=True, text=True, timeout=5).stdout.strip())
+            gpu.vram_mb = mem_bytes // (1024 * 1024)
+        except Exception:
+            gpu.vram_mb = 0
+        gpu.vulkan = False
+        gpu.cuda = False
+        gpu.rocm = False
+        return gpu
     lspci = _run(["lspci"])
     if "NVIDIA" in lspci.upper():
         gpu.type = "nvidia"

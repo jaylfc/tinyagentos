@@ -69,7 +69,7 @@ Features unlock automatically based on your hardware and cluster. Solo Pi sees c
 | Category | Apps |
 |----------|------|
 | **Agent Frameworks** | SmolAgents, PocketFlow, OpenClaw, nanoclaw, picoclaw, TinyAgent, Hermes, Agent Zero, Swarm, OpenAI Agents SDK, Langroid |
-| **LLM Models** | Qwen3 0.6B-8B (GGUF + RKLLM), plus 167k+ searchable from HuggingFace |
+| **LLM Models** | Qwen3 0.6B-8B (GGUF + RKLLM + MLX), plus 167k+ searchable from HuggingFace |
 | **Image Models** | LCM Dreamshaper, SD 1.5 LCM, SDXL Turbo |
 | **Image Gen** | ComfyUI, Fooocus, SD Web UI, stable-diffusion.cpp, FastSD CPU, RKNN SD, rk-llama.cpp |
 | **Video Gen** | WanGP (Wan 2.1/2.2, HunyuanVideo), LTX Video |
@@ -82,13 +82,14 @@ Features unlock automatically based on your hardware and cluster. Solo Pi sees c
 
 | Category | Hardware | Notes |
 |----------|----------|-------|
-| **ARM + Rockchip NPU** | Orange Pi 5/5 Plus, Rock 5B | 6 TOPS NPU, primary target |
+| **Apple Silicon** | Mac Mini, MacBook, Mac Studio, Mac Pro (M1-M5) | MLX-accelerated via Ollama (93% faster), 8-192GB unified memory |
+| **ARM + Rockchip NPU** | Orange Pi 5/5 Plus, Rock 5B | 6 TOPS NPU, primary SBC target |
 | **Raspberry Pi** | Pi 4 (8GB), Pi 5 (8/16GB) | CPU-only or with accelerator HATs |
 | **Pi Accelerators** | Hailo-10H (40T), M5Stack LLM-8850 (24T) | LLM-capable accelerators |
-| **NVIDIA** | GTX 1050 Ti through RTX 4090 | CUDA 4-24GB or Vulkan legacy |
+| **NVIDIA** | GTX 1050 Ti through RTX 4090/5090 | CUDA 4-24GB or Vulkan legacy |
 | **AMD** | RX 6600 through RX 7900 XTX | ROCm 8-24GB |
 | **CPU Only** | Any device | Smallest quantized models |
-| **Mixed Cluster** | All of the above combined | Distributed compute |
+| **Mixed Cluster** | All of the above combined | Distributed compute — a Mac, a Pi, and a gaming PC working together |
 
 ## Architecture
 

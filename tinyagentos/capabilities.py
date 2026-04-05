@@ -50,6 +50,9 @@ class CapabilityChecker:
             resources["vram_mb"] = max(resources["vram_mb"], self.hardware.gpu.vram_mb)
         if self.hardware.gpu.type == "amd" and self.hardware.gpu.rocm:
             resources["vram_mb"] = max(resources["vram_mb"], self.hardware.gpu.vram_mb)
+        # Apple Silicon unified memory counts as VRAM (MLX-accelerated)
+        if self.hardware.gpu.type == "apple":
+            resources["vram_mb"] = max(resources["vram_mb"], self.hardware.gpu.vram_mb)
         # Local NPU
         if self.hardware.npu.type != "none":
             resources["npu_types"].append(self.hardware.npu.type)
@@ -63,7 +66,7 @@ class CapabilityChecker:
                     worker_ram = hw.get("ram_mb", 0)
                     resources["ram_mb"] = max(resources["ram_mb"], worker_ram)
                     gpu = hw.get("gpu", {})
-                    if gpu.get("cuda") or gpu.get("rocm"):
+                    if gpu.get("cuda") or gpu.get("rocm") or gpu.get("type") == "apple":
                         resources["vram_mb"] = max(resources["vram_mb"], gpu.get("vram_mb", 0))
                     npu = hw.get("npu", {})
                     if npu.get("type", "none") != "none":
