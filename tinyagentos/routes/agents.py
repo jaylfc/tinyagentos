@@ -37,6 +37,24 @@ async def list_agents(request: Request):
     return request.app.state.config.agents
 
 
+@router.get("/api/agents/containers")
+async def list_agent_containers(request: Request):
+    """List live LXC container status for all agent containers."""
+    from tinyagentos.containers import list_containers
+    containers = await list_containers(prefix="agent-")
+    return [
+        {
+            "name": c.name,
+            "agent_name": c.name.removeprefix("agent-"),
+            "status": c.status,
+            "ip": c.ip,
+            "memory_mb": c.memory_mb,
+            "cpu_cores": c.cpu_cores,
+        }
+        for c in containers
+    ]
+
+
 @router.get("/api/agents/{name}")
 async def get_agent_endpoint(request: Request, name: str):
     config = request.app.state.config
