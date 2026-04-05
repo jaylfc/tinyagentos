@@ -51,6 +51,43 @@ async def api_health(request: Request):
     }
 
 
+@router.get("/api/system")
+async def api_system(request: Request):
+    """Comprehensive system overview in one call."""
+    import psutil
+    from dataclasses import asdict
+
+    config = request.app.state.config
+    hw = request.app.state.hardware_profile
+    registry = request.app.state.registry
+
+    hw_data = asdict(hw)
+    hw_data["profile_id"] = hw.profile_id
+
+    mem = psutil.virtual_memory()
+    disk = psutil.disk_usage("/")
+
+    return {
+        "hardware": hw_data,
+        "resources": {
+            "cpu_percent": psutil.cpu_percent(),
+            "ram_total_mb": mem.total // (1024 * 1024),
+            "ram_used_mb": mem.used // (1024 * 1024),
+            "ram_percent": mem.percent,
+            "disk_total_gb": disk.total // (1024 ** 3),
+            "disk_used_gb": disk.used // (1024 ** 3),
+            "disk_percent": disk.percent,
+        },
+        "platform": {
+            "version": "0.1.0",
+            "agents": len(config.agents),
+            "backends": len(config.backends),
+            "catalog_apps": len(registry.list_available()),
+            "installed_apps": len(registry.list_installed()),
+        },
+    }
+
+
 @router.get("/api/backends")
 async def api_backends(request: Request):
     config = request.app.state.config
