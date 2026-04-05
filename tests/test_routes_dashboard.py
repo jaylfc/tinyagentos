@@ -22,7 +22,11 @@ class TestDashboardPage:
         resp = await client.get("/api/backends")
         assert resp.status_code == 200
         data = resp.json()
-        assert isinstance(data, list)
+        assert isinstance(data, dict)
+        assert "backends" in data
+        assert isinstance(data["backends"], list)
+        assert "primary" in data
+        assert "fallback_status" in data
 
     async def test_metrics_api(self, client):
         resp = await client.get("/api/metrics/test.metric?range=24h")

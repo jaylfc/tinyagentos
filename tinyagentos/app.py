@@ -9,6 +9,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from tinyagentos.backend_fallback import BackendFallback
 from tinyagentos.config import load_config
 from tinyagentos.channels import ChannelStore
 from tinyagentos.download_manager import DownloadManager
@@ -49,6 +50,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     secrets_store = SecretsStore(data_dir / "secrets.db")
     channel_store = ChannelStore(data_dir / "channels.db")
     scheduler = TaskScheduler(data_dir / "scheduler.db")
+    fallback = BackendFallback(config.backends, http_client)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -67,6 +69,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.download_manager = download_manager
         app.state.secrets = secrets_store
         app.state.channels = channel_store
+        app.state.fallback = fallback
         app.state.scheduler = scheduler
         # Start background health monitor
         from tinyagentos.health import HealthMonitor
@@ -100,6 +103,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     app.state.download_manager = download_manager
     app.state.secrets = secrets_store
     app.state.channels = channel_store
+    app.state.fallback = fallback
     app.state.scheduler = scheduler
     app.state.registry = registry
     app.state.hardware_profile = hardware_profile
@@ -150,6 +154,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     from tinyagentos.routes.import_data import router as import_router
     app.include_router(import_router)
+
+    from tinyagentos.lobby.routes import router as lobby_router
+    app.include_router(lobby_router)
 
     return app
 

@@ -91,14 +91,20 @@ async def api_system(request: Request):
 
 @router.get("/api/backends")
 async def api_backends(request: Request):
-    """List all configured backends with live health status."""
+    """List all configured backends with live health status and fallback info."""
     config = request.app.state.config
     http_client = request.app.state.http_client
+    fallback = request.app.state.fallback
     results = []
     for backend in config.backends:
         result = await check_backend_health(http_client, backend)
         results.append(result)
-    return results
+    primary = fallback.get_primary_backend()
+    return {
+        "backends": results,
+        "primary": primary["name"] if primary else None,
+        "fallback_status": fallback.get_status(),
+    }
 
 
 @router.get("/api/partials/kpi-cards", response_class=HTMLResponse)
