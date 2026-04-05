@@ -59,9 +59,14 @@ async def client(app):
     if channel_store._db is not None:
         await channel_store.close()
     await channel_store.init()
+    relationship_mgr = app.state.relationships
+    if relationship_mgr._db is not None:
+        await relationship_mgr.close()
+    await relationship_mgr.init()
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
+    await relationship_mgr.close()
     await channel_store.close()
     await scheduler.close()
     await secrets_store.close()
@@ -152,9 +157,14 @@ async def client_with_qmd(app_with_qmd):
     if channel_store._db is not None:
         await channel_store.close()
     await channel_store.init()
+    relationship_mgr = app_with_qmd.state.relationships
+    if relationship_mgr._db is not None:
+        await relationship_mgr.close()
+    await relationship_mgr.init()
     transport = ASGITransport(app=app_with_qmd)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
+    await relationship_mgr.close()
     await channel_store.close()
     await scheduler.close()
     await secrets_store.close()

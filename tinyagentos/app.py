@@ -17,6 +17,7 @@ from tinyagentos.metrics import MetricsStore
 from tinyagentos.notifications import NotificationStore
 from tinyagentos.qmd_client import QmdClient
 from tinyagentos.scheduler import TaskScheduler
+from tinyagentos.relationships import RelationshipManager
 from tinyagentos.secrets import SecretsStore
 
 PROJECT_DIR = Path(__file__).parent.parent
@@ -48,6 +49,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     http_client = httpx.AsyncClient(timeout=30)
     download_manager = DownloadManager()
     secrets_store = SecretsStore(data_dir / "secrets.db")
+    relationship_mgr = RelationshipManager(data_dir / "relationships.db")
     channel_store = ChannelStore(data_dir / "channels.db")
     scheduler = TaskScheduler(data_dir / "scheduler.db")
     fallback = BackendFallback(config.backends, http_client)
@@ -58,6 +60,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         await notif_store.init()
         await qmd_client.init()
         await secrets_store.init()
+        await relationship_mgr.init()
         await channel_store.init()
         await scheduler.init()
         app.state.config = config
@@ -68,6 +71,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.http_client = http_client
         app.state.download_manager = download_manager
         app.state.secrets = secrets_store
+        app.state.relationships = relationship_mgr
         app.state.channels = channel_store
         app.state.fallback = fallback
         app.state.scheduler = scheduler
@@ -82,6 +86,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         await monitor.stop()
         await scheduler.close()
         await channel_store.close()
+        await relationship_mgr.close()
         await secrets_store.close()
         await notif_store.close()
         await metrics_store.close()
@@ -102,6 +107,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     app.state.http_client = http_client
     app.state.download_manager = download_manager
     app.state.secrets = secrets_store
+    app.state.relationships = relationship_mgr
     app.state.channels = channel_store
     app.state.fallback = fallback
     app.state.scheduler = scheduler
@@ -142,6 +148,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     from tinyagentos.routes.notifications import router as notifications_router
     app.include_router(notifications_router)
+
+    from tinyagentos.routes.relationships import router as relationships_router
+    app.include_router(relationships_router)
 
     from tinyagentos.routes.secrets import router as secrets_router
     app.include_router(secrets_router)
