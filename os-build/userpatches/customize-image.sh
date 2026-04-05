@@ -18,7 +18,8 @@ apt-get install -y -qq \
     python3 python3-pip python3-venv \
     git curl wget \
     incus-client \
-    docker.io docker-compose
+    docker.io docker-compose \
+    avahi-daemon
 
 # Node.js 22 LTS via NodeSource
 echo ">>> TinyAgentOS: Installing Node.js 22 LTS"

@@ -27,7 +27,7 @@ echo "Detected architecture: $ARCH"
 echo ""
 echo "Installing system dependencies..."
 apt-get update -qq
-apt-get install -y -qq python3 python3-pip python3-venv nodejs npm git curl
+apt-get install -y -qq python3 python3-pip python3-venv nodejs npm git curl avahi-daemon
 
 # Check Python version
 PYTHON_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
