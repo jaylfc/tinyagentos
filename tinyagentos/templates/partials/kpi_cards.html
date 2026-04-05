@@ -1,0 +1,24 @@
+<div class="kpi-grid">
+    <article class="kpi-card">
+        <div class="value" style="color: {{ 'green' if agents_online == agents_total else 'orange' }}">
+            {{ agents_online }}/{{ agents_total }}
+        </div>
+        <div class="label">Agents Online</div>
+    </article>
+    <article class="kpi-card">
+        <div class="value" style="color: #7ecfff">{{ total_vectors }}</div>
+        <div class="label">Total Vectors</div>
+    </article>
+    <article class="kpi-card">
+        <div class="value" style="color: {{ '#98fb98' if avg_response_ms else '#ff6b6b' }}">
+            {% if avg_response_ms %}{{ avg_response_ms }}ms{% else %}N/A{% endif %}
+        </div>
+        <div class="label">Avg Backend Response</div>
+    </article>
+    <article class="kpi-card">
+        <div class="value" style="color: #ffd700">
+            {% if qmd_latency_ms %}{{ qmd_latency_ms }}ms{% else %}N/A{% endif %}
+        </div>
+        <div class="label">QMD Latency</div>
+    </article>
+</div>
