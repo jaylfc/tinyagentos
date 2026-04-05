@@ -180,3 +180,51 @@ apps:
     version: 0.1.0
     name: Stable Diffusion (Mali GPU)
     description: "SD on RK3588 Mali-G610 via MLC/TVM — GPU alternative to NPU path"
+
+  # Home Automation & Monitoring
+  - id: home-assistant
+    type: service
+    version: stable
+    name: Home Assistant
+    description: "Home automation platform — agents can control smart home devices and automations"
+  - id: uptime-kuma
+    type: service
+    version: 1.0.0
+    name: Uptime Kuma
+    description: "Self-hosted uptime monitoring — track agent and service availability with alerts"
+
+  # File Management
+  - id: filebrowser
+    type: service
+    version: latest
+    name: File Browser
+    description: "Web file manager — browse and manage agent workspaces through a clean browser UI"
+
+  # Collaboration & Notes
+  - id: excalidraw
+    type: service
+    version: latest
+    name: Excalidraw
+    description: "Collaborative whiteboard — agents can generate and share diagrams and sketches"
+  - id: memos
+    type: service
+    version: stable
+    name: Memos
+    description: "Lightweight note-taking and knowledge base — agents can store and retrieve notes"
+  - id: linkwarden
+    type: service
+    version: latest
+    name: Linkwarden
+    description: "Bookmark and link manager — agents save and organize research links with archiving"
+
+  # Voice / Speech
+  - id: whisper
+    type: service
+    version: latest
+    name: Whisper ASR
+    description: "Speech-to-text via OpenAI Whisper — agents can transcribe audio files and streams"
+  - id: piper-tts
+    type: service
+    version: latest
+    name: Piper TTS
+    description: "Fast local text-to-speech via Wyoming Piper — agents can generate natural voice audio"
