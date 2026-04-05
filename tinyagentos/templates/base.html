@@ -22,7 +22,8 @@
             <li><a href="/" {% if active_page == 'dashboard' %}class="active"{% endif %}>Dashboard</a></li>
             <li><a href="/store" {% if active_page == 'store' %}class="active"{% endif %}>Store</a></li>
             <li><a href="/models" {% if active_page == 'models' %}class="active"{% endif %}>Models</a></li>
-            <li><a href="/images" {% if active_page == 'images' %}class="active"{% endif %}>Images</a></li>
+            <li>{% if cap.is_available("image-generation-cpu") or cap.is_available("image-generation-gpu") or cap.is_available("image-generation-npu") %}<a href="/images" {% if active_page == 'images' %}class="active"{% endif %}>Images</a>{% else %}<a href="/images" class="locked{% if active_page == 'images' %} active{% endif %}" title="{{ cap.get_unlock_hint('image-generation-gpu') or 'Hardware requirements not met' }}" aria-label="Images (locked)">Images</a>{% endif %}</li>
+            <li><a href="/video" {% if active_page == 'video' %}class="active"{% endif %}>Video</a></li>
             <li><a href="/memory" {% if active_page == 'memory' %}class="active"{% endif %}>Memory</a></li>
             <li><a href="/channels" {% if active_page == 'channels' %}class="active"{% endif %}>Channels</a></li>
             <li><a href="/agents" {% if active_page == 'agents' %}class="active"{% endif %}>Agents</a></li>

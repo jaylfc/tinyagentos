@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from tinyagentos.backend_fallback import BackendFallback
+from tinyagentos.capabilities import CapabilityChecker
 from tinyagentos.cluster.manager import ClusterManager
 from tinyagentos.cluster.router import TaskRouter
 from tinyagentos.config import load_config
@@ -57,6 +58,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     fallback = BackendFallback(config.backends, http_client)
     cluster_manager = ClusterManager()
     task_router = TaskRouter(cluster_manager, http_client)
+    cap_checker = CapabilityChecker(hardware_profile, cluster_manager)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -81,6 +83,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.scheduler = scheduler
         app.state.cluster_manager = cluster_manager
         app.state.task_router = task_router
+        app.state.capabilities = cap_checker
         # Start background health monitor
         from tinyagentos.health import HealthMonitor
         monitor = HealthMonitor(config, metrics_store, qmd_client, http_client, notif_store)
@@ -123,6 +126,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     app.state.hardware_profile = hardware_profile
     app.state.cluster_manager = cluster_manager
     app.state.task_router = task_router
+    app.state.capabilities = cap_checker
 
     # Mount static files
     static_dir = PROJECT_DIR / "static"
@@ -132,6 +136,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     # Templates
     templates_dir = Path(__file__).parent / "templates"
     templates = Jinja2Templates(directory=str(templates_dir))
+    templates.env.globals["cap"] = cap_checker
     app.state.templates = templates
 
     # Import and include routers
@@ -155,6 +160,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     from tinyagentos.routes.images import router as images_router
     app.include_router(images_router)
+
+    from tinyagentos.routes.video import router as video_router
+    app.include_router(video_router)
 
     from tinyagentos.routes.notifications import router as notifications_router
     app.include_router(notifications_router)

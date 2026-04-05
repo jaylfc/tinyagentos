@@ -41,6 +41,13 @@ async def setup_complete(request: Request):
     return RedirectResponse(url="/", status_code=303)
 
 
+@router.get("/api/capabilities")
+async def api_capabilities(request: Request):
+    """Return all capabilities with their available/locked status and unlock hints."""
+    cap_checker = request.app.state.capabilities
+    return {"capabilities": cap_checker.get_all_capabilities()}
+
+
 @router.get("/api/health")
 async def api_health(request: Request):
     """System health check -- returns agent and backend counts."""

@@ -127,6 +127,15 @@ nav a.active {
 .notif-item.unread { font-weight: 600; }
 .notif-item .notif-title { font-size: 0.8rem; }
 .notif-item .notif-meta { font-size: 0.7rem; color: var(--pico-muted-color); }
+/* Capability-locked nav items */
+nav a.locked {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+nav a.locked::after {
+    content: " \1F512";
+    font-size: 0.7em;
+}
 .error-alert {
     background: rgba(255, 107, 107, 0.1);
     border: 1px solid rgba(255, 107, 107, 0.3);
