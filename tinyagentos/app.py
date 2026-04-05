@@ -22,6 +22,7 @@ from tinyagentos.qmd_client import QmdClient
 from tinyagentos.scheduler import TaskScheduler
 from tinyagentos.relationships import RelationshipManager
 from tinyagentos.secrets import SecretsStore
+from tinyagentos.training import TrainingManager
 
 PROJECT_DIR = Path(__file__).parent.parent
 
@@ -59,6 +60,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     cluster_manager = ClusterManager()
     task_router = TaskRouter(cluster_manager, http_client)
     cap_checker = CapabilityChecker(hardware_profile, cluster_manager)
+    training_manager = TrainingManager(data_dir / "training.db")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -69,6 +71,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         await relationship_mgr.init()
         await channel_store.init()
         await scheduler.init()
+        await training_manager.init()
         app.state.config = config
         app.state.config_path = config_path
         app.state.metrics = metrics_store
@@ -84,6 +87,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.cluster_manager = cluster_manager
         app.state.task_router = task_router
         app.state.capabilities = cap_checker
+        app.state.training = training_manager
         # Start background health monitor
         from tinyagentos.health import HealthMonitor
         monitor = HealthMonitor(config, metrics_store, qmd_client, http_client, notif_store)
@@ -95,6 +99,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         yield
         await cluster_manager.stop()
         await monitor.stop()
+        await training_manager.close()
         await scheduler.close()
         await channel_store.close()
         await relationship_mgr.close()
@@ -127,6 +132,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     app.state.cluster_manager = cluster_manager
     app.state.task_router = task_router
     app.state.capabilities = cap_checker
+    app.state.training = training_manager
 
     # Mount static files
     static_dir = PROJECT_DIR / "static"
@@ -184,6 +190,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     from tinyagentos.routes.cluster import router as cluster_router
     app.include_router(cluster_router)
+
+    from tinyagentos.routes.training import router as training_router
+    app.include_router(training_router)
 
     from tinyagentos.lobby.routes import router as lobby_router
     app.include_router(lobby_router)
