@@ -124,12 +124,14 @@ async def settings_page(request: Request):
 
 @router.get("/api/config")
 async def get_config(request: Request):
+    """Get current configuration as YAML."""
     config = request.app.state.config
     return {"yaml": yaml.dump(config.to_dict(), default_flow_style=False, sort_keys=False)}
 
 
 @router.put("/api/config")
 async def save_config_endpoint(request: Request, body: ConfigUpdate, validate_only: bool = False):
+    """Validate and save configuration from YAML."""
     try:
         data = yaml.safe_load(body.yaml)
     except yaml.YAMLError as e:

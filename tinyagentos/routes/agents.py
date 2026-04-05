@@ -34,6 +34,7 @@ async def agents_page(request: Request):
 
 @router.get("/api/agents")
 async def list_agents(request: Request):
+    """List all configured agents."""
     return request.app.state.config.agents
 
 
@@ -57,6 +58,7 @@ async def list_agent_containers(request: Request):
 
 @router.get("/api/agents/{name}")
 async def get_agent_endpoint(request: Request, name: str):
+    """Get agent details by name."""
     config = request.app.state.config
     agent = find_agent(config, name)
     if not agent:
@@ -66,6 +68,7 @@ async def get_agent_endpoint(request: Request, name: str):
 
 @router.post("/api/agents")
 async def add_agent(request: Request, body: AgentCreate):
+    """Add a new agent to the configuration."""
     config = request.app.state.config
     name_error = validate_agent_name(body.name)
     if name_error:
@@ -79,6 +82,7 @@ async def add_agent(request: Request, body: AgentCreate):
 
 @router.put("/api/agents/{name}")
 async def update_agent(request: Request, name: str, body: AgentUpdate):
+    """Update an existing agent's configuration."""
     config = request.app.state.config
     agent = find_agent(config, name)
     if not agent:
@@ -95,6 +99,7 @@ async def update_agent(request: Request, name: str, body: AgentUpdate):
 
 @router.delete("/api/agents/{name}")
 async def delete_agent(request: Request, name: str):
+    """Remove an agent from the configuration."""
     config = request.app.state.config
     config.agents = [a for a in config.agents if a["name"] != name]
     await save_config_locked(config, config.config_path)
@@ -112,6 +117,7 @@ class DeployAgentRequest(BaseModel):
 
 @router.post("/api/agents/deploy")
 async def deploy_agent_endpoint(request: Request, body: DeployAgentRequest):
+    """Deploy a new agent -- creates LXC container, installs framework and QMD."""
     config = request.app.state.config
     name_error = validate_agent_name(body.name)
     if name_error:
@@ -156,24 +162,28 @@ async def deploy_agent_endpoint(request: Request, body: DeployAgentRequest):
 
 @router.post("/api/agents/{name}/start")
 async def start_agent(request: Request, name: str):
+    """Start an agent's LXC container."""
     from tinyagentos.containers import start_container
     return await start_container(f"agent-{name}")
 
 
 @router.post("/api/agents/{name}/stop")
 async def stop_agent(request: Request, name: str):
+    """Stop an agent's LXC container."""
     from tinyagentos.containers import stop_container
     return await stop_container(f"agent-{name}")
 
 
 @router.post("/api/agents/{name}/restart")
 async def restart_agent(request: Request, name: str):
+    """Restart an agent's LXC container."""
     from tinyagentos.containers import restart_container
     return await restart_container(f"agent-{name}")
 
 
 @router.get("/api/agents/{name}/logs")
 async def agent_logs(request: Request, name: str, lines: int = 100):
+    """Get recent journal logs from an agent's container."""
     from tinyagentos.containers import get_container_logs
     logs = await get_container_logs(f"agent-{name}", lines=lines)
     return {"name": name, "logs": logs}
@@ -181,6 +191,7 @@ async def agent_logs(request: Request, name: str, lines: int = 100):
 
 @router.delete("/api/agents/{name}/destroy")
 async def destroy_agent(request: Request, name: str):
+    """Destroy an agent -- stops and deletes the LXC container."""
     config = request.app.state.config
     from tinyagentos.deployer import undeploy_agent
     result = await undeploy_agent(name)

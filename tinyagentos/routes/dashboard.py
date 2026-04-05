@@ -43,6 +43,7 @@ async def setup_complete(request: Request):
 
 @router.get("/api/health")
 async def api_health(request: Request):
+    """System health check -- returns agent and backend counts."""
     config = request.app.state.config
     return {
         "status": "ok",
@@ -53,7 +54,7 @@ async def api_health(request: Request):
 
 @router.get("/api/system")
 async def api_system(request: Request):
-    """Comprehensive system overview in one call."""
+    """Comprehensive system overview -- hardware, resources, platform stats."""
     import psutil
     from dataclasses import asdict
 
@@ -90,6 +91,7 @@ async def api_system(request: Request):
 
 @router.get("/api/backends")
 async def api_backends(request: Request):
+    """List all configured backends with live health status."""
     config = request.app.state.config
     http_client = request.app.state.http_client
     results = []
@@ -101,6 +103,7 @@ async def api_backends(request: Request):
 
 @router.get("/api/partials/kpi-cards", response_class=HTMLResponse)
 async def kpi_cards(request: Request):
+    """HTMX partial: KPI cards with agent, vector, and latency stats."""
     config = request.app.state.config
     templates = request.app.state.templates
 
@@ -130,6 +133,7 @@ async def kpi_cards(request: Request):
 
 @router.get("/api/partials/backend-status", response_class=HTMLResponse)
 async def backend_status(request: Request):
+    """HTMX partial: backend status table sorted by priority."""
     config = request.app.state.config
     http_client = request.app.state.http_client
     templates = request.app.state.templates
@@ -143,6 +147,7 @@ async def backend_status(request: Request):
 
 @router.get("/api/partials/agent-summary", response_class=HTMLResponse)
 async def agent_summary(request: Request):
+    """HTMX partial: agent summary list."""
     config = request.app.state.config
     templates = request.app.state.templates
     return templates.TemplateResponse(request, "partials/agent_summary.html", {
@@ -152,6 +157,7 @@ async def agent_summary(request: Request):
 
 @router.get("/api/metrics/{name}")
 async def api_metrics(request: Request, name: str, range: str = "24h"):
+    """Query time-series metrics by name and time range."""
     metrics = request.app.state.metrics
     now = int(time.time())
     range_map = {"1h": 3600, "24h": 86400, "7d": 604800, "30d": 2592000}

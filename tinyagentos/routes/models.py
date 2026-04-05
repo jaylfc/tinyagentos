@@ -109,6 +109,7 @@ async def models_page(request: Request):
 
 @router.get("/api/models")
 async def list_models(request: Request):
+    """List all available models with download status and compatibility."""
     registry = request.app.state.registry
     hardware_profile = request.app.state.hardware_profile
     models_dir = _models_dir(request)
@@ -125,6 +126,7 @@ async def list_models(request: Request):
 
 @router.get("/api/models/{model_id}")
 async def get_model(request: Request, model_id: str):
+    """Get detailed information about a specific model."""
     registry = request.app.state.registry
     hardware_profile = request.app.state.hardware_profile
     models_dir = _models_dir(request)
@@ -139,6 +141,7 @@ async def get_model(request: Request, model_id: str):
 
 @router.post("/api/models/download")
 async def download_model(request: Request, body: DownloadRequest):
+    """Download a specific model variant."""
     registry = request.app.state.registry
     manifest = registry.get(body.app_id)
     if not manifest or manifest.type != "model":
@@ -167,6 +170,7 @@ async def download_model(request: Request, body: DownloadRequest):
 
 @router.delete("/api/models/{model_id}")
 async def delete_model(request: Request, model_id: str):
+    """Delete all downloaded files for a model."""
     registry = request.app.state.registry
     models_dir = _models_dir(request)
 

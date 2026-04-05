@@ -74,6 +74,7 @@ async def app_grid_partial(request: Request, type: str | None = None, q: str | N
 
 @router.get("/api/store/catalog")
 async def list_catalog(request: Request, type: str | None = None):
+    """List all available apps in the catalog, optionally filtered by type."""
     registry = request.app.state.registry
     apps = registry.list_available(type_filter=type)
     return [
@@ -89,11 +90,13 @@ async def list_catalog(request: Request, type: str | None = None):
 
 @router.get("/api/store/installed")
 async def list_installed(request: Request):
+    """List currently installed apps."""
     return request.app.state.registry.list_installed()
 
 
 @router.get("/api/store/app/{app_id}")
 async def get_app(request: Request, app_id: str):
+    """Get detailed information about a specific app."""
     registry = request.app.state.registry
     app = registry.get(app_id)
     if not app:
@@ -110,6 +113,7 @@ async def get_app(request: Request, app_id: str):
 
 @router.get("/api/hardware")
 async def hardware_profile(request: Request):
+    """Get detected hardware profile for this device."""
     profile = request.app.state.hardware_profile
     data = asdict(profile)
     data["profile_id"] = profile.profile_id
@@ -118,6 +122,7 @@ async def hardware_profile(request: Request):
 
 @router.post("/api/hardware/detect")
 async def redetect_hardware(request: Request):
+    """Re-detect hardware profile and save updated results."""
     from tinyagentos.hardware import detect_hardware
     profile = detect_hardware()
     profile.save(request.app.state.config_path.parent / "hardware.json")
@@ -129,6 +134,7 @@ async def redetect_hardware(request: Request):
 
 @router.post("/api/store/sync")
 async def sync_store(request: Request):
+    """Sync the app catalog from the git repository."""
     from tinyagentos.catalog_sync import sync_catalog
     registry = request.app.state.registry
     result = await sync_catalog(registry.catalog_dir)
@@ -139,6 +145,7 @@ async def sync_store(request: Request):
 
 @router.post("/api/store/install")
 async def install_app(request: Request, body: InstallRequest):
+    """Install an app from the catalog."""
     registry = request.app.state.registry
     manifest = registry.get(body.app_id)
     if not manifest:
@@ -168,6 +175,7 @@ async def install_app(request: Request, body: InstallRequest):
 
 @router.post("/api/store/uninstall")
 async def uninstall_app(request: Request, body: UninstallRequest):
+    """Uninstall an installed app."""
     registry = request.app.state.registry
     if not registry.is_installed(body.app_id):
         return JSONResponse({"error": f"App '{body.app_id}' not installed"}, status_code=404)

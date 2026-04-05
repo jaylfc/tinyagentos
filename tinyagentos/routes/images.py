@@ -83,6 +83,7 @@ async def images_page(request: Request):
 
 @router.post("/api/images/generate")
 async def generate_image(request: Request, body: GenerateRequest):
+    """Generate an image from a text prompt using the rkllama backend."""
     rkllama_url = _get_rkllama_url(request)
     if not rkllama_url:
         return JSONResponse(
@@ -167,12 +168,14 @@ async def generate_image(request: Request, body: GenerateRequest):
 
 @router.get("/api/images")
 async def list_images(request: Request):
+    """List all generated images with metadata, newest first."""
     images_dir = _images_dir(request)
     return {"images": _list_images(images_dir)}
 
 
 @router.delete("/api/images/{filename}")
 async def delete_image(request: Request, filename: str):
+    """Delete a generated image and its metadata sidecar."""
     images_dir = _images_dir(request)
 
     # Prevent path traversal

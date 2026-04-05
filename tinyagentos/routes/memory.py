@@ -79,6 +79,7 @@ async def memory_browse(
     limit: int = 20,
     offset: int = 0,
 ):
+    """Browse agent memory chunks, paginated, most recent first."""
     config = request.app.state.config
     agent_dict = find_agent(config, agent)
     if not agent_dict:
@@ -128,6 +129,7 @@ async def _search_single_agent(request: Request, agent_dict: dict, query: str,
 
 @router.post("/api/memory/search")
 async def memory_search(request: Request, body: SearchRequest):
+    """Search agent memory using keyword or semantic search."""
     config = request.app.state.config
 
     if body.mode == "semantic":
@@ -175,6 +177,7 @@ async def memory_search(request: Request, body: SearchRequest):
 
 @router.get("/api/memory/collections/{agent_name}")
 async def memory_collections(request: Request, agent_name: str):
+    """List memory collections for an agent."""
     config = request.app.state.config
     agent_dict = find_agent(config, agent_name)
     if not agent_dict:
@@ -198,6 +201,7 @@ async def memory_collections(request: Request, agent_name: str):
 
 @router.delete("/api/memory/chunk/{content_hash}")
 async def memory_delete_chunk(request: Request, content_hash: str, agent: str):
+    """Delete a specific memory chunk by content hash."""
     config = request.app.state.config
     agent_dict = find_agent(config, agent)
     if not agent_dict:
