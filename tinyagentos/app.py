@@ -5,11 +5,13 @@ from pathlib import Path
 
 import httpx
 from fastapi import FastAPI
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from tinyagentos.config import load_config
 from tinyagentos.metrics import MetricsStore
+from tinyagentos.notifications import NotificationStore
 from tinyagentos.qmd_client import QmdClient
 
 PROJECT_DIR = Path(__file__).parent.parent
@@ -36,37 +38,45 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     registry = AppRegistry(catalog_dir=catalog_dir, installed_path=installed_path)
 
     metrics_store = MetricsStore(data_dir / "metrics.db")
+    notif_store = NotificationStore(data_dir / "notifications.db")
     qmd_client = QmdClient(config.qmd.get("url", "http://localhost:7832"))
     http_client = httpx.AsyncClient(timeout=30)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         await metrics_store.init()
+        await notif_store.init()
         await qmd_client.init()
         app.state.config = config
         app.state.config_path = config_path
         app.state.metrics = metrics_store
+        app.state.notifications = notif_store
         app.state.qmd_client = qmd_client
         app.state.http_client = http_client
         # Start background health monitor
         from tinyagentos.health import HealthMonitor
-        monitor = HealthMonitor(config, metrics_store, qmd_client, http_client)
+        monitor = HealthMonitor(config, metrics_store, qmd_client, http_client, notif_store)
         app.state.registry = registry
         app.state.hardware_profile = hardware_profile
         app.state.health_monitor = monitor
         await monitor.start()
         yield
         await monitor.stop()
+        await notif_store.close()
         await metrics_store.close()
         await qmd_client.close()
         await http_client.aclose()
 
     app = FastAPI(title="TinyAgentOS", version="0.1.0", lifespan=lifespan)
 
+    # GZip compression for faster transfers on slow SD card / network
+    app.add_middleware(GZipMiddleware, minimum_size=500)
+
     # Set state eagerly so it's available even without lifespan (e.g. tests)
     app.state.config = config
     app.state.config_path = config_path
     app.state.metrics = metrics_store
+    app.state.notifications = notif_store
     app.state.qmd_client = qmd_client
     app.state.http_client = http_client
     app.state.registry = registry
@@ -103,6 +113,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     from tinyagentos.routes.images import router as images_router
     app.include_router(images_router)
+
+    from tinyagentos.routes.notifications import router as notifications_router
+    app.include_router(notifications_router)
 
     return app
 
