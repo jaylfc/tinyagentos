@@ -28,6 +28,7 @@ class MetricsStore:
     async def close(self) -> None:
         if self._db:
             await self._db.close()
+            self._db = None
 
     async def insert(self, name: str, value: float, timestamp: int | None = None, labels: dict | None = None) -> None:
         ts = timestamp or int(time.time())

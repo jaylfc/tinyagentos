@@ -124,21 +124,6 @@ async def list_models(request: Request):
     }
 
 
-@router.get("/api/models/{model_id}")
-async def get_model(request: Request, model_id: str):
-    """Get detailed information about a specific model."""
-    registry = request.app.state.registry
-    hardware_profile = request.app.state.hardware_profile
-    models_dir = _models_dir(request)
-
-    manifest = registry.get(model_id)
-    if not manifest or manifest.type != "model":
-        return JSONResponse({"error": f"Model '{model_id}' not found"}, status_code=404)
-
-    downloaded = get_downloaded_models(models_dir)
-    return _model_to_dict(manifest, hardware_profile, downloaded)
-
-
 @router.post("/api/models/download")
 async def download_model(request: Request, body: DownloadRequest):
     """Start a background download for a specific model variant."""
@@ -195,6 +180,21 @@ async def get_download_progress(request: Request, download_id: str):
     if not task:
         return JSONResponse({"error": f"Download '{download_id}' not found"}, status_code=404)
     return _task_to_dict(task)
+
+
+@router.get("/api/models/{model_id}")
+async def get_model(request: Request, model_id: str):
+    """Get detailed information about a specific model."""
+    registry = request.app.state.registry
+    hardware_profile = request.app.state.hardware_profile
+    models_dir = _models_dir(request)
+
+    manifest = registry.get(model_id)
+    if not manifest or manifest.type != "model":
+        return JSONResponse({"error": f"Model '{model_id}' not found"}, status_code=404)
+
+    downloaded = get_downloaded_models(models_dir)
+    return _model_to_dict(manifest, hardware_profile, downloaded)
 
 
 def _task_to_dict(task) -> dict:

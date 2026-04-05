@@ -59,6 +59,23 @@ async def create_task(request: Request, body: TaskCreate):
     return {"status": "created", "id": task_id}
 
 
+@router.get("/api/tasks/presets")
+async def list_presets(request: Request):
+    scheduler = request.app.state.scheduler
+    return await scheduler.get_presets()
+
+
+@router.post("/api/tasks/presets/{preset_id}/apply")
+async def apply_preset(request: Request, preset_id: int, body: PresetApply):
+    scheduler = request.app.state.scheduler
+    if not body.agent_name:
+        return JSONResponse({"error": "agent_name is required"}, status_code=400)
+    count = await scheduler.apply_preset(preset_id, body.agent_name)
+    if count == 0:
+        return JSONResponse({"error": "Preset not found or has no tasks"}, status_code=404)
+    return {"status": "applied", "tasks_created": count}
+
+
 @router.put("/api/tasks/{task_id}")
 async def update_task(request: Request, task_id: int, body: TaskUpdate):
     scheduler = request.app.state.scheduler
@@ -89,20 +106,3 @@ async def toggle_task(request: Request, task_id: int):
     new_state = not task["enabled"]
     await scheduler.update_task(task_id, enabled=new_state)
     return {"status": "toggled", "id": task_id, "enabled": new_state}
-
-
-@router.get("/api/tasks/presets")
-async def list_presets(request: Request):
-    scheduler = request.app.state.scheduler
-    return await scheduler.get_presets()
-
-
-@router.post("/api/tasks/presets/{preset_id}/apply")
-async def apply_preset(request: Request, preset_id: int, body: PresetApply):
-    scheduler = request.app.state.scheduler
-    if not body.agent_name:
-        return JSONResponse({"error": "agent_name is required"}, status_code=400)
-    count = await scheduler.apply_preset(preset_id, body.agent_name)
-    if count == 0:
-        return JSONResponse({"error": "Preset not found or has no tasks"}, status_code=404)
-    return {"status": "applied", "tasks_created": count}

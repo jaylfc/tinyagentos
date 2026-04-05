@@ -79,6 +79,7 @@ class SecretsStore:
     async def close(self):
         if self._db:
             await self._db.close()
+            self._db = None
 
     async def add(
         self,

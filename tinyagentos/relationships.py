@@ -47,6 +47,7 @@ class RelationshipManager:
     async def close(self):
         if self._db:
             await self._db.close()
+            self._db = None
 
     # Groups
     async def create_group(

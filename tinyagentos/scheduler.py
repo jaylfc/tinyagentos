@@ -68,6 +68,7 @@ class TaskScheduler:
     async def close(self):
         if self._db:
             await self._db.close()
+            self._db = None
 
     async def add_task(self, name: str, schedule: str, command: str, agent_name: str | None = None, description: str = "") -> int:
         now = int(time.time())

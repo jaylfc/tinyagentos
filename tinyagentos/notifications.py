@@ -33,6 +33,7 @@ class NotificationStore:
     async def close(self) -> None:
         if self._db:
             await self._db.close()
+            self._db = None
 
     async def add(self, title: str, message: str, level: str = "info", source: str = "system") -> None:
         ts = int(time.time())

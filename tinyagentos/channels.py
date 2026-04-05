@@ -107,6 +107,7 @@ class ChannelStore:
     async def close(self) -> None:
         if self._db:
             await self._db.close()
+            self._db = None
 
     async def add(self, agent_name: str, channel_type: str, config: dict | None = None) -> int:
         """Add or replace a channel for an agent. Returns the row id."""

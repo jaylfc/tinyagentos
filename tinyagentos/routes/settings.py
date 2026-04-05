@@ -177,9 +177,10 @@ async def save_platform_settings(request: Request, body: PlatformUpdate):
 
 
 @router.post("/api/settings/test-backend")
-async def test_backend_connection(request: Request, body: dict):
+async def test_backend_connection(request: Request):
     """Test connectivity to a backend URL."""
     from tinyagentos.backend_adapters import get_adapter
+    body = await request.json()
     url = body.get("url", "")
     backend_type = body.get("type", "rkllama")
     if not url:
@@ -228,6 +229,9 @@ async def restore_backup(request: Request, file: UploadFile):
                     continue
                 relative = member.name[len("backup/"):]
                 if not relative:
+                    continue
+                rel_path = Path(relative)
+                if rel_path.is_absolute() or ".." in rel_path.parts:
                     continue
                 dest = data_dir / relative
                 dest.parent.mkdir(parents=True, exist_ok=True)
