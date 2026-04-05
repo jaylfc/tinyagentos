@@ -27,8 +27,8 @@ class AgentUpdate(BaseModel):
 async def agents_page(request: Request):
     config = request.app.state.config
     templates = request.app.state.templates
-    return templates.TemplateResponse("agents.html", {
-        "request": request, "active_page": "agents", "agents": get_agent_summaries(config),
+    return templates.TemplateResponse(request, "agents.html", {
+        "active_page": "agents", "agents": get_agent_summaries(config),
     })
 
 

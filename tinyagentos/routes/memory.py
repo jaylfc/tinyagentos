@@ -21,8 +21,7 @@ class SearchRequest(BaseModel):
 async def memory_page(request: Request):
     config = request.app.state.config
     templates = request.app.state.templates
-    return templates.TemplateResponse("memory.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "memory.html", {
         "active_page": "memory",
         "agents": get_agent_summaries(config),
     })

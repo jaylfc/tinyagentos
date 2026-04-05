@@ -19,7 +19,7 @@ async def dashboard_page(request: Request):
     if is_first_boot(data_dir):
         return RedirectResponse(url="/setup", status_code=303)
     templates = request.app.state.templates
-    return templates.TemplateResponse("dashboard.html", {"request": request, "active_page": "dashboard"})
+    return templates.TemplateResponse(request, "dashboard.html", {"active_page": "dashboard"})
 
 
 @router.get("/setup", response_class=HTMLResponse)
@@ -28,8 +28,7 @@ async def setup_page(request: Request):
     hardware = request.app.state.hardware_profile
     hw_data = asdict(hardware)
     hw_data["profile_id"] = hardware.profile_id
-    return templates.TemplateResponse("setup.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "setup.html", {
         "active_page": "setup",
         "hardware": hardware,
     })
@@ -83,8 +82,7 @@ async def kpi_cards(request: Request):
     qmd_health = await request.app.state.qmd_client.health()
     qmd_latency_ms = qmd_health.get("response_ms") if qmd_health.get("status") != "error" else None
 
-    return templates.TemplateResponse("partials/kpi_cards.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "partials/kpi_cards.html", {
         "agents_online": agents_online,
         "agents_total": len(summaries),
         "total_vectors": total_vectors,
@@ -103,15 +101,15 @@ async def backend_status(request: Request):
         result = await check_backend_health(http_client, backend)
         backends.append(result)
     backends.sort(key=lambda b: b.get("priority", 99))
-    return templates.TemplateResponse("partials/backend_status.html", {"request": request, "backends": backends})
+    return templates.TemplateResponse(request, "partials/backend_status.html", {"backends": backends})
 
 
 @router.get("/api/partials/agent-summary", response_class=HTMLResponse)
 async def agent_summary(request: Request):
     config = request.app.state.config
     templates = request.app.state.templates
-    return templates.TemplateResponse("partials/agent_summary.html", {
-        "request": request, "agents": get_agent_summaries(config),
+    return templates.TemplateResponse(request, "partials/agent_summary.html", {
+        "agents": get_agent_summaries(config),
     })
 
 

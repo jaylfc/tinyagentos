@@ -21,8 +21,8 @@ async def config_page(request: Request):
     if config_path.exists():
         mtime = config_path.stat().st_mtime
         last_saved = datetime.datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
-    return templates.TemplateResponse("config.html", {
-        "request": request, "active_page": "config",
+    return templates.TemplateResponse(request, "config.html", {
+        "active_page": "config",
         "config_yaml": config_yaml, "last_saved": last_saved,
     })
 
