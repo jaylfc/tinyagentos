@@ -3,7 +3,7 @@
 {% block content %}
 <h2>Image Generation</h2>
 
-<section>
+<section aria-label="Image generation form">
     <form id="generate-form" hx-post="/api/images/generate" hx-target="#generate-result" hx-swap="innerHTML"
           hx-indicator="#generate-spinner" hx-ext="json-enc">
         <label for="prompt">Prompt</label>
@@ -52,7 +52,7 @@
 
 <hr>
 
-<section>
+<section aria-label="Image gallery">
     <h3>Gallery</h3>
     <div id="image-gallery" hx-get="/api/images" hx-trigger="load" hx-target="#gallery-content" hx-swap="innerHTML">
         <article aria-busy="true">Loading gallery...</article>
@@ -107,7 +107,7 @@ document.addEventListener('htmx:afterRequest', function(evt) {
             images.forEach(img => {
                 html += `
                     <article class="kpi-card" style="text-align: left; padding: 1rem;">
-                        <img src="${img.path}" alt="${img.prompt}" style="width: 100%; border-radius: 4px; margin-bottom: 0.5rem;">
+                        <img src="${img.path}" alt="Generated image: ${img.prompt}" style="width: 100%; border-radius: 4px; margin-bottom: 0.5rem;">
                         <p style="font-size: 0.9rem; margin: 0.5rem 0;">${img.prompt}</p>
                         <small style="color: var(--pico-muted-color);">
                             ${img.model} &middot; ${img.size} &middot; ${img.steps} steps &middot; seed ${img.seed}

@@ -5,7 +5,7 @@
 <p>This appears to be your first boot. Let's get your system set up.</p>
 
 <h3>Hardware Detected</h3>
-<table>
+<table aria-label="Detected hardware">
     <tbody>
         <tr><td>Profile</td><td>{{ hardware.profile_id }}</td></tr>
         <tr><td>CPU</td><td>{{ hardware.cpu.arch }} — {{ hardware.cpu.model or 'Unknown' }} ({{ hardware.cpu.cores }} cores)</td></tr>

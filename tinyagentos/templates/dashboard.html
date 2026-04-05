@@ -3,20 +3,20 @@
 {% block content %}
 <h2>Dashboard</h2>
 
-<div id="kpi-cards" hx-get="/api/partials/kpi-cards" hx-trigger="load, every 30s" hx-swap="innerHTML">
+<section id="kpi-cards" aria-label="KPI Cards" hx-get="/api/partials/kpi-cards" hx-trigger="load, every 30s" hx-swap="innerHTML">
     <article aria-busy="true">Loading...</article>
-</div>
+</section>
 
 <div class="grid">
     <div>
         <h3>Backends</h3>
-        <div id="backend-status" hx-get="/api/partials/backend-status" hx-trigger="load, every 30s" hx-swap="innerHTML">
+        <div id="backend-status" aria-label="Backend Status" role="region" hx-get="/api/partials/backend-status" hx-trigger="load, every 30s" hx-swap="innerHTML">
             <article aria-busy="true">Loading...</article>
         </div>
     </div>
     <div>
         <h3>Agents</h3>
-        <div id="agent-summary" hx-get="/api/partials/agent-summary" hx-trigger="load, every 30s" hx-swap="innerHTML">
+        <div id="agent-summary" aria-label="Agent summary" role="region" hx-get="/api/partials/agent-summary" hx-trigger="load, every 30s" hx-swap="innerHTML">
             <article aria-busy="true">Loading...</article>
         </div>
     </div>
@@ -24,7 +24,7 @@
 
 <h3>Query Latency</h3>
 <div>
-    <canvas id="latency-chart" height="200"></canvas>
+    <canvas id="latency-chart" height="200" aria-label="Query latency chart" role="img"></canvas>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <script>

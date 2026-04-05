@@ -11,7 +11,7 @@
       Profile: {{ hardware.profile_id }}
     </span>
     <div class="overflow-auto">
-      <table>
+      <table aria-label="System hardware information">
         <tbody>
           <tr><td><strong>CPU Architecture</strong></td><td>{{ hardware.cpu.arch or "unknown" }}</td></tr>
           <tr><td><strong>CPU Model</strong></td><td>{{ hardware.cpu.model or "unknown" }}</td></tr>
@@ -40,7 +40,7 @@
   <summary><strong>Storage Usage</strong></summary>
   <div style="margin-top: 1rem;">
     <div class="overflow-auto">
-      <table>
+      <table aria-label="Storage usage">
         <thead>
           <tr><th>Directory</th><th>Path</th><th>Size</th></tr>
         </thead>
@@ -101,6 +101,7 @@
   <div style="margin-top: 1rem;">
     <div id="config-status"></div>
     <form id="config-form">
+      <label for="config-editor">Configuration YAML</label>
       <textarea id="config-editor" name="yaml" rows="25"
                 style="font-family: monospace; font-size: 0.9rem;">{{ config_yaml }}</textarea>
       <div class="grid" style="margin-top: 1rem;">

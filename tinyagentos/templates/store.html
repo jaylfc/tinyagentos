@@ -13,6 +13,7 @@
     </button>
 </div>
 
+<label for="store-search" class="sr-only" style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden;">Search apps</label>
 <input type="search" id="store-search" placeholder="Search apps..."
        style="margin-bottom: 1rem;"
        hx-get="/api/partials/app-grid"
@@ -21,7 +22,7 @@
        hx-include="#type-filter"
        name="q">
 
-<div class="search-modes" style="margin-bottom: 1.5rem;">
+<div class="search-modes" role="group" aria-label="App type filter" style="margin-bottom: 1.5rem;">
     <input type="hidden" id="type-filter" name="type" value="">
     <button class="active" onclick="filterType(this, '')">All</button>
     <button onclick="filterType(this, 'agent-framework')">Agents</button>

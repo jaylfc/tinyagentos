@@ -9,7 +9,8 @@
     <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
-    <nav class="container-fluid">
+    <a href="#main-content" class="sr-only" style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;">Skip to main content</a>
+    <nav class="container-fluid" role="navigation" aria-label="Main navigation">
         <ul>
             <li><strong>TinyAgentOS</strong></li>
         </ul>
@@ -23,13 +24,13 @@
             <li><a href="/settings" {% if active_page == 'settings' %}class="active"{% endif %}>Settings</a></li>
         </ul>
     </nav>
-    <main class="container">
+    <main class="container" role="main" id="main-content">
         {% block content %}{% endblock %}
     </main>
-    <footer class="container" style="text-align: center; padding: 2rem 0; color: var(--pico-muted-color); font-size: 0.85rem;">
+    <footer class="container" role="contentinfo" style="text-align: center; padding: 2rem 0; color: var(--pico-muted-color); font-size: 0.85rem;">
         TinyAgentOS v0.1.0 · <a href="https://github.com/jaylfc/tinyagentos">GitHub</a> · <a href="https://buymeacoffee.com/jaylfc">Support</a>
     </footer>
-    <div id="toast" style="display:none; position:fixed; bottom:20px; right:20px; padding:1rem 1.5rem; border-radius:8px; z-index:1000; background:var(--pico-primary-background); color:var(--pico-primary-inverse);"></div>
+    <div id="toast" role="alert" aria-live="assertive" style="display:none; position:fixed; bottom:20px; right:20px; padding:1rem 1.5rem; border-radius:8px; z-index:1000; background:var(--pico-primary-background); color:var(--pico-primary-inverse);"></div>
     <script>
     function showToast(msg, type='success') {
         const t = document.getElementById('toast');

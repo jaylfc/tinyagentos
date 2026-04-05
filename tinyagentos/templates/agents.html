@@ -2,7 +2,7 @@
 {% block title %}Agents — TinyAgentOS{% endblock %}
 {% block content %}
 <h2>Agents</h2>
-<table>
+<table aria-label="Agent status">
     <thead>
         <tr><th>Agent</th><th>Host</th><th>QMD Index</th><th>Status</th><th>Vectors</th><th>Actions</th></tr>
     </thead>
@@ -16,6 +16,7 @@
         <td>{{ agent.vectors }}</td>
         <td>
             <button class="outline secondary" style="padding: 0.2rem 0.5rem; font-size: 0.8rem;"
+                    aria-label="Delete agent {{ agent.name }}"
                     hx-delete="/api/agents/{{ agent.name }}" hx-confirm="Delete agent {{ agent.name }}?"
                     hx-target="closest tr" hx-swap="outerHTML">Delete</button>
         </td>
@@ -33,12 +34,16 @@
     <summary role="button" class="outline">Add Agent (Manual)</summary>
     <form hx-post="/api/agents" hx-target="body" hx-swap="innerHTML">
         <div class="grid">
-            <label>Name <input type="text" name="name" required></label>
-            <label>Host <input type="text" name="host" required></label>
+            <label for="manual-agent-name">Name</label>
+            <input type="text" id="manual-agent-name" name="name" required>
+            <label for="manual-agent-host">Host</label>
+            <input type="text" id="manual-agent-host" name="host" required>
         </div>
         <div class="grid">
-            <label>QMD Index <input type="text" name="qmd_index" required></label>
-            <label>Color <input type="color" name="color" value="#98fb98"></label>
+            <label for="manual-agent-qmd-index">QMD Index</label>
+            <input type="text" id="manual-agent-qmd-index" name="qmd_index" required>
+            <label for="manual-agent-color">Color</label>
+            <input type="color" id="manual-agent-color" name="color" value="#98fb98">
         </div>
         <button type="submit">Add Agent</button>
     </form>
@@ -48,7 +53,7 @@
 
 <button id="open-deploy-wizard" onclick="document.getElementById('deploy-wizard').showModal()">Deploy New Agent</button>
 
-<dialog id="deploy-wizard">
+<dialog id="deploy-wizard" aria-label="Deploy Agent Wizard" role="dialog">
     <article style="max-width: 600px; margin: auto;">
         <header>
             <button aria-label="Close" rel="prev" onclick="document.getElementById('deploy-wizard').close()"></button>
@@ -120,7 +125,7 @@
 
         <div id="wizard-step-5" class="wizard-step" style="display:none;">
             <p><strong>Confirm Deployment</strong></p>
-            <table id="deploy-summary">
+            <table id="deploy-summary" aria-label="Deployment summary">
                 <tbody>
                     <tr><td>Name</td><td id="summary-name"></td></tr>
                     <tr><td>Color</td><td id="summary-color"></td></tr>
