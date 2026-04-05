@@ -1,2 +1,0 @@
-[console_scripts]
-tinyagentos = tinyagentos.app:main
