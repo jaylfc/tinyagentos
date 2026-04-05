@@ -52,8 +52,9 @@
 </details>
 {% endif %}
 
-<div id="app-grid" class="kpi-grid">
-{% include "partials/app_grid.html" %}
+<div id="app-grid" class="kpi-grid"
+     hx-get="/api/partials/app-grid" hx-trigger="load" hx-swap="innerHTML">
+    <article aria-busy="true">Loading apps...</article>
 </div>
 
 <script>
