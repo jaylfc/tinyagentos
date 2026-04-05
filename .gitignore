@@ -19,5 +19,10 @@ data/secrets.db
 .env
 .env.*
 
+# Internal/demo — not for public release
+tinyagentos/lobby/
+tests/test_lobby.py
+docs/specs/2026-04-05-lobby-chat-room-design.md
+
 # OS
 .DS_Store

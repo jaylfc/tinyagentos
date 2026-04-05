@@ -271,6 +271,7 @@ def _detect_disk() -> DiskInfo:
 
 
 def _detect_os() -> OsInfo:
+    import os as _os
     distro = ""
     version = ""
     try:
@@ -282,6 +283,9 @@ def _detect_os() -> OsInfo:
     except OSError:
         pass
     kernel = platform.release()
+    # Detect Android/Termux
+    if "TERMUX_VERSION" in _os.environ or "com.termux" in str(Path.home()):
+        distro = "android-termux"
     return OsInfo(distro=distro, version=version, kernel=kernel)
 
 

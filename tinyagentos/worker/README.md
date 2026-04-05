@@ -78,3 +78,29 @@ The output goes to `dist/tinyagentos-worker-linux` (or platform equivalent). Dis
 - On GNOME, install the AppIndicator extension
 - For autostart, add a `.desktop` file to `~/.config/autostart/`
 - Headless mode works on any Linux system including servers and SBCs
+
+### Android (Termux)
+
+Android phones can join the cluster as compute workers via Termux. The setup
+script installs llama.cpp, builds it from source, and creates a standalone
+worker script:
+
+```bash
+# In Termux:
+curl -sL https://raw.githubusercontent.com/jaylfc/tinyagentos/master/tinyagentos/worker/android_setup.sh | bash
+
+# Download a small model:
+wget -O ~/model.gguf https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/resolve/main/qwen3-1.7b-q4_k_m.gguf
+
+# Start the worker:
+python ~/tinyagentos-worker.py http://YOUR-SERVER:8888 --model ~/model.gguf
+```
+
+The worker registers with platform `android` and runs llama.cpp in CPU mode.
+See `android_setup.sh` for the full setup script.
+
+### iOS
+
+iOS does not support background inference servers. See `ios_guide.md` for
+options including using LLM apps with Shortcuts automation and using an
+iPad/iPhone as a dashboard client via the PWA web interface.
