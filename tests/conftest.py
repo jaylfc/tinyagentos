@@ -42,10 +42,15 @@ async def client(app):
     if store._db is not None:
         await store.close()
     await store.init()
+    notif_store = app.state.notifications
+    if notif_store._db is not None:
+        await notif_store.close()
+    await notif_store.init()
     await app.state.qmd_client.init()
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
+    await notif_store.close()
     await store.close()
     await app.state.qmd_client.close()
     await app.state.http_client.aclose()
@@ -115,10 +120,15 @@ async def client_with_qmd(app_with_qmd):
     if store._db is not None:
         await store.close()
     await store.init()
+    notif_store = app_with_qmd.state.notifications
+    if notif_store._db is not None:
+        await notif_store.close()
+    await notif_store.init()
     await app_with_qmd.state.qmd_client.init()
     transport = ASGITransport(app=app_with_qmd)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
+    await notif_store.close()
     await store.close()
     await app_with_qmd.state.qmd_client.close()
     await app_with_qmd.state.http_client.aclose()

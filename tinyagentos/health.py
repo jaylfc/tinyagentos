@@ -10,6 +10,7 @@ import psutil
 from tinyagentos.backend_adapters import check_backend_health
 from tinyagentos.config import AppConfig
 from tinyagentos.metrics import MetricsStore
+from tinyagentos.notifications import NotificationStore
 from tinyagentos.qmd_client import QmdClient
 from tinyagentos.agent_db import get_agent_db
 
@@ -23,14 +24,17 @@ class HealthMonitor:
         metrics: MetricsStore,
         qmd_client: QmdClient,
         http_client: httpx.AsyncClient,
+        notifications: NotificationStore | None = None,
     ):
         self.config = config
         self.metrics = metrics
         self.qmd_client = qmd_client
         self.http_client = http_client
+        self.notifications = notifications
         self._task: asyncio.Task | None = None
         self._poll_count = 0
         self._last_cleanup = 0
+        self._backend_states: dict[str, str] = {}
 
     async def start(self) -> None:
         self._task = asyncio.create_task(self._poll_loop())
@@ -67,6 +71,23 @@ class HealthMonitor:
                     float(result.get("response_ms", 0)),
                     now,
                 )
+                # Notify on state changes only
+                current = result["status"]
+                prev = self._backend_states.get(backend["name"])
+                if prev is not None and prev != current and self.notifications:
+                    if current != "ok":
+                        await self.notifications.add(
+                            f"Backend '{backend['name']}' is unreachable",
+                            f"Health check failed for {backend['url']}",
+                            level="warning", source="health",
+                        )
+                    else:
+                        await self.notifications.add(
+                            f"Backend '{backend['name']}' recovered",
+                            f"Health check succeeded for {backend['url']}",
+                            level="info", source="health",
+                        )
+                self._backend_states[backend["name"]] = current
             except Exception as e:
                 logger.warning(f"Backend health check failed for {backend['name']}: {e}")
 

@@ -101,6 +101,32 @@ nav a.active {
         grid-template-columns: 1fr;
     }
 }
+/* Notification bell */
+.notif-hidden { display: none !important; }
+.notif-badge[data-count="0"] { display: none; }
+.notif-badge {
+    position: absolute;
+    top: -4px;
+    right: -8px;
+    background: #ff6b6b;
+    color: #fff;
+    font-size: 0.65rem;
+    font-weight: bold;
+    border-radius: 50%;
+    min-width: 16px;
+    height: 16px;
+    line-height: 16px;
+    text-align: center;
+    padding: 0 3px;
+}
+.notif-item {
+    padding: 0.4rem 0.5rem;
+    border-bottom: 1px solid var(--pico-muted-border-color);
+}
+.notif-item:last-child { border-bottom: none; }
+.notif-item.unread { font-weight: 600; }
+.notif-item .notif-title { font-size: 0.8rem; }
+.notif-item .notif-meta { font-size: 0.7rem; color: var(--pico-muted-color); }
 .error-alert {
     background: rgba(255, 107, 107, 0.1);
     border: 1px solid rgba(255, 107, 107, 0.3);
