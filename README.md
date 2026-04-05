@@ -18,11 +18,14 @@ Open `http://your-host:8888` (or `http://tinyagentos.local:8888` with mDNS).
 ## Key Features
 
 ### Distributed Compute Cluster
-Combine multiple devices into one AI compute mesh. A gaming PC handles large models, a laptop runs smaller ones, a Pi handles embeddings — all managed from one dashboard. Cross-platform worker apps (Windows, macOS, Linux) connect any machine to your cluster from the system tray.
+Combine ANY device into one AI compute mesh — desktops, laptops, SBCs, even phones and tablets. A gaming PC handles large models, a Mac runs MLX inference, a Pi handles embeddings, an old Android phone contributes from a drawer. Cross-platform worker apps connect from the system tray (Windows, macOS, Linux) or via Termux (Android).
 
 ```bash
-# On any Windows/Mac/Linux machine — joins your cluster
+# Desktop — system tray worker app
 tinyagentos-worker http://your-server:8888
+
+# Android — one-line Termux setup
+curl -sL https://raw.githubusercontent.com/jaylfc/tinyagentos/master/tinyagentos/worker/android_setup.sh | bash
 ```
 
 ### Live Model Browser
@@ -88,8 +91,10 @@ Features unlock automatically based on your hardware and cluster. Solo Pi sees c
 | **Pi Accelerators** | Hailo-10H (40T), M5Stack LLM-8850 (24T) | LLM-capable accelerators |
 | **NVIDIA** | GTX 1050 Ti through RTX 4090/5090 | CUDA 4-24GB or Vulkan legacy |
 | **AMD** | RX 6600 through RX 7900 XTX | ROCm 8-24GB |
+| **Android** | Flagship phones/tablets (12-16GB) | 7-8B models at 15-30 tok/s via Termux + llama.cpp |
+| **iOS/iPadOS** | iPad Pro M4, iPhones (6-8GB+) | Dashboard via PWA, future native worker app |
 | **CPU Only** | Any device | Smallest quantized models |
-| **Mixed Cluster** | All of the above combined | Distributed compute — a Mac, a Pi, and a gaming PC working together |
+| **Mixed Cluster** | All of the above combined | A Mac, a Pi, a gaming PC, and an old phone — all working together |
 
 ## Architecture
 
