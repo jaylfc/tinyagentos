@@ -263,10 +263,16 @@ def detect_hardware() -> HardwareProfile:
     )
 
 
+CACHE_TTL_SECONDS = 86400  # Re-detect after 24h (user might add accelerator card)
+
+
 def get_hardware_profile(cache_path: Path) -> HardwareProfile:
-    """Load cached hardware profile, or detect and cache if missing."""
+    """Load cached hardware profile, or detect and cache if missing/stale."""
     if cache_path.exists():
-        return HardwareProfile.load(cache_path)
+        import time
+        age = time.time() - cache_path.stat().st_mtime
+        if age < CACHE_TTL_SECONDS:
+            return HardwareProfile.load(cache_path)
     profile = detect_hardware()
     profile.save(cache_path)
     return profile
