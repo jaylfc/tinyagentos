@@ -22,6 +22,7 @@
             <li><a href="/memory" {% if active_page == 'memory' %}class="active"{% endif %}>Memory</a></li>
             <li><a href="/agents" {% if active_page == 'agents' %}class="active"{% endif %}>Agents</a></li>
             <li><a href="/settings" {% if active_page == 'settings' %}class="active"{% endif %}>Settings</a></li>
+            <li><a href="#" id="theme-toggle" aria-label="Toggle dark/light theme" onclick="toggleTheme(); return false;">🌙</a></li>
         </ul>
     </nav>
     <main class="container" role="main" id="main-content">
@@ -32,6 +33,21 @@
     </footer>
     <div id="toast" role="alert" aria-live="assertive" style="display:none; position:fixed; bottom:20px; right:20px; padding:1rem 1.5rem; border-radius:8px; z-index:1000; background:var(--pico-primary-background); color:var(--pico-primary-inverse);"></div>
     <script>
+    function toggleTheme() {
+        const html = document.documentElement;
+        const current = html.getAttribute('data-theme');
+        const next = current === 'dark' ? 'light' : 'dark';
+        html.setAttribute('data-theme', next);
+        localStorage.setItem('theme', next);
+        document.getElementById('theme-toggle').textContent = next === 'dark' ? '🌙' : '☀️';
+    }
+    // Load saved theme
+    (function() {
+        const saved = localStorage.getItem('theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', saved);
+        const btn = document.getElementById('theme-toggle');
+        if (btn) btn.textContent = saved === 'dark' ? '🌙' : '☀️';
+    })();
     function showToast(msg, type='success') {
         const t = document.getElementById('toast');
         t.textContent = msg;
