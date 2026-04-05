@@ -237,3 +237,75 @@ async def restore_backup(request: Request, file: UploadFile):
         except Exception:
             pass
     return {"status": "restored", "message": "Backup restored successfully"}
+
+
+@router.get("/api/settings/update-check")
+async def check_for_updates(request: Request):
+    """Check if a newer version of TinyAgentOS is available on GitHub."""
+    import asyncio
+    proc = await asyncio.create_subprocess_exec(
+        "git", "fetch", "--dry-run", "origin", "master",
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+        cwd=str(Path(__file__).parent.parent.parent),
+    )
+    stdout, _ = await proc.communicate()
+    output = stdout.decode() if stdout else ""
+    has_updates = bool(output.strip())
+
+    # Get current commit
+    proc2 = await asyncio.create_subprocess_exec(
+        "git", "log", "-1", "--format=%h %s",
+        stdout=asyncio.subprocess.PIPE,
+        cwd=str(Path(__file__).parent.parent.parent),
+    )
+    stdout2, _ = await proc2.communicate()
+    current = stdout2.decode().strip() if stdout2 else "unknown"
+
+    return {
+        "has_updates": has_updates,
+        "current_version": "0.1.0",
+        "current_commit": current,
+    }
+
+
+@router.post("/api/settings/update")
+async def apply_update(request: Request):
+    """Pull latest TinyAgentOS code from GitHub and restart."""
+    import asyncio
+    project_dir = Path(__file__).parent.parent.parent
+
+    # Git pull
+    proc = await asyncio.create_subprocess_exec(
+        "git", "pull", "--ff-only", "origin", "master",
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+        cwd=str(project_dir),
+    )
+    stdout, _ = await proc.communicate()
+    output = stdout.decode() if stdout else ""
+
+    if proc.returncode != 0:
+        return JSONResponse({"error": f"Update failed: {output}"}, status_code=500)
+
+    # Pip install to pick up new deps
+    venv_pip = project_dir / "venv" / "bin" / "pip"
+    pip_cmd = str(venv_pip) if venv_pip.exists() else "pip"
+    proc2 = await asyncio.create_subprocess_exec(
+        pip_cmd, "install", "-e", ".", "-q",
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+        cwd=str(project_dir),
+    )
+    await proc2.communicate()
+
+    # Notify
+    if hasattr(request.app.state, "notifications") and request.app.state.notifications:
+        await request.app.state.notifications.add(
+            "System updated",
+            f"TinyAgentOS updated successfully. Restart to apply changes.\n{output.strip()}",
+            level="info", source="system",
+        )
+
+    return {
+        "status": "updated",
+        "output": output.strip(),
+        "message": "Update pulled. Restart TinyAgentOS to apply changes.",
+    }

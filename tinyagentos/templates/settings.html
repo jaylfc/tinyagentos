@@ -95,7 +95,28 @@
   </div>
 </details>
 
-<!-- Section 4: Backup & Restore -->
+<!-- Section 4: System Updates -->
+<details open>
+  <summary><strong>System Updates</strong></summary>
+  <div style="margin-top: 1rem;">
+    <section aria-label="System Updates">
+      <div id="update-status" hx-get="/api/settings/update-check" hx-trigger="load" hx-swap="innerHTML">
+        <article aria-busy="true">Checking for updates...</article>
+      </div>
+      <button class="outline" aria-label="Check for updates"
+              hx-get="/api/settings/update-check" hx-target="#update-status" hx-swap="innerHTML">
+        Check for Updates
+      </button>
+      <button aria-label="Apply update"
+              hx-post="/api/settings/update" hx-target="#update-status" hx-swap="innerHTML"
+              hx-confirm="This will pull the latest code from GitHub. Continue?">
+        Update Now
+      </button>
+    </section>
+  </div>
+</details>
+
+<!-- Section 5: Backup & Restore -->
 <details open>
   <summary><strong>Backup &amp; Restore</strong></summary>
   <div style="margin-top: 1rem;">
