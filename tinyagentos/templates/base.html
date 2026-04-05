@@ -20,7 +20,9 @@
             <li><a href="/models" {% if active_page == 'models' %}class="active"{% endif %}>Models</a></li>
             <li><a href="/images" {% if active_page == 'images' %}class="active"{% endif %}>Images</a></li>
             <li><a href="/memory" {% if active_page == 'memory' %}class="active"{% endif %}>Memory</a></li>
+            <li><a href="/channels" {% if active_page == 'channels' %}class="active"{% endif %}>Channels</a></li>
             <li><a href="/agents" {% if active_page == 'agents' %}class="active"{% endif %}>Agents</a></li>
+            <li><a href="/secrets" {% if active_page == 'secrets' %}class="active"{% endif %}>Secrets</a></li>
             <li><a href="/settings" {% if active_page == 'settings' %}class="active"{% endif %}>Settings</a></li>
             <li style="position:relative;">
                 <a href="#" id="notif-bell" aria-label="Notifications" onclick="document.getElementById('notif-panel').classList.toggle('notif-hidden'); if(!document.getElementById('notif-panel').classList.contains('notif-hidden')){htmx.ajax('GET','/api/notifications',{target:'#notif-list'});} return false;"
@@ -64,6 +66,7 @@
         {text: "Download and manage AI models here — the platform recommends models for your hardware.", target: 'a[href="/models"]'},
         {text: "Generate images using Stable Diffusion on your NPU or GPU.", target: 'a[href="/images"]'},
         {text: "Browse and search your agents' memories.", target: 'a[href="/memory"]'},
+        {text: "Configure how your agents communicate — Telegram, Email, Discord, and more.", target: 'a[href="/channels"]'},
         {text: "Deploy and manage your AI agents — each gets its own isolated container.", target: 'a[href="/agents"]'},
         {text: "System settings, updates, backups, and hardware info.", target: 'a[href="/settings"]'},
         {text: "You're all set! Check the Store to install your first agent framework.", target: null},

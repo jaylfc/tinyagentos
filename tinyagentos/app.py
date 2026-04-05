@@ -10,9 +10,13 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from tinyagentos.config import load_config
+from tinyagentos.channels import ChannelStore
+from tinyagentos.download_manager import DownloadManager
 from tinyagentos.metrics import MetricsStore
 from tinyagentos.notifications import NotificationStore
 from tinyagentos.qmd_client import QmdClient
+from tinyagentos.scheduler import TaskScheduler
+from tinyagentos.secrets import SecretsStore
 
 PROJECT_DIR = Path(__file__).parent.parent
 
@@ -41,18 +45,29 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     notif_store = NotificationStore(data_dir / "notifications.db")
     qmd_client = QmdClient(config.qmd.get("url", "http://localhost:7832"))
     http_client = httpx.AsyncClient(timeout=30)
+    download_manager = DownloadManager()
+    secrets_store = SecretsStore(data_dir / "secrets.db")
+    channel_store = ChannelStore(data_dir / "channels.db")
+    scheduler = TaskScheduler(data_dir / "scheduler.db")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         await metrics_store.init()
         await notif_store.init()
         await qmd_client.init()
+        await secrets_store.init()
+        await channel_store.init()
+        await scheduler.init()
         app.state.config = config
         app.state.config_path = config_path
         app.state.metrics = metrics_store
         app.state.notifications = notif_store
         app.state.qmd_client = qmd_client
         app.state.http_client = http_client
+        app.state.download_manager = download_manager
+        app.state.secrets = secrets_store
+        app.state.channels = channel_store
+        app.state.scheduler = scheduler
         # Start background health monitor
         from tinyagentos.health import HealthMonitor
         monitor = HealthMonitor(config, metrics_store, qmd_client, http_client, notif_store)
@@ -62,6 +77,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         await monitor.start()
         yield
         await monitor.stop()
+        await scheduler.close()
+        await channel_store.close()
+        await secrets_store.close()
         await notif_store.close()
         await metrics_store.close()
         await qmd_client.close()
@@ -79,6 +97,10 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     app.state.notifications = notif_store
     app.state.qmd_client = qmd_client
     app.state.http_client = http_client
+    app.state.download_manager = download_manager
+    app.state.secrets = secrets_store
+    app.state.channels = channel_store
+    app.state.scheduler = scheduler
     app.state.registry = registry
     app.state.hardware_profile = hardware_profile
 
@@ -116,6 +138,18 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     from tinyagentos.routes.notifications import router as notifications_router
     app.include_router(notifications_router)
+
+    from tinyagentos.routes.secrets import router as secrets_router
+    app.include_router(secrets_router)
+
+    from tinyagentos.routes.channels import router as channels_router
+    app.include_router(channels_router)
+
+    from tinyagentos.routes.tasks import router as tasks_router
+    app.include_router(tasks_router)
+
+    from tinyagentos.routes.import_data import router as import_router
+    app.include_router(import_router)
 
     return app
 

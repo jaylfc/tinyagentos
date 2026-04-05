@@ -47,9 +47,24 @@ async def client(app):
         await notif_store.close()
     await notif_store.init()
     await app.state.qmd_client.init()
+    secrets_store = app.state.secrets
+    if secrets_store._db is not None:
+        await secrets_store.close()
+    await secrets_store.init()
+    scheduler = app.state.scheduler
+    if scheduler._db is not None:
+        await scheduler.close()
+    await scheduler.init()
+    channel_store = app.state.channels
+    if channel_store._db is not None:
+        await channel_store.close()
+    await channel_store.init()
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
+    await channel_store.close()
+    await scheduler.close()
+    await secrets_store.close()
     await notif_store.close()
     await store.close()
     await app.state.qmd_client.close()
@@ -125,9 +140,24 @@ async def client_with_qmd(app_with_qmd):
         await notif_store.close()
     await notif_store.init()
     await app_with_qmd.state.qmd_client.init()
+    secrets_store = app_with_qmd.state.secrets
+    if secrets_store._db is not None:
+        await secrets_store.close()
+    await secrets_store.init()
+    scheduler = app_with_qmd.state.scheduler
+    if scheduler._db is not None:
+        await scheduler.close()
+    await scheduler.init()
+    channel_store = app_with_qmd.state.channels
+    if channel_store._db is not None:
+        await channel_store.close()
+    await channel_store.init()
     transport = ASGITransport(app=app_with_qmd)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
+    await channel_store.close()
+    await scheduler.close()
+    await secrets_store.close()
     await notif_store.close()
     await store.close()
     await app_with_qmd.state.qmd_client.close()

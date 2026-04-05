@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block title %}Channels — TinyAgentOS{% endblock %}
+{% block content %}
+<h2>Communication Channels</h2>
+<p>Configure how your agents communicate with the outside world.</p>
+
+<!-- Configured Channels -->
+<section aria-label="Configured channels">
+  <h3>Configured Channels</h3>
+  <div id="channel-list" hx-get="/api/channels" hx-trigger="load" hx-swap="innerHTML">
+    <p>Loading...</p>
+  </div>
+</section>
+
+<!-- Add Channel Form -->
+<details>
+  <summary><strong>Add Channel</strong></summary>
+  <form id="add-channel-form" aria-label="Add a communication channel" style="margin-top: 1rem;">
+    <div class="grid">
+      <label for="agent-select">
+        Agent
+        <select id="agent-select" name="agent_name" required aria-label="Select agent">
+          {% for agent in agents %}
+          <option value="{{ agent }}">{{ agent }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label for="type-select">
+        Channel Type
+        <select id="type-select" name="type" required aria-label="Select channel type" onchange="renderConfigFields()">
+          <optgroup label="Easy Setup">
+            {% for key, ch in easy_channels.items() %}
+            <option value="{{ key }}">{{ ch.name }}</option>
+            {% endfor %}
+          </optgroup>
+          <optgroup label="Advanced">
+            {% for key, ch in advanced_channels.items() %}
+            <option value="{{ key }}">{{ ch.name }}</option>
+            {% endfor %}
+          </optgroup>
+        </select>
+      </label>
+    </div>
+    <div id="config-fields" aria-label="Channel configuration fields"></div>
+    <button type="submit">Add Channel</button>
+  </form>
+</details>
+
+<hr>
+
+<!-- Easy Setup -->
+<section aria-label="Easy setup channels">
+  <h3>Easy Setup</h3>
+  <p>No developer account needed — get started in seconds.</p>
+  <div class="grid">
+    {% for key, ch in easy_channels.items() %}
+    <article aria-label="{{ ch.name }} channel">
+      <header><strong>{{ ch.name }}</strong></header>
+      <p>{{ ch.description }}</p>
+      <footer>
+        <small>Type: <code>{{ key }}</code></small>
+      </footer>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<!-- Advanced -->
+<section aria-label="Advanced channels">
+  <h3>Advanced</h3>
+  <p>Requires developer account or app creation.</p>
+  <div class="grid">
+    {% for key, ch in advanced_channels.items() %}
+    <article aria-label="{{ ch.name }} channel">
+      <header><strong>{{ ch.name }}</strong></header>
+      <p>{{ ch.description }}</p>
+      <footer>
+        <small>Type: <code>{{ key }}</code></small>
+      </footer>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<script>
+const CHANNEL_TYPES = {{ channel_types | tojson }};
+
+function renderConfigFields() {
+    const type = document.getElementById('type-select').value;
+    const container = document.getElementById('config-fields');
+    const info = CHANNEL_TYPES[type];
+    if (!info || !info.config_fields || info.config_fields.length === 0) {
+        container.innerHTML = '<p><small>No configuration needed.</small></p>';
+        return;
+    }
+    let html = '';
+    for (const field of info.config_fields) {
+        const req = field.required ? 'required' : '';
+        const defVal = field.default !== undefined ? field.default : '';
+        const inputType = field.type === 'number' ? 'number' : (field.type === 'url' ? 'url' : 'text');
+        html += '<label for="cfg-' + field.name + '">' + field.label;
+        html += '<input type="' + inputType + '" id="cfg-' + field.name + '" name="config.' + field.name + '" value="' + defVal + '" ' + req + ' aria-label="' + field.label + '">';
+        html += '</label>';
+    }
+    container.innerHTML = html;
+}
+
+// Initialize config fields
+renderConfigFields();
+
+document.getElementById('add-channel-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const form = e.target;
+    const agent_name = form.agent_name.value;
+    const type = form.type.value;
+    const config = {};
+    const inputs = form.querySelectorAll('[name^="config."]');
+    inputs.forEach(function(input) {
+        const key = input.name.replace('config.', '');
+        config[key] = input.value;
+    });
+    try {
+        const resp = await fetch('/api/channels', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({agent_name, type, config}),
+        });
+        const data = await resp.json();
+        if (resp.ok) {
+            showToast('Channel added');
+            htmx.ajax('GET', '/api/channels', {target: '#channel-list'});
+        } else {
+            showToast(data.error || 'Failed to add channel', 'error');
+        }
+    } catch(err) {
+        showToast('Network error', 'error');
+    }
+});
+</script>
+{% endblock %}
