@@ -1,25 +1,12 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
+from tinyagentos.agent_db import get_agent_db
 from tinyagentos.backend_adapters import check_backend_health
-from tinyagentos.qmd_db import QmdDatabase
 
 router = APIRouter()
-
-QMD_CACHE_DIR = Path.home() / ".cache" / "qmd"
-
-
-def _get_agent_db(agent: dict) -> QmdDatabase | None:
-    index_name = agent.get("qmd_index", "index")
-    db_path = QMD_CACHE_DIR / f"{index_name}.sqlite"
-    try:
-        return QmdDatabase(db_path)
-    except FileNotFoundError:
-        return None
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -58,7 +45,7 @@ async def kpi_cards(request: Request):
     agents_online = 0
     total_vectors = 0
     for agent in config.agents:
-        db = _get_agent_db(agent)
+        db = get_agent_db(agent)
         if db:
             total_vectors += db.vector_count()
             agents_online += 1
@@ -103,7 +90,7 @@ async def agent_summary(request: Request):
     templates = request.app.state.templates
     agents = []
     for agent in config.agents:
-        db = _get_agent_db(agent)
+        db = get_agent_db(agent)
         agents.append({
             "name": agent["name"],
             "color": agent.get("color", "#888"),

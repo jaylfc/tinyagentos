@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from pathlib import Path
 
 import httpx
 import psutil
@@ -12,11 +11,9 @@ from tinyagentos.backend_adapters import check_backend_health
 from tinyagentos.config import AppConfig
 from tinyagentos.metrics import MetricsStore
 from tinyagentos.qmd_client import QmdClient
-from tinyagentos.qmd_db import QmdDatabase
+from tinyagentos.agent_db import get_agent_db
 
 logger = logging.getLogger(__name__)
-
-QMD_CACHE_DIR = Path.home() / ".cache" / "qmd"
 
 
 class HealthMonitor:
@@ -89,17 +86,13 @@ class HealthMonitor:
         # 4. Agent vector counts (every 10th cycle)
         if self._poll_count % 10 == 0:
             for agent in self.config.agents:
-                index_name = agent.get("qmd_index", "index")
-                db_path = QMD_CACHE_DIR / f"{index_name}.sqlite"
-                try:
-                    db = QmdDatabase(db_path)
+                db = get_agent_db(agent)
+                if db:
                     count = db.vector_count()
                     await self.metrics.insert(
                         f"agent.{agent['name']}.vectors", float(count), now,
                         labels={"agent": agent["name"]},
                     )
-                except FileNotFoundError:
-                    pass
 
         # 5. Daily retention cleanup
         if now - self._last_cleanup > 86400:

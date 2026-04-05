@@ -1,0 +1,15 @@
+[Unit]
+Description=TinyAgentOS Web GUI
+After=network.target
+
+[Service]
+Type=simple
+User=jay
+WorkingDirectory=/home/jay/tinyagentos
+ExecStart=/usr/local/bin/python3.12 -m uvicorn tinyagentos.app:create_app --factory --host 0.0.0.0 --port 8888
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
