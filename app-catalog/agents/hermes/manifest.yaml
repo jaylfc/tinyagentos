@@ -1,0 +1,22 @@
+id: hermes
+name: Hermes Function Calling
+type: agent-framework
+version: 1.0.0
+description: "Nous Research function calling framework — structured tool use with Hermes models"
+homepage: https://github.com/NousResearch/Hermes-Function-Calling
+license: MIT
+
+requires:
+  ram_mb: 256
+  python: ">=3.10"
+
+install:
+  method: pip
+  package: git+https://github.com/NousResearch/Hermes-Function-Calling.git
+
+hardware_tiers:
+  arm-npu-16gb: full
+  arm-npu-32gb: full
+  x86-cuda-12gb: full
+  x86-vulkan-8gb: full
+  cpu-only: full

@@ -32,6 +32,31 @@ apps:
     version: 0.30.0
     name: Langroid
     description: "Multi-agent message-passing with built-in vector store"
+  - id: nanoclaw
+    type: agent-framework
+    version: 1.0.0
+    name: nanoclaw
+    description: "Lightweight OpenClaw — minimal footprint"
+  - id: picoclaw
+    type: agent-framework
+    version: 1.0.0
+    name: picoclaw
+    description: "Micro OpenClaw — smallest possible agent"
+  - id: tinyagent
+    type: agent-framework
+    version: 1.0.0
+    name: TinyAgent
+    description: "Edge tool calling — 1-3B models with LLMCompiler (UC Berkeley)"
+  - id: hermes
+    type: agent-framework
+    version: 1.0.0
+    name: Hermes Function Calling
+    description: "Nous Research structured tool use with Hermes models"
+  - id: agent-zero
+    type: agent-framework
+    version: 0.8.0
+    name: Agent Zero
+    description: "Autonomous agent — self-correcting workflows, tool creation"
 
   # Models
   - id: qwen3-embedding-0.6b
@@ -115,3 +140,13 @@ apps:
     version: 1.10.0
     name: Stable Diffusion Web UI
     description: "AUTOMATIC1111's popular image generation interface"
+  - id: stable-diffusion-cpp
+    type: service
+    version: 0.2.0
+    name: Stable Diffusion.cpp
+    description: "Pure C/C++ image generation — runs on CPU including ARM"
+  - id: fastsdcpu
+    type: service
+    version: 1.0.0
+    name: FastSD CPU
+    description: "Fast Stable Diffusion on CPU — optimized for ARM and devices without GPU"

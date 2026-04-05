@@ -1,0 +1,23 @@
+id: tinyagent
+name: TinyAgent
+type: agent-framework
+version: 1.0.0
+description: "Function calling at the edge — proves 1-3B models can do reliable tool calling (UC Berkeley)"
+homepage: https://github.com/SqueezeAILab/TinyAgent
+license: MIT
+
+requires:
+  ram_mb: 256
+  python: ">=3.10"
+
+install:
+  method: pip
+  package: git+https://github.com/SqueezeAILab/TinyAgent.git
+
+hardware_tiers:
+  arm-npu-16gb: full
+  arm-npu-32gb: full
+  x86-cuda-12gb: full
+  x86-vulkan-8gb: full
+  x86-vulkan-4gb: full
+  cpu-only: full

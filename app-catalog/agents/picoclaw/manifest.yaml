@@ -1,0 +1,23 @@
+id: picoclaw
+name: picoclaw
+type: agent-framework
+version: 1.0.0
+description: "Micro OpenClaw — smallest possible agent, ideal for constrained devices"
+homepage: https://github.com/openclaw/picoclaw
+license: MIT
+
+requires:
+  ram_mb: 64
+  python: ">=3.10"
+
+install:
+  method: pip
+  package: picoclaw
+
+hardware_tiers:
+  arm-npu-16gb: full
+  arm-npu-32gb: full
+  x86-cuda-12gb: full
+  x86-vulkan-8gb: full
+  x86-vulkan-4gb: full
+  cpu-only: full

@@ -1,0 +1,22 @@
+id: agent-zero
+name: Agent Zero
+type: agent-framework
+version: 0.8.0
+description: "Autonomous AI agent — self-correcting workflows, tool creation, computer control"
+homepage: https://github.com/frdel/agent-zero
+license: MIT
+
+requires:
+  ram_mb: 512
+  python: ">=3.10"
+
+install:
+  method: script
+  script: scripts/install-agent-zero.sh
+
+hardware_tiers:
+  arm-npu-16gb: full
+  arm-npu-32gb: full
+  x86-cuda-12gb: full
+  x86-vulkan-8gb: full
+  cpu-only: degraded
