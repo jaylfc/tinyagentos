@@ -95,6 +95,27 @@
   </div>
 </details>
 
+<!-- Section 3b: Test Backend Connection -->
+<details open>
+  <summary><strong>Test Backend Connection</strong></summary>
+  <div style="margin-top: 1rem;">
+    <div class="grid">
+        <input type="url" id="test-url" placeholder="http://localhost:8080" aria-label="Backend URL">
+        <select id="test-type" aria-label="Backend type">
+            <option value="rkllama">rkllama</option>
+            <option value="ollama">ollama</option>
+            <option value="llama-cpp">llama-cpp</option>
+            <option value="vllm">vLLM</option>
+        </select>
+        <button class="outline" aria-label="Test connection"
+                hx-post="/api/settings/test-backend"
+                hx-vals='js:{"url": document.getElementById("test-url").value, "type": document.getElementById("test-type").value}'
+                hx-target="#test-result">Test</button>
+    </div>
+    <div id="test-result" aria-live="polite"></div>
+  </div>
+</details>
+
 <!-- Section 4: System Updates -->
 <details open>
   <summary><strong>System Updates</strong></summary>

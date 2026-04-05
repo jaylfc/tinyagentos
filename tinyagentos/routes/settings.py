@@ -176,6 +176,23 @@ async def save_platform_settings(request: Request, body: PlatformUpdate):
     return {"status": "saved", "message": "Platform settings saved"}
 
 
+@router.post("/api/settings/test-backend")
+async def test_backend_connection(request: Request, body: dict):
+    """Test connectivity to a backend URL."""
+    from tinyagentos.backend_adapters import get_adapter
+    url = body.get("url", "")
+    backend_type = body.get("type", "rkllama")
+    if not url:
+        return JSONResponse({"error": "URL required"}, status_code=400)
+    try:
+        adapter = get_adapter(backend_type)
+        http_client = request.app.state.http_client
+        result = await adapter.health(http_client, url)
+        return {"reachable": result["status"] == "ok", "response_ms": result.get("response_ms", 0), "models": result.get("models", [])}
+    except Exception as e:
+        return {"reachable": False, "error": str(e)}
+
+
 @router.post("/api/backup")
 async def create_backup(request: Request):
     """Create a downloadable backup of configuration and app data."""
