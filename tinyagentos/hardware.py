@@ -123,6 +123,8 @@ def _detect_cpu() -> CpuInfo:
                 soc = "rk3576"
             elif "bcm2712" in soc_str:
                 soc = "bcm2712"
+            elif "bcm2711" in soc_str or "raspberry pi 4" in soc_str:
+                soc = "bcm2711"
     except OSError:
         pass
     if not cores:
@@ -148,9 +150,16 @@ def _detect_npu() -> NpuInfo:
     if Path("/dev/rknpu").exists():
         cores = 3  # RK3588 default
         return NpuInfo(type="rknpu", device="/dev/rknpu", tops=6, cores=cores)
-    # Hailo
+    # Hailo — distinguish 8L (13 TOPS, vision only) from 10H (40 TOPS, LLM capable)
     for p in Path("/dev").glob("hailo*"):
-        return NpuInfo(type="hailo", device=str(p), tops=26, cores=1)
+        hailo_info = _run(["lspci", "-d", "1e60:"])
+        if "10h" in hailo_info.lower() or "hailo-10" in hailo_info.lower():
+            return NpuInfo(type="hailo10h", device=str(p), tops=40, cores=1)
+        return NpuInfo(type="hailo", device=str(p), tops=13, cores=1)
+    # M5Stack LLM-8850 / Axera AX8850 (24 TOPS, LLM capable, M.2 add-on)
+    axera_info = _run(["lspci"])
+    if "axera" in axera_info.lower() or "ax8850" in axera_info.lower():
+        return NpuInfo(type="axera", device="pcie", tops=24, cores=1)
     # Google Coral
     for p in Path("/dev").glob("apex_*"):
         return NpuInfo(type="coral", device=str(p), tops=4, cores=1)

@@ -97,10 +97,15 @@ Infrastructure:
 
 | Profile | Example Hardware | Notes |
 |---------|-----------------|-------|
-| **ARM + NPU** | | |
-| arm-npu-16gb | Orange Pi 5 Plus (RK3588) | Primary dev target, NPU accelerated |
+| **ARM + Rockchip NPU** | | |
+| arm-npu-16gb | Orange Pi 5 Plus (RK3588) | Primary dev target, 6 TOPS NPU |
 | arm-npu-32gb | RK3588 32GB boards | More concurrent models |
 | arm-npu-64gb+ | High-RAM ARM boards | Full model suite |
+| **Raspberry Pi** | | |
+| arm-cpu-8gb | Raspberry Pi 4 (8GB) | CPU only, 1-2B models, lightweight agents |
+| arm-cpu-8gb | Raspberry Pi 5 (8GB) | CPU only, faster A76 cores, 4B models |
+| arm-hailo10h-8gb | Pi 5 + Hailo AI HAT+ 2 (40 TOPS) | LLM acceleration, recommended Pi setup |
+| arm-axera-8gb | Pi 5 + M5Stack LLM-8850 (24 TOPS) | Alternative LLM accelerator, 8GB dedicated |
 | **NVIDIA (CUDA)** | | |
 | x86-cuda-4gb | GTX 1050 Ti | Small quantized models only |
 | x86-cuda-6gb | GTX 1060 6GB, RTX 2060 | 4-bit 7B models |
