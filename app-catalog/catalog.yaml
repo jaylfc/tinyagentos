@@ -84,6 +84,21 @@ apps:
     version: 3.0.0
     name: Qwen 3 1.7B
     description: "Tiny chat — ideal for setup agent and low-power devices"
+  - id: lcm-dreamshaper-v7
+    type: model
+    version: 7.0.0
+    name: LCM Dreamshaper V7
+    description: "Fast image generation — 4-step LCM acceleration, 512x512 in seconds on RK3588 NPU"
+  - id: sd-v1.5-lcm
+    type: model
+    version: 1.5.0
+    name: Stable Diffusion 1.5 LCM
+    description: "Stable Diffusion 1.5 with Latent Consistency Model — fewer steps, faster generation"
+  - id: sdxl-turbo
+    type: model
+    version: 1.0.0
+    name: SDXL Turbo
+    description: "Real-time image generation — single-step SDXL distillation, fast on GPU"
 
   # Services
   - id: gitea

@@ -1,0 +1,32 @@
+id: sd-v1.5-lcm
+name: Stable Diffusion 1.5 LCM
+type: model
+version: 1.5.0
+description: "Stable Diffusion 1.5 with Latent Consistency Model — fewer steps, faster generation"
+homepage: https://huggingface.co/SimianLuo/LCM_Dreamshaper_v7
+capabilities: [image-generation]
+
+variants:
+  - id: gguf-q8
+    name: "GGUF Q8 (1.7GB, CPU/GPU)"
+    format: gguf
+    size_mb: 1700
+    min_ram_mb: 4096
+    download_url: https://huggingface.co/stabilityai/stable-diffusion-v1-5-gguf/resolve/main/sd-v1-5-pruned-emaonly-Q8_0.gguf
+    backend: [stable-diffusion-cpp]
+  - id: rknn
+    name: "RKNN (NPU, ~1GB)"
+    format: rknn
+    size_mb: 1024
+    min_ram_mb: 1024
+    download_url: https://huggingface.co/happyme531/Stable-Diffusion-1.5-LCM-ONNX-RKNN2/resolve/main/sd-v1.5-lcm-rknn.zip
+    backend: [rkllama]
+    requires_npu: [rk3588, rk3576]
+
+hardware_tiers:
+  arm-npu-16gb: {recommended: rknn, fallback: gguf-q8}
+  arm-npu-32gb: {recommended: rknn}
+  x86-cuda-8gb: {recommended: gguf-q8}
+  x86-cuda-12gb: {recommended: gguf-q8}
+  x86-vulkan-8gb: {recommended: gguf-q8}
+  cpu-only: {recommended: gguf-q8, notes: "Slow — 2-5 minutes per image"}
