@@ -155,3 +155,13 @@ apps:
     version: 0.1.0
     name: RKNN Stable Diffusion
     description: "Image generation on Rockchip NPU — 512x512 in seconds on RK3588"
+  - id: lcm-dreamshaper-rknn
+    type: service
+    version: 0.1.0
+    name: LCM Dreamshaper (RKNN Rust)
+    description: "Fast Rust-based text-to-image on RK3588 NPU — optimized LCM pipeline"
+  - id: rk3588-sd-gpu
+    type: service
+    version: 0.1.0
+    name: Stable Diffusion (Mali GPU)
+    description: "SD on RK3588 Mali-G610 via MLC/TVM — GPU alternative to NPU path"
