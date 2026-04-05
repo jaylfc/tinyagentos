@@ -1,25 +1,4 @@
 import pytest
-import pytest_asyncio
-from httpx import AsyncClient, ASGITransport
-from tinyagentos.app import create_app
-
-
-@pytest.fixture
-def app(tmp_data_dir):
-    return create_app(data_dir=tmp_data_dir)
-
-
-@pytest_asyncio.fixture
-async def client(app):
-    """Async test client that initialises the metrics store before requests."""
-    await app.state.metrics.init()
-    await app.state.qmd_client.init()
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
-        yield c
-    await app.state.metrics.close()
-    await app.state.qmd_client.close()
-    await app.state.http_client.aclose()
 
 
 @pytest.mark.asyncio
