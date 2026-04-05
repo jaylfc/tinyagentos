@@ -47,6 +47,68 @@
         TinyAgentOS v0.1.0 · <a href="https://github.com/jaylfc/tinyagentos">GitHub</a> · <a href="https://buymeacoffee.com/jaylfc">Support</a>
     </footer>
     <div id="toast" role="alert" aria-live="assertive" style="display:none; position:fixed; bottom:20px; right:20px; padding:1rem 1.5rem; border-radius:8px; z-index:1000; background:var(--pico-primary-background); color:var(--pico-primary-inverse);"></div>
+    <div id="tour-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:999;">
+        <div id="tour-tooltip" style="position:absolute; background:var(--pico-card-background-color); border:2px solid var(--pico-primary); border-radius:8px; padding:1.5rem; max-width:300px; z-index:1000;">
+            <p id="tour-text"></p>
+            <div style="display:flex; justify-content:space-between; margin-top:1rem;">
+                <button class="outline" onclick="tourSkip()" aria-label="Skip tour">Skip</button>
+                <button onclick="tourNext()" aria-label="Next step">Next</button>
+            </div>
+            <small id="tour-step" style="color:var(--pico-muted-color);"></small>
+        </div>
+    </div>
+    <script>
+    const tourSteps = [
+        {text: "Welcome to TinyAgentOS! Let me show you around.", target: null},
+        {text: "The Store is where you install agent frameworks, models, and services.", target: 'a[href="/store"]'},
+        {text: "Download and manage AI models here — the platform recommends models for your hardware.", target: 'a[href="/models"]'},
+        {text: "Generate images using Stable Diffusion on your NPU or GPU.", target: 'a[href="/images"]'},
+        {text: "Browse and search your agents' memories.", target: 'a[href="/memory"]'},
+        {text: "Deploy and manage your AI agents — each gets its own isolated container.", target: 'a[href="/agents"]'},
+        {text: "System settings, updates, backups, and hardware info.", target: 'a[href="/settings"]'},
+        {text: "You're all set! Check the Store to install your first agent framework.", target: null},
+    ];
+    let tourIdx = 0;
+
+    function startTour() {
+        tourIdx = 0;
+        document.getElementById('tour-overlay').style.display = 'block';
+        showTourStep();
+    }
+    function showTourStep() {
+        const step = tourSteps[tourIdx];
+        document.getElementById('tour-text').textContent = step.text;
+        document.getElementById('tour-step').textContent = `Step ${tourIdx + 1} of ${tourSteps.length}`;
+        const tooltip = document.getElementById('tour-tooltip');
+        if (step.target) {
+            const el = document.querySelector(step.target);
+            if (el) {
+                const rect = el.getBoundingClientRect();
+                tooltip.style.top = (rect.bottom + 10) + 'px';
+                tooltip.style.left = Math.max(10, rect.left - 50) + 'px';
+            }
+        } else {
+            tooltip.style.top = '50%';
+            tooltip.style.left = '50%';
+            tooltip.style.transform = 'translate(-50%, -50%)';
+        }
+    }
+    function tourNext() {
+        tourIdx++;
+        if (tourIdx >= tourSteps.length) { tourSkip(); return; }
+        const tooltip = document.getElementById('tour-tooltip');
+        tooltip.style.transform = '';
+        showTourStep();
+    }
+    function tourSkip() {
+        document.getElementById('tour-overlay').style.display = 'none';
+        localStorage.setItem('tour_completed', 'true');
+    }
+    // Auto-start on first visit to dashboard
+    if (window.location.pathname === '/' && !localStorage.getItem('tour_completed')) {
+        setTimeout(startTour, 1000);
+    }
+    </script>
     <script>
     function toggleTheme() {
         const html = document.documentElement;
