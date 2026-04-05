@@ -1,0 +1,31 @@
+id: qwen3-reranker-0.6b
+name: Qwen 3 Reranker 0.6B
+type: model
+version: 3.0.0
+description: "Cross-encoder reranker for search result scoring"
+homepage: https://huggingface.co/Qwen/Qwen3-Reranker-0.6B
+capabilities: [reranking]
+
+variants:
+  - id: rkllm-w8a8
+    name: "RKLLM W8A8 (892MB, NPU)"
+    format: rkllm
+    size_mb: 892
+    min_ram_mb: 0
+    download_url: https://huggingface.co/jaylfc/qwen3-reranker-0.6b-rkllm/resolve/main/qwen3-reranker-0.6b-w8a8.rkllm
+    backend: [rkllama]
+    requires_npu: [rk3588, rk3576]
+  - id: q8_0
+    name: "Q8_0 GGUF (639MB)"
+    format: gguf
+    size_mb: 639
+    min_ram_mb: 1024
+    download_url: https://huggingface.co/sam860/qwen3-reranker-0.6b-Q8_0-GGUF/resolve/main/qwen3-reranker-0.6b-q8_0.gguf
+    backend: [ollama, llama-cpp]
+
+hardware_tiers:
+  arm-npu-16gb: {recommended: rkllm-w8a8, fallback: q8_0}
+  arm-npu-32gb: {recommended: rkllm-w8a8}
+  x86-cuda-12gb: {recommended: q8_0}
+  x86-vulkan-8gb: {recommended: q8_0}
+  cpu-only: {recommended: q8_0}

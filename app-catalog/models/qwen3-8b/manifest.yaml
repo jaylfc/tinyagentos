@@ -1,0 +1,32 @@
+id: qwen3-8b
+name: Qwen 3 8B
+type: model
+version: 3.0.0
+description: "General-purpose chat model with strong tool calling and reasoning"
+homepage: https://huggingface.co/Qwen/Qwen3-8B
+capabilities: [chat, tool-calling, code, reasoning]
+
+variants:
+  - id: q4_k_m
+    name: "Q4_K_M (4.8GB)"
+    format: gguf
+    size_mb: 4800
+    min_ram_mb: 6144
+    download_url: https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/qwen3-8b-q4_k_m.gguf
+    backend: [ollama, llama-cpp, vllm]
+  - id: q8_0
+    name: "Q8_0 (8.5GB)"
+    format: gguf
+    size_mb: 8500
+    min_ram_mb: 10240
+    download_url: https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/qwen3-8b-q8_0.gguf
+    backend: [ollama, llama-cpp, vllm]
+
+hardware_tiers:
+  arm-npu-16gb: {recommended: q4_k_m, notes: "Runs on CPU, NPU used for embed/rerank"}
+  arm-npu-32gb: {recommended: q8_0}
+  x86-cuda-12gb: {recommended: q4_k_m}
+  x86-cuda-24gb: {recommended: q8_0}
+  x86-vulkan-8gb: {recommended: q4_k_m}
+  x86-vulkan-4gb: unsupported
+  cpu-only: {recommended: q4_k_m, notes: "Slow but functional"}

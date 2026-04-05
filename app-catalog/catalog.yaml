@@ -1,0 +1,58 @@
+version: 1
+updated: 2026-04-05T16:00:00Z
+apps:
+  # Agent Frameworks
+  - id: smolagents
+    type: agent-framework
+    version: 1.0.0
+    name: SmolAgents
+    description: "HuggingFace's code-based agent framework — 30% fewer LLM calls"
+  - id: pocketflow
+    type: agent-framework
+    version: 0.1.0
+    name: PocketFlow
+    description: "100-line LLM framework — zero deps, graph-based agents"
+  - id: openclaw
+    type: agent-framework
+    version: 1.0.0
+    name: OpenClaw
+    description: "Full-featured agent with multi-channel support"
+
+  # Models
+  - id: qwen3-embedding-0.6b
+    type: model
+    version: 3.0.0
+    name: Qwen 3 Embedding 0.6B
+    description: "Fast embedding model — 1024 dimensions"
+  - id: qwen3-reranker-0.6b
+    type: model
+    version: 3.0.0
+    name: Qwen 3 Reranker 0.6B
+    description: "Cross-encoder reranker for search scoring"
+  - id: qwen3-8b
+    type: model
+    version: 3.0.0
+    name: Qwen 3 8B
+    description: "General-purpose chat with strong tool calling"
+  - id: qwen3-4b
+    type: model
+    version: 3.0.0
+    name: Qwen 3 4B
+    description: "Compact chat model — good balance of capability and resources"
+  - id: qwen3-1.7b
+    type: model
+    version: 3.0.0
+    name: Qwen 3 1.7B
+    description: "Tiny chat — ideal for setup agent and low-power devices"
+
+  # Services
+  - id: gitea
+    type: service
+    version: 1.22.0
+    name: Gitea
+    description: "Self-hosted Git server with agent access"
+  - id: code-server
+    type: service
+    version: 4.96.0
+    name: Code Server
+    description: "VS Code in the browser — web IDE"
