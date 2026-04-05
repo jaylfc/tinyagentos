@@ -33,7 +33,13 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         app.state.metrics = metrics_store
         app.state.qmd_client = qmd_client
         app.state.http_client = http_client
+        # Start background health monitor
+        from tinyagentos.health import HealthMonitor
+        monitor = HealthMonitor(config, metrics_store, qmd_client, http_client)
+        app.state.health_monitor = monitor
+        await monitor.start()
         yield
+        await monitor.stop()
         await metrics_store.close()
         await qmd_client.close()
         await http_client.aclose()
