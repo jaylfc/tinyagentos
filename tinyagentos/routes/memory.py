@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-from typing import Optional
-
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
-from tinyagentos.agent_db import find_agent, get_agent_db
+from tinyagentos.agent_db import find_agent, get_agent_db, get_agent_summaries
 
 router = APIRouter()
 
@@ -14,8 +12,8 @@ router = APIRouter()
 class SearchRequest(BaseModel):
     query: str
     mode: str = "keyword"
-    agent: Optional[str] = None
-    collection: Optional[str] = None
+    agent: str | None = None
+    collection: str | None = None
     limit: int = 20
 
 
@@ -23,19 +21,10 @@ class SearchRequest(BaseModel):
 async def memory_page(request: Request):
     config = request.app.state.config
     templates = request.app.state.templates
-    agents = []
-    for agent in config.agents:
-        db = get_agent_db(agent)
-        vectors = db.vector_count() if db else 0
-        agents.append({
-            "name": agent["name"],
-            "color": agent.get("color", "#888"),
-            "vectors": vectors,
-        })
     return templates.TemplateResponse("memory.html", {
         "request": request,
         "active_page": "memory",
-        "agents": agents,
+        "agents": get_agent_summaries(config),
     })
 
 

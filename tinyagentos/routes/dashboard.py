@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import time
+
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
-from tinyagentos.agent_db import get_agent_db
+from tinyagentos.agent_db import get_agent_summaries
 from tinyagentos.backend_adapters import check_backend_health
 
 router = APIRouter()
@@ -41,14 +43,9 @@ async def kpi_cards(request: Request):
     config = request.app.state.config
     templates = request.app.state.templates
 
-    agents_total = len(config.agents)
-    agents_online = 0
-    total_vectors = 0
-    for agent in config.agents:
-        db = get_agent_db(agent)
-        if db:
-            total_vectors += db.vector_count()
-            agents_online += 1
+    summaries = get_agent_summaries(config)
+    agents_online = sum(1 for s in summaries if s["status"] == "ok")
+    total_vectors = sum(s["vectors"] for s in summaries)
 
     http_client = request.app.state.http_client
     response_times = []
@@ -64,7 +61,7 @@ async def kpi_cards(request: Request):
     return templates.TemplateResponse("partials/kpi_cards.html", {
         "request": request,
         "agents_online": agents_online,
-        "agents_total": agents_total,
+        "agents_total": len(summaries),
         "total_vectors": total_vectors,
         "avg_response_ms": avg_response_ms,
         "qmd_latency_ms": qmd_latency_ms,
@@ -88,23 +85,14 @@ async def backend_status(request: Request):
 async def agent_summary(request: Request):
     config = request.app.state.config
     templates = request.app.state.templates
-    agents = []
-    for agent in config.agents:
-        db = get_agent_db(agent)
-        agents.append({
-            "name": agent["name"],
-            "color": agent.get("color", "#888"),
-            "status": "ok" if db else "error",
-            "vectors": db.vector_count() if db else 0,
-            "last_embedded": db.last_embedded_at() if db else None,
-        })
-    return templates.TemplateResponse("partials/agent_summary.html", {"request": request, "agents": agents})
+    return templates.TemplateResponse("partials/agent_summary.html", {
+        "request": request, "agents": get_agent_summaries(config),
+    })
 
 
 @router.get("/api/metrics/{name}")
 async def api_metrics(request: Request, name: str, range: str = "24h"):
     metrics = request.app.state.metrics
-    import time
     now = int(time.time())
     range_map = {"1h": 3600, "24h": 86400, "7d": 604800, "30d": 2592000}
     seconds = range_map.get(range, 86400)

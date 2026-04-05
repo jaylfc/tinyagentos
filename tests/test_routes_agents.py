@@ -1,20 +1,6 @@
 import pytest
-import pytest_asyncio
-from httpx import AsyncClient, ASGITransport
-from tinyagentos.app import create_app
 from tinyagentos.config import load_config
 
-@pytest.fixture
-def app(tmp_data_dir):
-    return create_app(data_dir=tmp_data_dir)
-
-@pytest_asyncio.fixture
-async def client(app):
-    app.state.metrics._db = None
-    await app.state.metrics.init()
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
-        yield c
 
 @pytest.mark.asyncio
 class TestAgentsPage:

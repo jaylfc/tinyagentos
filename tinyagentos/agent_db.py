@@ -33,3 +33,20 @@ def get_agent_db(agent: dict) -> QmdDatabase | None:
         return QmdDatabase(db_path)
     except FileNotFoundError:
         return None
+
+
+def get_agent_summaries(config) -> list[dict]:
+    """Return a list of agents enriched with live DB stats."""
+    result = []
+    for agent in config.agents:
+        db = get_agent_db(agent)
+        result.append({
+            "name": agent["name"],
+            "host": agent.get("host", ""),
+            "qmd_index": agent.get("qmd_index", ""),
+            "color": agent.get("color", "#888"),
+            "status": "ok" if db else "error",
+            "vectors": db.vector_count() if db else 0,
+            "last_embedded": db.last_embedded_at() if db else None,
+        })
+    return result

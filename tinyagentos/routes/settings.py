@@ -4,7 +4,7 @@ import yaml
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
-from tinyagentos.config import AppConfig, load_config, save_config, validate_config
+from tinyagentos.config import AppConfig, save_config_locked, validate_config
 
 router = APIRouter()
 
@@ -52,6 +52,6 @@ async def save_config_endpoint(request: Request, body: ConfigUpdate, validate_on
         return JSONResponse({"error": "Validation failed", "details": errors}, status_code=400)
     if validate_only:
         return {"status": "valid", "message": "Config is valid"}
-    save_config(new_config, request.app.state.config_path)
+    await save_config_locked(new_config, request.app.state.config_path)
     request.app.state.config = new_config
     return {"status": "saved", "message": "Config saved successfully"}
