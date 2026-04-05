@@ -141,7 +141,17 @@ The NPU can't hot-swap LoRA adapters — each RKLLM model has weights baked in. 
 
 3. **Future: dynamic NPU core allocation** (issue #13) — smart scheduling that assigns NPU cores per-agent and manages model loading/unloading based on demand patterns.
 
-The capability system handles this transparently — if no GPU worker is available, per-agent LoRA training is still offered but deployment targets show NPU as "merged model (slower swap)" vs GPU as "instant swap".
+### Automatic Method Selection
+
+The system picks the best method transparently based on what's available:
+
+1. **GPU worker available?** → route agent's LoRA chat to GPU (instant hot-swap, preferred)
+2. **NPU only, merged RKLLM for this agent exists?** → load merged model on NPU (5-10s swap when switching agents, fine for 2-3 agents)
+3. **NPU only, no merged model?** → use shared base model on NPU (no specialisation, no swap delay)
+
+The capability system and task router handle this automatically. Users just see "naira has web design training" — the infrastructure picks the fastest available path.
+
+For time-sharing on NPU, the pool manager batches requests per-agent to minimise swaps. If naira and stanley are both active, it serves all naira's queued requests, swaps to stanley's model, serves his requests, etc. Natural conversation patterns (one agent active at a time) mean swaps are rare in practice.
 
 ### Training Data Sources
 
