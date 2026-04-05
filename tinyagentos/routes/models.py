@@ -102,8 +102,7 @@ def _model_to_dict(manifest, hardware_profile, downloaded_files: list[dict]) -> 
 @router.get("/models", response_class=HTMLResponse)
 async def models_page(request: Request):
     templates = request.app.state.templates
-    return templates.TemplateResponse("models.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "models.html", {
         "active_page": "models",
     })
 

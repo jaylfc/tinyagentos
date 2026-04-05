@@ -54,8 +54,7 @@ async def store_page(request: Request):
     profile_id = request.app.state.hardware_profile.profile_id
     items = _build_app_items(registry, profile_id)
     installed_apps = [i for i in items if i["installed"]]
-    return templates.TemplateResponse("store.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "store.html", {
         "active_page": "store",
         "apps": items,
         "installed_apps": installed_apps,
@@ -68,8 +67,7 @@ async def app_grid_partial(request: Request, type: str | None = None, q: str | N
     registry = request.app.state.registry
     profile_id = request.app.state.hardware_profile.profile_id
     items = _build_app_items(registry, profile_id, type_filter=type, query=q)
-    return templates.TemplateResponse("partials/app_grid.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "partials/app_grid.html", {
         "apps": items,
     })
 
