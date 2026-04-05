@@ -1,0 +1,21 @@
+{% if images|length == 0 %}
+<p style="color: var(--pico-muted-color); text-align: center; padding: 2rem;">No images generated yet.</p>
+{% else %}
+<div class="kpi-grid">
+{% for img in images %}
+    <article class="kpi-card" style="text-align: left; padding: 1rem;">
+        <img src="{{ img.path }}" alt="{{ img.prompt }}" style="width: 100%; border-radius: 4px; margin-bottom: 0.5rem;">
+        <p style="font-size: 0.9rem; margin: 0.5rem 0;">{{ img.prompt }}</p>
+        <small style="color: var(--pico-muted-color);">
+            {{ img.model }} &middot; {{ img.size }} &middot; {{ img.steps }} steps &middot; seed {{ img.seed }}
+        </small>
+        <br>
+        <button class="outline contrast" style="font-size: 0.8rem; margin-top: 0.5rem;"
+                hx-delete="/api/images/{{ img.filename }}"
+                hx-confirm="Delete this image?"
+                hx-target="closest article"
+                hx-swap="outerHTML">Delete</button>
+    </article>
+{% endfor %}
+</div>
+{% endif %}

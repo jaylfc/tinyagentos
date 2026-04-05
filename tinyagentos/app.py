@@ -101,6 +101,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     from tinyagentos.routes.models import router as models_router
     app.include_router(models_router)
 
+    from tinyagentos.routes.images import router as images_router
+    app.include_router(images_router)
+
     return app
 
 

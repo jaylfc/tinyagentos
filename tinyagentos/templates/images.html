@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}Images — TinyAgentOS{% endblock %}
+{% block content %}
+<h2>Image Generation</h2>
+
+<section>
+    <form id="generate-form" hx-post="/api/images/generate" hx-target="#generate-result" hx-swap="innerHTML"
+          hx-indicator="#generate-spinner" hx-ext="json-enc">
+        <label for="prompt">Prompt</label>
+        <textarea id="prompt" name="prompt" rows="3" placeholder="A futuristic cityscape at sunset..." required></textarea>
+
+        <div class="grid">
+            <div>
+                <label for="model">Model</label>
+                <input id="model" name="model" type="text" value="lcm-dreamshaper-v7">
+            </div>
+            <div>
+                <label for="size">Size</label>
+                <select id="size" name="size">
+                    <option value="256x256">256x256</option>
+                    <option value="384x384">384x384</option>
+                    <option value="512x512" selected>512x512</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="grid">
+            <div>
+                <label for="steps">Steps: <span id="steps-value">4</span></label>
+                <input id="steps" name="steps" type="range" min="1" max="8" value="4"
+                       oninput="document.getElementById('steps-value').textContent=this.value">
+            </div>
+            <div>
+                <label for="seed">Seed (empty = random)</label>
+                <input id="seed" name="seed" type="number" placeholder="Random">
+            </div>
+            <div>
+                <label for="guidance_scale">Guidance Scale</label>
+                <input id="guidance_scale" name="guidance_scale" type="number" min="1" max="20" step="0.5" value="7.5">
+            </div>
+        </div>
+
+        <button type="submit">Generate</button>
+    </form>
+
+    <div id="generate-spinner" class="htmx-indicator" style="text-align: center; padding: 2rem;">
+        <p aria-busy="true">Generating image on NPU... this may take 15-20 seconds.</p>
+    </div>
+
+    <div id="generate-result"></div>
+</section>
+
+<hr>
+
+<section>
+    <h3>Gallery</h3>
+    <div id="image-gallery" hx-get="/api/images" hx-trigger="load" hx-target="#gallery-content" hx-swap="innerHTML">
+        <p>Loading gallery...</p>
+    </div>
+    <div id="gallery-content"></div>
+</section>
+
+<script>
+// Handle generate response — refresh gallery after successful generation
+document.addEventListener('htmx:afterRequest', function(evt) {
+    if (evt.detail.pathInfo.requestPath === '/api/images/generate') {
+        if (evt.detail.successful) {
+            try {
+                const data = JSON.parse(evt.detail.xhr.responseText);
+                if (data.error) {
+                    document.getElementById('generate-result').innerHTML =
+                        '<article style="border-left: 3px solid #f44336; padding: 1rem; margin: 1rem 0;">' +
+                        '<p style="color: #f44336; margin: 0;">' + data.error + '</p></article>';
+                    return;
+                }
+                document.getElementById('generate-result').innerHTML =
+                    '<article style="border-left: 3px solid #4caf50; padding: 1rem; margin: 1rem 0;">' +
+                    '<p style="color: #4caf50; margin: 0;">Image generated: ' + data.filename + '</p></article>';
+            } catch(e) {}
+            // Refresh gallery
+            htmx.trigger('#image-gallery', 'load');
+        } else {
+            try {
+                const data = JSON.parse(evt.detail.xhr.responseText);
+                document.getElementById('generate-result').innerHTML =
+                    '<article style="border-left: 3px solid #f44336; padding: 1rem; margin: 1rem 0;">' +
+                    '<p style="color: #f44336; margin: 0;">' + (data.error || 'Generation failed') + '</p></article>';
+            } catch(e) {
+                document.getElementById('generate-result').innerHTML =
+                    '<article style="border-left: 3px solid #f44336; padding: 1rem; margin: 1rem 0;">' +
+                    '<p style="color: #f44336; margin: 0;">Generation failed</p></article>';
+            }
+        }
+    }
+
+    // Handle gallery list response
+    if (evt.detail.pathInfo.requestPath === '/api/images') {
+        try {
+            const data = JSON.parse(evt.detail.xhr.responseText);
+            const container = document.getElementById('gallery-content');
+            const images = data.images || [];
+            if (images.length === 0) {
+                container.innerHTML = '<p style="color: var(--pico-muted-color); text-align: center; padding: 2rem;">No images generated yet.</p>';
+                return;
+            }
+            let html = '<div class="kpi-grid">';
+            images.forEach(img => {
+                html += `
+                    <article class="kpi-card" style="text-align: left; padding: 1rem;">
+                        <img src="${img.path}" alt="${img.prompt}" style="width: 100%; border-radius: 4px; margin-bottom: 0.5rem;">
+                        <p style="font-size: 0.9rem; margin: 0.5rem 0;">${img.prompt}</p>
+                        <small style="color: var(--pico-muted-color);">
+                            ${img.model} &middot; ${img.size} &middot; ${img.steps} steps &middot; seed ${img.seed}
+                        </small>
+                        <br>
+                        <button class="outline contrast" style="font-size: 0.8rem; margin-top: 0.5rem;"
+                                hx-delete="/api/images/${img.filename}"
+                                hx-confirm="Delete this image?"
+                                hx-target="closest article"
+                                hx-swap="outerHTML">Delete</button>
+                    </article>`;
+            });
+            html += '</div>';
+            container.innerHTML = html;
+            htmx.process(container);
+        } catch(e) {}
+    }
+});
+</script>
+{% endblock %}
