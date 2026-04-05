@@ -1,11 +1,23 @@
 # tinyagentos/routes/models.py
 from __future__ import annotations
 
+import asyncio
+import logging
 from pathlib import Path
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
+
+from tinyagentos.model_sources import (
+    estimate_ram_mb,
+    get_compatibility,
+    get_huggingface_model_files,
+    search_huggingface,
+    search_ollama,
+)
+
+logger = logging.getLogger(__name__)
 
 
 class DownloadRequest(BaseModel):
@@ -15,6 +27,10 @@ class DownloadRequest(BaseModel):
 
 class DeleteRequest(BaseModel):
     app_id: str
+
+
+class PullRequest(BaseModel):
+    model_name: str
 
 
 router = APIRouter()
@@ -182,21 +198,6 @@ async def get_download_progress(request: Request, download_id: str):
     return _task_to_dict(task)
 
 
-@router.get("/api/models/{model_id}")
-async def get_model(request: Request, model_id: str):
-    """Get detailed information about a specific model."""
-    registry = request.app.state.registry
-    hardware_profile = request.app.state.hardware_profile
-    models_dir = _models_dir(request)
-
-    manifest = registry.get(model_id)
-    if not manifest or manifest.type != "model":
-        return JSONResponse({"error": f"Model '{model_id}' not found"}, status_code=404)
-
-    downloaded = get_downloaded_models(models_dir)
-    return _model_to_dict(manifest, hardware_profile, downloaded)
-
-
 def _task_to_dict(task) -> dict:
     pct = 0
     if task.total_bytes > 0:
@@ -213,6 +214,185 @@ def _task_to_dict(task) -> dict:
         "started_at": task.started_at,
         "completed_at": task.completed_at,
     }
+
+
+def _add_compatibility_to_results(results: list[dict], hardware_profile) -> list[dict]:
+    """Add hardware compatibility info to search results."""
+    ram_mb = hardware_profile.ram_mb
+    for r in results:
+        if r.get("source") == "huggingface":
+            r["ram_available_mb"] = ram_mb
+        elif r.get("source") == "ollama":
+            r["ram_available_mb"] = ram_mb
+    return results
+
+
+def _search_catalog(registry, query: str, hardware_profile) -> list[dict]:
+    """Search the local catalog for models matching the query."""
+    query_lower = query.lower()
+    models = registry.list_available(type_filter="model")
+    results = []
+    for m in models:
+        if query_lower in m.name.lower() or query_lower in m.id.lower() or query_lower in m.description.lower():
+            results.append({
+                "id": m.id,
+                "name": m.name,
+                "author": "catalog",
+                "description": m.description,
+                "tags": m.capabilities,
+                "source": "catalog",
+                "url": f"/api/models/{m.id}",
+            })
+    return results
+
+
+def _render_search_results(request: Request, results: list[dict], source: str):
+    """Render search results as HTML partial or JSON based on Accept header."""
+    accept = request.headers.get("accept", "")
+    if "text/html" in accept:
+        templates = request.app.state.templates
+        return templates.TemplateResponse(
+            request,
+            "partials/model_search_results.html",
+            {"results": results, "source": source},
+        )
+    return {"results": results, "source": source, "count": len(results)}
+
+
+@router.get("/api/models/search/huggingface")
+async def search_hf(request: Request, q: str = Query("", min_length=0)):
+    """Search HuggingFace for GGUF models."""
+    if not q.strip():
+        return {"results": [], "source": "huggingface"}
+    hardware_profile = request.app.state.hardware_profile
+    results = await search_huggingface(q.strip())
+    results = _add_compatibility_to_results(results, hardware_profile)
+    return {"results": results, "source": "huggingface"}
+
+
+@router.get("/api/models/search/ollama")
+async def search_ol(request: Request, q: str = Query("", min_length=0)):
+    """Search Ollama model library."""
+    if not q.strip():
+        return {"results": [], "source": "ollama"}
+    hardware_profile = request.app.state.hardware_profile
+    results = await search_ollama(q.strip())
+    results = _add_compatibility_to_results(results, hardware_profile)
+    return {"results": results, "source": "ollama"}
+
+
+@router.get("/api/models/search")
+async def search_models(
+    request: Request,
+    q: str = Query("", min_length=0),
+    source: str = Query("all"),
+):
+    """Search models across sources. source=all|huggingface|ollama|catalog."""
+    query = q.strip()
+    if not query:
+        return _render_search_results(request, [], source)
+
+    hardware_profile = request.app.state.hardware_profile
+    results: list[dict] = []
+
+    if source in ("all", "huggingface"):
+        hf_task = search_huggingface(query)
+    else:
+        hf_task = None
+
+    if source in ("all", "ollama"):
+        ol_task = search_ollama(query)
+    else:
+        ol_task = None
+
+    if source in ("all", "catalog"):
+        registry = request.app.state.registry
+        catalog_results = _search_catalog(registry, query, hardware_profile)
+    else:
+        catalog_results = []
+
+    # Await external searches concurrently
+    tasks = []
+    task_labels = []
+    if hf_task:
+        tasks.append(hf_task)
+        task_labels.append("huggingface")
+    if ol_task:
+        tasks.append(ol_task)
+        task_labels.append("ollama")
+
+    if tasks:
+        gathered = await asyncio.gather(*tasks, return_exceptions=True)
+        for label, result in zip(task_labels, gathered):
+            if isinstance(result, Exception):
+                logger.warning(f"Search {label} failed: {result}")
+            elif isinstance(result, list):
+                results.extend(result)
+
+    results.extend(catalog_results)
+    results = _add_compatibility_to_results(results, hardware_profile)
+
+    return _render_search_results(request, results, source)
+
+
+@router.get("/api/models/files/{model_id:path}")
+async def get_model_files(request: Request, model_id: str):
+    """Get GGUF files for a HuggingFace model with compatibility info."""
+    hardware_profile = request.app.state.hardware_profile
+    ram_mb = hardware_profile.ram_mb
+    files = await get_huggingface_model_files(model_id)
+    for f in files:
+        ram_needed = estimate_ram_mb(f["size_mb"])
+        f["ram_estimate_mb"] = ram_needed
+        f["compatibility"] = get_compatibility(ram_needed, ram_mb)
+    return {"model_id": model_id, "files": files, "ram_available_mb": ram_mb}
+
+
+@router.post("/api/models/pull")
+async def pull_model(request: Request, body: PullRequest):
+    """Pull an Ollama model by calling the configured backend."""
+    model_name = body.model_name.strip()
+    if not model_name:
+        return JSONResponse({"error": "model_name is required"}, status_code=400)
+    try:
+        http_client = request.app.state.http_client
+        config = request.app.state.config
+        ollama_url = None
+        for b in config.backends:
+            if b.type == "ollama":
+                ollama_url = b.url
+                break
+        if not ollama_url:
+            ollama_url = "http://localhost:11434"
+        resp = await http_client.post(
+            f"{ollama_url}/api/pull",
+            json={"name": model_name, "stream": False},
+            timeout=300,
+        )
+        if resp.status_code == 200:
+            return {"status": "pulled", "model": model_name}
+        return JSONResponse(
+            {"error": f"Ollama pull failed: {resp.text}"},
+            status_code=resp.status_code,
+        )
+    except Exception as e:
+        logger.warning(f"Ollama pull failed: {e}")
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+
+@router.get("/api/models/{model_id}")
+async def get_model(request: Request, model_id: str):
+    """Get detailed information about a specific model."""
+    registry = request.app.state.registry
+    hardware_profile = request.app.state.hardware_profile
+    models_dir = _models_dir(request)
+
+    manifest = registry.get(model_id)
+    if not manifest or manifest.type != "model":
+        return JSONResponse({"error": f"Model '{model_id}' not found"}, status_code=404)
+
+    downloaded = get_downloaded_models(models_dir)
+    return _model_to_dict(manifest, hardware_profile, downloaded)
 
 
 @router.delete("/api/models/{model_id}")

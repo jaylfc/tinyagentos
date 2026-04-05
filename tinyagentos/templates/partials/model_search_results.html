@@ -1,0 +1,61 @@
+{% if results %}
+<div class="kpi-grid" style="margin-top: 1rem;">
+{% for m in results %}
+    <article class="kpi-card" style="text-align: left; padding: 1.25rem;">
+        <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+            <h4 style="margin: 0;">{{ m.name }}</h4>
+            {% if m.source == 'huggingface' %}
+            <kbd style="font-size: 0.7rem; background: #ffd54f; color: #333;">HuggingFace</kbd>
+            {% elif m.source == 'ollama' %}
+            <kbd style="font-size: 0.7rem; background: #81c784; color: #333;">Ollama</kbd>
+            {% elif m.source == 'catalog' %}
+            <kbd style="font-size: 0.7rem; background: #90caf9; color: #333;">Catalog</kbd>
+            {% endif %}
+        </div>
+        {% if m.author and m.author != 'catalog' %}
+        <small style="color: var(--pico-muted-color);">by {{ m.author }}</small>
+        {% endif %}
+        {% if m.description %}
+        <p style="font-size: 0.9rem; margin: 0.5rem 0;">{{ m.description }}</p>
+        {% endif %}
+        {% if m.downloads is defined and m.downloads %}
+        <small>{{ "{:,}".format(m.downloads) }} downloads</small>
+        {% endif %}
+        {% if m.likes is defined and m.likes %}
+        <small style="margin-left: 0.5rem;">{{ m.likes }} likes</small>
+        {% endif %}
+        <div style="margin-top: 0.5rem;">
+            {% if m.source == 'huggingface' %}
+            <details>
+                <summary style="cursor: pointer; font-size: 0.9rem;">View GGUF files</summary>
+                <div hx-get="/api/models/files/{{ m.id }}" hx-trigger="toggle once" hx-swap="innerHTML">
+                    <article aria-busy="true" style="padding: 0.5rem;">Loading files...</article>
+                </div>
+            </details>
+            <a href="{{ m.url }}" target="_blank" rel="noopener" style="font-size: 0.85rem;">View on HuggingFace</a>
+            {% elif m.source == 'ollama' %}
+            <button class="outline" style="padding: 0.25rem 0.75rem; font-size: 0.8rem;"
+                    hx-post="/api/models/pull"
+                    hx-vals='{"model_name": "{{ m.id }}"}'
+                    hx-swap="outerHTML"
+                    hx-confirm="Pull {{ m.name }} from Ollama?">
+                Pull
+            </button>
+            <a href="{{ m.url }}" target="_blank" rel="noopener" style="font-size: 0.85rem; margin-left: 0.5rem;">View on Ollama</a>
+            {% elif m.source == 'catalog' %}
+            <a href="{{ m.url }}" style="font-size: 0.85rem;">View details</a>
+            {% endif %}
+        </div>
+        {% if m.tags %}
+        <div style="margin-top: 0.5rem;">
+            {% for tag in m.tags[:5] %}
+            <kbd style="font-size: 0.7rem;">{{ tag }}</kbd>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </article>
+{% endfor %}
+</div>
+{% elif source %}
+<p style="color: var(--pico-muted-color); margin-top: 1rem;">No models found. Try a different search term.</p>
+{% endif %}

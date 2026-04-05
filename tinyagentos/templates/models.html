@@ -3,6 +3,24 @@
 {% block content %}
 <h2>Model Manager</h2>
 
+<section aria-label="Search Models">
+    <h3>Browse Models</h3>
+    <div class="grid">
+        <input type="search" id="model-search" placeholder="Search models (e.g. qwen3, llama, mistral)..."
+               aria-label="Search models"
+               hx-get="/api/models/search" hx-trigger="keyup changed delay:500ms"
+               hx-target="#search-results" hx-include="[name='source']"
+               name="q">
+        <select name="source" aria-label="Model source">
+            <option value="all">All Sources</option>
+            <option value="huggingface">HuggingFace (GGUF)</option>
+            <option value="ollama">Ollama Library</option>
+            <option value="catalog">Local Catalog</option>
+        </select>
+    </div>
+    <div id="search-results"></div>
+</section>
+
 <section id="downloaded-section">
     <h3>Downloaded Models</h3>
     <div id="downloaded-models" hx-get="/api/models" hx-trigger="load" hx-target="#models-content" hx-swap="innerHTML">
