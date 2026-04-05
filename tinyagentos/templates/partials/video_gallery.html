@@ -1,0 +1,31 @@
+{% if videos|length == 0 %}
+<p style="color: var(--pico-muted-color); text-align: center; padding: 2rem;">No videos generated yet. Try entering a prompt above.</p>
+{% else %}
+<div class="kpi-grid">
+{% for vid in videos %}
+    <article class="kpi-card" style="text-align: left; padding: 1rem;">
+        <video controls preload="metadata" style="width: 100%; border-radius: 4px; margin-bottom: 0.5rem;"
+               aria-label="Generated video: {{ vid.prompt }}">
+            <source src="{{ vid.path }}" type="video/mp4">
+            Your browser does not support the video tag.
+        </video>
+        <p style="font-size: 0.9rem; margin: 0.5rem 0;">{{ vid.prompt }}</p>
+        <small style="color: var(--pico-muted-color);">
+            {{ vid.model }} &middot; {{ vid.resolution }} &middot; {{ vid.duration }}s &middot; seed {{ vid.seed }}
+        </small>
+        <br>
+        <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+            <a href="{{ vid.path }}" download="{{ vid.filename }}"
+               class="outline" role="button" style="font-size: 0.8rem;"
+               aria-label="Download video: {{ vid.prompt }}">Download</a>
+            <button class="outline contrast" style="font-size: 0.8rem;"
+                    aria-label="Delete video: {{ vid.prompt }}"
+                    hx-delete="/api/video/{{ vid.filename }}"
+                    hx-confirm="Delete this video?"
+                    hx-target="closest article"
+                    hx-swap="outerHTML">Delete</button>
+        </div>
+    </article>
+{% endfor %}
+</div>
+{% endif %}
