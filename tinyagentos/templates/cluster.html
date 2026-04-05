@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Cluster — TinyAgentOS{% endblock %}
+{% block content %}
+<h2>Compute Cluster</h2>
+
+<section aria-label="Cluster capabilities summary" style="margin-bottom: 1.5rem;">
+    <h4>Cluster Capabilities</h4>
+    <div id="caps-summary" style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+        {% if capabilities %}
+            {% for cap in capabilities %}
+            <span style="background: var(--pico-primary-background); color: var(--pico-primary-inverse); padding: 0.25rem 0.75rem; border-radius: 999px; font-size: 0.85rem;">{{ cap }}</span>
+            {% endfor %}
+        {% else %}
+            <p style="color: var(--pico-muted-color);">No workers connected. Add a worker to get started.</p>
+        {% endif %}
+    </div>
+</section>
+
+<section aria-label="Connected workers" hx-get="/api/cluster/workers" hx-trigger="every 10s" hx-target="#workers-grid" hx-swap="innerHTML" hx-select-oob="#caps-summary">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h4 style="margin: 0;">Workers ({{ workers|length }})</h4>
+        <button class="outline" onclick="document.getElementById('add-worker-dialog').showModal()" aria-label="Show add worker instructions">Add Worker</button>
+    </div>
+
+    <div id="workers-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem;">
+        {% for w in workers %}
+        <article style="margin: 0; padding: 1rem; position: relative;" aria-label="Worker {{ w.name }}">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                <strong style="font-size: 1.1rem;">
+                    {% if w.platform == 'linux' %}&#x1F427;{% elif w.platform == 'windows' %}&#x1FA9F;{% elif w.platform == 'macos' %}&#x1F34E;{% else %}&#x1F5A5;{% endif %}
+                    {{ w.name }}
+                </strong>
+                <span style="width: 10px; height: 10px; border-radius: 50%; display: inline-block;
+                    background: {% if w.status == 'online' %}#4caf50{% elif w.status == 'busy' %}#ff9800{% else %}#f44336{% endif %};"
+                    title="{{ w.status }}" aria-label="Status: {{ w.status }}"></span>
+            </div>
+
+            {% if w.hardware %}
+            <div style="font-size: 0.8rem; color: var(--pico-muted-color); margin-bottom: 0.5rem;">
+                {% if w.hardware.get('cpu') %}CPU: {{ w.hardware['cpu'] }}{% endif %}
+                {% if w.hardware.get('ram_gb') %} &middot; {{ w.hardware['ram_gb'] }} GB RAM{% endif %}
+                {% if w.hardware.get('gpu') %} &middot; {{ w.hardware['gpu'] }}{% endif %}
+                {% if w.hardware.get('npu') %} &middot; NPU: {{ w.hardware['npu'] }}{% endif %}
+            </div>
+            {% endif %}
+
+            <div style="margin-bottom: 0.5rem;">
+                <small style="color: var(--pico-muted-color);">Load</small>
+                <div style="background: var(--pico-muted-border-color); border-radius: 4px; height: 8px; overflow: hidden;" role="progressbar" aria-valuenow="{{ (w.load * 100)|int }}" aria-valuemin="0" aria-valuemax="100" aria-label="Worker load {{ (w.load * 100)|int }}%">
+                    <div style="height: 100%; width: {{ (w.load * 100)|int }}%; background: {% if w.load < 0.5 %}#4caf50{% elif w.load < 0.8 %}#ff9800{% else %}#f44336{% endif %}; transition: width 0.3s;"></div>
+                </div>
+            </div>
+
+            <div style="display: flex; flex-wrap: wrap; gap: 0.3rem; margin-bottom: 0.5rem;">
+                {% for cap in w.capabilities %}
+                <span style="background: var(--pico-secondary-background); color: var(--pico-secondary-inverse); padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.75rem;">{{ cap }}</span>
+                {% endfor %}
+            </div>
+
+            {% if w.models %}
+            <div style="font-size: 0.8rem; color: var(--pico-muted-color);">
+                <small>Models:</small> {{ w.models|join(', ') }}
+            </div>
+            {% endif %}
+
+            <div style="margin-top: 0.5rem;">
+                <button class="outline secondary" style="font-size: 0.75rem; padding: 0.2rem 0.6rem;" aria-label="Remove worker {{ w.name }}"
+                    hx-delete="/api/cluster/workers/{{ w.name }}" hx-confirm="Remove worker '{{ w.name }}' from the cluster?"
+                    hx-target="closest article" hx-swap="outerHTML">Remove</button>
+            </div>
+        </article>
+        {% endfor %}
+
+        {% if not workers %}
+        <p style="color: var(--pico-muted-color); grid-column: 1 / -1;">No workers connected yet.</p>
+        {% endif %}
+    </div>
+</section>
+
+<dialog id="add-worker-dialog" aria-label="Add worker instructions">
+    <article style="max-width: 600px;">
+        <header>
+            <button aria-label="Close" rel="prev" onclick="document.getElementById('add-worker-dialog').close()"></button>
+            <h3>Adding a Worker</h3>
+        </header>
+        <p>Workers connect <strong>to</strong> this controller over HTTP. On the remote machine, run:</p>
+        <pre><code>curl -X POST http://YOUR_CONTROLLER_IP:8888/api/cluster/workers \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "my-gaming-pc",
+    "url": "http://WORKER_IP:PORT",
+    "platform": "linux",
+    "capabilities": ["chat", "embed", "image-generation"],
+    "hardware": {"cpu": "Ryzen 9", "ram_gb": 64, "gpu": "RTX 4090"},
+    "models": ["llama3-70b"]
+  }'</code></pre>
+        <p style="font-size: 0.85rem; color: var(--pico-muted-color);">
+            The worker should send periodic heartbeats to <code>POST /api/cluster/heartbeat</code> with its name and current load.
+            Workers that miss heartbeats for 30 seconds are marked offline.
+        </p>
+        <footer>
+            <button onclick="document.getElementById('add-worker-dialog').close()">Close</button>
+        </footer>
+    </article>
+</dialog>
+{% endblock %}

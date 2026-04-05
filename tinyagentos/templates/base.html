@@ -31,6 +31,7 @@
             <li><a href="/import" {% if active_page == 'import' %}class="active"{% endif %}>Import</a></li>
             <li><a href="/secrets" {% if active_page == 'secrets' %}class="active"{% endif %}>Secrets</a></li>
             <li><a href="/settings" {% if active_page == 'settings' %}class="active"{% endif %}>Settings</a></li>
+            <li><a href="/cluster" {% if active_page == 'cluster' %}class="active"{% endif %}>Cluster</a></li>
             <li style="position:relative;">
                 <a href="#" id="notif-bell" aria-label="Notifications" onclick="document.getElementById('notif-panel').classList.toggle('notif-hidden'); if(!document.getElementById('notif-panel').classList.contains('notif-hidden')){htmx.ajax('GET','/api/notifications',{target:'#notif-list'});} return false;"
                    style="position:relative; text-decoration:none;">

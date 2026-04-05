@@ -10,6 +10,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from tinyagentos.backend_fallback import BackendFallback
+from tinyagentos.cluster.manager import ClusterManager
+from tinyagentos.cluster.router import TaskRouter
 from tinyagentos.config import load_config
 from tinyagentos.channels import ChannelStore
 from tinyagentos.download_manager import DownloadManager
@@ -53,6 +55,8 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     channel_store = ChannelStore(data_dir / "channels.db")
     scheduler = TaskScheduler(data_dir / "scheduler.db")
     fallback = BackendFallback(config.backends, http_client)
+    cluster_manager = ClusterManager()
+    task_router = TaskRouter(cluster_manager, http_client)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -75,6 +79,8 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.channels = channel_store
         app.state.fallback = fallback
         app.state.scheduler = scheduler
+        app.state.cluster_manager = cluster_manager
+        app.state.task_router = task_router
         # Start background health monitor
         from tinyagentos.health import HealthMonitor
         monitor = HealthMonitor(config, metrics_store, qmd_client, http_client, notif_store)
@@ -82,7 +88,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.hardware_profile = hardware_profile
         app.state.health_monitor = monitor
         await monitor.start()
+        await cluster_manager.start()
         yield
+        await cluster_manager.stop()
         await monitor.stop()
         await scheduler.close()
         await channel_store.close()
@@ -113,6 +121,8 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     app.state.scheduler = scheduler
     app.state.registry = registry
     app.state.hardware_profile = hardware_profile
+    app.state.cluster_manager = cluster_manager
+    app.state.task_router = task_router
 
     # Mount static files
     static_dir = PROJECT_DIR / "static"
@@ -163,6 +173,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     from tinyagentos.routes.import_data import router as import_router
     app.include_router(import_router)
+
+    from tinyagentos.routes.cluster import router as cluster_router
+    app.include_router(cluster_router)
 
     from tinyagentos.lobby.routes import router as lobby_router
     app.include_router(lobby_router)

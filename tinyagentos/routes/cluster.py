@@ -1,0 +1,123 @@
+from __future__ import annotations
+
+from dataclasses import asdict
+
+from fastapi import APIRouter, Request
+from fastapi.responses import HTMLResponse, JSONResponse
+from pydantic import BaseModel
+
+from tinyagentos.cluster.worker_protocol import WorkerInfo
+
+router = APIRouter()
+
+
+class WorkerRegister(BaseModel):
+    name: str
+    url: str
+    hardware: dict = {}
+    backends: list[dict] = []
+    models: list[str] = []
+    capabilities: list[str] = []
+    platform: str = ""
+
+
+class HeartbeatBody(BaseModel):
+    name: str
+    load: float = 0.0
+    models: list[str] | None = None
+
+
+class RouteRequest(BaseModel):
+    capability: str
+    method: str = "POST"
+    path: str
+    body: dict | None = None
+    timeout: float = 60
+
+
+@router.get("/cluster", response_class=HTMLResponse)
+async def cluster_page(request: Request):
+    templates = request.app.state.templates
+    cluster = request.app.state.cluster_manager
+    workers = cluster.get_workers()
+    # Collect all capabilities across workers
+    all_caps = sorted({cap for w in workers for cap in w.capabilities if w.status == "online"})
+    return templates.TemplateResponse(request, "cluster.html", {
+        "active_page": "cluster",
+        "workers": workers,
+        "capabilities": all_caps,
+    })
+
+
+@router.get("/api/cluster/workers")
+async def list_workers(request: Request):
+    cluster = request.app.state.cluster_manager
+    workers = cluster.get_workers()
+    return [asdict(w) for w in workers]
+
+
+@router.post("/api/cluster/workers")
+async def register_worker(request: Request, body: WorkerRegister):
+    cluster = request.app.state.cluster_manager
+    if not body.name or not body.url:
+        return JSONResponse({"error": "name and url are required"}, status_code=400)
+    info = WorkerInfo(
+        name=body.name,
+        url=body.url,
+        hardware=body.hardware,
+        backends=body.backends,
+        models=body.models,
+        capabilities=body.capabilities,
+        platform=body.platform,
+    )
+    cluster.register_worker(info)
+    return {"status": "registered", "name": body.name}
+
+
+@router.post("/api/cluster/heartbeat")
+async def worker_heartbeat(request: Request, body: HeartbeatBody):
+    cluster = request.app.state.cluster_manager
+    ok = cluster.heartbeat(body.name, load=body.load, models=body.models)
+    if not ok:
+        return JSONResponse({"error": "Worker not registered"}, status_code=404)
+    return {"status": "ok"}
+
+
+@router.delete("/api/cluster/workers/{name}")
+async def unregister_worker(request: Request, name: str):
+    cluster = request.app.state.cluster_manager
+    removed = cluster.unregister_worker(name)
+    if not removed:
+        return JSONResponse({"error": "Worker not found"}, status_code=404)
+    return {"status": "removed", "name": name}
+
+
+@router.get("/api/cluster/capabilities")
+async def list_capabilities(request: Request):
+    cluster = request.app.state.cluster_manager
+    workers = cluster.get_workers()
+    caps: dict[str, list[str]] = {}
+    for w in workers:
+        if w.status != "online":
+            continue
+        for cap in w.capabilities:
+            caps.setdefault(cap, []).append(w.name)
+    return caps
+
+
+@router.post("/api/cluster/route")
+async def route_task(request: Request, body: RouteRequest):
+    task_router = request.app.state.task_router
+    data, worker_name = await task_router.route_request(
+        capability=body.capability,
+        method=body.method,
+        path=body.path,
+        body=body.body,
+        timeout=body.timeout,
+    )
+    if data is None:
+        return JSONResponse(
+            {"error": f"No available worker for capability '{body.capability}'"},
+            status_code=503,
+        )
+    return {"data": data, "worker": worker_name}
