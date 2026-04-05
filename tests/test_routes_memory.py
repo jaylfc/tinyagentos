@@ -15,11 +15,9 @@ def app_with_qmd(tmp_data_dir, tmp_path, monkeypatch):
 
     app = create_app(data_dir=tmp_data_dir)
 
-    # Monkeypatch QMD_CACHE_DIR in both dashboard and memory routes
-    import tinyagentos.routes.dashboard as dashboard_mod
-    import tinyagentos.routes.memory as memory_mod
-    monkeypatch.setattr(dashboard_mod, "QMD_CACHE_DIR", qmd_cache)
-    monkeypatch.setattr(memory_mod, "QMD_CACHE_DIR", qmd_cache)
+    # Monkeypatch the shared QMD_CACHE_DIR
+    import tinyagentos.agent_db as agent_db_mod
+    monkeypatch.setattr(agent_db_mod, "QMD_CACHE_DIR", qmd_cache)
 
     return app
 

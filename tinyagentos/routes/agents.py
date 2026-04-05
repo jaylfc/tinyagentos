@@ -1,13 +1,11 @@
 from __future__ import annotations
-from pathlib import Path
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
+from tinyagentos.agent_db import get_agent_db
 from tinyagentos.config import save_config
-from tinyagentos.qmd_db import QmdDatabase
 
 router = APIRouter()
-QMD_CACHE_DIR = Path.home() / ".cache" / "qmd"
 
 class AgentCreate(BaseModel):
     name: str
@@ -26,16 +24,9 @@ async def agents_page(request: Request):
     templates = request.app.state.templates
     agents = []
     for agent in config.agents:
-        index_name = agent.get("qmd_index", "index")
-        db_path = QMD_CACHE_DIR / f"{index_name}.sqlite"
-        vectors = 0
-        status = "error"
-        try:
-            db = QmdDatabase(db_path)
-            vectors = db.vector_count()
-            status = "ok"
-        except FileNotFoundError:
-            pass
+        db = get_agent_db(agent)
+        vectors = db.vector_count() if db else 0
+        status = "ok" if db else "error"
         agents.append({**agent, "vectors": vectors, "status": status})
     return templates.TemplateResponse("agents.html", {
         "request": request, "active_page": "agents", "agents": agents,
