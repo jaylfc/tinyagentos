@@ -1,5 +1,5 @@
 version: 1
-updated: 2026-04-05T18:00:00Z
+updated: 2026-04-05T20:00:00Z
 apps:
   # Agent Frameworks
   - id: smolagents
@@ -86,3 +86,32 @@ apps:
     version: 0.15.0
     name: Dify
     description: "RAG + agent builder with visual workflow editor"
+
+  # AI Search
+  - id: perplexica
+    type: service
+    version: 1.9.0
+    name: Perplexica
+    description: "Self-hosted AI search engine — open source Perplexity alternative"
+  - id: searxng
+    type: service
+    version: 2024.12.0
+    name: SearXNG
+    description: "Privacy-respecting metasearch engine — powers AI search tools"
+
+  # AI Image Generation
+  - id: comfyui
+    type: service
+    version: 0.3.0
+    name: ComfyUI
+    description: "Node-based AI image generation — advanced Stable Diffusion workflows"
+  - id: fooocus
+    type: service
+    version: 2.5.0
+    name: Fooocus
+    description: "Simple AI image generation — Midjourney-like UX, just works"
+  - id: stable-diffusion-webui
+    type: service
+    version: 1.10.0
+    name: Stable Diffusion Web UI
+    description: "AUTOMATIC1111's popular image generation interface"

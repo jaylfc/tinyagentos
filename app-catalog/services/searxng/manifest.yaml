@@ -1,0 +1,27 @@
+id: searxng
+name: SearXNG
+type: service
+version: 2024.12.0
+description: "Privacy-respecting metasearch engine — powers AI search tools like Perplexica"
+homepage: https://github.com/searxng/searxng
+license: AGPL-3.0
+
+requires:
+  ram_mb: 128
+  disk_mb: 200
+  ports: [8080]
+
+install:
+  method: docker
+  image: searxng/searxng:latest
+  volumes:
+    - config:/etc/searxng
+  ports: [8080]
+
+hardware_tiers:
+  arm-npu-16gb: full
+  arm-npu-32gb: full
+  x86-cuda-12gb: full
+  x86-vulkan-8gb: full
+  x86-vulkan-4gb: full
+  cpu-only: full

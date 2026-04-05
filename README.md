@@ -39,7 +39,8 @@ YAML editor with validation, hardware profile display, catalog sync.
 |------|------|
 | **Agent Frameworks** | SmolAgents, PocketFlow, OpenClaw, Swarm, OpenAI Agents SDK, Langroid |
 | **Models** | Qwen3 Embedding 0.6B, Reranker 0.6B, 1.7B, 4B, 8B |
-| **Services** | Gitea, Code Server, Open WebUI, n8n, Dify |
+| **AI Tools** | Perplexica (AI search), Open WebUI (chat), ComfyUI, Fooocus, Stable Diffusion Web UI |
+| **Infrastructure** | Gitea (Git), Code Server (IDE), n8n (automation), Dify (RAG builder), SearXNG (search) |
 
 Models include RKLLM variants for Rockchip NPU and GGUF for CPU/GPU. Community can contribute apps via PR to the catalog repo.
 
