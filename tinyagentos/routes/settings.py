@@ -1,11 +1,8 @@
 from __future__ import annotations
 import datetime
 import io
-import os
-import shutil
 import tarfile
 import time
-from dataclasses import asdict
 from pathlib import Path
 
 import yaml
@@ -63,19 +60,21 @@ def _get_storage_stats(app) -> list[dict]:
 
     # Models dir
     models_dir = data_dir / "models"
+    models_bytes = _dir_size(models_dir)
     items.append({
         "label": "Models",
         "path": str(models_dir),
-        "size": _format_size(_dir_size(models_dir)),
-        "bytes": _dir_size(models_dir),
+        "size": _format_size(models_bytes),
+        "bytes": models_bytes,
     })
 
     # Data dir
+    data_bytes = _dir_size(data_dir)
     items.append({
         "label": "Data",
         "path": str(data_dir),
-        "size": _format_size(_dir_size(data_dir)),
-        "bytes": _dir_size(data_dir),
+        "size": _format_size(data_bytes),
+        "bytes": data_bytes,
     })
 
     # App catalog
@@ -84,11 +83,12 @@ def _get_storage_stats(app) -> list[dict]:
         cat_path = catalog_dir.catalog_dir
     else:
         cat_path = data_dir.parent / "app-catalog"
+    cat_bytes = _dir_size(cat_path)
     items.append({
         "label": "App Catalog",
         "path": str(cat_path),
-        "size": _format_size(_dir_size(cat_path)),
-        "bytes": _dir_size(cat_path),
+        "size": _format_size(cat_bytes),
+        "bytes": cat_bytes,
     })
 
     return items

@@ -4,7 +4,7 @@ import json
 import time
 from pathlib import Path
 
-import aiosqlite
+from tinyagentos.base_store import BaseStore
 
 SCHEDULER_SCHEMA = """
 CREATE TABLE IF NOT EXISTS scheduled_tasks (
@@ -47,16 +47,10 @@ DEFAULT_PRESETS = [
 ]
 
 
-class TaskScheduler:
-    def __init__(self, db_path: Path):
-        self.db_path = db_path
-        self._db = None
+class TaskScheduler(BaseStore):
+    SCHEMA = SCHEDULER_SCHEMA
 
-    async def init(self):
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._db = await aiosqlite.connect(str(self.db_path))
-        await self._db.executescript(SCHEDULER_SCHEMA)
-        await self._db.commit()
+    async def _post_init(self) -> None:
         # Seed default presets
         for preset in DEFAULT_PRESETS:
             await self._db.execute(
@@ -64,11 +58,6 @@ class TaskScheduler:
                 (preset["name"], preset["description"], json.dumps(preset["tasks"])),
             )
         await self._db.commit()
-
-    async def close(self):
-        if self._db:
-            await self._db.close()
-            self._db = None
 
     async def add_task(self, name: str, schedule: str, command: str, agent_name: str | None = None, description: str = "") -> int:
         now = int(time.time())

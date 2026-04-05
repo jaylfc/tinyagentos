@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-import aiosqlite
+from tinyagentos.base_store import BaseStore
 
 NOTIF_SCHEMA = """
 CREATE TABLE IF NOT EXISTS notifications (
@@ -19,21 +19,8 @@ CREATE INDEX IF NOT EXISTS idx_notif_ts ON notifications(timestamp DESC);
 """
 
 
-class NotificationStore:
-    def __init__(self, db_path: Path):
-        self.db_path = db_path
-        self._db: aiosqlite.Connection | None = None
-
-    async def init(self) -> None:
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._db = await aiosqlite.connect(str(self.db_path))
-        await self._db.executescript(NOTIF_SCHEMA)
-        await self._db.commit()
-
-    async def close(self) -> None:
-        if self._db:
-            await self._db.close()
-            self._db = None
+class NotificationStore(BaseStore):
+    SCHEMA = NOTIF_SCHEMA
 
     async def add(self, title: str, message: str, level: str = "info", source: str = "system") -> None:
         ts = int(time.time())

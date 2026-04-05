@@ -2,9 +2,12 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-import aiosqlite
 
-SCHEMA = """
+from tinyagentos.base_store import BaseStore
+
+
+class MetricsStore(BaseStore):
+    SCHEMA = """
 CREATE TABLE IF NOT EXISTS metrics (
     timestamp INTEGER NOT NULL,
     name TEXT NOT NULL,
@@ -13,22 +16,6 @@ CREATE TABLE IF NOT EXISTS metrics (
 );
 CREATE INDEX IF NOT EXISTS idx_metrics_name_ts ON metrics(name, timestamp);
 """
-
-class MetricsStore:
-    def __init__(self, db_path: Path):
-        self.db_path = db_path
-        self._db: aiosqlite.Connection | None = None
-
-    async def init(self) -> None:
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._db = await aiosqlite.connect(str(self.db_path))
-        await self._db.executescript(SCHEMA)
-        await self._db.commit()
-
-    async def close(self) -> None:
-        if self._db:
-            await self._db.close()
-            self._db = None
 
     async def insert(self, name: str, value: float, timestamp: int | None = None, labels: dict | None = None) -> None:
         ts = timestamp or int(time.time())

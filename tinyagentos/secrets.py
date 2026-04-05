@@ -5,7 +5,7 @@ import hashlib
 import time
 from pathlib import Path
 
-import aiosqlite
+from tinyagentos.base_store import BaseStore
 
 SECRETS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS secrets (
@@ -58,28 +58,17 @@ def _decrypt(encrypted: str) -> str:
     return decrypted.decode()
 
 
-class SecretsStore:
-    def __init__(self, db_path: Path):
-        self.db_path = db_path
-        self._db: aiosqlite.Connection | None = None
+class SecretsStore(BaseStore):
+    SCHEMA = SECRETS_SCHEMA
 
-    async def init(self):
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._db = await aiosqlite.connect(str(self.db_path))
+    async def _post_init(self) -> None:
         await self._db.execute("PRAGMA foreign_keys = ON")
-        await self._db.executescript(SECRETS_SCHEMA)
-        await self._db.commit()
         # Seed default categories
         for cat in DEFAULT_CATEGORIES:
             await self._db.execute(
                 "INSERT OR IGNORE INTO secret_categories (name) VALUES (?)", (cat,)
             )
         await self._db.commit()
-
-    async def close(self):
-        if self._db:
-            await self._db.close()
-            self._db = None
 
     async def add(
         self,
