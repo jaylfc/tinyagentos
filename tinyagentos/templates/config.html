@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Config — TinyAgentOS{% endblock %}
+{% block content %}
+<h2>Config</h2>
+<div id="config-status"></div>
+<form id="config-form">
+    <textarea id="config-editor" name="yaml" rows="25" style="font-family: monospace; font-size: 0.9rem;">{{ config_yaml }}</textarea>
+    <div class="grid" style="margin-top: 1rem;">
+        <button type="button" class="outline"
+                hx-put="/api/config?validate_only=true"
+                hx-target="#config-status" hx-swap="innerHTML"
+                hx-vals='js:{"yaml": document.getElementById("config-editor").value}'>
+            Validate
+        </button>
+        <button type="button"
+                hx-put="/api/config"
+                hx-target="#config-status" hx-swap="innerHTML"
+                hx-vals='js:{"yaml": document.getElementById("config-editor").value}'>
+            Save
+        </button>
+    </div>
+</form>
+{% if last_saved %}
+<p style="color: var(--pico-muted-color); font-size: 0.85rem;">Last saved: {{ last_saved }}</p>
+{% endif %}
+{% endblock %}
