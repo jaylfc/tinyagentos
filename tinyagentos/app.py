@@ -64,6 +64,12 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     from tinyagentos.routes.agents import router as agents_router
     app.include_router(agents_router)
 
+    from tinyagentos.routes.memory import router as memory_router
+    app.include_router(memory_router)
+
+    from tinyagentos.routes.settings import router as settings_router
+    app.include_router(settings_router)
+
     return app
 
 
