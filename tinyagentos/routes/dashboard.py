@@ -1,20 +1,45 @@
 from __future__ import annotations
 
 import time
+from dataclasses import asdict
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from tinyagentos.agent_db import get_agent_summaries
 from tinyagentos.backend_adapters import check_backend_health
+from tinyagentos.first_boot import is_first_boot, mark_setup_complete
 
 router = APIRouter()
 
 
 @router.get("/", response_class=HTMLResponse)
 async def dashboard_page(request: Request):
+    data_dir = request.app.state.config_path.parent
+    if is_first_boot(data_dir):
+        return RedirectResponse(url="/setup", status_code=303)
     templates = request.app.state.templates
     return templates.TemplateResponse("dashboard.html", {"request": request, "active_page": "dashboard"})
+
+
+@router.get("/setup", response_class=HTMLResponse)
+async def setup_page(request: Request):
+    templates = request.app.state.templates
+    hardware = request.app.state.hardware_profile
+    hw_data = asdict(hardware)
+    hw_data["profile_id"] = hardware.profile_id
+    return templates.TemplateResponse("setup.html", {
+        "request": request,
+        "active_page": "setup",
+        "hardware": hardware,
+    })
+
+
+@router.post("/setup/complete")
+async def setup_complete(request: Request):
+    data_dir = request.app.state.config_path.parent
+    mark_setup_complete(data_dir)
+    return RedirectResponse(url="/", status_code=303)
 
 
 @router.get("/api/health")
