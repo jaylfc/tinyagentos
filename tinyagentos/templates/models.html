@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}Models — TinyAgentOS{% endblock %}
+{% block content %}
+<h2>Model Manager</h2>
+
+<section id="downloaded-section">
+    <h3>Downloaded Models</h3>
+    <div id="downloaded-models" hx-get="/api/models" hx-trigger="load" hx-target="#models-content" hx-swap="innerHTML">
+        <p>Loading...</p>
+    </div>
+</section>
+
+<div id="models-content">
+    <p style="color: var(--pico-muted-color);">Loading model catalog...</p>
+</div>
+
+<template id="models-template">
+    <!-- Populated by JS from /api/models response -->
+</template>
+
+<script>
+document.addEventListener('htmx:afterRequest', function(evt) {
+    if (evt.detail.pathInfo.requestPath !== '/api/models') return;
+
+    const data = JSON.parse(evt.detail.xhr.responseText);
+    const container = document.getElementById('models-content');
+
+    // Downloaded section
+    let downloadedHtml = '';
+    const downloadedFiles = data.downloaded_files || [];
+    if (downloadedFiles.length === 0) {
+        downloadedHtml = '<p style="color: var(--pico-muted-color);">No models downloaded yet.</p>';
+    } else {
+        downloadedHtml = '<div class="kpi-grid">';
+        downloadedFiles.forEach(f => {
+            downloadedHtml += `
+                <article class="kpi-card" style="text-align: left; padding: 1rem;">
+                    <strong>${f.filename}</strong>
+                    <br><small>${f.size_mb} MB &middot; ${f.format.toUpperCase()}</small>
+                </article>`;
+        });
+        downloadedHtml += '</div>';
+    }
+
+    // Available models
+    let availableHtml = '<h3>Available Models</h3>';
+    const models = data.models || [];
+    if (models.length === 0) {
+        availableHtml += '<p style="color: var(--pico-muted-color);">No models in catalog.</p>';
+    } else {
+        availableHtml += '<div class="kpi-grid">';
+        models.forEach(m => {
+            const compatColor = m.compatibility === 'green' ? '#4caf50' :
+                                m.compatibility === 'yellow' ? '#ff9800' : '#f44336';
+            const capBadges = (m.capabilities || []).map(c =>
+                `<kbd style="font-size: 0.75rem;">${c}</kbd>`).join(' ');
+
+            let variantsHtml = '<ul style="padding-left: 1rem; margin: 0.5rem 0;">';
+            (m.variants || []).forEach(v => {
+                const vColor = v.compatibility === 'green' ? '#4caf50' :
+                               v.compatibility === 'yellow' ? '#ff9800' : '#f44336';
+                const backends = (v.backend || []).join(', ');
+                const ramReq = v.min_ram_mb ? v.min_ram_mb + ' MB RAM' : 'No RAM requirement';
+                const dlLabel = v.downloaded
+                    ? '<mark>Downloaded</mark>'
+                    : `<button class="outline" style="padding: 0.25rem 0.75rem; font-size: 0.8rem;"
+                         hx-post="/api/models/download"
+                         hx-vals='${JSON.stringify({app_id: m.id, variant_id: v.id}).replace(/'/g, "&#39;")}'
+                         hx-confirm="Download ${v.name}?">Download</button>`;
+                variantsHtml += `<li style="margin-bottom: 0.5rem;">
+                    <span style="color: ${vColor};">&#9679;</span>
+                    <strong>${v.name}</strong> &mdash; ${v.size_mb} MB, ${(v.format || '').toUpperCase()}
+                    <br><small>Backends: ${backends} &middot; ${ramReq}</small>
+                    <br>${dlLabel}
+                </li>`;
+            });
+            variantsHtml += '</ul>';
+
+            availableHtml += `
+                <article class="kpi-card" style="text-align: left; padding: 1.25rem;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <span style="color: ${compatColor}; font-size: 1.2rem;">&#9679;</span>
+                        <h4 style="margin: 0;">${m.name}</h4>
+                    </div>
+                    <small style="color: var(--pico-muted-color);">v${m.version}</small>
+                    <p style="font-size: 0.9rem; margin: 0.5rem 0;">${m.description}</p>
+                    <div style="margin-bottom: 0.5rem;">${capBadges}</div>
+                    ${variantsHtml}
+                    ${m.has_downloaded_variant ? '' :
+                        `<button class="outline contrast" style="font-size: 0.8rem;"
+                             hx-delete="/api/models/${m.id}"
+                             hx-confirm="Delete all files for ${m.name}?"
+                             style="display:none;">Delete</button>`}
+                    ${m.has_downloaded_variant ?
+                        `<button class="outline contrast" style="font-size: 0.8rem;"
+                             hx-delete="/api/models/${m.id}"
+                             hx-confirm="Delete all downloaded files for ${m.name}?">Delete All</button>` : ''}
+                </article>`;
+        });
+        availableHtml += '</div>';
+    }
+
+    // Replace downloaded section
+    document.getElementById('downloaded-models').innerHTML = downloadedHtml;
+    container.innerHTML = availableHtml;
+
+    // Re-process htmx for new dynamic content
+    htmx.process(container);
+    htmx.process(document.getElementById('downloaded-models'));
+});
+</script>
+{% endblock %}
