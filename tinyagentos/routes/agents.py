@@ -5,7 +5,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
 from tinyagentos.agent_db import find_agent, get_agent_summaries
-from tinyagentos.config import save_config_locked
+from tinyagentos.config import save_config_locked, validate_agent_name
 
 router = APIRouter()
 
@@ -49,6 +49,9 @@ async def get_agent_endpoint(request: Request, name: str):
 @router.post("/api/agents")
 async def add_agent(request: Request, body: AgentCreate):
     config = request.app.state.config
+    name_error = validate_agent_name(body.name)
+    if name_error:
+        return JSONResponse({"error": name_error}, status_code=400)
     if find_agent(config, body.name):
         return JSONResponse({"error": f"Agent '{body.name}' already exists"}, status_code=409)
     config.agents.append(body.model_dump())
@@ -92,6 +95,15 @@ class DeployAgentRequest(BaseModel):
 @router.post("/api/agents/deploy")
 async def deploy_agent_endpoint(request: Request, body: DeployAgentRequest):
     config = request.app.state.config
+    name_error = validate_agent_name(body.name)
+    if name_error:
+        return JSONResponse({"error": name_error}, status_code=400)
+    # Validate framework against catalog instead of hardcoded list
+    if body.framework != "none":
+        registry = request.app.state.registry
+        known = {a.id for a in registry.list_available(type_filter="agent-framework")}
+        if body.framework not in known:
+            return JSONResponse({"error": f"Unknown framework '{body.framework}'. Available: {sorted(known)}"}, status_code=400)
     if find_agent(config, body.name):
         return JSONResponse({"error": f"Agent '{body.name}' already exists"}, status_code=409)
 

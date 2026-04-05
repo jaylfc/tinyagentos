@@ -5,4 +5,16 @@ dist/
 build/
 *.db
 .superpowers/
+
+# User config — never commit (contains IPs, backend URLs, agent definitions)
+data/config.yaml
+data/hardware.json
+data/installed.json
+data/.setup_complete
+
+# Environment
 .env
+.env.*
+
+# OS
+.DS_Store

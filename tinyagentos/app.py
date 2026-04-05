@@ -21,6 +21,12 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     data_dir = data_dir or PROJECT_DIR / "data"
     config_path = data_dir / "config.yaml"
+    # Copy example config on first run
+    if not config_path.exists():
+        example = data_dir / "config.yaml.example"
+        if example.exists():
+            import shutil
+            shutil.copy2(example, config_path)
     config = load_config(config_path)
 
     catalog_dir = catalog_dir or PROJECT_DIR / "app-catalog"

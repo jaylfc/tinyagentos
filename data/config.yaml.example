@@ -1,0 +1,21 @@
+server:
+  host: 0.0.0.0
+  port: 8888
+
+backends:
+  - name: local-npu
+    type: rkllama
+    url: http://localhost:8080
+    priority: 3
+
+qmd:
+  url: http://localhost:7832
+
+# Agent data (memory, QMD database) always lives inside the agent's LXC.
+# TinyAgentOS accesses it via the agent's qmd_url (each agent runs qmd serve).
+# This ensures multi-host fallback works — data follows the agent, not the host.
+agents: []
+
+metrics:
+  poll_interval: 30
+  retention_days: 30
