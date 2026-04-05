@@ -37,6 +37,21 @@ async def _search_via_http(http_client, qmd_url: str, query: str,
     return data.get("results", data.get("chunks", []))
 
 
+async def _vsearch_via_http(http_client, qmd_url: str, query: str,
+                            collection: str | None = None, limit: int = 20) -> list[dict]:
+    """Semantic vector search via an agent's qmd serve /vsearch endpoint."""
+    url = qmd_url.rstrip("/") + "/vsearch"
+    body: dict = {"query": query, "limit": limit}
+    if collection:
+        body["collection"] = collection
+    resp = await http_client.post(url, json=body, timeout=30)
+    resp.raise_for_status()
+    data = resp.json()
+    if isinstance(data, list):
+        return data
+    return data.get("results", [])
+
+
 async def _browse_via_http(http_client, qmd_url: str,
                            collection: str | None = None,
                            limit: int = 20, offset: int = 0) -> list[dict]:
@@ -133,8 +148,6 @@ async def memory_search(request: Request, body: SearchRequest):
     config = request.app.state.config
 
     if body.mode == "semantic":
-        # Semantic uses the same qmd /search endpoint for now (FTS5 keyword)
-        # until qmd serve adds a proper vector search endpoint
         if body.agent:
             agent_dict = find_agent(config, body.agent)
             if not agent_dict:
@@ -143,12 +156,29 @@ async def memory_search(request: Request, body: SearchRequest):
             if qmd_url:
                 http_client = request.app.state.http_client
                 try:
-                    results = await _search_via_http(http_client, qmd_url, body.query,
-                                                     collection=body.collection, limit=body.limit)
-                    return {"results": results, "note": "Using keyword search via qmd serve (vector search pending)"}
-                except Exception:
-                    pass
-        return JSONResponse({"results": [], "error": "Semantic search requires agent with qmd_url"})
+                    results = await _vsearch_via_http(http_client, qmd_url, body.query,
+                                                      collection=body.collection, limit=body.limit)
+                    return {"results": results}
+                except Exception as e:
+                    logger.warning("Semantic search failed for %s: %s", body.agent, e)
+                    return JSONResponse({"results": [], "error": f"Semantic search failed: {e}"})
+        # Search across all agents
+        all_results = []
+        for agent in config.agents:
+            qmd_url = agent.get("qmd_url")
+            if not qmd_url:
+                continue
+            http_client = request.app.state.http_client
+            try:
+                results = await _vsearch_via_http(http_client, qmd_url, body.query,
+                                                   collection=body.collection, limit=body.limit)
+                for r in results:
+                    r["agent"] = agent["name"]
+                all_results.extend(results)
+            except Exception:
+                continue
+        all_results.sort(key=lambda r: r.get("score", 0))
+        return {"results": all_results[:body.limit]}
 
     if body.agent:
         agent_dict = find_agent(config, body.agent)
