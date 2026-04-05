@@ -1,0 +1,76 @@
+nav a.active {
+    color: var(--pico-primary-color);
+    font-weight: bold;
+}
+.kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+.kpi-card {
+    text-align: center;
+    padding: 1rem;
+}
+.kpi-card .value {
+    font-size: 2rem;
+    font-weight: bold;
+}
+.kpi-card .label {
+    color: var(--pico-muted-color);
+    font-size: 0.85rem;
+}
+.status-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 0.5rem;
+}
+.status-dot.ok { background: #98fb98; }
+.status-dot.error { background: #ff6b6b; }
+.status-dot.unknown { background: #666; }
+.memory-layout {
+    display: grid;
+    grid-template-columns: 250px 1fr;
+    gap: 1.5rem;
+}
+.search-modes {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+.search-modes button {
+    padding: 0.25rem 0.75rem;
+    font-size: 0.85rem;
+}
+.search-modes button.active {
+    background: var(--pico-primary-background);
+    color: var(--pico-primary-inverse);
+}
+.chunk-result {
+    border-left: 3px solid var(--pico-muted-border-color);
+    padding: 0.75rem 1rem;
+    margin-bottom: 0.75rem;
+}
+.chunk-result .meta {
+    font-size: 0.8rem;
+    color: var(--pico-muted-color);
+    margin-bottom: 0.25rem;
+}
+.agent-color {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    margin-right: 0.4rem;
+    vertical-align: middle;
+}
+.error-alert {
+    background: rgba(255, 107, 107, 0.1);
+    border: 1px solid rgba(255, 107, 107, 0.3);
+    border-radius: 4px;
+    padding: 0.75rem 1rem;
+    color: #ff6b6b;
+    margin-bottom: 1rem;
+}
