@@ -2,9 +2,7 @@
 
 > **⚠️ Early Development** — This project is under active development and has not been tested on clean hardware yet. Do not install in production. Star/watch the repo to follow progress.
 
-Self-hosted AI agent platform for low-power hardware. Like [Umbrel](https://umbrel.com) but for AI agents — app store, model management, agent deployment, and system monitoring in a single web dashboard.
-
-Run AI agents on a $150 Orange Pi, a budget x86 PC, or anything in between. Flash an image, open the browser, deploy your first agent.
+Self-hosted AI agent platform for low-power hardware. App store, model management, agent deployment, and system monitoring — all from a single web dashboard running on a $150 SBC or budget PC.
 
 ## Quick Start
 
@@ -13,38 +11,60 @@ pip install -e .
 python -m uvicorn tinyagentos.app:create_app --factory --host 0.0.0.0 --port 8888
 ```
 
-Open `http://your-host:8888` in your browser.
+Open `http://your-host:8888` (or `http://tinyagentos.local:8888` with mDNS).
 
 ## Features
 
 ### App Store
-Browse and install agent frameworks, LLM models, and services from the built-in catalog. Hardware-aware recommendations — the store shows what works on your hardware.
+Browse and install agent frameworks, LLM models, and services from a built-in catalog of 43+ apps. Hardware-aware recommendations filter what works on your hardware.
 
 ### Model Manager
-Download and manage LLM models with support for multiple formats (GGUF, RKLLM). Automatic variant selection based on your hardware profile (NPU, GPU, CPU).
+Download and manage LLM models (GGUF, RKLLM). Background downloads with progress tracking. Automatic variant selection based on hardware profile.
 
 ### Agent Deployment
-Create agents through a wizard — pick a framework, choose a model, configure, and deploy. Each agent gets its own LXC container with isolated memory and QMD serve.
+Create agents through a 5-step wizard — pick a framework, choose a model, configure, and deploy. Each agent gets its own LXC container with isolated memory.
 
-### Dashboard
-Real-time KPIs, backend health monitoring, agent status, and query latency metrics with Chart.js graphs. Auto-refreshes via htmx.
+### Image Generation
+Generate images using Stable Diffusion on your NPU/GPU. Built-in gallery, prompt history, and an MCP tool so agents can generate images too.
 
 ### Memory Browser
-Search and browse agent memories using QMD's full-text search. Filter by agent and collection, view chunks, delete entries.
+Search and browse agent memories. Keyword search across agents, filter by collection, view/delete chunks.
 
-### System Config
-YAML editor with validation, hardware profile display, catalog sync.
+### Communication Channels
+Configure how agents communicate — Telegram, Discord, Slack, email, web chat, webhooks. Split into "Easy Setup" (no dev account needed) and "Advanced".
 
-## App Catalog
+### Secrets Manager
+Encrypted storage for API keys, tokens, and credentials. Per-agent access control — choose which agents can see each secret. Categories and groups for organisation.
+
+### Scheduled Tasks
+Manage cron jobs across agents. Built-in presets for common tasks (daily embedding, memory cleanup). Edit schedules, enable/disable, apply presets to agent groups.
+
+### Data Import
+Drag-and-drop files to embed into agent memory. Supports .txt, .md, .pdf, .html, .json, .csv.
+
+### Dashboard
+Real-time KPIs, CPU/RAM sparklines, backend health, agent status, query latency charts, and an activity feed. Auto-refreshes via htmx.
+
+### Notifications
+Bell icon in nav bar with health alerts. Backend up/down state changes trigger notifications. Mark read, notification history.
+
+### Settings
+System info, storage usage, backup/restore, system updates via git pull, platform config, test backend connections. Dark/light theme toggle.
+
+### First Boot
+Setup wizard detects hardware, shows quick-start links. Interactive onboarding tour on first visit.
+
+## App Catalog (43+ apps)
 
 | Type | Apps |
 |------|------|
-| **Agent Frameworks** | SmolAgents, PocketFlow, OpenClaw, Swarm, OpenAI Agents SDK, Langroid |
-| **Models** | Qwen3 Embedding 0.6B, Reranker 0.6B, 1.7B, 4B, 8B |
-| **AI Tools** | Perplexica (AI search), Open WebUI (chat), ComfyUI, Fooocus, Stable Diffusion Web UI |
-| **Infrastructure** | Gitea (Git), Code Server (IDE), n8n (automation), Dify (RAG builder), SearXNG (search) |
-
-Models include RKLLM variants for Rockchip NPU and GGUF for CPU/GPU. Community can contribute apps via PR to the catalog repo.
+| **Agent Frameworks** | SmolAgents, PocketFlow, OpenClaw, nanoclaw, picoclaw, TinyAgent, Hermes, Agent Zero, Swarm, OpenAI Agents SDK, Langroid |
+| **LLM Models** | Qwen3 Embedding 0.6B, Reranker 0.6B, 1.7B, 4B, 8B |
+| **Image Models** | LCM Dreamshaper V7, SD 1.5 LCM, SDXL Turbo |
+| **AI Tools** | Perplexica (AI search), Open WebUI (chat), ComfyUI, Fooocus, SD Web UI, stable-diffusion.cpp, FastSD CPU, RKNN SD, LCM Dreamshaper RKNN, Mali GPU SD |
+| **Infrastructure** | Gitea, Code Server, n8n, Dify, SearXNG |
+| **Home & Monitoring** | Home Assistant, Uptime Kuma, File Browser, Excalidraw, Memos, Linkwarden |
+| **Voice** | Whisper (speech-to-text), Piper TTS (text-to-speech) |
 
 ## Supported Agent Frameworks
 
@@ -58,11 +78,11 @@ Models include RKLLM variants for Rockchip NPU and GGUF for CPU/GPU. Community c
 | [TinyAgent](https://github.com/SqueezeAILab/TinyAgent) | Edge tool calling | 1-3B models with LLMCompiler |
 | [Hermes](https://github.com/NousResearch/Hermes-Function-Calling) | Function calling | Nous Research |
 | [Agent Zero](https://github.com/frdel/agent-zero) | Autonomous agent | Self-correcting workflows |
-| [Swarm](https://github.com/openai/swarm) | Multi-agent handoffs | OpenAI, lightweight, experimental |
-| [OpenAI Agents SDK](https://github.com/openai/openai-agents-python) | Multi-agent orchestration | Provider-agnostic, tracing, guardrails |
+| [Swarm](https://github.com/openai/swarm) | Multi-agent handoffs | OpenAI, lightweight |
+| [OpenAI Agents SDK](https://github.com/openai/openai-agents-python) | Multi-agent orchestration | Provider-agnostic, guardrails |
 | [Langroid](https://github.com/langroid/langroid) | Message-passing agents | Built-in vector store, local LLM support |
 
-## Supported Backends
+## Supported Inference Backends
 
 | Backend | Type | API |
 |---------|------|-----|
@@ -71,62 +91,48 @@ Models include RKLLM variants for Rockchip NPU and GGUF for CPU/GPU. Community c
 | [llama.cpp](https://github.com/ggml-org/llama.cpp) | CPU/GPU/Vulkan | OpenAI-compatible |
 | [vLLM](https://github.com/vllm-project/vllm) | GPU (CUDA/ROCm) | OpenAI-compatible |
 
+## Hardware Support
+
+| Category | Hardware | Notes |
+|----------|----------|-------|
+| **ARM + Rockchip NPU** | Orange Pi 5/5 Plus (RK3588), Rock 5B | 6 TOPS NPU, primary target |
+| **Raspberry Pi** | Pi 4 (8GB), Pi 5 (8/16GB) | CPU-only or with accelerator HATs |
+| **Pi Accelerators** | Hailo-10H (40 TOPS), M5Stack LLM-8850 (24 TOPS), Hailo-8L (13 TOPS) | LLM-capable: Hailo-10H, M5Stack |
+| **NVIDIA** | GTX 1050 Ti through RTX 4090 | CUDA (4-24GB) or Vulkan (legacy) |
+| **AMD** | RX 6600 through RX 7900 XTX | ROCm (8-24GB) |
+| **CPU Only** | Any device | Smallest quantized models |
+
+Hardware auto-detected on first boot. Platform recommends compatible models and apps.
+
 ## Architecture
 
 ```
 TinyAgentOS (FastAPI + htmx, port 8888)
-├── Dashboard  — KPIs, backend health, metrics charts
-├── App Store  — browse/install frameworks, models, services
-├── Models     — download, manage, assign LLM models
-├── Memory     — search/browse agent memories
-├── Agents     — deploy, manage, start/stop, logs
-└── Settings   — config editor, hardware profile
+├── Dashboard    — KPIs, sparklines, activity feed, backend health
+├── App Store    — 43+ apps, search, filters, install/uninstall
+├── Models       — download with progress, hardware recommendations
+├── Images       — generate via NPU/GPU, gallery, MCP tool
+├── Memory       — search/browse agent memories via qmd serve
+├── Channels     — Telegram, Discord, Slack, web chat, webhooks
+├── Agents       — deploy wizard, LXC containers, logs viewer
+├── Secrets      — encrypted storage, per-agent access control
+├── Tasks        — scheduled jobs, presets, cron management
+├── Import       — drag-and-drop file upload to agent memory
+├── Settings     — system info, updates, backup/restore, test connections
+└── Notifications — health alerts, activity feed, nav bell
 
 Infrastructure:
-├── App Registry      — manifest parsing, install tracking
-├── Hardware Detector  — CPU, RAM, NPU, GPU, disk profiling
-├── Installers        — pip/venv, Docker Compose, model downloads
-├── Container Manager — LXC via incus (agent isolation)
-├── Health Monitor    — background polling, metrics SQLite
-└── Catalog Sync      — git-based app catalog updates
+├── Hardware Detector    — CPU, RAM, NPU (RKNPU/Hailo/Axera/Coral), GPU, disk
+├── App Registry         — manifest parsing, install tracking, catalog sync
+├── Secrets Store        — encrypted at rest, agent access control
+├── Container Manager    — LXC via incus
+├── Download Manager     — background downloads with progress
+├── Task Scheduler       — cron-based with presets
+├── Channel Store        — per-agent communication config
+├── Health Monitor       — background polling, notifications on state change
+├── Metrics Store        — SQLite time-series
+└── Notification Store   — alerts, activity feed
 ```
-
-**Agent data always lives in the agent's LXC container.** TinyAgentOS accesses memory via each agent's QMD serve instance over HTTP. This enables multi-host fallback.
-
-**Service apps use Docker.** Gitea, Code Server, and other services run as Docker containers managed via Docker Compose.
-
-## Hardware Targets
-
-| Profile | Example Hardware | Notes |
-|---------|-----------------|-------|
-| **ARM + Rockchip NPU** | | |
-| arm-npu-16gb | Orange Pi 5 Plus (RK3588) | Primary dev target, 6 TOPS NPU |
-| arm-npu-32gb | RK3588 32GB boards | More concurrent models |
-| arm-npu-64gb+ | High-RAM ARM boards | Full model suite |
-| **Raspberry Pi** | | |
-| arm-cpu-8gb | Raspberry Pi 4 (8GB) | CPU only, 1-2B models, lightweight agents |
-| arm-cpu-8gb | Raspberry Pi 5 (8GB) | CPU only, faster A76 cores, 4B models |
-| arm-hailo10h-8gb | Pi 5 + Hailo AI HAT+ 2 (40 TOPS) | LLM acceleration, recommended Pi setup |
-| arm-axera-8gb | Pi 5 + M5Stack LLM-8850 (24 TOPS) | Alternative LLM accelerator, 8GB dedicated |
-| **NVIDIA (CUDA)** | | |
-| x86-cuda-4gb | GTX 1050 Ti | Small quantized models only |
-| x86-cuda-6gb | GTX 1060 6GB, RTX 2060 | 4-bit 7B models |
-| x86-cuda-8gb | RTX 2070, RTX 3060 Ti, RTX 4060 | Comfortable 7-8B models |
-| x86-cuda-12gb | RTX 3060, RTX 4070 | 7-14B models, fast inference |
-| x86-cuda-16gb | RTX 4070 Ti, RTX 5060 Ti | 14B+ models |
-| x86-cuda-24gb | RTX 3090, RTX 4090 | Large models, multiple concurrent |
-| **NVIDIA (Vulkan, no CUDA)** | | |
-| x86-vulkan-4gb | GTX 750 Ti, GTX 950, GTX 960 | Legacy cards, small models via Vulkan |
-| x86-vulkan-8gb | GTX 1070, GTX 1080 | Medium models via Vulkan |
-| **AMD (ROCm)** | | |
-| x86-rocm-8gb | RX 6600, RX 7600 | Entry-level AMD GPU compute |
-| x86-rocm-12gb | RX 6700 XT | Solid mid-range |
-| x86-rocm-16gb | RX 7800 XT | Comfortable for 14B models |
-| x86-rocm-24gb | RX 7900 XTX | Large models |
-| **CPU Only** | | |
-| cpu-only | Any device | Smallest quantized models, slowest |
-
-Hardware is auto-detected on first boot. The platform adapts to what's available — users with more RAM or better accelerators get access to larger models automatically.
 
 ## Resource Overhead
 
@@ -139,25 +145,40 @@ Platform overhead (without models or agents): **~345 MB RAM**
 | incusd (container management) | ~67 MB |
 | Metrics + health monitor | ~5 MB |
 
-## Investigating
-
-- [Outlines](https://github.com/dottxt-ai/outlines) — structured generation for reliable tool calling with small models
-- [DSPy](https://github.com/stanfordnlp/dspy) — automated prompt optimization for small local LLMs
-
 ## Development
 
 ```bash
 pip install -e ".[dev]"
-pytest tests/ -v          # 123+ tests
+pytest tests/ -v          # 180+ tests
 ```
 
 ## Roadmap
 
+### In Progress
+- [ ] Fresh install test on clean Orange Pi 5 Plus
 - [ ] Pre-built Armbian OS images for supported SBCs
+- [ ] Semantic vector search via qmd serve
+
+### Planned
+- [ ] Authentication system for web GUI
 - [ ] Local assistant LLM (chat-based setup agent)
+- [ ] Inter-agent relationship manager
+- [ ] Progressive Web App (mobile-optimised)
+- [ ] Automated Playwright test suite
+- [ ] Multi-host inference fallback
+- [ ] RKNN model conversion pipeline
+
+### Future Vision
 - [ ] Cloud services (tinyagentos.com, agent email, subscriptions)
 - [ ] AI-aware desktop environment with auto-attaching MCP servers
+- [ ] LoRA fine-tuning pipeline
+- [ ] Dynamic NPU core allocation
 - [ ] Custom domain support for agents
+
+## Investigating
+
+- [Outlines](https://github.com/dottxt-ai/outlines) — structured generation for reliable tool calling with small models
+- [DSPy](https://github.com/stanfordnlp/dspy) — automated prompt optimization for small local LLMs
 
 ## Support the Project
 
