@@ -1,5 +1,5 @@
 version: 1
-updated: 2026-04-05T16:00:00Z
+updated: 2026-04-05T18:00:00Z
 apps:
   # Agent Frameworks
   - id: smolagents
@@ -17,6 +17,21 @@ apps:
     version: 1.0.0
     name: OpenClaw
     description: "Full-featured agent with multi-channel support"
+  - id: swarm
+    type: agent-framework
+    version: 0.1.0
+    name: Swarm
+    description: "OpenAI's lightweight multi-agent with sequential handoffs"
+  - id: openai-agents-sdk
+    type: agent-framework
+    version: 0.1.0
+    name: OpenAI Agents SDK
+    description: "Provider-agnostic multi-agent with tracing and guardrails"
+  - id: langroid
+    type: agent-framework
+    version: 0.30.0
+    name: Langroid
+    description: "Multi-agent message-passing with built-in vector store"
 
   # Models
   - id: qwen3-embedding-0.6b
@@ -56,3 +71,18 @@ apps:
     version: 4.96.0
     name: Code Server
     description: "VS Code in the browser — web IDE"
+  - id: open-webui
+    type: service
+    version: 0.5.0
+    name: Open WebUI
+    description: "Self-hosted ChatGPT-style interface for any LLM"
+  - id: n8n
+    type: service
+    version: 1.80.0
+    name: n8n
+    description: "Workflow automation with 400+ integrations"
+  - id: dify
+    type: service
+    version: 0.15.0
+    name: Dify
+    description: "RAG + agent builder with visual workflow editor"
