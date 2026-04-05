@@ -1,0 +1,24 @@
+id: musicgpt
+name: MusicGPT
+type: service
+version: 0.4.0
+description: "Generate music from text prompts — runs locally using Meta's MusicGen, no Python required"
+homepage: https://github.com/gabotechs/MusicGPT
+license: MIT
+
+requires:
+  ram_mb: 2048
+  disk_mb: 5000
+  ports: [8882]
+
+install:
+  method: script
+  script: scripts/install-musicgpt.sh
+
+hardware_tiers:
+  arm-npu-16gb: degraded
+  arm-npu-32gb: full
+  x86-cuda-8gb: full
+  x86-cuda-12gb: full
+  x86-vulkan-8gb: full
+  cpu-only: degraded

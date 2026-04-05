@@ -1,10 +1,10 @@
-"""MCP tool definition for agent image generation via rkllama."""
+"""MCP tool definition for agent image generation via any OpenAI-compatible backend."""
 from __future__ import annotations
 
 # MCP tool schema — agents can call this to generate images
 IMAGE_GENERATION_TOOL = {
     "name": "generate_image",
-    "description": "Generate an image from a text prompt using Stable Diffusion on the local NPU/GPU. Returns the image as a base64-encoded PNG.",
+    "description": "Generate an image from a text prompt using your local AI backend (rkllama, ollama, or standalone SD server). Returns the image as a base64-encoded PNG.",
     "input_schema": {
         "type": "object",
         "properties": {
@@ -37,15 +37,16 @@ IMAGE_GENERATION_TOOL = {
 
 async def execute_image_generation(
     prompt: str,
-    rkllama_url: str = "http://localhost:8080",
+    backend_url: str = "http://localhost:8080",
     model: str = "lcm-dreamshaper-v7",
     size: str = "512x512",
     steps: int = 4,
     seed: int | None = None,
     guidance_scale: float = 7.5,
 ) -> dict:
-    """Execute image generation via rkllama's OpenAI-compatible endpoint.
+    """Execute image generation via an OpenAI-compatible endpoint.
 
+    Works with rkllama, ollama, or any backend serving ``/v1/images/generations``.
     Returns dict with 'success', 'image_b64' (base64 PNG), and 'error' if failed.
     """
     import httpx
@@ -57,7 +58,7 @@ async def execute_image_generation(
     try:
         async with httpx.AsyncClient(timeout=120) as client:
             resp = await client.post(
-                f"{rkllama_url.rstrip('/')}/v1/images/generations",
+                f"{backend_url.rstrip('/')}/v1/images/generations",
                 json={
                     "prompt": prompt,
                     "model": model,
@@ -81,7 +82,7 @@ async def execute_image_generation(
                 }
             return {"success": False, "error": "No image data in response"}
     except httpx.ConnectError:
-        return {"success": False, "error": f"Cannot connect to rkllama at {rkllama_url}"}
+        return {"success": False, "error": f"Cannot connect to image backend at {backend_url}"}
     except httpx.TimeoutException:
         return {"success": False, "error": "Image generation timed out (>120s)"}
     except Exception as e:

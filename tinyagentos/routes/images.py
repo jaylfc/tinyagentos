@@ -38,13 +38,27 @@ def _images_dir(request: Request) -> Path:
     return d
 
 
-def _get_rkllama_url(request: Request) -> str | None:
-    """Find the rkllama backend URL from config."""
+def _get_image_backend(request: Request) -> tuple[str | None, str]:
+    """Find an image generation backend. Returns (url, backend_type).
+
+    Priority:
+    1. Explicit ``image_backend_url`` in server config (standalone SD servers).
+    2. Any configured backend of type rkllama or ollama (both expose
+       ``/v1/images/generations``), ordered by the optional ``priority`` field.
+    """
     config = request.app.state.config
-    for backend in config.backends:
-        if backend.get("type") == "rkllama":
-            return backend.get("url")
-    return None
+
+    # Check for explicit image backend in config
+    image_url = config.server.get("image_backend_url")
+    if image_url:
+        return image_url, "openai"
+
+    # Try configured backends — rkllama and ollama both support /v1/images/generations
+    for backend in sorted(config.backends, key=lambda b: b.get("priority", 99)):
+        if backend.get("type") in ("rkllama", "ollama"):
+            return backend["url"], backend["type"]
+
+    return None, ""
 
 
 def _list_images(images_dir: Path) -> list[dict]:
@@ -83,11 +97,11 @@ async def images_page(request: Request):
 
 @router.post("/api/images/generate")
 async def generate_image(request: Request, body: GenerateRequest):
-    """Generate an image from a text prompt using the rkllama backend."""
-    rkllama_url = _get_rkllama_url(request)
-    if not rkllama_url:
+    """Generate an image from a text prompt using any configured image backend."""
+    backend_url, backend_type = _get_image_backend(request)
+    if not backend_url:
         return JSONResponse(
-            {"error": "No rkllama backend configured. Add an rkllama backend in Config."},
+            {"error": "No image generation backend configured. Add rkllama or ollama backend, or set image_backend_url in config."},
             status_code=503,
         )
 
@@ -103,24 +117,24 @@ async def generate_image(request: Request, body: GenerateRequest):
     try:
         async with httpx.AsyncClient(timeout=120) as client:
             resp = await client.post(
-                f"{rkllama_url}/v1/images/generations",
+                f"{backend_url.rstrip('/')}/v1/images/generations",
                 json=payload,
             )
             resp.raise_for_status()
             data = resp.json()
     except httpx.ConnectError:
         return JSONResponse(
-            {"error": f"Cannot connect to rkllama at {rkllama_url}. Is it running?"},
+            {"error": f"Cannot connect to image backend at {backend_url}. Is it running?"},
             status_code=503,
         )
     except httpx.TimeoutException:
         return JSONResponse(
-            {"error": "Image generation timed out. The NPU may be busy."},
+            {"error": "Image generation timed out. The backend may be busy."},
             status_code=504,
         )
     except httpx.HTTPStatusError as e:
         return JSONResponse(
-            {"error": f"rkllama returned error: {e.response.status_code}"},
+            {"error": f"Image backend returned error: {e.response.status_code}"},
             status_code=502,
         )
     except Exception as e:
@@ -134,7 +148,7 @@ async def generate_image(request: Request, body: GenerateRequest):
         image_data = data["data"][0]["b64_json"]
     except (KeyError, IndexError):
         return JSONResponse(
-            {"error": "Unexpected response format from rkllama"},
+            {"error": "Unexpected response format from image backend"},
             status_code=502,
         )
 
