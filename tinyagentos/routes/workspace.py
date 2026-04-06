@@ -19,6 +19,8 @@ class SendMessageRequest(BaseModel):
     message: str
     tool_calls: list | None = None
     tool_results: list | None = None
+    reasoning: str = ""
+    depth: int = 2
     metadata: dict | None = None
 
 
@@ -39,14 +41,15 @@ async def workspace_page(request: Request, name: str):
 
 
 @router.get("/agents/{name}/workspace/messages", response_class=HTMLResponse)
-async def workspace_messages_page(request: Request, name: str):
+async def workspace_messages_page(request: Request, name: str, depth: int = 2):
     config = request.app.state.config
     agent = find_agent(config, name)
     if not agent:
         return JSONResponse({"error": f"Agent '{name}' not found"}, status_code=404)
     templates = request.app.state.templates
     msg_store = request.app.state.agent_messages
-    messages = await msg_store.get_messages(name)
+    depth_level = max(1, min(3, depth))
+    messages = await msg_store.get_messages(name, depth=depth_level)
     # Get list of conversation partners
     partners = set()
     for m in messages:
@@ -62,13 +65,14 @@ async def workspace_messages_page(request: Request, name: str):
         "messages": messages,
         "partners": sorted(partners),
         "all_agents": all_agents,
+        "depth_level": depth_level,
     })
 
 
 @router.get("/api/agents/{name}/messages")
-async def api_agent_messages(request: Request, name: str, limit: int = 50):
+async def api_agent_messages(request: Request, name: str, limit: int = 50, depth: int = 2):
     msg_store = request.app.state.agent_messages
-    messages = await msg_store.get_messages(name, limit=limit)
+    messages = await msg_store.get_messages(name, limit=limit, depth=depth)
     return messages
 
 
@@ -99,6 +103,8 @@ async def api_send_message(request: Request, name: str, body: SendMessageRequest
         message=body.message,
         tool_calls=body.tool_calls,
         tool_results=body.tool_results,
+        reasoning=body.reasoning,
+        depth=body.depth,
         metadata=body.metadata,
     )
     return {"id": msg_id, "status": "sent"}

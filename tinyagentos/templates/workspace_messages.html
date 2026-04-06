@@ -5,7 +5,20 @@
     <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
         <a href="/agents/{{ agent.name }}/workspace" style="text-decoration: none; font-size: 1.25rem;">&larr;</a>
         <h2 style="margin: 0;">{{ agent.name }} &mdash; Messages</h2>
+        <div style="margin-left: auto; display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem;">
+            <span>Detail Level:</span>
+            <button class="depth-btn outline{% if depth_level == 1 %} contrast{% endif %}" onclick="setDepth(1)" style="padding: 0.2rem 0.6rem; font-size: 0.8rem; margin: 0;">1</button>
+            <button class="depth-btn outline{% if depth_level == 2 %} contrast{% endif %}" onclick="setDepth(2)" style="padding: 0.2rem 0.6rem; font-size: 0.8rem; margin: 0;">2</button>
+            <button class="depth-btn outline{% if depth_level == 3 %} contrast{% endif %}" onclick="setDepth(3)" style="padding: 0.2rem 0.6rem; font-size: 0.8rem; margin: 0;">3</button>
+        </div>
     </div>
+    <script>
+    function setDepth(level) {
+        const url = new URL(window.location.href);
+        url.searchParams.set('depth', level);
+        window.location.href = url.toString();
+    }
+    </script>
 
     <div style="display: grid; grid-template-columns: 200px 1fr; gap: 1rem; min-height: 400px;">
         <!-- Sidebar: conversation partners -->
@@ -52,6 +65,12 @@
                         <details style="margin-top: 0.4rem; font-size: 0.8rem;">
                             <summary>Tool results ({{ m.tool_results|length }})</summary>
                             <pre style="font-size: 0.75rem; white-space: pre-wrap;">{{ m.tool_results }}</pre>
+                        </details>
+                        {% endif %}
+                        {% if m.reasoning %}
+                        <details style="margin-top: 0.4rem; font-size: 0.8rem;">
+                            <summary>Reasoning</summary>
+                            <pre style="font-size: 0.75rem; white-space: pre-wrap;">{{ m.reasoning }}</pre>
                         </details>
                         {% endif %}
                     </div>

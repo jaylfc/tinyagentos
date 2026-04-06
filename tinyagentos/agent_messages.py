@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS agent_messages (
     message TEXT NOT NULL,
     tool_calls TEXT DEFAULT '[]',
     tool_results TEXT DEFAULT '[]',
+    reasoning TEXT DEFAULT '',
+    depth INTEGER NOT NULL DEFAULT 2,
     metadata TEXT DEFAULT '{}',
     timestamp REAL NOT NULL,
     read INTEGER DEFAULT 0
@@ -27,47 +29,69 @@ class AgentMessageStore(BaseStore):
 
     async def send(self, from_agent: str, to_agent: str, message: str,
                    tool_calls: list | None = None, tool_results: list | None = None,
+                   reasoning: str = "", depth: int = 2,
                    metadata: dict | None = None) -> int:
         now = time.time()
         cursor = await self._db.execute(
-            "INSERT INTO agent_messages (from_agent, to_agent, message, tool_calls, tool_results, metadata, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO agent_messages (from_agent, to_agent, message, tool_calls, tool_results, reasoning, depth, metadata, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (from_agent, to_agent, message, json.dumps(tool_calls or []),
-             json.dumps(tool_results or []), json.dumps(metadata or {}), now))
+             json.dumps(tool_results or []), reasoning or "", depth,
+             json.dumps(metadata or {}), now))
         await self._db.commit()
         return cursor.lastrowid
 
-    async def get_messages(self, agent_name: str, limit: int = 50) -> list[dict]:
-        """Get all messages involving an agent (sent or received)."""
+    async def get_messages(self, agent_name: str, limit: int = 50,
+                           depth: int = 2) -> list[dict]:
+        """Get all messages involving an agent (sent or received).
+
+        depth controls transcript detail level:
+          1 = message text only
+          2 = message + tool calls/results (default)
+          3 = message + tool calls + reasoning
+        """
         async with self._db.execute(
-            """SELECT id, from_agent, to_agent, message, tool_calls, tool_results, metadata, timestamp, read
+            """SELECT id, from_agent, to_agent, message, tool_calls, tool_results,
+                      reasoning, depth, metadata, timestamp, read
                FROM agent_messages WHERE from_agent = ? OR to_agent = ?
                ORDER BY timestamp DESC LIMIT ?""",
             (agent_name, agent_name, limit)
         ) as cursor:
             rows = await cursor.fetchall()
-        return [
-            {"id": r[0], "from": r[1], "to": r[2], "message": r[3],
-             "tool_calls": json.loads(r[4]), "tool_results": json.loads(r[5]),
-             "metadata": json.loads(r[6]), "timestamp": r[7], "read": bool(r[8])}
-            for r in rows
-        ]
+        return [self._format_message(r, depth) for r in rows]
 
-    async def get_conversation(self, agent1: str, agent2: str, limit: int = 50) -> list[dict]:
+    @staticmethod
+    def _format_message(r: tuple, view_depth: int = 2) -> dict:
+        """Format a message row, filtering fields by view depth."""
+        msg = {
+            "id": r[0], "from": r[1], "to": r[2], "message": r[3],
+            "metadata": json.loads(r[8]), "timestamp": r[9], "read": bool(r[10]),
+            "depth": r[7],
+        }
+        if view_depth >= 2:
+            msg["tool_calls"] = json.loads(r[4])
+            msg["tool_results"] = json.loads(r[5])
+        else:
+            msg["tool_calls"] = []
+            msg["tool_results"] = []
+        if view_depth >= 3:
+            msg["reasoning"] = r[6]
+        else:
+            msg["reasoning"] = ""
+        return msg
+
+    async def get_conversation(self, agent1: str, agent2: str, limit: int = 50,
+                               depth: int = 2) -> list[dict]:
         """Get messages between two specific agents."""
         async with self._db.execute(
-            """SELECT id, from_agent, to_agent, message, tool_calls, tool_results, metadata, timestamp
+            """SELECT id, from_agent, to_agent, message, tool_calls, tool_results,
+                      reasoning, depth, metadata, timestamp, read
                FROM agent_messages
                WHERE (from_agent = ? AND to_agent = ?) OR (from_agent = ? AND to_agent = ?)
                ORDER BY timestamp ASC LIMIT ?""",
             (agent1, agent2, agent2, agent1, limit)
         ) as cursor:
             rows = await cursor.fetchall()
-        return [
-            {"id": r[0], "from": r[1], "to": r[2], "message": r[3],
-             "tool_calls": json.loads(r[4]), "tool_results": json.loads(r[5]),
-             "metadata": json.loads(r[6]), "timestamp": r[7]}
-            for r in rows
-        ]
+        return [self._format_message(r, depth) for r in rows]
 
     async def mark_read(self, agent_name: str):
         await self._db.execute("UPDATE agent_messages SET read = 1 WHERE to_agent = ?", (agent_name,))

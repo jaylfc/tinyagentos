@@ -26,6 +26,7 @@ from tinyagentos.secrets import SecretsStore
 from tinyagentos.training import TrainingManager
 from tinyagentos.conversion import ConversionManager
 from tinyagentos.agent_messages import AgentMessageStore
+from tinyagentos.shared_folders import SharedFolderManager
 
 PROJECT_DIR = Path(__file__).parent.parent
 
@@ -67,6 +68,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     training_manager = TrainingManager(data_dir / "training.db")
     conversion_manager = ConversionManager(data_dir / "conversion.db")
     agent_messages = AgentMessageStore(data_dir / "agent_messages.db")
+    shared_folders = SharedFolderManager(data_dir / "shared_folders.db", data_dir / "shared-folders")
     auth_manager = AuthManager(data_dir)
 
     @asynccontextmanager
@@ -81,6 +83,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         await training_manager.init()
         await conversion_manager.init()
         await agent_messages.init()
+        await shared_folders.init()
         app.state.config = config
         app.state.config_path = config_path
         app.state.metrics = metrics_store
@@ -99,6 +102,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.training = training_manager
         app.state.conversion = conversion_manager
         app.state.agent_messages = agent_messages
+        app.state.shared_folders = shared_folders
         app.state.auth = auth_manager
         # Start background health monitor
         from tinyagentos.health import HealthMonitor
@@ -111,6 +115,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         yield
         await cluster_manager.stop()
         await monitor.stop()
+        await shared_folders.close()
         await agent_messages.close()
         await conversion_manager.close()
         await training_manager.close()
@@ -153,6 +158,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     app.state.training = training_manager
     app.state.conversion = conversion_manager
     app.state.agent_messages = agent_messages
+    app.state.shared_folders = shared_folders
     app.state.auth = auth_manager
 
     # Mount static files
@@ -223,6 +229,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     from tinyagentos.routes.workspace import router as workspace_router
     app.include_router(workspace_router)
+
+    from tinyagentos.routes.shared_folders import router as shared_folders_router
+    app.include_router(shared_folders_router)
 
     # Lobby demo (internal only — not included in public builds)
     try:

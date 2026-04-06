@@ -71,9 +71,14 @@ async def client(app):
     if agent_messages._db is not None:
         await agent_messages.close()
     await agent_messages.init()
+    shared_folders = app.state.shared_folders
+    if shared_folders._db is not None:
+        await shared_folders.close()
+    await shared_folders.init()
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
+    await shared_folders.close()
     await agent_messages.close()
     await conversion_mgr.close()
     await relationship_mgr.close()
@@ -179,9 +184,14 @@ async def client_with_qmd(app_with_qmd):
     if agent_messages._db is not None:
         await agent_messages.close()
     await agent_messages.init()
+    shared_folders = app_with_qmd.state.shared_folders
+    if shared_folders._db is not None:
+        await shared_folders.close()
+    await shared_folders.init()
     transport = ASGITransport(app=app_with_qmd)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
+    await shared_folders.close()
     await agent_messages.close()
     await conversion_mgr.close()
     await relationship_mgr.close()
