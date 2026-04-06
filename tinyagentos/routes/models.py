@@ -380,6 +380,40 @@ async def pull_model(request: Request, body: PullRequest):
         return JSONResponse({"error": str(e)}, status_code=502)
 
 
+@router.get("/api/models/recommended")
+async def recommended_models(request: Request):
+    """Return models recommended for the current hardware profile."""
+    registry = request.app.state.registry
+    hw = request.app.state.hardware_profile
+    profile_id = hw.profile_id
+
+    all_models = registry.list_available(type_filter="model")
+    recommended = []
+    compatible = []
+
+    for model in all_models:
+        tiers = getattr(model, "hardware_tiers", {}) or {}
+        tier_status = tiers.get(profile_id, "")
+
+        entry = {
+            "id": model.id,
+            "name": model.name,
+            "description": getattr(model, "description", ""),
+            "compatibility": tier_status or "unknown",
+        }
+
+        if tier_status == "full":
+            recommended.append(entry)
+        elif tier_status == "limited":
+            compatible.append(entry)
+
+    return {
+        "profile_id": profile_id,
+        "recommended": recommended,
+        "compatible": compatible,
+    }
+
+
 @router.get("/api/models/{model_id}")
 async def get_model(request: Request, model_id: str):
     """Get detailed information about a specific model."""

@@ -153,6 +153,19 @@ class TestModelsDelete:
         assert data["deleted_files"] == []
 
 
+@pytest.mark.asyncio
+class TestModelRecommendations:
+    async def test_recommended_models(self, models_client):
+        resp = await models_client.get("/api/models/recommended")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "profile_id" in data
+        assert "recommended" in data
+        assert "compatible" in data
+        assert isinstance(data["recommended"], list)
+        assert isinstance(data["compatible"], list)
+
+
 class TestGetDownloadedModels:
     def test_empty_dir(self, tmp_path):
         models_dir = tmp_path / "models"
