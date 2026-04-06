@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import asyncio
+import shutil
 import time
 from dataclasses import asdict
 
+import psutil
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
@@ -215,3 +218,154 @@ async def api_metrics(request: Request, name: str, range: str = "24h"):
     seconds = range_map.get(range, 86400)
     results = await metrics.query(name, start=now - seconds, end=now)
     return results
+
+
+# --- Health Debug Page ---
+
+async def _timed_check(name: str, coro) -> dict:
+    """Run a health check coroutine and return {name, status, detail, response_ms}."""
+    start = time.monotonic()
+    try:
+        result = await asyncio.wait_for(coro, timeout=10)
+        elapsed = int((time.monotonic() - start) * 1000)
+        return {"name": name, "status": result.get("status", "ok"), "detail": result.get("detail", ""), "response_ms": elapsed}
+    except asyncio.TimeoutError:
+        elapsed = int((time.monotonic() - start) * 1000)
+        return {"name": name, "status": "timeout", "detail": "Check timed out after 10s", "response_ms": elapsed}
+    except Exception as e:
+        elapsed = int((time.monotonic() - start) * 1000)
+        return {"name": name, "status": "error", "detail": str(e), "response_ms": elapsed}
+
+
+async def _check_incusd() -> dict:
+    """Check if incusd is running."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "incus", "version",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+        if proc.returncode == 0:
+            return {"status": "ok", "detail": stdout.decode().strip()}
+        return {"status": "error", "detail": f"exit code {proc.returncode}"}
+    except FileNotFoundError:
+        return {"status": "unavailable", "detail": "incus not installed"}
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}
+
+
+async def _check_docker() -> dict:
+    """Check Docker daemon connectivity."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "docker", "info", "--format", "{{.ServerVersion}}",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=5)
+        if proc.returncode == 0:
+            return {"status": "ok", "detail": f"Docker {stdout.decode().strip()}"}
+        return {"status": "error", "detail": stderr.decode().strip()[:200]}
+    except FileNotFoundError:
+        return {"status": "unavailable", "detail": "docker not installed"}
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}
+
+
+@router.get("/health-check", response_class=HTMLResponse)
+async def health_check_page(request: Request):
+    """Health debug page -- shows connectivity status of all services."""
+    templates = request.app.state.templates
+    return templates.TemplateResponse(request, "health_check.html", {"active_page": "health-check"})
+
+
+@router.get("/api/health-check")
+async def api_health_check(request: Request):
+    """Run all health checks and return results."""
+    config = request.app.state.config
+    http_client = request.app.state.http_client
+    checks = []
+
+    # 1. TinyAgentOS itself
+    checks.append({"name": "TinyAgentOS", "status": "ok", "detail": "Running", "response_ms": 0})
+
+    # 2. incusd
+    checks.append(await _timed_check("incusd", _check_incusd()))
+
+    # 3. Docker
+    checks.append(await _timed_check("Docker", _check_docker()))
+
+    # 4. Each backend
+    for backend in config.backends:
+        name = f"Backend: {backend.get('name', backend.get('url', 'unknown'))}"
+
+        async def _check_backend(b=backend):
+            result = await check_backend_health(http_client, b)
+            return {"status": result["status"], "detail": f"{result.get('response_ms', 0)}ms, {len(result.get('models', []))} models"}
+
+        checks.append(await _timed_check(name, _check_backend()))
+
+    # 5. QMD
+    async def _check_qmd():
+        qmd = request.app.state.qmd_client
+        result = await qmd.health()
+        if result.get("status") == "error":
+            return {"status": "error", "detail": result.get("error", "unreachable")}
+        return {"status": "ok", "detail": f"{result.get('response_ms', 0)}ms"}
+
+    checks.append(await _timed_check("QMD Server", _check_qmd()))
+
+    # 6. Each agent's qmd_url
+    for agent in config.agents:
+        qmd_url = agent.get("qmd_url", "")
+        if qmd_url:
+            name = f"Agent QMD: {agent['name']}"
+
+            async def _check_agent_qmd(url=qmd_url):
+                from tinyagentos.qmd_client import QmdClient
+                client = QmdClient(url)
+                await client.init()
+                try:
+                    result = await client.health()
+                    if result.get("status") == "error":
+                        return {"status": "error", "detail": result.get("error", "unreachable")}
+                    return {"status": "ok", "detail": f"{result.get('response_ms', 0)}ms"}
+                finally:
+                    await client.close()
+
+            checks.append(await _timed_check(name, _check_agent_qmd()))
+
+    # 7. Disk space
+    disk = shutil.disk_usage("/")
+    disk_pct = (disk.used / disk.total) * 100
+    disk_status = "ok" if disk_pct < 85 else ("warning" if disk_pct < 95 else "error")
+    free_gb = disk.free / (1024 ** 3)
+    checks.append({
+        "name": "Disk Space",
+        "status": disk_status,
+        "detail": f"{disk_pct:.1f}% used, {free_gb:.1f} GB free",
+        "response_ms": 0,
+    })
+
+    # 8. RAM usage
+    mem = psutil.virtual_memory()
+    ram_status = "ok" if mem.percent < 85 else ("warning" if mem.percent < 95 else "error")
+    avail_gb = mem.available / (1024 ** 3)
+    checks.append({
+        "name": "RAM Usage",
+        "status": ram_status,
+        "detail": f"{mem.percent:.1f}% used, {avail_gb:.1f} GB available",
+        "response_ms": 0,
+    })
+
+    # 9. Cluster workers
+    cluster = request.app.state.cluster_manager
+    for worker in cluster.get_workers():
+        age = int(time.time() - worker.last_heartbeat)
+        checks.append({
+            "name": f"Worker: {worker.name}",
+            "status": "ok" if worker.status == "online" else "error",
+            "detail": f"{worker.status}, last heartbeat {age}s ago, {worker.platform}",
+            "response_ms": 0,
+        })
+
+    return {"checks": checks}

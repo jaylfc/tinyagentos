@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Health Check — TinyAgentOS{% endblock %}
+{% block content %}
+<h2>Health Check</h2>
+<p>Diagnostic page showing connectivity status of all system components.</p>
+
+<div id="health-results" hx-get="/api/health-check" hx-trigger="load" hx-swap="innerHTML">
+  <article aria-busy="true">Running health checks...</article>
+</div>
+
+<button class="outline" style="margin-top: 1rem;"
+        hx-get="/api/health-check" hx-target="#health-results" hx-swap="innerHTML">
+  Re-run Checks
+</button>
+
+<script>
+document.body.addEventListener("htmx:afterSwap", function(evt) {
+  if (evt.detail.target.id !== "health-results") return;
+  try {
+    var data = JSON.parse(evt.detail.xhr.responseText);
+    var checks = data.checks || [];
+
+    // Build table using safe DOM methods (no innerHTML with untrusted data)
+    var container = document.createElement("div");
+    container.className = "overflow-auto";
+    var table = document.createElement("table");
+    table.setAttribute("aria-label", "Health check results");
+
+    var thead = document.createElement("thead");
+    var headerRow = document.createElement("tr");
+    ["Component", "Status", "Detail", "Response"].forEach(function(text) {
+      var th = document.createElement("th");
+      th.textContent = text;
+      headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    var tbody = document.createElement("tbody");
+    var statusIcons = {"ok": "\u2705", "warning": "\u26A0\uFE0F", "unavailable": "\u2796"};
+
+    checks.forEach(function(c) {
+      var tr = document.createElement("tr");
+      if (c.status === "error") tr.style.color = "var(--pico-del-color)";
+      else if (c.status === "warning") tr.style.color = "#f0ad4e";
+
+      var tdName = document.createElement("td");
+      var strong = document.createElement("strong");
+      strong.textContent = c.name;
+      tdName.appendChild(strong);
+      tr.appendChild(tdName);
+
+      var tdStatus = document.createElement("td");
+      var icon = statusIcons[c.status] || "\u274C";
+      tdStatus.textContent = icon + " " + c.status;
+      tr.appendChild(tdStatus);
+
+      var tdDetail = document.createElement("td");
+      tdDetail.textContent = c.detail || "-";
+      tr.appendChild(tdDetail);
+
+      var tdMs = document.createElement("td");
+      tdMs.textContent = c.response_ms > 0 ? c.response_ms + " ms" : "-";
+      tr.appendChild(tdMs);
+
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    container.appendChild(table);
+
+    // Clear and append safely
+    while (evt.detail.target.firstChild) {
+      evt.detail.target.removeChild(evt.detail.target.firstChild);
+    }
+    evt.detail.target.appendChild(container);
+  } catch(e) {
+    // If not JSON, leave the response as-is
+  }
+});
+</script>
+{% endblock %}
