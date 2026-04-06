@@ -76,16 +76,18 @@ class HealthMonitor:
                 prev = self._backend_states.get(backend["name"])
                 if prev is not None and prev != current and self.notifications:
                     if current != "ok":
-                        await self.notifications.add(
+                        await self.notifications.emit_event(
+                            "backend.down",
                             f"Backend '{backend['name']}' is unreachable",
                             f"Health check failed for {backend['url']}",
-                            level="warning", source="health",
+                            level="warning",
                         )
                     else:
-                        await self.notifications.add(
+                        await self.notifications.emit_event(
+                            "backend.up",
                             f"Backend '{backend['name']}' recovered",
                             f"Health check succeeded for {backend['url']}",
-                            level="info", source="health",
+                            level="info",
                         )
                 self._backend_states[backend["name"]] = current
             except Exception as e:

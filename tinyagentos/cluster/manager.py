@@ -66,11 +66,11 @@ class ClusterManager:
                 msg += f"\n\nNewly unlocked: {', '.join(newly_unlocked)}"
                 msg += "\n\nConsider running cluster optimisation to redistribute workloads."
 
-            await self._notifications.add(
+            await self._notifications.emit_event(
+                "worker.join",
                 f"Worker '{info.name}' joined the cluster",
                 msg,
                 level="info",
-                source="cluster",
             )
 
     def heartbeat(self, name: str, load: float = 0.0, models: list[str] | None = None) -> bool:
@@ -115,10 +115,10 @@ class ClusterManager:
                     worker.status = "offline"
                     logger.warning(f"Worker '{worker.name}' marked offline (no heartbeat for {HEARTBEAT_TIMEOUT}s)")
                     if self._notifications:
-                        await self._notifications.add(
+                        await self._notifications.emit_event(
+                            "worker.leave",
                             f"Worker '{worker.name}' went offline",
                             f"No heartbeat for {HEARTBEAT_TIMEOUT}s. Capabilities may be reduced.",
                             level="warning",
-                            source="cluster",
                         )
             await asyncio.sleep(5)
