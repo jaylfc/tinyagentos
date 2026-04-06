@@ -3,7 +3,58 @@ import hashlib
 import json
 import secrets
 import time
+from collections.abc import Iterator
 from pathlib import Path
+
+
+class _PersistentSessions:
+    """Dict-like wrapper that reads/writes sessions from a JSON file on every access."""
+
+    def __init__(self, path: Path):
+        self._path = path
+
+    def _load(self) -> dict[str, float]:
+        if not self._path.exists():
+            return {}
+        try:
+            return json.loads(self._path.read_text())
+        except (json.JSONDecodeError, OSError):
+            return {}
+
+    def _save(self, data: dict[str, float]) -> None:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._path.write_text(json.dumps(data))
+
+    def __getitem__(self, key: str) -> float:
+        return self._load()[key]
+
+    def __setitem__(self, key: str, value: float) -> None:
+        data = self._load()
+        data[key] = value
+        self._save(data)
+
+    def __delitem__(self, key: str) -> None:
+        data = self._load()
+        del data[key]
+        self._save(data)
+
+    def __contains__(self, key: object) -> bool:
+        return key in self._load()
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._load())
+
+    def get(self, key: str, default: float | None = None) -> float | None:
+        return self._load().get(key, default)
+
+    def pop(self, key: str, *args: float) -> float:
+        data = self._load()
+        result = data.pop(key, *args)
+        self._save(data)
+        return result
+
+    def items(self) -> list[tuple[str, float]]:
+        return list(self._load().items())
 
 
 def hash_password(password: str, salt: str = "") -> str:
@@ -23,33 +74,8 @@ class AuthManager:
         self.data_dir = data_dir
         self._password_file = data_dir / ".auth_password"
         self._sessions_file = data_dir / ".auth_sessions"
+        self._sessions = _PersistentSessions(self._sessions_file)
         self.session_ttl = 86400 * 7  # 7 days
-
-    def _load_sessions(self) -> dict[str, float]:
-        """Load sessions from disk, filtering out expired ones."""
-        if not self._sessions_file.exists():
-            return {}
-        try:
-            data = json.loads(self._sessions_file.read_text())
-            now = time.time()
-            return {k: v for k, v in data.items() if v > now}
-        except (json.JSONDecodeError, OSError):
-            return {}
-
-    def _save_sessions(self, sessions: dict[str, float]) -> None:
-        """Persist sessions to disk."""
-        self._sessions_file.parent.mkdir(parents=True, exist_ok=True)
-        self._sessions_file.write_text(json.dumps(sessions))
-
-    @property
-    def _sessions(self) -> dict[str, float]:
-        """Backward-compatible property for tests that access _sessions directly."""
-        return self._load_sessions()
-
-    @_sessions.setter
-    def _sessions(self, value: dict[str, float]) -> None:
-        """Backward-compatible setter for tests that assign to _sessions."""
-        self._save_sessions(value)
 
     def is_configured(self) -> bool:
         return self._password_file.exists()
@@ -65,30 +91,24 @@ class AuthManager:
         return verify_password(password, stored)
 
     def create_session(self) -> str:
-        sessions = self._load_sessions()
         token = secrets.token_urlsafe(32)
-        sessions[token] = time.time() + self.session_ttl
-        self._save_sessions(sessions)
+        self._sessions[token] = time.time() + self.session_ttl
         return token
 
     def validate_session(self, token: str) -> bool:
-        sessions = self._load_sessions()
-        expiry = sessions.get(token)
+        expiry = self._sessions.get(token)
         if not expiry:
             return False
         if time.time() > expiry:
-            sessions.pop(token, None)
-            self._save_sessions(sessions)
+            del self._sessions[token]
             return False
         return True
 
     def revoke_session(self, token: str) -> None:
-        sessions = self._load_sessions()
-        sessions.pop(token, None)
-        self._save_sessions(sessions)
+        self._sessions.pop(token, None)
 
     def cleanup_sessions(self) -> None:
         now = time.time()
-        sessions = self._load_sessions()
-        cleaned = {t: exp for t, exp in sessions.items() if now <= exp}
-        self._save_sessions(cleaned)
+        expired = [t for t, exp in self._sessions.items() if now > exp]
+        for t in expired:
+            del self._sessions[t]
