@@ -35,9 +35,15 @@
     </article>
 </div>
 
+<h3>Set Password</h3>
+<p>Protect your TinyAgentOS instance with a password. Anyone on your network will need this to access the dashboard.</p>
 <div style="margin-top: 2rem; text-align: center;">
     <form method="POST" action="/setup/complete">
-        <button type="submit">Skip Setup</button>
+        <label for="password">Password (recommended)</label>
+        <input type="password" id="password" name="password" placeholder="Choose a password">
+        <small>Leave blank to skip — you can set a password later in Settings.</small>
+        <br><br>
+        <button type="submit">Complete Setup</button>
     </form>
 </div>
 {% endblock %}

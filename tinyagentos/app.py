@@ -9,6 +9,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from tinyagentos.auth import AuthManager
 from tinyagentos.backend_fallback import BackendFallback
 from tinyagentos.capabilities import CapabilityChecker
 from tinyagentos.cluster.manager import ClusterManager
@@ -62,6 +63,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     cap_checker = CapabilityChecker(hardware_profile, cluster_manager)
     cluster_manager._capabilities = cap_checker  # wire after creation (circular dep)
     training_manager = TrainingManager(data_dir / "training.db")
+    auth_manager = AuthManager(data_dir)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -89,6 +91,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.task_router = task_router
         app.state.capabilities = cap_checker
         app.state.training = training_manager
+        app.state.auth = auth_manager
         # Start background health monitor
         from tinyagentos.health import HealthMonitor
         monitor = HealthMonitor(config, metrics_store, qmd_client, http_client, notif_store)
@@ -112,6 +115,10 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     app = FastAPI(title="TinyAgentOS", version="0.1.0", lifespan=lifespan)
 
+    # Auth middleware — must be added before GZip so it runs first
+    from tinyagentos.auth_middleware import AuthMiddleware
+    app.add_middleware(AuthMiddleware)
+
     # GZip compression for faster transfers on slow SD card / network
     app.add_middleware(GZipMiddleware, minimum_size=500)
 
@@ -134,6 +141,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     app.state.task_router = task_router
     app.state.capabilities = cap_checker
     app.state.training = training_manager
+    app.state.auth = auth_manager
 
     # Mount static files
     static_dir = PROJECT_DIR / "static"
@@ -147,6 +155,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     app.state.templates = templates
 
     # Import and include routers
+    from tinyagentos.routes.auth import router as auth_router
+    app.include_router(auth_router)
+
     from tinyagentos.routes.dashboard import router as dashboard_router
     app.include_router(dashboard_router)
 

@@ -37,8 +37,19 @@ async def setup_page(request: Request):
 @router.post("/setup/complete")
 async def setup_complete(request: Request):
     data_dir = request.app.state.config_path.parent
+    form = await request.form()
+    password = form.get("password", "")
+    if password:
+        auth_mgr = request.app.state.auth
+        if not auth_mgr.is_configured():
+            auth_mgr.set_password(password)
     mark_setup_complete(data_dir)
-    return RedirectResponse(url="/", status_code=303)
+    response = RedirectResponse(url="/", status_code=303)
+    # If password was just set, create a session so user is logged in
+    if password:
+        token = auth_mgr.create_session()
+        response.set_cookie("taos_session", token, httponly=True, samesite="lax", max_age=auth_mgr.session_ttl)
+    return response
 
 
 @router.get("/api/capabilities")
