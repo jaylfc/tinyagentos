@@ -4,12 +4,20 @@ import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Request, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+@router.get("/shared-folders", response_class=HTMLResponse)
+async def shared_folders_page(request: Request):
+    templates = request.app.state.templates
+    return templates.TemplateResponse(request, "shared_folders.html", {
+        "active_page": "shared-folders",
+    })
 
 
 class CreateFolderRequest(BaseModel):

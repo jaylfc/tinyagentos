@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Shared Folders — TinyAgentOS{% endblock %}
+{% block content %}
+<main class="container">
+  <hgroup>
+    <h2>Shared Folders</h2>
+    <p>Create shared file spaces for agents, groups, and departments</p>
+  </hgroup>
+
+  <div id="folder-list" hx-get="/api/shared-folders" hx-trigger="load" hx-swap="innerHTML">
+    <p aria-busy="true">Loading folders...</p>
+  </div>
+
+  <details>
+    <summary role="button" class="secondary">New Folder</summary>
+    <form hx-post="/api/shared-folders" hx-target="#folder-list" hx-swap="innerHTML"
+          hx-on::after-request="this.reset(); htmx.trigger('#folder-list', 'load')">
+      <label for="folder-name">Folder Name
+        <input type="text" id="folder-name" name="name" required placeholder="e.g. team-docs">
+      </label>
+      <label for="folder-desc">Description
+        <input type="text" id="folder-desc" name="description" placeholder="Optional description">
+      </label>
+      <button type="submit">Create Folder</button>
+    </form>
+  </details>
+</main>
+{% endblock %}
