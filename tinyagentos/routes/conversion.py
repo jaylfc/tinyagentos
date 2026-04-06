@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
 from tinyagentos.conversion import CONVERSION_PATHS
@@ -11,6 +11,14 @@ from tinyagentos.conversion import CONVERSION_PATHS
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+@router.get("/conversions", response_class=HTMLResponse)
+async def conversions_page(request: Request):
+    templates = request.app.state.templates
+    return templates.TemplateResponse(request, "conversions.html", {
+        "active_page": "conversions",
+    })
 
 
 class CreateConversionJobRequest(BaseModel):
