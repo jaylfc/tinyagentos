@@ -4,7 +4,9 @@
 
 Self-hosted AI agent platform that runs on whatever hardware you have. An old laptop, a Raspberry Pi, a gaming PC, an SBC gathering dust — or all of them at once. TinyAgentOS turns your spare hardware into a distributed AI compute cluster.
 
-72+ apps, 17 agent frameworks, 167k+ searchable models, agent deployment, training, image/video/audio generation, and full system monitoring — all from a single web dashboard. Supports Apple Silicon (MLX), NVIDIA, AMD, Rockchip NPU, Raspberry Pi, Android phones, and more.
+73 apps, 17 agent frameworks, 167k+ searchable models, agent deployment, training, image/video/audio generation, and full system monitoring — all from a single web dashboard. Supports Apple Silicon (MLX), NVIDIA, AMD, Rockchip NPU, Raspberry Pi, Android phones, and more.
+
+**Framework-agnostic by design** — switch agent frameworks without losing messaging connections, model assignments, or API keys. The Channel Hub owns your communication channels (Telegram, Discord, Slack, Email, Web Chat, Webhooks) and the LLM Proxy manages model access, so agents are always portable.
 
 ## Quick Start
 
@@ -31,11 +33,22 @@ curl -sL https://raw.githubusercontent.com/jaylfc/tinyagentos/master/tinyagentos
 ### Live Model Browser
 Search 167k+ GGUF models from HuggingFace and the Ollama library directly from the dashboard. Hardware-filtered compatibility indicators show what runs on your device (green/yellow/red).
 
-### App Store (52+ Apps)
+### App Store (73 Apps)
 One-click install for agent frameworks, AI models, and services. Hardware-aware — only shows what works on your device.
 
 ### Agent Deployment
 5-step wizard: pick framework → choose model → configure → deploy into isolated LXC container. Each agent gets its own memory system.
+
+### Channel Hub (Framework-Agnostic Messaging)
+TinyAgentOS owns the messaging connections — not the agent framework. Telegram bots, Discord bots, Slack apps, email accounts, web chat widgets, and generic webhooks all connect once at the platform level. Switch an agent from SmolAgents to LangChain and it keeps all its channels, history, and connections.
+
+- **6 connectors** — Telegram, Discord, Slack, Email (IMAP/SMTP), Web Chat (WebSocket), Webhooks
+- **17 framework adapters** — thin HTTP bridges (~25 lines each) that translate the universal message format to framework-specific APIs
+- **Rich responses** — buttons, images, cards via universal format with inline hint fallback for any framework
+- **Per-agent or shared bots** — each agent gets its own bot, or share one across a group
+
+### LLM Proxy (LiteLLM)
+Hidden internal gateway that unifies all inference providers. Per-agent virtual keys with budget/rate limits. Auto-configured from your backend list. Hot-swap providers without touching agent config.
 
 ### Dynamic Capabilities
 Features unlock automatically based on your hardware and cluster. Solo Pi sees core features. Add a GPU worker and image generation, video, and training appear. No configuration — the platform just knows what's possible.
@@ -65,9 +78,7 @@ Create shared file spaces for agents, groups, and departments. The design team s
 - **Scheduled Tasks** — cron jobs with presets, per-agent or group assignment
 - **Data Import** — drag-and-drop file upload to agent memory
 - **Memory Browser** — keyword + semantic vector search across all agents
-
-### LLM Proxy (LiteLLM)
-Hidden internal gateway that unifies all inference providers. Per-agent virtual keys with budget/rate limits. Auto-configured from your backend list. Hot-swap providers without touching agent config.
+- **Agent Export/Import** — portable JSON export of agent config, channels, and group memberships
 
 ### Authentication
 Password-protected dashboard with persistent sessions. Per-agent API keys. Exempt paths for cluster workers and health checks.
@@ -84,11 +95,11 @@ Convert models between formats (GGUF→RKLLM, HF→GGUF, GGUF→MLX). Capability
 - **System Updates** — pull latest from GitHub via Settings page
 - **Provider Management** — add/test/remove inference providers with live connectivity checks
 
-## App Catalog (72+ Apps)
+## App Catalog (73 Apps)
 
 | Category | Apps |
 |----------|------|
-| **Agent Frameworks** | SmolAgents, PocketFlow, OpenClaw, nanoclaw, PicoClaw (NPU-aware), ZeroClaw, MicroClaw, IronClaw, NullClaw, Moltis, NemoClaw, TinyAgent, Hermes, Agent Zero, Swarm, OpenAI Agents SDK, Langroid |
+| **Agent Frameworks (17)** | SmolAgents, PocketFlow, OpenClaw, nanoclaw, PicoClaw (NPU-aware), ZeroClaw, MicroClaw, IronClaw, NullClaw, Moltis, NemoClaw, TinyAgent, Hermes, Agent Zero, Swarm, OpenAI Agents SDK, Langroid |
 | **LLM Models** | Qwen3 0.6B-8B (GGUF + RKLLM + MLX), plus 167k+ searchable from HuggingFace |
 | **Image Models** | LCM Dreamshaper, SD 1.5 LCM, SDXL Turbo |
 | **Image Gen** | ComfyUI, Fooocus, SD Web UI, stable-diffusion.cpp, FastSD CPU, RKNN SD, rk-llama.cpp |
@@ -117,15 +128,20 @@ Convert models between formats (GGUF→RKLLM, HF→GGUF, GGUF→MLX). Capability
 
 ```
 TinyAgentOS Controller (FastAPI + htmx)
-├── Web Dashboard (13 pages + lobby demo)
+├── Web Dashboard (23 route modules, 24 templates)
+├── Channel Hub (6 connectors, 17 framework adapters)
+│   ├── Telegram, Discord, Slack, Email, Web Chat, Webhooks
+│   └── Universal message format → framework-specific translation
+├── LLM Proxy (LiteLLM, per-agent virtual keys)
 ├── Cluster Manager (worker registration, task routing)
-├── App Store + Registry (52+ apps, manifest-based)
+├── App Store + Registry (73 apps, manifest-based)
 ├── Live Model Browser (HuggingFace + Ollama search)
 ├── Container Manager (LXC via incus)
 ├── Health Monitor + Notifications
 ├── Secrets Manager (encrypted, per-agent access)
-├── Channel Manager (8 channel types)
 ├── Task Scheduler (cron with presets)
+├── Training Manager (LoRA, per-agent adapters)
+├── Agent Export/Import (portable JSON config)
 └── Backend Fallback (priority-based, auto-recovery)
 
 Worker Apps (Windows / macOS / Linux)
@@ -143,7 +159,7 @@ Platform overhead: **~345 MB RAM** (without models or agents)
 
 ```bash
 pip install -e ".[dev]"
-pytest tests/ -v          # 580+ tests
+pytest tests/ -v          # 697 tests
 ```
 
 CI runs automatically on every push (Python 3.10-3.12 + security audit).
@@ -151,8 +167,8 @@ CI runs automatically on every push (Python 3.10-3.12 + security audit).
 ## Roadmap
 
 ### Done ✅
-- [x] Web GUI with 18+ pages
-- [x] App Store (72+ apps, 17 agent frameworks)
+- [x] Web GUI with 23 pages
+- [x] App Store (73 apps, 17 agent frameworks)
 - [x] Live model browser (HuggingFace + Ollama, 167k+ models)
 - [x] Agent deployment wizard (LXC containers)
 - [x] Image + video generation (multi-backend)
@@ -172,9 +188,10 @@ CI runs automatically on every push (Python 3.10-3.12 + security audit).
 - [x] LLM Proxy (LiteLLM) with per-agent keys
 - [x] Webhook notifications (Slack/Discord/Telegram)
 - [x] Health debug page
+- [x] Channel Hub — framework-agnostic messaging (6 connectors, 17 adapters)
+- [x] Agent config export/import
 
 ### In Progress
-- [ ] Channel Hub — framework-agnostic messaging abstraction
 - [ ] Fresh install test on clean hardware (#2)
 
 ### Planned
