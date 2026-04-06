@@ -112,6 +112,6 @@ class AuthManager:
 
     def cleanup_sessions(self) -> None:
         now = time.time()
-        expired = [t for t, exp in self._sessions.items() if now > exp]
+        expired = [t for t, exp in self._sessions.items() if now >= exp]
         for t in expired:
             del self._sessions[t]
