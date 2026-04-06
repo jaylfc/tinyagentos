@@ -84,6 +84,39 @@ async def connect_bot(request: Request):
         connectors[connector_key] = connector
         request.app.state.channel_hub_connectors = connectors
         return {"status": "connected", "platform": platform, "agent_name": agent_name}
+    elif platform == "slack":
+        channel_ids = body.get("channel_ids", [])
+        from tinyagentos.channel_hub.slack_connector import SlackConnector
+        connector = SlackConnector(
+            bot_token=bot_token, agent_name=agent_name,
+            router=router_obj, channel_ids=channel_ids,
+        )
+        router_obj.assign_channel(platform, bot_token_secret, agent_name)
+        await connector.start()
+        connectors[connector_key] = connector
+        request.app.state.channel_hub_connectors = connectors
+        return {"status": "connected", "platform": platform, "agent_name": agent_name}
+    elif platform == "email":
+        imap_host = body.get("imap_host", "")
+        imap_port = body.get("imap_port", 993)
+        smtp_host = body.get("smtp_host", "")
+        smtp_port = body.get("smtp_port", 587)
+        # bot_token holds "username:password" for email
+        parts = bot_token.split(":", 1)
+        email_user = parts[0]
+        email_pass = parts[1] if len(parts) > 1 else ""
+        from tinyagentos.channel_hub.email_connector import EmailConnector
+        connector = EmailConnector(
+            agent_name=agent_name, router=router_obj,
+            imap_host=imap_host, imap_port=imap_port,
+            smtp_host=smtp_host, smtp_port=smtp_port,
+            username=email_user, password=email_pass,
+        )
+        router_obj.assign_channel(platform, bot_token_secret, agent_name)
+        await connector.start()
+        connectors[connector_key] = connector
+        request.app.state.channel_hub_connectors = connectors
+        return {"status": "connected", "platform": platform, "agent_name": agent_name}
     else:
         return JSONResponse({"error": f"Platform '{platform}' not yet supported"}, status_code=400)
 
