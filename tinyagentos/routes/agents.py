@@ -7,6 +7,8 @@ from pydantic import BaseModel
 from tinyagentos.agent_db import find_agent, get_agent_summaries
 from tinyagentos.config import save_config_locked, validate_agent_name
 
+EXPORT_VERSION = 1
+
 router = APIRouter()
 
 
@@ -198,6 +200,77 @@ async def agent_logs(request: Request, name: str, lines: int = 100):
     from tinyagentos.containers import get_container_logs
     logs = await get_container_logs(f"agent-{name}", lines=lines)
     return {"name": name, "logs": logs}
+
+
+@router.get("/api/agents/{name}/export")
+async def export_agent(request: Request, name: str):
+    """Export an agent's full config as portable JSON."""
+    config = request.app.state.config
+    agent = find_agent(config, name)
+    if not agent:
+        return JSONResponse({"error": f"Agent '{name}' not found"}, status_code=404)
+
+    # Gather channel assignments
+    channel_store = request.app.state.channels
+    channels = await channel_store.list_for_agent(name)
+    channel_export = [
+        {"type": ch["type"], "config": ch.get("config", {})}
+        for ch in channels
+    ]
+
+    # Gather group memberships
+    relationship_mgr = request.app.state.relationships
+    groups = await relationship_mgr.get_agent_groups(name)
+    group_names = [g["name"] for g in groups]
+
+    return {
+        "version": EXPORT_VERSION,
+        "agent": {k: v for k, v in agent.items()},
+        "channels": channel_export,
+        "groups": group_names,
+    }
+
+
+class AgentImport(BaseModel):
+    version: int = 1
+    agent: dict
+    channels: list[dict] = []
+    groups: list[str] = []
+
+
+@router.post("/api/agents/import")
+async def import_agent(request: Request, body: AgentImport):
+    """Import an agent from an exported JSON config."""
+    config = request.app.state.config
+
+    agent_data = body.agent
+    name = agent_data.get("name", "")
+    if not name:
+        return JSONResponse({"error": "Agent name is required in export data"}, status_code=400)
+    name_error = validate_agent_name(name)
+    if name_error:
+        return JSONResponse({"error": name_error}, status_code=400)
+    if find_agent(config, name):
+        return JSONResponse({"error": f"Agent '{name}' already exists"}, status_code=409)
+
+    # Create the agent
+    config.agents.append(agent_data)
+    await save_config_locked(config, config.config_path)
+
+    # Restore channel assignments
+    channel_store = request.app.state.channels
+    for ch in body.channels:
+        await channel_store.add(name, ch.get("type", ""), ch.get("config", {}))
+
+    # Restore group memberships
+    relationship_mgr = request.app.state.relationships
+    existing_groups = await relationship_mgr.list_groups()
+    group_map = {g["name"]: g["id"] for g in existing_groups}
+    for group_name in body.groups:
+        if group_name in group_map:
+            await relationship_mgr.add_member(group_map[group_name], name)
+
+    return {"status": "imported", "name": name}
 
 
 @router.delete("/api/agents/{name}/destroy")
