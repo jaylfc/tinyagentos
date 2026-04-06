@@ -118,6 +118,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.channel_hub_router = channel_hub_router
         app.state.adapter_manager = adapter_manager
         app.state.channel_hub_connectors = {}
+        app.state.deploy_tasks = {}
         # Optionally start LiteLLM proxy (non-fatal if not installed)
         try:
             await llm_proxy.start(config.backends)
@@ -188,6 +189,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     app.state.channel_hub_router = channel_hub_router
     app.state.adapter_manager = adapter_manager
     app.state.channel_hub_connectors = {}
+    app.state.deploy_tasks = {}
 
     # Mount static files
     static_dir = PROJECT_DIR / "static"

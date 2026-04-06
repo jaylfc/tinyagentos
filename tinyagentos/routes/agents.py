@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
@@ -56,6 +58,16 @@ async def list_agent_containers(request: Request):
         }
         for c in containers
     ]
+
+
+@router.get("/api/agents/{name}/deploy-status")
+async def get_deploy_status(request: Request, name: str):
+    """Get the background deploy task status for an agent."""
+    deploy_tasks = request.app.state.deploy_tasks
+    task = deploy_tasks.get(name)
+    if task is None:
+        return JSONResponse({"error": f"No deploy task found for '{name}'"}, status_code=404)
+    return task
 
 
 @router.get("/api/agents/{name}")
@@ -119,7 +131,7 @@ class DeployAgentRequest(BaseModel):
 
 @router.post("/api/agents/deploy")
 async def deploy_agent_endpoint(request: Request, body: DeployAgentRequest):
-    """Deploy a new agent -- creates LXC container, installs framework and QMD."""
+    """Deploy a new agent -- creates LXC container, installs framework and QMD (background)."""
     config = request.app.state.config
     name_error = validate_agent_name(body.name)
     if name_error:
@@ -133,6 +145,20 @@ async def deploy_agent_endpoint(request: Request, body: DeployAgentRequest):
     if find_agent(config, body.name):
         return JSONResponse({"error": f"Agent '{body.name}' already exists"}, status_code=409)
 
+    # Add agent entry immediately with deploying status
+    config.agents.append({
+        "name": body.name,
+        "host": "",
+        "qmd_url": "",
+        "color": body.color,
+        "status": "deploying",
+    })
+    await save_config_locked(config, config.config_path)
+
+    # Record deploy task
+    deploy_tasks = request.app.state.deploy_tasks
+    deploy_tasks[body.name] = {"status": "deploying", "name": body.name}
+
     from tinyagentos.deployer import deploy_agent, DeployRequest
     rkllama_url = "http://localhost:8080"
     for b in config.backends:
@@ -140,26 +166,46 @@ async def deploy_agent_endpoint(request: Request, body: DeployAgentRequest):
             rkllama_url = b["url"]
             break
 
-    result = await deploy_agent(DeployRequest(
-        name=body.name,
-        framework=body.framework,
-        model=body.model,
-        color=body.color,
-        memory_limit=body.memory_limit,
-        cpu_limit=body.cpu_limit,
-        rkllama_url=rkllama_url,
-    ))
+    async def _background_deploy():
+        try:
+            result = await deploy_agent(DeployRequest(
+                name=body.name,
+                framework=body.framework,
+                model=body.model,
+                color=body.color,
+                memory_limit=body.memory_limit,
+                cpu_limit=body.cpu_limit,
+                rkllama_url=rkllama_url,
+            ))
+            agent = find_agent(config, body.name)
+            if result.get("success"):
+                if agent is not None:
+                    agent["host"] = result.get("ip", "")
+                    agent["qmd_url"] = result.get("qmd_url", "")
+                    agent["status"] = "running"
+                deploy_tasks[body.name] = {"status": "success", "name": body.name, "result": result}
+            else:
+                if agent is not None:
+                    agent["status"] = "failed"
+                deploy_tasks[body.name] = {
+                    "status": "failed",
+                    "name": body.name,
+                    "error": result.get("error", "unknown error"),
+                }
+        except Exception as exc:  # noqa: BLE001
+            agent = find_agent(config, body.name)
+            if agent is not None:
+                agent["status"] = "failed"
+            deploy_tasks[body.name] = {
+                "status": "failed",
+                "name": body.name,
+                "error": str(exc),
+            }
+        finally:
+            await save_config_locked(config, config.config_path)
 
-    if result["success"]:
-        config.agents.append({
-            "name": body.name,
-            "host": result.get("ip", ""),
-            "qmd_url": result.get("qmd_url", ""),
-            "color": body.color,
-        })
-        await save_config_locked(config, config.config_path)
-
-    return result
+    asyncio.create_task(_background_deploy())
+    return {"status": "deploying", "name": body.name}
 
 
 @router.post("/api/agents/{name}/start")

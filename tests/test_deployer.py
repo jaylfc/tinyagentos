@@ -105,6 +105,38 @@ class TestDeployAgent:
             assert result.get("llm_key") is None
 
 
+class TestBackgroundDeploy:
+    @pytest.mark.asyncio
+    async def test_deploy_endpoint_returns_immediately(self, client):
+        """POST /api/agents/deploy should return immediately with status=deploying."""
+        resp = await client.post("/api/agents/deploy", json={
+            "name": "bg-test",
+            "framework": "none",
+            "color": "#aabbcc",
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "deploying"
+        assert data["name"] == "bg-test"
+
+    @pytest.mark.asyncio
+    async def test_deploy_status_endpoint(self, client):
+        """GET /api/agents/{name}/deploy-status returns task state."""
+        await client.post("/api/agents/deploy", json={
+            "name": "status-test",
+            "framework": "none",
+        })
+        resp = await client.get("/api/agents/status-test/deploy-status")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] in ("deploying", "success", "failed")
+
+    @pytest.mark.asyncio
+    async def test_deploy_status_not_found(self, client):
+        resp = await client.get("/api/agents/nonexistent/deploy-status")
+        assert resp.status_code == 404
+
+
 class TestUndeployAgent:
     @pytest.mark.asyncio
     async def test_undeploy(self):
