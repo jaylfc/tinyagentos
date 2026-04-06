@@ -4,7 +4,7 @@
 
 Self-hosted AI agent platform that runs on whatever hardware you have. An old laptop, a Raspberry Pi, a gaming PC, an SBC gathering dust — or all of them at once. TinyAgentOS turns your spare hardware into a distributed AI compute cluster.
 
-74 apps, 18 agent frameworks, 167k+ searchable models, agent deployment, training, image/video/audio generation, and full system monitoring — all from a single web dashboard. Supports Apple Silicon (MLX), NVIDIA, AMD, Rockchip NPU, Raspberry Pi, Android phones, and more.
+75 apps, 18 agent frameworks, 167k+ searchable models, agent deployment, training, image/video/audio generation, and full system monitoring — all from a single web dashboard. Supports Apple Silicon (MLX), NVIDIA, AMD, Rockchip NPU, Raspberry Pi, Android phones, and more.
 
 **Framework-agnostic by design** — switch agent frameworks without losing messaging connections, model assignments, or API keys. The Channel Hub owns your communication channels (Telegram, Discord, Slack, Email, Web Chat, Webhooks) and the LLM Proxy manages model access, so agents are always portable.
 
@@ -36,7 +36,7 @@ Search 167k+ GGUF models from HuggingFace and the Ollama library directly from t
 ### Agent Templates (1,467 Templates)
 Pick from 1,467 agent templates — 12 built-in plus 196 from awesome-openclaw-agents and 1,259 from the System Prompt Library — and deploy in one click. Browse by category (24 categories), filter by source, or search. Each template includes a system prompt, recommended framework, model, and resource limits. All templates vendored locally so nothing depends on external services.
 
-### App Store (74 Apps)
+### App Store (75 Apps)
 One-click install for agent frameworks, AI models, and services. Hardware-aware — only shows what works on your device.
 
 ### Agent Deployment
@@ -177,7 +177,7 @@ CI runs automatically on every push (Python 3.10-3.12 + security audit).
 
 ### Done ✅
 - [x] Web GUI with 23 pages
-- [x] App Store (74 apps, 18 agent frameworks)
+- [x] App Store (75 apps, 18 agent frameworks)
 - [x] Live model browser (HuggingFace + Ollama, 167k+ models)
 - [x] Agent deployment wizard (LXC containers)
 - [x] Image + video generation (multi-backend)
