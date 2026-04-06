@@ -1,23 +1,18 @@
 id: picoclaw
-name: picoclaw
+name: PicoClaw
 type: agent-framework
 version: 1.0.0
-description: "Micro OpenClaw — smallest possible agent, ideal for constrained devices"
-homepage: https://github.com/openclaw/picoclaw
+description: "NPU-aware micro agent by Sipeed — under 10MB RAM, designed for $10 ARM boards with NPU acceleration"
+homepage: https://github.com/sipeed/picoclaw
 license: MIT
-
 requires:
-  ram_mb: 64
-  python: ">=3.10"
-
+  ram_mb: 10
 install:
-  method: pip
-  package: picoclaw
-
+  method: script
+  script: scripts/install-picoclaw.sh
 hardware_tiers:
   arm-npu-16gb: full
-  arm-npu-32gb: full
+  arm-cpu-8gb: full
   x86-cuda-12gb: full
-  x86-vulkan-8gb: full
   x86-vulkan-4gb: full
   cpu-only: full
