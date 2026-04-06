@@ -201,10 +201,11 @@ document.addEventListener('htmx:afterRequest', function(evt) {
             const data = JSON.parse(evt.detail.xhr.response);
             if (data.results && data.results.length > 0) {
                 panel.style.display = 'block';
+                function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
                 panel.innerHTML = data.results.map(r =>
-                    '<a href="' + r.url + '" style="display:block; padding:0.5rem 0.75rem; text-decoration:none; border-bottom:1px solid var(--pico-muted-border-color);">' +
-                    '<strong style="font-size:0.85rem;">' + r.title + '</strong>' +
-                    '<br><small style="color:var(--pico-muted-color);">' + r.subtitle + '</small></a>'
+                    '<a href="' + esc(r.url) + '" style="display:block; padding:0.5rem 0.75rem; text-decoration:none; border-bottom:1px solid var(--pico-muted-border-color);">' +
+                    '<strong style="font-size:0.85rem;">' + esc(r.title) + '</strong>' +
+                    '<br><small style="color:var(--pico-muted-color);">' + esc(r.subtitle) + '</small></a>'
                 ).join('');
             } else {
                 panel.style.display = 'none';
