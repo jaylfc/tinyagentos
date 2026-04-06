@@ -4,7 +4,7 @@
 
 Self-hosted AI agent platform that runs on whatever hardware you have. An old laptop, a Raspberry Pi, a gaming PC, an SBC gathering dust — or all of them at once. TinyAgentOS turns your spare hardware into a distributed AI compute cluster.
 
-52+ apps, 167k+ searchable models, agent deployment, training, image/video/audio generation, and full system monitoring — all from a single web dashboard. Supports Apple Silicon (MLX), NVIDIA, AMD, Rockchip NPU, Raspberry Pi, and more.
+58+ apps, 167k+ searchable models, agent deployment, training, image/video/audio generation, and full system monitoring — all from a single web dashboard. Supports Apple Silicon (MLX), NVIDIA, AMD, Rockchip NPU, Raspberry Pi, Android phones, and more.
 
 ## Quick Start
 
@@ -51,6 +51,12 @@ Features unlock automatically based on your hardware and cluster. Solo Pi sees c
 - **Per-agent LoRAs** — each agent gets its own specialisation on a shared base model
 - **Smart routing** — GPU workers get instant LoRA hot-swap, NPU uses time-shared merged models
 - **Deployment** — auto-converts and deploys to all backends in the cluster
+
+### Agent Workspace
+Click on any agent to enter their "virtual computer" — a tablet-like interface with app icons: Messages, Memory, Files, Tasks, Channels, Logs. Browse their conversations, search their knowledge, manage their files. Like logging into their personal device.
+
+### Shared Folders
+Create shared file spaces for agents, groups, and departments. The design team shares mockups, the research team shares documents. Per-agent access control.
 
 ### Agent Management
 - **Communication Channels** — Telegram, Discord, Slack, web chat, email, webhooks (Easy/Advanced setup)
@@ -126,7 +132,7 @@ Platform overhead: **~345 MB RAM** (without models or agents)
 
 ```bash
 pip install -e ".[dev]"
-pytest tests/ -v          # 320+ tests
+pytest tests/ -v          # 540+ tests
 ```
 
 CI runs automatically on every push (Python 3.10-3.12 + security audit).

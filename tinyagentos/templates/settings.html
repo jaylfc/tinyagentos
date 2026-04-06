@@ -116,6 +116,48 @@
   </div>
 </details>
 
+<!-- Section: Shared Folders -->
+<details open>
+  <summary><strong>Shared Folders</strong></summary>
+  <div style="margin-top: 1rem;">
+    <div id="shared-folders-list" hx-get="/api/shared-folders" hx-trigger="load" hx-swap="innerHTML">
+      <article aria-busy="true">Loading shared folders...</article>
+    </div>
+    <form style="display: flex; gap: 0.5rem; align-items: end; margin-top: 1rem;"
+          hx-post="/api/shared-folders" hx-target="#shared-folders-list" hx-swap="innerHTML">
+      <div style="flex: 1;">
+        <label for="sf-name">Folder Name</label>
+        <input type="text" id="sf-name" name="name" placeholder="shared-docs" required style="margin: 0;">
+      </div>
+      <div style="flex: 2;">
+        <label for="sf-desc">Description</label>
+        <input type="text" id="sf-desc" name="description" placeholder="Shared documents for all agents" style="margin: 0;">
+      </div>
+      <button type="submit" style="margin: 0;">Create</button>
+    </form>
+  </div>
+</details>
+
+<!-- Section: Transcript Depth -->
+<details open>
+  <summary><strong>Transcript Depth</strong></summary>
+  <div style="margin-top: 1rem;">
+    <p style="font-size: 0.9rem;">Configure the default logging depth for inter-agent conversations.</p>
+    <table aria-label="Transcript depth levels">
+      <thead><tr><th>Level</th><th>Includes</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Message text only (clean conversation view)</td></tr>
+        <tr><td>2</td><td>Messages + tool calls and results (default)</td></tr>
+        <tr><td>3</td><td>Messages + tool calls + reasoning chain</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size: 0.85rem; color: var(--pico-muted-color);">
+      Per-agent transcript depth can be set in the agent's config via <code>transcript_depth</code>.
+      The depth toggle is available in each agent's Messages view.
+    </p>
+  </div>
+</details>
+
 <!-- Section 4: System Updates -->
 <details open>
   <summary><strong>System Updates</strong></summary>
