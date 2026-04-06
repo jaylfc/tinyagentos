@@ -151,6 +151,11 @@
     }
     </script>
     <script>
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/static/sw.js').catch(() => {});
+}
+</script>
+    <script>
     function toggleTheme() {
         const html = document.documentElement;
         const current = html.getAttribute('data-theme');

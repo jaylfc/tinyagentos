@@ -25,6 +25,12 @@ async def dashboard_page(request: Request):
     return templates.TemplateResponse(request, "dashboard.html", {"active_page": "dashboard"})
 
 
+@router.get("/offline", response_class=HTMLResponse)
+async def offline_page(request: Request):
+    templates = request.app.state.templates
+    return templates.TemplateResponse(request, "offline.html", {"active_page": "offline"})
+
+
 @router.get("/setup", response_class=HTMLResponse)
 async def setup_page(request: Request):
     templates = request.app.state.templates

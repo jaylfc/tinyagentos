@@ -48,6 +48,14 @@ class TestClusterSummary:
         assert data["workers"] == 0
 
 
+class TestOfflinePage:
+    @pytest.mark.asyncio
+    async def test_offline_page(self, client):
+        resp = await client.get("/offline")
+        assert resp.status_code == 200
+        assert b"Offline" in resp.content
+
+
 class TestActivityFeed:
     @pytest.mark.asyncio
     async def test_activity_json(self, client):
