@@ -185,3 +185,23 @@ async def webchat_ws(websocket: WebSocket, agent_name: str):
         websocket.app.state.channel_hub_connectors = connectors
 
     await connector.handle_websocket(websocket)
+
+
+@router.post("/api/channel-hub/webhook/{agent_name}")
+async def webhook_incoming(request: Request, agent_name: str):
+    """Accept an incoming webhook and return the agent's response."""
+    connectors = getattr(request.app.state, "channel_hub_connectors", {})
+    connector_key = f"webhook:{agent_name}"
+
+    connector = connectors.get(connector_key)
+    if not connector:
+        # Auto-create a webhook connector if none exists
+        from tinyagentos.channel_hub.webhook_connector import WebhookConnector
+        router_obj = request.app.state.channel_hub_router
+        connector = WebhookConnector(agent_name=agent_name, router=router_obj)
+        connectors[connector_key] = connector
+        request.app.state.channel_hub_connectors = connectors
+
+    body = await request.json()
+    result = await connector.handle_incoming(body)
+    return result
