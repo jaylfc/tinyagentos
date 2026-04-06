@@ -269,6 +269,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     from tinyagentos.routes.channel_hub import router as channel_hub_router_routes
     app.include_router(channel_hub_router_routes)
 
+    from tinyagentos.routes.search import router as search_router
+    app.include_router(search_router)
+
     # Lobby demo (internal only — not included in public builds)
     try:
         from tinyagentos.lobby.routes import router as lobby_router
