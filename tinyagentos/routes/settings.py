@@ -276,6 +276,61 @@ async def restore_backup(request: Request, file: UploadFile):
     return {"status": "restored", "message": "Backup restored successfully"}
 
 
+class BackupSchedule(BaseModel):
+    frequency: str  # "off", "daily", "weekly"
+
+
+BACKUP_SCHEDULES = {
+    "daily": "0 3 * * *",
+    "weekly": "0 3 * * 0",
+}
+
+
+@router.get("/api/settings/backup-schedule")
+async def get_backup_schedule(request: Request):
+    """Get current backup schedule."""
+    scheduler = request.app.state.scheduler
+    tasks = await scheduler.list_tasks()
+    backup_task = next((t for t in tasks if t.get("name") == "auto-backup"), None)
+    if backup_task:
+        # Reverse-lookup frequency from cron
+        cron = backup_task.get("schedule", "")
+        freq = "custom"
+        for name, sched in BACKUP_SCHEDULES.items():
+            if sched == cron:
+                freq = name
+                break
+        return {"frequency": freq, "schedule": cron, "task_id": backup_task.get("id")}
+    return {"frequency": "off", "schedule": None, "task_id": None}
+
+
+@router.put("/api/settings/backup-schedule")
+async def set_backup_schedule(request: Request, body: BackupSchedule):
+    """Set or disable automatic backup schedule."""
+    scheduler = request.app.state.scheduler
+
+    # Remove existing backup task if any
+    tasks = await scheduler.list_tasks()
+    for task in tasks:
+        if task.get("name") == "auto-backup":
+            await scheduler.delete_task(task["id"])
+
+    if body.frequency == "off":
+        return {"status": "disabled", "frequency": "off"}
+
+    cron = BACKUP_SCHEDULES.get(body.frequency)
+    if not cron:
+        return JSONResponse({"error": f"Invalid frequency: {body.frequency}"}, status_code=400)
+
+    await scheduler.add_task(
+        name="auto-backup",
+        schedule=cron,
+        command="create_backup",
+        agent_name=None,
+    )
+    return {"status": "enabled", "frequency": body.frequency, "schedule": cron}
+
+
 class WebhookAdd(BaseModel):
     url: str
     type: str = "generic"

@@ -65,6 +65,33 @@ class TestSettingsRoutes:
         assert worker_join[0]["muted"] is True
 
     @pytest.mark.asyncio
+    async def test_get_backup_schedule_default_off(self, client):
+        resp = await client.get("/api/settings/backup-schedule")
+        assert resp.status_code == 200
+        assert resp.json()["frequency"] == "off"
+
+    @pytest.mark.asyncio
+    async def test_set_backup_schedule_daily(self, client):
+        resp = await client.put("/api/settings/backup-schedule", json={"frequency": "daily"})
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "enabled"
+        assert resp.json()["frequency"] == "daily"
+        # Verify it persisted
+        resp = await client.get("/api/settings/backup-schedule")
+        assert resp.json()["frequency"] == "daily"
+
+    @pytest.mark.asyncio
+    async def test_disable_backup_schedule(self, client):
+        # Enable first
+        await client.put("/api/settings/backup-schedule", json={"frequency": "weekly"})
+        # Then disable
+        resp = await client.put("/api/settings/backup-schedule", json={"frequency": "off"})
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "disabled"
+        resp = await client.get("/api/settings/backup-schedule")
+        assert resp.json()["frequency"] == "off"
+
+    @pytest.mark.asyncio
     async def test_webhooks_crud(self, client):
         resp = await client.post("/api/settings/webhooks", json={
             "url": "https://example.com/hook",
