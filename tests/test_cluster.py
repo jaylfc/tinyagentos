@@ -26,11 +26,12 @@ def _make_worker(name: str, capabilities: list[str] | None = None,
     )
 
 
+@pytest.mark.asyncio
 class TestClusterManager:
-    def test_register_worker(self):
+    async def test_register_worker(self):
         mgr = ClusterManager()
         w = _make_worker("gpu-box")
-        mgr.register_worker(w)
+        await mgr.register_worker(w)
 
         assert len(mgr.get_workers()) == 1
         fetched = mgr.get_worker("gpu-box")
@@ -39,17 +40,17 @@ class TestClusterManager:
         assert fetched.registered_at > 0
         assert fetched.last_heartbeat > 0
 
-    def test_unregister_worker(self):
+    async def test_unregister_worker(self):
         mgr = ClusterManager()
-        mgr.register_worker(_make_worker("gpu-box"))
+        await mgr.register_worker(_make_worker("gpu-box"))
         assert mgr.unregister_worker("gpu-box") is True
         assert mgr.get_workers() == []
         assert mgr.unregister_worker("gpu-box") is False
 
-    def test_heartbeat_updates_load_and_status(self):
+    async def test_heartbeat_updates_load_and_status(self):
         mgr = ClusterManager()
         w = _make_worker("gpu-box")
-        mgr.register_worker(w)
+        await mgr.register_worker(w)
 
         ok = mgr.heartbeat("gpu-box", load=0.75, models=["llama3"])
         assert ok is True
@@ -58,23 +59,23 @@ class TestClusterManager:
         assert updated.models == ["llama3"]
         assert updated.status == "online"
 
-    def test_heartbeat_unknown_worker_returns_false(self):
+    async def test_heartbeat_unknown_worker_returns_false(self):
         mgr = ClusterManager()
         assert mgr.heartbeat("nonexistent") is False
 
-    def test_heartbeat_revives_offline_worker(self):
+    async def test_heartbeat_revives_offline_worker(self):
         mgr = ClusterManager()
         w = _make_worker("gpu-box")
-        mgr.register_worker(w)
+        await mgr.register_worker(w)
         w.status = "offline"
 
         mgr.heartbeat("gpu-box", load=0.1)
         assert mgr.get_worker("gpu-box").status == "online"
 
-    def test_heartbeat_timeout_marks_offline(self):
+    async def test_heartbeat_timeout_marks_offline(self):
         mgr = ClusterManager()
         w = _make_worker("gpu-box")
-        mgr.register_worker(w)
+        await mgr.register_worker(w)
         # Simulate stale heartbeat
         w.last_heartbeat = time.time() - HEARTBEAT_TIMEOUT - 5
 
@@ -86,11 +87,11 @@ class TestClusterManager:
 
         assert mgr.get_worker("gpu-box").status == "offline"
 
-    def test_get_workers_for_capability_filters_and_sorts(self):
+    async def test_get_workers_for_capability_filters_and_sorts(self):
         mgr = ClusterManager()
-        mgr.register_worker(_make_worker("fast-gpu", capabilities=["chat", "embed"], load=0.2))
-        mgr.register_worker(_make_worker("slow-gpu", capabilities=["chat"], load=0.8))
-        mgr.register_worker(_make_worker("offline-gpu", capabilities=["chat"], load=0.0))
+        await mgr.register_worker(_make_worker("fast-gpu", capabilities=["chat", "embed"], load=0.2))
+        await mgr.register_worker(_make_worker("slow-gpu", capabilities=["chat"], load=0.8))
+        await mgr.register_worker(_make_worker("offline-gpu", capabilities=["chat"], load=0.0))
         # Mark one offline
         mgr.get_worker("offline-gpu").status = "offline"
 
@@ -99,36 +100,37 @@ class TestClusterManager:
         assert result[0].name == "fast-gpu"  # lowest load first
         assert result[1].name == "slow-gpu"
 
-    def test_get_workers_for_capability_embed(self):
+    async def test_get_workers_for_capability_embed(self):
         mgr = ClusterManager()
-        mgr.register_worker(_make_worker("fast-gpu", capabilities=["chat", "embed"], load=0.2))
-        mgr.register_worker(_make_worker("slow-gpu", capabilities=["chat"], load=0.1))
+        await mgr.register_worker(_make_worker("fast-gpu", capabilities=["chat", "embed"], load=0.2))
+        await mgr.register_worker(_make_worker("slow-gpu", capabilities=["chat"], load=0.1))
 
         result = mgr.get_workers_for_capability("embed")
         assert len(result) == 1
         assert result[0].name == "fast-gpu"
 
-    def test_get_best_worker_returns_lowest_load(self):
+    async def test_get_best_worker_returns_lowest_load(self):
         mgr = ClusterManager()
-        mgr.register_worker(_make_worker("high-load", capabilities=["chat"], load=0.9))
-        mgr.register_worker(_make_worker("low-load", capabilities=["chat"], load=0.1))
+        await mgr.register_worker(_make_worker("high-load", capabilities=["chat"], load=0.9))
+        await mgr.register_worker(_make_worker("low-load", capabilities=["chat"], load=0.1))
 
         best = mgr.get_best_worker("chat")
         assert best is not None
         assert best.name == "low-load"
 
-    def test_get_best_worker_returns_none_for_missing_capability(self):
+    async def test_get_best_worker_returns_none_for_missing_capability(self):
         mgr = ClusterManager()
-        mgr.register_worker(_make_worker("gpu", capabilities=["chat"]))
+        await mgr.register_worker(_make_worker("gpu", capabilities=["chat"]))
         assert mgr.get_best_worker("tts") is None
 
 
+@pytest.mark.asyncio
 class TestTaskRouter:
     @pytest.mark.asyncio
     async def test_router_tries_workers_in_order(self):
         mgr = ClusterManager()
-        mgr.register_worker(_make_worker("w1", capabilities=["chat"], load=0.1, url="http://w1:8000"))
-        mgr.register_worker(_make_worker("w2", capabilities=["chat"], load=0.5, url="http://w2:8000"))
+        await mgr.register_worker(_make_worker("w1", capabilities=["chat"], load=0.1, url="http://w1:8000"))
+        await mgr.register_worker(_make_worker("w2", capabilities=["chat"], load=0.5, url="http://w2:8000"))
 
         mock_client = AsyncMock(spec=httpx.AsyncClient)
         # First worker fails, second succeeds
@@ -151,7 +153,7 @@ class TestTaskRouter:
     @pytest.mark.asyncio
     async def test_router_returns_none_when_all_fail(self):
         mgr = ClusterManager()
-        mgr.register_worker(_make_worker("w1", capabilities=["chat"], load=0.1, url="http://w1:8000"))
+        await mgr.register_worker(_make_worker("w1", capabilities=["chat"], load=0.1, url="http://w1:8000"))
 
         mock_client = AsyncMock(spec=httpx.AsyncClient)
         mock_client.post.side_effect = Exception("connection refused")

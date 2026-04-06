@@ -57,9 +57,10 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     channel_store = ChannelStore(data_dir / "channels.db")
     scheduler = TaskScheduler(data_dir / "scheduler.db")
     fallback = BackendFallback(config.backends, http_client)
-    cluster_manager = ClusterManager()
+    cluster_manager = ClusterManager(notifications=notif_store)
     task_router = TaskRouter(cluster_manager, http_client)
     cap_checker = CapabilityChecker(hardware_profile, cluster_manager)
+    cluster_manager._capabilities = cap_checker  # wire after creation (circular dep)
     training_manager = TrainingManager(data_dir / "training.db")
 
     @asynccontextmanager

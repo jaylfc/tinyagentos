@@ -6,6 +6,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
+from tinyagentos.cluster.optimiser import ClusterOptimiser
 from tinyagentos.cluster.worker_protocol import WorkerInfo
 
 router = APIRouter()
@@ -33,6 +34,12 @@ class RouteRequest(BaseModel):
     path: str
     body: dict | None = None
     timeout: float = 60
+
+
+class MoveRequest(BaseModel):
+    item: str
+    from_worker: str | None = None
+    to_worker: str
 
 
 @router.get("/cluster", response_class=HTMLResponse)
@@ -70,7 +77,7 @@ async def register_worker(request: Request, body: WorkerRegister):
         capabilities=body.capabilities,
         platform=body.platform,
     )
-    cluster.register_worker(info)
+    await cluster.register_worker(info)
     return {"status": "registered", "name": body.name}
 
 
@@ -121,3 +128,34 @@ async def route_task(request: Request, body: RouteRequest):
             status_code=503,
         )
     return {"data": data, "worker": worker_name}
+
+
+@router.get("/api/cluster/optimise")
+async def optimise_cluster(request: Request):
+    cluster = request.app.state.cluster_manager
+    optimiser = ClusterOptimiser(cluster)
+    return optimiser.analyse()
+
+
+@router.post("/api/cluster/move")
+async def move_model(request: Request, body: MoveRequest):
+    cluster = request.app.state.cluster_manager
+    to_worker = cluster.get_worker(body.to_worker)
+    if not to_worker:
+        return JSONResponse({"error": f"Worker '{body.to_worker}' not found"}, status_code=404)
+    if to_worker.status != "online":
+        return JSONResponse({"error": f"Worker '{body.to_worker}' is not online"}, status_code=400)
+
+    # If from_worker specified, remove the item from it
+    if body.from_worker:
+        from_w = cluster.get_worker(body.from_worker)
+        if from_w and body.item in from_w.models:
+            from_w.models.remove(body.item)
+        if from_w and body.item in from_w.capabilities:
+            from_w.capabilities.remove(body.item)
+
+    # Add to target worker's models if not already there
+    if body.item not in to_worker.models:
+        to_worker.models.append(body.item)
+
+    return {"status": "moved", "item": body.item, "to": body.to_worker}

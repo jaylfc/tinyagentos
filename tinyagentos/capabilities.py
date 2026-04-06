@@ -72,7 +72,7 @@ class CapabilityChecker:
                     if npu.get("type", "none") != "none":
                         resources["npu_types"].append(npu["type"])
                     cpu = hw.get("cpu", {})
-                    if cpu.get("arch"):
+                    if isinstance(cpu, dict) and cpu.get("arch"):
                         resources["architectures"].append(cpu["arch"])
         return resources
 
