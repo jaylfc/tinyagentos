@@ -159,7 +159,7 @@ Platform overhead: **~345 MB RAM** (without models or agents)
 
 ```bash
 pip install -e ".[dev]"
-pytest tests/ -v          # 697 tests
+pytest tests/ -v          # 754 tests
 ```
 
 CI runs automatically on every push (Python 3.10-3.12 + security audit).
