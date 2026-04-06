@@ -67,6 +67,10 @@ async def client(app):
     if conversion_mgr._db is not None:
         await conversion_mgr.close()
     await conversion_mgr.init()
+    training_mgr = app.state.training
+    if training_mgr._db is not None:
+        await training_mgr.close()
+    await training_mgr.init()
     agent_messages = app.state.agent_messages
     if agent_messages._db is not None:
         await agent_messages.close()
@@ -81,6 +85,7 @@ async def client(app):
     await shared_folders.close()
     await agent_messages.close()
     await conversion_mgr.close()
+    await training_mgr.close()
     await relationship_mgr.close()
     await channel_store.close()
     await scheduler.close()
@@ -180,6 +185,10 @@ async def client_with_qmd(app_with_qmd):
     if conversion_mgr._db is not None:
         await conversion_mgr.close()
     await conversion_mgr.init()
+    training_mgr = app_with_qmd.state.training
+    if training_mgr._db is not None:
+        await training_mgr.close()
+    await training_mgr.init()
     agent_messages = app_with_qmd.state.agent_messages
     if agent_messages._db is not None:
         await agent_messages.close()
@@ -194,6 +203,7 @@ async def client_with_qmd(app_with_qmd):
     await shared_folders.close()
     await agent_messages.close()
     await conversion_mgr.close()
+    await training_mgr.close()
     await relationship_mgr.close()
     await channel_store.close()
     await scheduler.close()
