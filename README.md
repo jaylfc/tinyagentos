@@ -4,7 +4,7 @@
 
 Self-hosted AI agent platform that runs on whatever hardware you have. An old laptop, a Raspberry Pi, a gaming PC, an SBC gathering dust — or all of them at once. TinyAgentOS turns your spare hardware into a distributed AI compute cluster.
 
-58+ apps, 167k+ searchable models, agent deployment, training, image/video/audio generation, and full system monitoring — all from a single web dashboard. Supports Apple Silicon (MLX), NVIDIA, AMD, Rockchip NPU, Raspberry Pi, Android phones, and more.
+72+ apps, 17 agent frameworks, 167k+ searchable models, agent deployment, training, image/video/audio generation, and full system monitoring — all from a single web dashboard. Supports Apple Silicon (MLX), NVIDIA, AMD, Rockchip NPU, Raspberry Pi, Android phones, and more.
 
 ## Quick Start
 
@@ -66,18 +66,29 @@ Create shared file spaces for agents, groups, and departments. The design team s
 - **Data Import** — drag-and-drop file upload to agent memory
 - **Memory Browser** — keyword + semantic vector search across all agents
 
+### LLM Proxy (LiteLLM)
+Hidden internal gateway that unifies all inference providers. Per-agent virtual keys with budget/rate limits. Auto-configured from your backend list. Hot-swap providers without touching agent config.
+
+### Authentication
+Password-protected dashboard with persistent sessions. Per-agent API keys. Exempt paths for cluster workers and health checks.
+
+### Model Conversion
+Convert models between formats (GGUF→RKLLM, HF→GGUF, GGUF→MLX). Capability-gated — "Convert for NPU" button appears when an x86 worker joins the cluster.
+
 ### Monitoring & Management
-- **Dashboard** — KPIs, CPU/RAM sparklines, activity feed, backend health
-- **Notifications** — health alerts, backend up/down state changes
+- **Dashboard** — KPIs, CPU/RAM sparklines, activity feed, backend health, cluster stats
+- **Health Debug Page** — checks all services, backends, agents, disk, RAM with live status
+- **Notifications** — health alerts, backend up/down, worker join/leave, webhook forwarding (Slack/Discord/Telegram)
 - **Agent Logs** — real-time log viewer with auto-refresh
 - **Backup & Restore** — downloadable config backup, one-click restore
 - **System Updates** — pull latest from GitHub via Settings page
+- **Provider Management** — add/test/remove inference providers with live connectivity checks
 
-## App Catalog (52+ Apps)
+## App Catalog (72+ Apps)
 
 | Category | Apps |
 |----------|------|
-| **Agent Frameworks** | SmolAgents, PocketFlow, OpenClaw, nanoclaw, picoclaw, TinyAgent, Hermes, Agent Zero, Swarm, OpenAI Agents SDK, Langroid |
+| **Agent Frameworks** | SmolAgents, PocketFlow, OpenClaw, nanoclaw, PicoClaw (NPU-aware), ZeroClaw, MicroClaw, IronClaw, NullClaw, Moltis, NemoClaw, TinyAgent, Hermes, Agent Zero, Swarm, OpenAI Agents SDK, Langroid |
 | **LLM Models** | Qwen3 0.6B-8B (GGUF + RKLLM + MLX), plus 167k+ searchable from HuggingFace |
 | **Image Models** | LCM Dreamshaper, SD 1.5 LCM, SDXL Turbo |
 | **Image Gen** | ComfyUI, Fooocus, SD Web UI, stable-diffusion.cpp, FastSD CPU, RKNN SD, rk-llama.cpp |
@@ -132,7 +143,7 @@ Platform overhead: **~345 MB RAM** (without models or agents)
 
 ```bash
 pip install -e ".[dev]"
-pytest tests/ -v          # 540+ tests
+pytest tests/ -v          # 580+ tests
 ```
 
 CI runs automatically on every push (Python 3.10-3.12 + security audit).
@@ -140,33 +151,42 @@ CI runs automatically on every push (Python 3.10-3.12 + security audit).
 ## Roadmap
 
 ### Done ✅
-- [x] Web GUI with 13 pages
-- [x] App Store (52+ apps)
-- [x] Live model browser (HuggingFace + Ollama)
-- [x] Agent deployment wizard (LXC)
-- [x] Image generation (multi-backend)
-- [x] Semantic vector search
-- [x] Multi-host backend fallback
-- [x] Communication channels
-- [x] Secrets manager
-- [x] Distributed compute cluster
-- [x] Cross-platform worker apps
+- [x] Web GUI with 18+ pages
+- [x] App Store (72+ apps, 17 agent frameworks)
+- [x] Live model browser (HuggingFace + Ollama, 167k+ models)
+- [x] Agent deployment wizard (LXC containers)
+- [x] Image + video generation (multi-backend)
+- [x] Semantic vector search via qmd serve
+- [x] Multi-host backend fallback with auto-recovery
+- [x] Communication channels (8 types, Easy/Advanced)
+- [x] Secrets manager (encrypted, per-agent access)
+- [x] Distributed compute cluster with auto-optimise
+- [x] Cross-platform worker apps (Windows/Mac/Linux/Android)
+- [x] Authentication (password + sessions)
+- [x] Model conversion pipeline (GGUF→RKLLM, capability-gated)
+- [x] Agent workspace (virtual computer per agent)
+- [x] Inter-agent messaging with transcript depth
+- [x] Shared folders for agent groups
+- [x] Training page with LoRA presets
+- [x] Dynamic capability system (features unlock by hardware)
+- [x] LLM Proxy (LiteLLM) with per-agent keys
+- [x] Webhook notifications (Slack/Discord/Telegram)
+- [x] Health debug page
 
 ### In Progress
+- [ ] Channel Hub — framework-agnostic messaging abstraction
 - [ ] Fresh install test on clean hardware (#2)
-- [ ] Pre-built Armbian images (#7)
-- [ ] Automated Playwright tests (#8)
 
 ### Planned
-- [ ] Authentication system (#3)
 - [ ] Local assistant LLM / Setup Agent (#4)
-- [ ] RKNN model conversion pipeline (#10)
-- [ ] Exo integration for model splitting
+- [ ] Pre-built Armbian images (#7)
+- [ ] Automated Playwright tests (#8)
+- [ ] Exo integration for pipeline-parallel inference
 
 ### Future Vision
 - [ ] Cloud services — tinyagentos.com (#5)
 - [ ] AI-aware desktop with auto-attaching MCP (#6)
-- [ ] LoRA fine-tuning pipeline (#12)
+- [ ] Mobile worker native apps (iOS/Android)
 - [ ] Dynamic NPU core allocation (#13)
 
 ## Contributing
