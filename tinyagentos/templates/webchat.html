@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}Chat with {{ agent_name }} — TinyAgentOS{% endblock %}
+{% block content %}
+<h2>Chat with {{ agent_name }}</h2>
+
+<section aria-label="Chat interface" id="chat-section">
+  <div id="chat-messages" role="log" aria-live="polite" aria-label="Chat messages"
+       style="height: 400px; overflow-y: auto; border: 1px solid var(--pico-muted-border-color); border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+    <p id="chat-placeholder" style="color: var(--pico-muted-color);">Connecting...</p>
+  </div>
+
+  <form id="chat-form" aria-label="Send a message" onsubmit="sendMessage(event)" style="display: flex; gap: 0.5rem;">
+    <input type="text" id="chat-input" placeholder="Type your message..."
+           aria-label="Message input" autocomplete="off" required style="flex: 1;">
+    <button type="submit" aria-label="Send message">Send</button>
+  </form>
+
+  <p id="chat-status" aria-live="polite" style="font-size: 0.85rem; color: var(--pico-muted-color); margin-top: 0.5rem;"></p>
+</section>
+
+<script>
+(function() {
+  const agentName = "{{ agent_name }}";
+  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+  const wsUrl = protocol + "//" + location.host + "/ws/chat/" + agentName;
+  const messagesDiv = document.getElementById("chat-messages");
+  const placeholder = document.getElementById("chat-placeholder");
+  const chatInput = document.getElementById("chat-input");
+  const statusEl = document.getElementById("chat-status");
+  let ws = null;
+  let userName = "User";
+
+  function connect() {
+    ws = new WebSocket(wsUrl);
+    ws.onopen = function() {
+      placeholder.textContent = "Connected. Say hello!";
+      statusEl.textContent = "Connected";
+    };
+    ws.onmessage = function(event) {
+      const data = JSON.parse(event.data);
+      addMessage("agent", data.content || "(no response)");
+      if (data.buttons && data.buttons.length > 0) {
+        addButtons(data.buttons);
+      }
+      if (data.images) {
+        data.images.forEach(function(url) {
+          addImage(url);
+        });
+      }
+    };
+    ws.onclose = function() {
+      statusEl.textContent = "Disconnected. Reconnecting...";
+      setTimeout(connect, 3000);
+    };
+    ws.onerror = function() {
+      statusEl.textContent = "Connection error";
+    };
+  }
+
+  function addMessage(role, text) {
+    if (placeholder && placeholder.parentNode) {
+      placeholder.remove();
+    }
+    const el = document.createElement("div");
+    el.setAttribute("role", "article");
+    el.setAttribute("aria-label", role === "agent" ? "Agent message" : "Your message");
+    el.style.marginBottom = "0.75rem";
+    el.style.padding = "0.5rem 0.75rem";
+    el.style.borderRadius = "6px";
+    if (role === "user") {
+      el.style.background = "var(--pico-primary-background)";
+      el.style.color = "var(--pico-primary-inverse)";
+      el.style.marginLeft = "20%";
+      el.style.textAlign = "right";
+    } else {
+      el.style.background = "var(--pico-card-background-color)";
+      el.style.marginRight = "20%";
+    }
+    el.textContent = text;
+    messagesDiv.appendChild(el);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+  }
+
+  function addButtons(buttons) {
+    const row = document.createElement("div");
+    row.style.display = "flex";
+    row.style.gap = "0.5rem";
+    row.style.marginBottom = "0.75rem";
+    buttons.forEach(function(b) {
+      const btn = document.createElement("button");
+      btn.textContent = b.label;
+      btn.className = "outline";
+      btn.setAttribute("aria-label", "Action: " + b.label);
+      btn.onclick = function() {
+        sendText(b.action || b.label);
+      };
+      row.appendChild(btn);
+    });
+    messagesDiv.appendChild(row);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+  }
+
+  function addImage(url) {
+    const img = document.createElement("img");
+    img.src = url;
+    img.alt = "Agent shared image";
+    img.style.maxWidth = "100%";
+    img.style.borderRadius = "6px";
+    img.style.marginBottom = "0.75rem";
+    messagesDiv.appendChild(img);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+  }
+
+  function sendText(text) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({name: userName, text: text}));
+    addMessage("user", text);
+  }
+
+  window.sendMessage = function(event) {
+    event.preventDefault();
+    const text = chatInput.value.trim();
+    if (!text) return;
+    sendText(text);
+    chatInput.value = "";
+    chatInput.focus();
+  };
+
+  connect();
+})();
+</script>
+{% endblock %}
