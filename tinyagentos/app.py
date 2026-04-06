@@ -24,6 +24,8 @@ from tinyagentos.scheduler import TaskScheduler
 from tinyagentos.relationships import RelationshipManager
 from tinyagentos.secrets import SecretsStore
 from tinyagentos.training import TrainingManager
+from tinyagentos.conversion import ConversionManager
+from tinyagentos.agent_messages import AgentMessageStore
 
 PROJECT_DIR = Path(__file__).parent.parent
 
@@ -63,6 +65,8 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     cap_checker = CapabilityChecker(hardware_profile, cluster_manager)
     cluster_manager._capabilities = cap_checker  # wire after creation (circular dep)
     training_manager = TrainingManager(data_dir / "training.db")
+    conversion_manager = ConversionManager(data_dir / "conversion.db")
+    agent_messages = AgentMessageStore(data_dir / "agent_messages.db")
     auth_manager = AuthManager(data_dir)
 
     @asynccontextmanager
@@ -75,6 +79,8 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         await channel_store.init()
         await scheduler.init()
         await training_manager.init()
+        await conversion_manager.init()
+        await agent_messages.init()
         app.state.config = config
         app.state.config_path = config_path
         app.state.metrics = metrics_store
@@ -91,6 +97,8 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.task_router = task_router
         app.state.capabilities = cap_checker
         app.state.training = training_manager
+        app.state.conversion = conversion_manager
+        app.state.agent_messages = agent_messages
         app.state.auth = auth_manager
         # Start background health monitor
         from tinyagentos.health import HealthMonitor
@@ -103,6 +111,8 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         yield
         await cluster_manager.stop()
         await monitor.stop()
+        await agent_messages.close()
+        await conversion_manager.close()
         await training_manager.close()
         await scheduler.close()
         await channel_store.close()
@@ -141,6 +151,8 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     app.state.task_router = task_router
     app.state.capabilities = cap_checker
     app.state.training = training_manager
+    app.state.conversion = conversion_manager
+    app.state.agent_messages = agent_messages
     app.state.auth = auth_manager
 
     # Mount static files
@@ -205,6 +217,12 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     from tinyagentos.routes.training import router as training_router
     app.include_router(training_router)
+
+    from tinyagentos.routes.conversion import router as conversion_router
+    app.include_router(conversion_router)
+
+    from tinyagentos.routes.workspace import router as workspace_router
+    app.include_router(workspace_router)
 
     # Lobby demo (internal only — not included in public builds)
     try:
