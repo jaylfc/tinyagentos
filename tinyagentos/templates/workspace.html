@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}{{ agent.name }}'s Workspace — TinyAgentOS{% endblock %}
+{% block content %}
+<div style="max-width: 700px; margin: 0 auto; padding: 1rem 0;">
+    <div style="text-align: center; margin-bottom: 2rem;">
+        <div style="display: inline-block; width: 3rem; height: 3rem; border-radius: 50%; background: {{ agent.color }}; margin-bottom: 0.5rem;"></div>
+        <h2 style="margin: 0;">{{ agent.name }}'s Workspace</h2>
+        <small style="color: var(--pico-muted-color);">{{ agent.host }}</small>
+    </div>
+
+    <div class="workspace-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 1.5rem; max-width: 600px; margin: 2rem auto;">
+
+        <a href="/agents/{{ agent.name }}/workspace/messages" class="workspace-app" aria-label="Messages"
+           style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1.25rem 0.5rem; border-radius: 1rem; background: var(--pico-card-background-color); border: 1px solid var(--pico-muted-border-color); text-decoration: none; color: inherit; position: relative; transition: transform 0.15s, box-shadow 0.15s;">
+            <div style="font-size: 3rem; text-align: center; line-height: 1;">&#x1F4AC;</div>
+            <div style="text-align: center; font-size: 0.85rem; margin-top: 0.5rem;">Messages</div>
+            {% if unread_count %}<span style="position: absolute; top: 0.5rem; right: 0.5rem; background: #ff6b6b; color: white; border-radius: 50%; width: 1.5rem; height: 1.5rem; font-size: 0.75rem; display: flex; align-items: center; justify-content: center;">{{ unread_count }}</span>{% endif %}
+        </a>
+
+        <a href="/agents/{{ agent.name }}/workspace/memory" class="workspace-app" aria-label="Memory"
+           style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1.25rem 0.5rem; border-radius: 1rem; background: var(--pico-card-background-color); border: 1px solid var(--pico-muted-border-color); text-decoration: none; color: inherit; transition: transform 0.15s, box-shadow 0.15s;">
+            <div style="font-size: 3rem; text-align: center; line-height: 1;">&#x1F9E0;</div>
+            <div style="text-align: center; font-size: 0.85rem; margin-top: 0.5rem;">Memory</div>
+        </a>
+
+        <a href="/agents/{{ agent.name }}/workspace/files" class="workspace-app" aria-label="Files"
+           style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1.25rem 0.5rem; border-radius: 1rem; background: var(--pico-card-background-color); border: 1px solid var(--pico-muted-border-color); text-decoration: none; color: inherit; transition: transform 0.15s, box-shadow 0.15s;">
+            <div style="font-size: 3rem; text-align: center; line-height: 1;">&#x1F4C1;</div>
+            <div style="text-align: center; font-size: 0.85rem; margin-top: 0.5rem;">Files</div>
+        </a>
+
+        <a href="/agents/{{ agent.name }}/workspace/tasks" class="workspace-app" aria-label="Tasks"
+           style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1.25rem 0.5rem; border-radius: 1rem; background: var(--pico-card-background-color); border: 1px solid var(--pico-muted-border-color); text-decoration: none; color: inherit; transition: transform 0.15s, box-shadow 0.15s;">
+            <div style="font-size: 3rem; text-align: center; line-height: 1;">&#x2705;</div>
+            <div style="text-align: center; font-size: 0.85rem; margin-top: 0.5rem;">Tasks</div>
+        </a>
+
+        <a href="/agents/{{ agent.name }}/workspace/channels" class="workspace-app" aria-label="Channels"
+           style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1.25rem 0.5rem; border-radius: 1rem; background: var(--pico-card-background-color); border: 1px solid var(--pico-muted-border-color); text-decoration: none; color: inherit; transition: transform 0.15s, box-shadow 0.15s;">
+            <div style="font-size: 3rem; text-align: center; line-height: 1;">&#x1F4E7;</div>
+            <div style="text-align: center; font-size: 0.85rem; margin-top: 0.5rem;">Channels</div>
+        </a>
+
+        <a href="/api/partials/agent-logs/{{ agent.name }}" class="workspace-app" aria-label="Logs"
+           style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1.25rem 0.5rem; border-radius: 1rem; background: var(--pico-card-background-color); border: 1px solid var(--pico-muted-border-color); text-decoration: none; color: inherit; transition: transform 0.15s, box-shadow 0.15s;">
+            <div style="font-size: 3rem; text-align: center; line-height: 1;">&#x1F4CB;</div>
+            <div style="text-align: center; font-size: 0.85rem; margin-top: 0.5rem;">Logs</div>
+        </a>
+
+    </div>
+
+    <div style="text-align: center; margin-top: 2rem;">
+        <a href="/agents" class="outline" role="button" style="font-size: 0.85rem;">Back to Agents</a>
+    </div>
+</div>
+
+<style>
+.workspace-app:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+</style>
+{% endblock %}

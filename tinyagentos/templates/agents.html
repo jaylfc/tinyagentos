@@ -15,6 +15,9 @@
         <td><span class="status-dot {{ agent.status }}"></span>{{ agent.status }}</td>
         <td>{{ agent.vectors }}</td>
         <td>
+            <a href="/agents/{{ agent.name }}/workspace" class="outline secondary" role="button"
+               style="padding: 0.2rem 0.5rem; font-size: 0.8rem; text-decoration: none;"
+               aria-label="Open workspace for {{ agent.name }}">Workspace</a>
             <button class="outline secondary" style="padding: 0.2rem 0.5rem; font-size: 0.8rem;"
                     aria-label="View logs for {{ agent.name }}"
                     hx-get="/api/partials/agent-logs/{{ agent.name }}"
