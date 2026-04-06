@@ -140,6 +140,32 @@ class ChannelStore(BaseStore):
                 for r in await cursor.fetchall()
             ]
 
+    async def get(self, channel_id: int) -> dict | None:
+        """Get a single channel by ID."""
+        async with self._db.execute(
+            "SELECT id, agent_name, type, config, enabled FROM channels WHERE id = ?",
+            (channel_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+        if not row:
+            return None
+        return {
+            "id": row[0],
+            "agent_name": row[1],
+            "type": row[2],
+            "config": json.loads(row[3]),
+            "enabled": bool(row[4]),
+            **CHANNEL_TYPES.get(row[2], {}),
+        }
+
+    async def update(self, channel_id: int, config: dict) -> None:
+        """Update a channel's config JSON."""
+        await self._db.execute(
+            "UPDATE channels SET config = ? WHERE id = ?",
+            (json.dumps(config), channel_id),
+        )
+        await self._db.commit()
+
     async def remove(self, agent_name: str, channel_type: str) -> bool:
         """Remove a channel. Returns True if a row was deleted."""
         cursor = await self._db.execute(

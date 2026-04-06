@@ -120,3 +120,33 @@ class AgentMessageStore(BaseStore):
         ) as cursor:
             row = await cursor.fetchone()
         return row[0] if row else 0
+
+    async def delete(self, message_id: int) -> bool:
+        """Delete a single message by ID. Returns True if deleted."""
+        cursor = await self._db.execute(
+            "DELETE FROM agent_messages WHERE id = ?", (message_id,)
+        )
+        await self._db.commit()
+        return cursor.rowcount > 0
+
+    async def search(self, query: str, agent_name: str | None = None,
+                     limit: int = 50) -> list[dict]:
+        """Search messages by content. Optionally filter by agent."""
+        pattern = f"%{query}%"
+        if agent_name:
+            sql = """SELECT id, from_agent, to_agent, message, tool_calls, tool_results,
+                            reasoning, depth, metadata, timestamp, read
+                     FROM agent_messages
+                     WHERE (from_agent = ? OR to_agent = ?) AND message LIKE ?
+                     ORDER BY timestamp DESC LIMIT ?"""
+            params = (agent_name, agent_name, pattern, limit)
+        else:
+            sql = """SELECT id, from_agent, to_agent, message, tool_calls, tool_results,
+                            reasoning, depth, metadata, timestamp, read
+                     FROM agent_messages
+                     WHERE message LIKE ?
+                     ORDER BY timestamp DESC LIMIT ?"""
+            params = (pattern, limit)
+        async with self._db.execute(sql, params) as cursor:
+            rows = await cursor.fetchall()
+        return [self._format_message(r) for r in rows]
