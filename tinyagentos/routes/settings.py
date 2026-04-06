@@ -180,6 +180,17 @@ async def save_platform_settings(request: Request, body: PlatformUpdate):
     return {"status": "saved", "message": "Platform settings saved"}
 
 
+@router.get("/api/settings/llm-proxy")
+async def llm_proxy_status(request: Request):
+    """Return LLM proxy status for the settings page."""
+    proxy = request.app.state.llm_proxy
+    return {
+        "running": proxy.is_running() if hasattr(proxy, "is_running") else False,
+        "port": proxy.port if hasattr(proxy, "port") else 4000,
+        "backends": len(request.app.state.config.backends),
+    }
+
+
 @router.post("/api/settings/test-backend")
 async def test_backend_connection(request: Request):
     """Test connectivity to a backend URL."""
