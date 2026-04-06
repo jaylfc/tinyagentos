@@ -6,6 +6,15 @@ from fastapi.responses import HTMLResponse, JSONResponse
 router = APIRouter(tags=["channel-hub"])
 
 
+@router.get("/channel-hub", response_class=HTMLResponse)
+async def channel_hub_page(request: Request):
+    """Channel Hub management page."""
+    templates = request.app.state.templates
+    return templates.TemplateResponse(request, "channel_hub.html", {
+        "active_page": "channel-hub",
+    })
+
+
 @router.get("/api/channel-hub/status")
 async def channel_hub_status(request: Request):
     """Show active connectors, adapters, and message counts."""
