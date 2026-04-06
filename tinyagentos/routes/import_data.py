@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 import shutil
 import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -66,16 +69,48 @@ async def embed_files(request: Request):
     if missing:
         return JSONResponse({"error": f"Files not found: {', '.join(missing)}"}, status_code=404)
 
-    # In a real deployment, this would call the agent's qmd serve to embed.
-    # For now, return success with file list.
-    embedded = []
+    # Look up the agent's qmd_url from config
+    config = request.app.state.config
+    agent_dict = next((a for a in config.agents if a.get("name") == agent_name), None)
+    qmd_url = agent_dict.get("qmd_url") if agent_dict else None
+
+    http_client = request.app.state.http_client
+    embedded_files = []
+    all_embedded = True
+
     for fname in filenames:
         fpath = UPLOAD_DIR / fname
-        embedded.append({"filename": fname, "size": fpath.stat().st_size})
+        text = fpath.read_text(errors="replace")
+        file_embedded = False
+
+        if qmd_url:
+            try:
+                resp = await http_client.post(
+                    qmd_url.rstrip("/") + "/api/embed",
+                    json={"text": text, "collection": "imports"},
+                    timeout=30.0,
+                )
+                resp.raise_for_status()
+                file_embedded = True
+            except Exception as exc:
+                logger.warning(
+                    "QMD embed failed for agent %s file %s (%s): %s",
+                    agent_name, fname, qmd_url, exc,
+                )
+                all_embedded = False
+        else:
+            all_embedded = False
+
+        embedded_files.append({
+            "filename": fname,
+            "size": fpath.stat().st_size,
+            "embedded": file_embedded,
+        })
 
     return {
         "status": "embedded",
         "agent_name": agent_name,
-        "files": embedded,
-        "count": len(embedded),
+        "files": embedded_files,
+        "count": len(embedded_files),
+        "embedded": all_embedded,
     }
