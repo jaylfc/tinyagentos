@@ -33,8 +33,8 @@ curl -sL https://raw.githubusercontent.com/jaylfc/tinyagentos/master/tinyagentos
 ### Live Model Browser
 Search 167k+ GGUF models from HuggingFace and the Ollama library directly from the dashboard. Hardware-filtered compatibility indicators show what runs on your device (green/yellow/red).
 
-### Agent Templates (12 Pre-Built)
-Pick a template — Research Assistant, Code Reviewer, Content Writer, Customer Support, Data Analyst, DevOps, Tutor, and more — and deploy in one click. Each template includes a system prompt, recommended framework, model, and resource limits.
+### Agent Templates (1,467 Templates)
+Pick from 1,467 agent templates — 12 built-in plus 196 from awesome-openclaw-agents and 1,259 from the System Prompt Library — and deploy in one click. Browse by category (24 categories), filter by source, or search. Each template includes a system prompt, recommended framework, model, and resource limits. All templates vendored locally so nothing depends on external services.
 
 ### App Store (74 Apps)
 One-click install for agent frameworks, AI models, and services. Hardware-aware — only shows what works on your device.
@@ -148,7 +148,7 @@ TinyAgentOS Controller (FastAPI + htmx)
 ├── Task Scheduler (cron with presets)
 ├── Training Manager (LoRA, per-agent adapters)
 ├── Agent Export/Import (portable JSON config)
-├── Agent Templates (12 pre-built personas)
+├── Agent Templates (1,467 vendored from 3 sources)
 ├── Global Search (agents, apps, messages, folders)
 ├── Backup Scheduler (daily/weekly automated backups)
 └── Backend Fallback (priority-based, auto-recovery)
@@ -168,7 +168,7 @@ Platform overhead: **~345 MB RAM** (without models or agents)
 
 ```bash
 pip install -e ".[dev]"
-pytest tests/ -v          # 784 tests
+pytest tests/ -v          # 794 tests
 ```
 
 CI runs automatically on every push (Python 3.10-3.12 + security audit).
@@ -199,7 +199,7 @@ CI runs automatically on every push (Python 3.10-3.12 + security audit).
 - [x] Health debug page
 - [x] Channel Hub — framework-agnostic messaging (6 connectors, 18 adapters)
 - [x] Agent config export/import
-- [x] Agent template library (12 pre-built agent configs)
+- [x] Agent template library (1,467 templates from 3 sources)
 - [x] Global search across all platform data
 - [x] Dashboard activity feed + quick actions
 - [x] Backup scheduling (daily/weekly/off)

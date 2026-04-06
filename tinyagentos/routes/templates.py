@@ -3,7 +3,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from tinyagentos.agent_templates import list_templates, get_template, CATEGORIES, EXTERNAL_SOURCES, fetch_external_index, fetch_external_template
+from tinyagentos.agent_templates import (
+    list_templates, get_template, CATEGORIES, EXTERNAL_SOURCES,
+    fetch_external_index, fetch_external_template, template_stats,
+)
 
 router = APIRouter()
 
@@ -16,10 +19,28 @@ async def templates_page(request: Request):
     })
 
 
+@router.get("/api/templates/stats")
+async def api_template_stats():
+    """Return template count stats."""
+    return template_stats()
+
+
 @router.get("/api/templates")
-async def api_list_templates(category: str | None = None):
-    """List agent templates, optionally filtered by category."""
-    return {"templates": list_templates(category), "categories": CATEGORIES}
+async def api_list_templates(category: str | None = None, source: str | None = None,
+                             limit: int = 50, offset: int = 0):
+    """List agent templates with filtering and pagination.
+
+    source: "builtin", "awesome-openclaw-agents", "system-prompt-library", or omit for all.
+    """
+    all_templates = list_templates(category=category, source=source)
+    total = len(all_templates)
+    page = all_templates[offset:offset + limit]
+    # Strip system_prompt from list view to reduce payload
+    compact = [
+        {k: v for k, v in t.items() if k != "system_prompt"}
+        for t in page
+    ]
+    return {"templates": compact, "total": total, "categories": CATEGORIES}
 
 
 @router.get("/api/templates/sources")

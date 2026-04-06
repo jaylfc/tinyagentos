@@ -1,10 +1,27 @@
-"""Built-in agent templates — pre-configured agent personas for one-click deploy."""
+"""Agent template library — built-in + vendored templates from external repos.
+
+Vendored data in data/templates/:
+- openclaw-agents.json  — 196 agents from mergisi/awesome-openclaw-agents (MIT)
+- system-prompts.json   — 1259 prompts from danielrosehill/System-Prompt-Library (CC BY 4.0)
+"""
 from __future__ import annotations
+
+import json
+import logging
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+DATA_DIR = Path(__file__).parent.parent / "data" / "templates"
 
 CATEGORIES = [
     "productivity", "development", "marketing", "finance",
     "education", "creative", "customer-support", "research",
     "devops", "data-science", "legal", "hr",
+    "automation", "business", "compliance", "ecommerce",
+    "freelance", "healthcare", "personal", "real-estate",
+    "saas", "security", "supply-chain", "voice",
+    "customer-success", "moltbook", "general",
 ]
 
 TEMPLATES = [
@@ -300,13 +317,76 @@ async def fetch_external_template(source_id: str, path: str, http_client) -> dic
     return None
 
 
-def list_templates(category: str | None = None) -> list[dict]:
-    """Return all templates, optionally filtered by category."""
+def _load_vendored() -> list[dict]:
+    """Load vendored templates from JSON files in data/templates/."""
+    templates = []
+    if not DATA_DIR.exists():
+        return templates
+    for path in DATA_DIR.glob("*.json"):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(data, list):
+                templates.extend(data)
+        except Exception as e:
+            logger.warning(f"Failed to load vendored templates from {path}: {e}")
+    return templates
+
+
+# Cache vendored templates on first access
+_vendored_cache: list[dict] | None = None
+
+
+def _get_vendored() -> list[dict]:
+    global _vendored_cache
+    if _vendored_cache is None:
+        _vendored_cache = _load_vendored()
+    return _vendored_cache
+
+
+def list_templates(category: str | None = None, source: str | None = None,
+                   include_vendored: bool = True) -> list[dict]:
+    """Return templates, optionally filtered by category and/or source.
+
+    source: "builtin", "awesome-openclaw-agents", "system-prompt-library", or None for all.
+    """
+    all_templates = list(TEMPLATES)
+    if include_vendored:
+        all_templates.extend(_get_vendored())
+
+    if source == "builtin":
+        all_templates = [t for t in all_templates if "source" not in t]
+    elif source:
+        all_templates = [t for t in all_templates if t.get("source") == source]
+
     if category:
-        return [t for t in TEMPLATES if t["category"] == category]
-    return list(TEMPLATES)
+        all_templates = [t for t in all_templates if t["category"] == category]
+
+    return all_templates
 
 
 def get_template(template_id: str) -> dict | None:
-    """Get a single template by ID."""
-    return next((t for t in TEMPLATES if t["id"] == template_id), None)
+    """Get a single template by ID (searches built-in + vendored)."""
+    # Check built-in first
+    for t in TEMPLATES:
+        if t["id"] == template_id:
+            return t
+    # Check vendored
+    for t in _get_vendored():
+        if t["id"] == template_id:
+            return t
+    return None
+
+
+def template_stats() -> dict:
+    """Return template count stats."""
+    vendored = _get_vendored()
+    by_source: dict[str, int] = {}
+    for t in vendored:
+        src = t.get("source", "unknown")
+        by_source[src] = by_source.get(src, 0) + 1
+    return {
+        "builtin": len(TEMPLATES),
+        "vendored": len(vendored),
+        "total": len(TEMPLATES) + len(vendored),
+        "by_source": by_source,
+    }
