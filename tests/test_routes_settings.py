@@ -40,6 +40,31 @@ class TestSettingsRoutes:
         assert "port" in data
 
     @pytest.mark.asyncio
+    async def test_get_notification_prefs(self, client):
+        resp = await client.get("/api/settings/notification-prefs")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "prefs" in data
+        assert isinstance(data["prefs"], list)
+        assert len(data["prefs"]) > 0
+        assert "event_type" in data["prefs"][0]
+        assert "muted" in data["prefs"][0]
+
+    @pytest.mark.asyncio
+    async def test_toggle_notification_pref(self, client):
+        resp = await client.post(
+            "/api/settings/notification-prefs/worker.join",
+            json={"muted": True},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["muted"] is True
+        # Verify it persisted
+        resp = await client.get("/api/settings/notification-prefs")
+        prefs = resp.json()["prefs"]
+        worker_join = [p for p in prefs if p["event_type"] == "worker.join"]
+        assert worker_join[0]["muted"] is True
+
+    @pytest.mark.asyncio
     async def test_webhooks_crud(self, client):
         resp = await client.post("/api/settings/webhooks", json={
             "url": "https://example.com/hook",

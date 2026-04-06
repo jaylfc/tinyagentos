@@ -351,6 +351,24 @@ async def test_webhook(request: Request):
         return {"status": "error", "message": str(e)}
 
 
+@router.get("/api/settings/notification-prefs")
+async def get_notification_prefs(request: Request):
+    """Return notification event preferences."""
+    notif_store = request.app.state.notifications
+    prefs = await notif_store.get_event_prefs()
+    return {"prefs": prefs}
+
+
+@router.post("/api/settings/notification-prefs/{event_type}")
+async def toggle_notification_pref(request: Request, event_type: str):
+    """Toggle mute for a notification event type."""
+    body = await request.json()
+    muted = body.get("muted", False)
+    notif_store = request.app.state.notifications
+    await notif_store.set_event_muted(event_type, muted)
+    return {"status": "updated", "event_type": event_type, "muted": muted}
+
+
 @router.get("/api/settings/update-check")
 async def check_for_updates(request: Request):
     """Check if a newer version of TinyAgentOS is available on GitHub."""
