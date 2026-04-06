@@ -31,6 +31,7 @@
                 <li><a href="/channels" {% if active_page == 'channels' %}class="active"{% endif %}>Channels</a></li>
                 <li><a href="/channel-hub" {% if active_page == 'channel-hub' %}class="active"{% endif %}>Channel Hub</a></li>
                 <li><a href="/agents" {% if active_page == 'agents' %}class="active"{% endif %}>Agents</a></li>
+                <li><a href="/templates" {% if active_page == 'templates' %}class="active"{% endif %}>Templates</a></li>
                 <li><a href="/shared-folders" {% if active_page == 'shared-folders' %}class="active"{% endif %}>Shared Folders</a></li>
                 <li><a href="/relationships" {% if active_page == 'relationships' %}class="active"{% endif %}>Relationships</a></li>
                 <li><a href="/tasks" {% if active_page == 'tasks' %}class="active"{% endif %}>Tasks</a></li>
@@ -51,12 +52,20 @@
             <li><a href="/memory" {% if active_page == 'memory' %}class="active"{% endif %}>Memory</a></li>
             <li><a href="/channels" {% if active_page == 'channels' %}class="active"{% endif %}>Channels</a></li>
             <li><a href="/agents" {% if active_page == 'agents' %}class="active"{% endif %}>Agents</a></li>
+            <li><a href="/templates" {% if active_page == 'templates' %}class="active"{% endif %}>Templates</a></li>
             <li><a href="/relationships" {% if active_page == 'relationships' %}class="active"{% endif %}>Relationships</a></li>
             <li><a href="/tasks" {% if active_page == 'tasks' %}class="active"{% endif %}>Tasks</a></li>
             <li><a href="/import" {% if active_page == 'import' %}class="active"{% endif %}>Import</a></li>
             <li><a href="/secrets" {% if active_page == 'secrets' %}class="active"{% endif %}>Secrets</a></li>
             <li><a href="/settings" {% if active_page == 'settings' %}class="active"{% endif %}>Settings</a></li>
             <li><a href="/cluster" {% if active_page == 'cluster' %}class="active"{% endif %}>Cluster</a></li>
+            <li style="position:relative;">
+                <input type="search" id="global-search" placeholder="Search..." aria-label="Search"
+                       style="margin:0; padding:0.3rem 0.6rem; font-size:0.8rem; width:160px;"
+                       hx-get="/api/search" hx-trigger="keyup changed delay:300ms" hx-target="#search-results"
+                       hx-swap="innerHTML" name="q">
+                <div id="search-results" style="position:absolute; right:0; top:100%; min-width:300px; max-height:400px; overflow-y:auto; background:var(--pico-card-background-color); border:1px solid var(--pico-muted-border-color); border-radius:8px; padding:0; z-index:100; box-shadow:0 4px 12px rgba(0,0,0,0.3); display:none;"></div>
+            </li>
             <li style="position:relative;">
                 <a href="#" id="notif-bell" aria-label="Notifications" onclick="document.getElementById('notif-panel').classList.toggle('notif-hidden'); if(!document.getElementById('notif-panel').classList.contains('notif-hidden')){htmx.ajax('GET','/api/notifications',{target:'#notif-list'});} return false;"
                    style="position:relative; text-decoration:none;">
@@ -184,5 +193,32 @@ if ('serviceWorker' in navigator) {
         }
     });
     </script>
+    <script>
+document.addEventListener('htmx:afterRequest', function(evt) {
+    if (evt.detail.target && evt.detail.target.id === 'search-results') {
+        const panel = document.getElementById('search-results');
+        try {
+            const data = JSON.parse(evt.detail.xhr.response);
+            if (data.results && data.results.length > 0) {
+                panel.style.display = 'block';
+                panel.innerHTML = data.results.map(r =>
+                    '<a href="' + r.url + '" style="display:block; padding:0.5rem 0.75rem; text-decoration:none; border-bottom:1px solid var(--pico-muted-border-color);">' +
+                    '<strong style="font-size:0.85rem;">' + r.title + '</strong>' +
+                    '<br><small style="color:var(--pico-muted-color);">' + r.subtitle + '</small></a>'
+                ).join('');
+            } else {
+                panel.style.display = 'none';
+            }
+        } catch(e) { panel.style.display = 'none'; }
+    }
+});
+document.addEventListener('click', function(e) {
+    const panel = document.getElementById('search-results');
+    const input = document.getElementById('global-search');
+    if (panel && !panel.contains(e.target) && e.target !== input) {
+        panel.style.display = 'none';
+    }
+});
+</script>
 </body>
 </html>

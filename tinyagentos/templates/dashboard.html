@@ -5,6 +5,8 @@
     <h2 style="margin-bottom: 0;">Dashboard</h2>
 </div>
 
+<div id="quick-actions" hx-get="/api/partials/quick-actions" hx-trigger="load" hx-swap="innerHTML"></div>
+
 <section id="kpi-cards" aria-label="KPI Cards" hx-get="/api/partials/kpi-cards" hx-trigger="load, every 30s" hx-swap="innerHTML">
     <article aria-busy="true">Loading...</article>
 </section>
@@ -23,6 +25,20 @@
         </div>
     </div>
 </div>
+
+<section>
+    <h3>Cluster</h3>
+    <div id="cluster-summary" hx-get="/api/dashboard/cluster-summary" hx-trigger="load, every 30s" hx-swap="innerHTML">
+        <article aria-busy="true">Loading...</article>
+    </div>
+</section>
+
+<section>
+    <h3>Recent Activity</h3>
+    <div id="activity-feed" hx-get="/api/partials/activity-feed" hx-trigger="load, every 30s" hx-swap="innerHTML">
+        <article aria-busy="true">Loading...</article>
+    </div>
+</section>
 
 <h3>Query Latency</h3>
 <div>
