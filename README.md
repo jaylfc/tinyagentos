@@ -4,7 +4,7 @@
 
 Self-hosted AI agent platform that runs on whatever hardware you have. An old laptop, a Raspberry Pi, a gaming PC, an SBC gathering dust — or all of them at once. TinyAgentOS turns your spare hardware into a distributed AI compute cluster.
 
-73 apps, 17 agent frameworks, 167k+ searchable models, agent deployment, training, image/video/audio generation, and full system monitoring — all from a single web dashboard. Supports Apple Silicon (MLX), NVIDIA, AMD, Rockchip NPU, Raspberry Pi, Android phones, and more.
+74 apps, 18 agent frameworks, 167k+ searchable models, agent deployment, training, image/video/audio generation, and full system monitoring — all from a single web dashboard. Supports Apple Silicon (MLX), NVIDIA, AMD, Rockchip NPU, Raspberry Pi, Android phones, and more.
 
 **Framework-agnostic by design** — switch agent frameworks without losing messaging connections, model assignments, or API keys. The Channel Hub owns your communication channels (Telegram, Discord, Slack, Email, Web Chat, Webhooks) and the LLM Proxy manages model access, so agents are always portable.
 
@@ -43,7 +43,7 @@ One-click install for agent frameworks, AI models, and services. Hardware-aware 
 TinyAgentOS owns the messaging connections — not the agent framework. Telegram bots, Discord bots, Slack apps, email accounts, web chat widgets, and generic webhooks all connect once at the platform level. Switch an agent from SmolAgents to LangChain and it keeps all its channels, history, and connections.
 
 - **6 connectors** — Telegram, Discord, Slack, Email (IMAP/SMTP), Web Chat (WebSocket), Webhooks
-- **17 framework adapters** — thin HTTP bridges (~25 lines each) that translate the universal message format to framework-specific APIs
+- **18 framework adapters** — thin HTTP bridges (~25 lines each) that translate the universal message format to framework-specific APIs
 - **Rich responses** — buttons, images, cards via universal format with inline hint fallback for any framework
 - **Per-agent or shared bots** — each agent gets its own bot, or share one across a group
 
@@ -99,7 +99,7 @@ Convert models between formats (GGUF→RKLLM, HF→GGUF, GGUF→MLX). Capability
 
 | Category | Apps |
 |----------|------|
-| **Agent Frameworks (17)** | SmolAgents, PocketFlow, OpenClaw, nanoclaw, PicoClaw (NPU-aware), ZeroClaw, MicroClaw, IronClaw, NullClaw, Moltis, NemoClaw, TinyAgent, Hermes, Agent Zero, Swarm, OpenAI Agents SDK, Langroid |
+| **Agent Frameworks (18)** | SmolAgents, PocketFlow, OpenClaw, nanoclaw, PicoClaw (NPU-aware), ZeroClaw, MicroClaw, IronClaw, NullClaw, Moltis, NemoClaw, TinyAgent, Hermes, Agent Zero, Swarm, OpenAI Agents SDK, Langroid, ShibaClaw |
 | **LLM Models** | Qwen3 0.6B-8B (GGUF + RKLLM + MLX), plus 167k+ searchable from HuggingFace |
 | **Image Models** | LCM Dreamshaper, SD 1.5 LCM, SDXL Turbo |
 | **Image Gen** | ComfyUI, Fooocus, SD Web UI, stable-diffusion.cpp, FastSD CPU, RKNN SD, rk-llama.cpp |
@@ -168,7 +168,7 @@ CI runs automatically on every push (Python 3.10-3.12 + security audit).
 
 ### Done ✅
 - [x] Web GUI with 23 pages
-- [x] App Store (73 apps, 17 agent frameworks)
+- [x] App Store (74 apps, 18 agent frameworks)
 - [x] Live model browser (HuggingFace + Ollama, 167k+ models)
 - [x] Agent deployment wizard (LXC containers)
 - [x] Image + video generation (multi-backend)
