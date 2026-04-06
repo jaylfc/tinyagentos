@@ -33,7 +33,10 @@ curl -sL https://raw.githubusercontent.com/jaylfc/tinyagentos/master/tinyagentos
 ### Live Model Browser
 Search 167k+ GGUF models from HuggingFace and the Ollama library directly from the dashboard. Hardware-filtered compatibility indicators show what runs on your device (green/yellow/red).
 
-### App Store (73 Apps)
+### Agent Templates (12 Pre-Built)
+Pick a template — Research Assistant, Code Reviewer, Content Writer, Customer Support, Data Analyst, DevOps, Tutor, and more — and deploy in one click. Each template includes a system prompt, recommended framework, model, and resource limits.
+
+### App Store (74 Apps)
 One-click install for agent frameworks, AI models, and services. Hardware-aware — only shows what works on your device.
 
 ### Agent Deployment
@@ -86,12 +89,15 @@ Password-protected dashboard with persistent sessions. Per-agent API keys. Exemp
 ### Model Conversion
 Convert models between formats (GGUF→RKLLM, HF→GGUF, GGUF→MLX). Capability-gated — "Convert for NPU" button appears when an x86 worker joins the cluster.
 
+### Global Search
+Search across agents, apps, messages, and files from a single endpoint. Finds anything on the platform instantly.
+
 ### Monitoring & Management
-- **Dashboard** — KPIs, CPU/RAM sparklines, activity feed, backend health, cluster stats
+- **Dashboard** — KPIs, CPU/RAM sparklines, activity feed, quick actions, backend health, cluster stats
 - **Health Debug Page** — checks all services, backends, agents, disk, RAM with live status
 - **Notifications** — health alerts, backend up/down, worker join/leave, webhook forwarding (Slack/Discord/Telegram)
 - **Agent Logs** — real-time log viewer with auto-refresh
-- **Backup & Restore** — downloadable config backup, one-click restore
+- **Backup & Restore** — downloadable config backup, one-click restore, scheduled auto-backup (daily/weekly)
 - **System Updates** — pull latest from GitHub via Settings page
 - **Provider Management** — add/test/remove inference providers with live connectivity checks
 
@@ -142,6 +148,9 @@ TinyAgentOS Controller (FastAPI + htmx)
 ├── Task Scheduler (cron with presets)
 ├── Training Manager (LoRA, per-agent adapters)
 ├── Agent Export/Import (portable JSON config)
+├── Agent Templates (12 pre-built personas)
+├── Global Search (agents, apps, messages, folders)
+├── Backup Scheduler (daily/weekly automated backups)
 └── Backend Fallback (priority-based, auto-recovery)
 
 Worker Apps (Windows / macOS / Linux)
@@ -159,7 +168,7 @@ Platform overhead: **~345 MB RAM** (without models or agents)
 
 ```bash
 pip install -e ".[dev]"
-pytest tests/ -v          # 754 tests
+pytest tests/ -v          # 784 tests
 ```
 
 CI runs automatically on every push (Python 3.10-3.12 + security audit).
@@ -188,8 +197,17 @@ CI runs automatically on every push (Python 3.10-3.12 + security audit).
 - [x] LLM Proxy (LiteLLM) with per-agent keys
 - [x] Webhook notifications (Slack/Discord/Telegram)
 - [x] Health debug page
-- [x] Channel Hub — framework-agnostic messaging (6 connectors, 17 adapters)
+- [x] Channel Hub — framework-agnostic messaging (6 connectors, 18 adapters)
 - [x] Agent config export/import
+- [x] Agent template library (12 pre-built agent configs)
+- [x] Global search across all platform data
+- [x] Dashboard activity feed + quick actions
+- [x] Backup scheduling (daily/weekly/off)
+- [x] Hardware-filtered model recommendations
+- [x] PWA service worker with offline fallback
+- [x] Bulk agent operations (start/stop/restart all)
+- [x] Notification preferences (mute by event type)
+- [x] Playwright E2E test scaffolding
 
 ### In Progress
 - [ ] Fresh install test on clean hardware (#2)
