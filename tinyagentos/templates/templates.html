@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Agent Templates — TinyAgentOS{% endblock %}
+{% block content %}
+<main class="container">
+  <hgroup>
+    <h2>Agent Templates</h2>
+    <p>Pre-built agent configurations — pick a template and deploy in one click</p>
+  </hgroup>
+
+  <div style="margin-bottom:1rem;">
+    <select id="category-filter" onchange="filterTemplates(this.value)" aria-label="Filter by category">
+      <option value="">All Categories</option>
+    </select>
+  </div>
+
+  <div id="template-grid" hx-get="/api/templates" hx-trigger="load" hx-swap="innerHTML"
+       style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:1rem;">
+    <p aria-busy="true">Loading templates...</p>
+  </div>
+</main>
+
+<script>
+function filterTemplates(category) {
+    const url = category ? '/api/templates?category=' + category : '/api/templates';
+    htmx.ajax('GET', url, {target: '#template-grid', swap: 'innerHTML'});
+}
+</script>
+{% endblock %}
