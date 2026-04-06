@@ -104,6 +104,33 @@ async def api_system(request: Request):
             "catalog_apps": len(registry.list_available()),
             "installed_apps": len(registry.list_installed()),
         },
+        "cluster": _get_cluster_stats(request),
+    }
+
+
+def _get_cluster_stats(request) -> dict:
+    """Aggregate cluster statistics."""
+    cluster = getattr(request.app.state, "cluster", None)
+    if not cluster:
+        return {"workers": 0, "online": 0, "total_vram_mb": 0, "total_ram_mb": 0, "capabilities": []}
+    workers = cluster.get_workers()
+    online = [w for w in workers if w.status == "online"]
+    total_vram = 0
+    total_ram = 0
+    all_caps = set()
+    for w in online:
+        hw = w.hardware if isinstance(w.hardware, dict) else {}
+        total_ram += hw.get("ram_mb", 0)
+        gpu = hw.get("gpu", {})
+        if isinstance(gpu, dict):
+            total_vram += gpu.get("vram_mb", 0)
+        all_caps.update(w.capabilities)
+    return {
+        "workers": len(workers),
+        "online": len(online),
+        "total_vram_mb": total_vram,
+        "total_ram_mb": total_ram,
+        "capabilities": sorted(all_caps),
     }
 
 
