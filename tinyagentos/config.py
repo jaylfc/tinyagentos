@@ -7,7 +7,7 @@ from pathlib import Path
 
 import yaml
 
-VALID_BACKEND_TYPES = {"rkllama", "ollama", "llama-cpp", "vllm", "exo", "mlx"}
+VALID_BACKEND_TYPES = {"rkllama", "ollama", "llama-cpp", "vllm", "exo", "mlx", "openai", "anthropic"}
 
 DEFAULT_CONFIG = {
     "server": {"host": "0.0.0.0", "port": 8888},

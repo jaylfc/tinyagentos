@@ -28,6 +28,7 @@ from tinyagentos.conversion import ConversionManager
 from tinyagentos.agent_messages import AgentMessageStore
 from tinyagentos.shared_folders import SharedFolderManager
 from tinyagentos.webhook_notifier import WebhookNotifier
+from tinyagentos.llm_proxy import LLMProxy
 
 PROJECT_DIR = Path(__file__).parent.parent
 
@@ -73,6 +74,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     auth_manager = AuthManager(data_dir)
     webhook_notifier = WebhookNotifier(config.to_dict())
     notif_store.set_webhook_notifier(webhook_notifier)
+    llm_proxy = LLMProxy(port=4000)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -108,6 +110,12 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.shared_folders = shared_folders
         app.state.auth = auth_manager
         app.state.webhook_notifier = webhook_notifier
+        app.state.llm_proxy = llm_proxy
+        # Optionally start LiteLLM proxy (non-fatal if not installed)
+        try:
+            await llm_proxy.start(config.backends)
+        except Exception:
+            pass  # LiteLLM is optional
         # Start background health monitor
         from tinyagentos.health import HealthMonitor
         monitor = HealthMonitor(config, metrics_store, qmd_client, http_client, notif_store)
@@ -118,6 +126,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         await cluster_manager.start()
         yield
         await cluster_manager.stop()
+        llm_proxy.stop()
         await monitor.stop()
         await shared_folders.close()
         await agent_messages.close()
@@ -165,6 +174,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     app.state.shared_folders = shared_folders
     app.state.auth = auth_manager
     app.state.webhook_notifier = webhook_notifier
+    app.state.llm_proxy = llm_proxy
 
     # Mount static files
     static_dir = PROJECT_DIR / "static"
@@ -237,6 +247,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     from tinyagentos.routes.shared_folders import router as shared_folders_router
     app.include_router(shared_folders_router)
+
+    from tinyagentos.routes.providers import router as providers_router
+    app.include_router(providers_router)
 
     # Lobby demo (internal only — not included in public builds)
     try:

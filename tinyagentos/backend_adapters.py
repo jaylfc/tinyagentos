@@ -79,6 +79,8 @@ _ADAPTERS: dict[str, BackendAdapter] = {
     "vllm": OpenAICompatAdapter(),
     "exo": OpenAICompatAdapter(),  # Exo distributed inference — OpenAI-compatible API
     "mlx": OpenAICompatAdapter(),  # MLX via mlx-lm server — OpenAI-compatible
+    "openai": OpenAICompatAdapter(),  # OpenAI API
+    "anthropic": OpenAICompatAdapter(),  # Anthropic API (health check via OpenAI-compat endpoint)
 }
 
 
