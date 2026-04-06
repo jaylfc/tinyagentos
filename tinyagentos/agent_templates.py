@@ -155,6 +155,151 @@ TEMPLATES = [
 ]
 
 
+EXTERNAL_SOURCES = [
+    {
+        "id": "awesome-openclaw",
+        "name": "Awesome OpenClaw Agents",
+        "repo": "mergisi/awesome-openclaw-agents",
+        "description": "202 agent personas across 24 categories",
+        "url": "https://github.com/mergisi/awesome-openclaw-agents",
+        "license": "MIT",
+        "format": "soul-md",
+        "count": 202,
+    },
+    {
+        "id": "system-prompt-library",
+        "name": "System Prompt Library",
+        "repo": "danielrosehill/System-Prompt-Library",
+        "description": "937+ system prompts with metadata and capability flags",
+        "url": "https://github.com/danielrosehill/System-Prompt-Library",
+        "license": "CC BY 4.0",
+        "format": "json",
+        "count": 937,
+    },
+]
+
+
+async def fetch_external_index(source_id: str, http_client) -> list[dict]:
+    """Fetch template index from an external GitHub source via the API.
+    Returns a list of template stubs (id, name, category, path) without full content."""
+    source = next((s for s in EXTERNAL_SOURCES if s["id"] == source_id), None)
+    if not source:
+        return []
+
+    repo = source["repo"]
+    try:
+        if source["format"] == "soul-md":
+            # Fetch the repo tree to find SOUL.md files
+            resp = await http_client.get(
+                f"https://api.github.com/repos/{repo}/git/trees/main?recursive=1",
+                headers={"Accept": "application/vnd.github.v3+json"},
+                timeout=15,
+            )
+            if resp.status_code != 200:
+                return []
+            tree = resp.json().get("tree", [])
+            templates = []
+            for item in tree:
+                path = item.get("path", "")
+                if path.endswith("/SOUL.md") and path.startswith("agents/"):
+                    parts = path.split("/")
+                    if len(parts) >= 3:
+                        category = parts[1]
+                        name = parts[2]
+                        templates.append({
+                            "id": f"{source_id}:{name}",
+                            "name": name.replace("-", " ").title(),
+                            "category": category,
+                            "source": source_id,
+                            "path": path,
+                            "description": f"{category} agent from {source['name']}",
+                        })
+            return templates
+
+        elif source["format"] == "json":
+            resp = await http_client.get(
+                f"https://api.github.com/repos/{repo}/git/trees/main?recursive=1",
+                headers={"Accept": "application/vnd.github.v3+json"},
+                timeout=15,
+            )
+            if resp.status_code != 200:
+                return []
+            tree = resp.json().get("tree", [])
+            templates = []
+            for item in tree:
+                path = item.get("path", "")
+                if path.startswith("system-prompts/json/") and path.endswith(".json"):
+                    filename = path.rsplit("/", 1)[-1].replace(".json", "")
+                    templates.append({
+                        "id": f"{source_id}:{filename}",
+                        "name": filename.replace("-", " ").replace("_", " ").title(),
+                        "category": "general",
+                        "source": source_id,
+                        "path": path,
+                        "description": f"System prompt from {source['name']}",
+                    })
+            return templates
+
+    except Exception:
+        return []
+
+    return []
+
+
+async def fetch_external_template(source_id: str, path: str, http_client) -> dict | None:
+    """Fetch the full content of a single external template."""
+    source = next((s for s in EXTERNAL_SOURCES if s["id"] == source_id), None)
+    if not source:
+        return None
+
+    repo = source["repo"]
+    try:
+        raw_url = f"https://raw.githubusercontent.com/{repo}/main/{path}"
+        resp = await http_client.get(raw_url, timeout=10)
+        if resp.status_code != 200:
+            return None
+
+        if source["format"] == "soul-md":
+            content = resp.text
+            parts = path.split("/")
+            category = parts[1] if len(parts) >= 2 else "general"
+            name = parts[2] if len(parts) >= 3 else "agent"
+            return {
+                "id": f"{source_id}:{name}",
+                "name": name.replace("-", " ").title(),
+                "category": category,
+                "source": source_id,
+                "framework": "openclaw",
+                "model": "qwen3-4b",
+                "system_prompt": content,
+                "color": "#888888",
+                "memory_limit": "1GB",
+                "cpu_limit": 1,
+            }
+
+        elif source["format"] == "json":
+            import json
+            data = json.loads(resp.text)
+            return {
+                "id": f"{source_id}:{path.rsplit('/', 1)[-1].replace('.json', '')}",
+                "name": data.get("agent_name", data.get("title", "Agent")),
+                "category": "general",
+                "source": source_id,
+                "framework": "smolagents",
+                "model": "qwen3-4b",
+                "system_prompt": data.get("System Prompt", data.get("system_prompt", "")),
+                "description": data.get("Description", data.get("description", "")),
+                "color": "#888888",
+                "memory_limit": "1GB",
+                "cpu_limit": 1,
+            }
+
+    except Exception:
+        return None
+
+    return None
+
+
 def list_templates(category: str | None = None) -> list[dict]:
     """Return all templates, optionally filtered by category."""
     if category:
