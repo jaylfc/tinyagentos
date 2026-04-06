@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 import time
 from pathlib import Path
 
 from tinyagentos.base_store import BaseStore
+
+logger = logging.getLogger(__name__)
 
 NOTIF_SCHEMA = """
 CREATE TABLE IF NOT EXISTS notifications (
@@ -22,6 +25,14 @@ CREATE INDEX IF NOT EXISTS idx_notif_ts ON notifications(timestamp DESC);
 class NotificationStore(BaseStore):
     SCHEMA = NOTIF_SCHEMA
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._webhook_notifier = None
+
+    def set_webhook_notifier(self, notifier) -> None:
+        """Attach a WebhookNotifier to fire on every notification."""
+        self._webhook_notifier = notifier
+
     async def add(self, title: str, message: str, level: str = "info", source: str = "system") -> None:
         ts = int(time.time())
         await self._db.execute(
@@ -29,6 +40,12 @@ class NotificationStore(BaseStore):
             (ts, level, title, message, source),
         )
         await self._db.commit()
+        # Fire webhook notifications in the background
+        if self._webhook_notifier:
+            try:
+                await self._webhook_notifier.notify(title, message, level)
+            except Exception as e:
+                logger.warning(f"Webhook notification error: {e}")
 
     async def list(self, limit: int = 20, unread_only: bool = False) -> list[dict]:
         sql = "SELECT id, timestamp, level, title, message, read, source FROM notifications"

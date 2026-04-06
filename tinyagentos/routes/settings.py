@@ -115,6 +115,8 @@ async def settings_page(request: Request):
         "retention_days": config.metrics.get("retention_days", 30),
     }
 
+    webhooks = config.webhooks if hasattr(config, "webhooks") else []
+
     return templates.TemplateResponse(request, "settings.html", {
         "active_page": "settings",
         "config_yaml": config_yaml,
@@ -122,6 +124,7 @@ async def settings_page(request: Request):
         "hardware": hardware,
         "storage": storage,
         "platform_settings": platform_settings,
+        "webhooks": webhooks,
     })
 
 
@@ -147,6 +150,7 @@ async def save_config_endpoint(request: Request, body: ConfigUpdate, validate_on
         qmd=data.get("qmd", {}),
         agents=data.get("agents", []),
         metrics=data.get("metrics", {}),
+        webhooks=data.get("webhooks", []),
         config_path=request.app.state.config_path,
     )
     errors = validate_config(new_config)
@@ -252,12 +256,88 @@ async def restore_backup(request: Request, file: UploadFile):
                 qmd=data.get("qmd", {}),
                 agents=data.get("agents", []),
                 metrics=data.get("metrics", {}),
+                webhooks=data.get("webhooks", []),
                 config_path=config_path,
             )
             request.app.state.config = new_config
         except Exception:
             pass
     return {"status": "restored", "message": "Backup restored successfully"}
+
+
+class WebhookAdd(BaseModel):
+    url: str
+    type: str = "generic"
+    bot_token: str = ""
+    chat_id: str = ""
+
+
+@router.get("/api/settings/webhooks")
+async def get_webhooks(request: Request):
+    """Return configured webhooks."""
+    config = request.app.state.config
+    webhooks = config.webhooks if hasattr(config, "webhooks") else []
+    return {"webhooks": webhooks}
+
+
+@router.post("/api/settings/webhooks")
+async def add_webhook(request: Request, body: WebhookAdd):
+    """Add a webhook endpoint."""
+    config = request.app.state.config
+    if not hasattr(config, "webhooks"):
+        config.webhooks = []
+    wh = {"url": body.url, "type": body.type}
+    if body.bot_token:
+        wh["bot_token"] = body.bot_token
+    if body.chat_id:
+        wh["chat_id"] = body.chat_id
+    config.webhooks.append(wh)
+    await save_config_locked(config, request.app.state.config_path)
+    # Update the notifier with new config
+    from tinyagentos.webhook_notifier import WebhookNotifier
+    notifier = WebhookNotifier(config.to_dict())
+    request.app.state.webhook_notifier = notifier
+    request.app.state.notifications.set_webhook_notifier(notifier)
+    return {"status": "added", "webhooks": config.webhooks}
+
+
+@router.delete("/api/settings/webhooks/{index}")
+async def remove_webhook(request: Request, index: int):
+    """Remove a webhook by index."""
+    config = request.app.state.config
+    webhooks = config.webhooks if hasattr(config, "webhooks") else []
+    if index < 0 or index >= len(webhooks):
+        return JSONResponse({"error": "Invalid webhook index"}, status_code=400)
+    webhooks.pop(index)
+    config.webhooks = webhooks
+    await save_config_locked(config, request.app.state.config_path)
+    from tinyagentos.webhook_notifier import WebhookNotifier
+    notifier = WebhookNotifier(config.to_dict())
+    request.app.state.webhook_notifier = notifier
+    request.app.state.notifications.set_webhook_notifier(notifier)
+    return {"status": "removed", "webhooks": config.webhooks}
+
+
+@router.post("/api/settings/webhooks/test")
+async def test_webhook(request: Request):
+    """Send a test notification to a webhook URL."""
+    body = await request.json()
+    url = body.get("url", "")
+    wh_type = body.get("type", "generic")
+    if not url:
+        return JSONResponse({"error": "URL required"}, status_code=400)
+    from tinyagentos.webhook_notifier import WebhookNotifier
+    test_wh = {"url": url, "type": wh_type}
+    if body.get("bot_token"):
+        test_wh["bot_token"] = body["bot_token"]
+    if body.get("chat_id"):
+        test_wh["chat_id"] = body["chat_id"]
+    notifier = WebhookNotifier({"webhooks": [test_wh]})
+    try:
+        await notifier.notify("TinyAgentOS Test", "This is a test notification from TinyAgentOS.", "info")
+        return {"status": "sent", "message": "Test notification sent"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @router.get("/api/settings/update-check")

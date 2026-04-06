@@ -15,6 +15,7 @@ DEFAULT_CONFIG = {
     "qmd": {"url": "http://localhost:7832"},
     "agents": [],
     "metrics": {"poll_interval": 30, "retention_days": 30},
+    "webhooks": [],
 }
 
 _config_lock = asyncio.Lock()
@@ -26,16 +27,20 @@ class AppConfig:
     qmd: dict = field(default_factory=lambda: DEFAULT_CONFIG["qmd"].copy())
     agents: list[dict] = field(default_factory=list)
     metrics: dict = field(default_factory=lambda: DEFAULT_CONFIG["metrics"].copy())
+    webhooks: list[dict] = field(default_factory=list)
     config_path: Path | None = None
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "server": self.server,
             "backends": self.backends,
             "qmd": self.qmd,
             "agents": self.agents,
             "metrics": self.metrics,
         }
+        if self.webhooks:
+            d["webhooks"] = self.webhooks
+        return d
 
 def load_config(path: Path) -> AppConfig:
     if not path.exists():
@@ -53,6 +58,7 @@ def load_config(path: Path) -> AppConfig:
         qmd=data.get("qmd", DEFAULT_CONFIG["qmd"].copy()),
         agents=data.get("agents", []),
         metrics=data.get("metrics", DEFAULT_CONFIG["metrics"].copy()),
+        webhooks=data.get("webhooks", []),
         config_path=path,
     )
 

@@ -138,6 +138,100 @@
   </div>
 </details>
 
+<!-- Section: Webhook Notifications -->
+<details open>
+  <summary><strong>Webhook Notifications</strong></summary>
+  <div style="margin-top: 1rem;">
+    <p style="font-size: 0.9rem;">Send notifications to external services when backends go down, workers join/leave, or other events occur.</p>
+
+    <div id="webhook-list">
+      {% if webhooks %}
+      <table aria-label="Configured webhooks">
+        <thead>
+          <tr><th>Type</th><th>URL</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for wh in webhooks %}
+          <tr>
+            <td><code>{{ wh.type or "generic" }}</code></td>
+            <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"><code>{{ wh.url }}</code></td>
+            <td>
+              <button class="outline secondary" style="padding: 0.3rem 0.6rem; font-size: 0.8rem;"
+                      hx-delete="/api/settings/webhooks/{{ loop.index0 }}"
+                      hx-target="#webhook-status" hx-swap="innerHTML"
+                      hx-confirm="Remove this webhook?">Remove</button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p style="color: var(--pico-muted-color); font-size: 0.85rem;">No webhooks configured.</p>
+      {% endif %}
+    </div>
+
+    <details>
+      <summary>Add Webhook</summary>
+      <div style="margin-top: 0.5rem;">
+        <div class="grid">
+          <div>
+            <label for="wh-type">Type</label>
+            <select id="wh-type" aria-label="Webhook type">
+              <option value="generic">Generic</option>
+              <option value="slack">Slack</option>
+              <option value="discord">Discord</option>
+              <option value="telegram">Telegram</option>
+            </select>
+          </div>
+          <div>
+            <label for="wh-url">Webhook URL</label>
+            <input type="url" id="wh-url" placeholder="https://hooks.slack.com/services/..." aria-label="Webhook URL">
+          </div>
+        </div>
+        <div id="telegram-fields" style="display: none;">
+          <div class="grid">
+            <div>
+              <label for="wh-bot-token">Bot Token</label>
+              <input type="text" id="wh-bot-token" placeholder="123456:ABC-DEF..." aria-label="Telegram bot token">
+            </div>
+            <div>
+              <label for="wh-chat-id">Chat ID</label>
+              <input type="text" id="wh-chat-id" placeholder="-1001234567890" aria-label="Telegram chat ID">
+            </div>
+          </div>
+        </div>
+        <div class="grid">
+          <button class="outline" aria-label="Test webhook"
+                  hx-post="/api/settings/webhooks/test"
+                  hx-target="#webhook-status" hx-swap="innerHTML"
+                  hx-vals='js:{
+                    "url": document.getElementById("wh-url").value,
+                    "type": document.getElementById("wh-type").value,
+                    "bot_token": document.getElementById("wh-bot-token").value,
+                    "chat_id": document.getElementById("wh-chat-id").value
+                  }'>Test</button>
+          <button aria-label="Add webhook"
+                  hx-post="/api/settings/webhooks"
+                  hx-target="#webhook-status" hx-swap="innerHTML"
+                  hx-vals='js:{
+                    "url": document.getElementById("wh-url").value,
+                    "type": document.getElementById("wh-type").value,
+                    "bot_token": document.getElementById("wh-bot-token").value,
+                    "chat_id": document.getElementById("wh-chat-id").value
+                  }'>Add Webhook</button>
+        </div>
+      </div>
+    </details>
+    <div id="webhook-status" aria-live="polite" style="margin-top: 0.5rem;"></div>
+    <script>
+      document.getElementById("wh-type").addEventListener("change", function() {
+        document.getElementById("telegram-fields").style.display =
+          this.value === "telegram" ? "block" : "none";
+      });
+    </script>
+  </div>
+</details>
+
 <!-- Section: Transcript Depth -->
 <details open>
   <summary><strong>Transcript Depth</strong></summary>

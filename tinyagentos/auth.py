@@ -97,10 +97,13 @@ class AuthManager:
 
     def validate_session(self, token: str) -> bool:
         expiry = self._sessions.get(token)
-        if not expiry:
+        if expiry is None:
             return False
-        if time.time() > expiry:
-            del self._sessions[token]
+        if time.time() >= expiry:
+            try:
+                del self._sessions[token]
+            except (KeyError, Exception):
+                pass
             return False
         return True
 

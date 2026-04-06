@@ -27,6 +27,7 @@ from tinyagentos.training import TrainingManager
 from tinyagentos.conversion import ConversionManager
 from tinyagentos.agent_messages import AgentMessageStore
 from tinyagentos.shared_folders import SharedFolderManager
+from tinyagentos.webhook_notifier import WebhookNotifier
 
 PROJECT_DIR = Path(__file__).parent.parent
 
@@ -70,6 +71,8 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     agent_messages = AgentMessageStore(data_dir / "agent_messages.db")
     shared_folders = SharedFolderManager(data_dir / "shared_folders.db", data_dir / "shared-folders")
     auth_manager = AuthManager(data_dir)
+    webhook_notifier = WebhookNotifier(config.to_dict())
+    notif_store.set_webhook_notifier(webhook_notifier)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -104,6 +107,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.agent_messages = agent_messages
         app.state.shared_folders = shared_folders
         app.state.auth = auth_manager
+        app.state.webhook_notifier = webhook_notifier
         # Start background health monitor
         from tinyagentos.health import HealthMonitor
         monitor = HealthMonitor(config, metrics_store, qmd_client, http_client, notif_store)
@@ -160,6 +164,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     app.state.agent_messages = agent_messages
     app.state.shared_folders = shared_folders
     app.state.auth = auth_manager
+    app.state.webhook_notifier = webhook_notifier
 
     # Mount static files
     static_dir = PROJECT_DIR / "static"
