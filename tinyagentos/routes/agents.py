@@ -208,6 +208,54 @@ async def deploy_agent_endpoint(request: Request, body: DeployAgentRequest):
     return {"status": "deploying", "name": body.name}
 
 
+@router.post("/api/agents/bulk/start")
+async def bulk_start_agents(request: Request):
+    """Start all agent containers."""
+    from tinyagentos.containers import start_container
+    config = request.app.state.config
+    results = {}
+    for agent in config.agents:
+        name = agent["name"]
+        try:
+            result = await start_container(f"agent-{name}")
+            results[name] = {"success": result.get("success", False)}
+        except Exception as e:
+            results[name] = {"success": False, "error": str(e)}
+    return {"action": "start", "results": results}
+
+
+@router.post("/api/agents/bulk/stop")
+async def bulk_stop_agents(request: Request):
+    """Stop all agent containers."""
+    from tinyagentos.containers import stop_container
+    config = request.app.state.config
+    results = {}
+    for agent in config.agents:
+        name = agent["name"]
+        try:
+            result = await stop_container(f"agent-{name}")
+            results[name] = {"success": result.get("success", False)}
+        except Exception as e:
+            results[name] = {"success": False, "error": str(e)}
+    return {"action": "stop", "results": results}
+
+
+@router.post("/api/agents/bulk/restart")
+async def bulk_restart_agents(request: Request):
+    """Restart all agent containers."""
+    from tinyagentos.containers import restart_container
+    config = request.app.state.config
+    results = {}
+    for agent in config.agents:
+        name = agent["name"]
+        try:
+            result = await restart_container(f"agent-{name}")
+            results[name] = {"success": result.get("success", False)}
+        except Exception as e:
+            results[name] = {"success": False, "error": str(e)}
+    return {"action": "restart", "results": results}
+
+
 @router.post("/api/agents/{name}/start")
 async def start_agent(request: Request, name: str):
     """Start an agent's LXC container."""

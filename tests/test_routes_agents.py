@@ -41,3 +41,25 @@ class TestAgentsPage:
             "name": "test-agent", "host": "10.0.0.1", "qmd_index": "dup", "color": "#000",
         })
         assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
+class TestBulkOperations:
+    async def test_bulk_start(self, client):
+        resp = await client.post("/api/agents/bulk/start")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["action"] == "start"
+        assert "results" in data
+        # test-agent is in config
+        assert "test-agent" in data["results"]
+
+    async def test_bulk_stop(self, client):
+        resp = await client.post("/api/agents/bulk/stop")
+        assert resp.status_code == 200
+        assert resp.json()["action"] == "stop"
+
+    async def test_bulk_restart(self, client):
+        resp = await client.post("/api/agents/bulk/restart")
+        assert resp.status_code == 200
+        assert resp.json()["action"] == "restart"
