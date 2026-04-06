@@ -1,0 +1,22 @@
+id: qwen3-14b
+name: Qwen 3 14B
+type: model
+version: 3.0.0
+description: "High-capability chat model — strong reasoning, tool calling, and code generation"
+homepage: https://huggingface.co/Qwen/Qwen3-14B
+capabilities: [chat, tool-calling, code, reasoning]
+variants:
+  - id: q4_k_m
+    name: "Q4_K_M (8.5GB)"
+    format: gguf
+    size_mb: 8500
+    min_ram_mb: 10240
+    download_url: https://huggingface.co/Qwen/Qwen3-14B-GGUF/resolve/main/qwen3-14b-q4_k_m.gguf
+    backend: [ollama, llama-cpp, vllm, exo]
+hardware_tiers:
+  arm-npu-32gb: {recommended: q4_k_m}
+  x86-cuda-12gb: {recommended: q4_k_m}
+  x86-cuda-16gb: {recommended: q4_k_m}
+  x86-cuda-24gb: {recommended: q4_k_m}
+  x86-vulkan-8gb: unsupported
+  cpu-only: {recommended: q4_k_m, notes: "Very slow on CPU"}

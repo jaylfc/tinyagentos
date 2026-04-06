@@ -12,6 +12,7 @@ data/hardware.json
 data/installed.json
 data/.setup_complete
 data/.auth_password
+data/.auth_sessions
 data/images/
 data/videos/
 data/secrets.db

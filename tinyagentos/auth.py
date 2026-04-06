@@ -1,5 +1,6 @@
 from __future__ import annotations
 import hashlib
+import json
 import secrets
 import time
 from pathlib import Path
@@ -21,8 +22,34 @@ class AuthManager:
     def __init__(self, data_dir: Path):
         self.data_dir = data_dir
         self._password_file = data_dir / ".auth_password"
-        self._sessions: dict[str, float] = {}  # token -> expiry timestamp
+        self._sessions_file = data_dir / ".auth_sessions"
         self.session_ttl = 86400 * 7  # 7 days
+
+    def _load_sessions(self) -> dict[str, float]:
+        """Load sessions from disk, filtering out expired ones."""
+        if not self._sessions_file.exists():
+            return {}
+        try:
+            data = json.loads(self._sessions_file.read_text())
+            now = time.time()
+            return {k: v for k, v in data.items() if v > now}
+        except (json.JSONDecodeError, OSError):
+            return {}
+
+    def _save_sessions(self, sessions: dict[str, float]) -> None:
+        """Persist sessions to disk."""
+        self._sessions_file.parent.mkdir(parents=True, exist_ok=True)
+        self._sessions_file.write_text(json.dumps(sessions))
+
+    @property
+    def _sessions(self) -> dict[str, float]:
+        """Backward-compatible property for tests that access _sessions directly."""
+        return self._load_sessions()
+
+    @_sessions.setter
+    def _sessions(self, value: dict[str, float]) -> None:
+        """Backward-compatible setter for tests that assign to _sessions."""
+        self._save_sessions(value)
 
     def is_configured(self) -> bool:
         return self._password_file.exists()
@@ -38,24 +65,30 @@ class AuthManager:
         return verify_password(password, stored)
 
     def create_session(self) -> str:
+        sessions = self._load_sessions()
         token = secrets.token_urlsafe(32)
-        self._sessions[token] = time.time() + self.session_ttl
+        sessions[token] = time.time() + self.session_ttl
+        self._save_sessions(sessions)
         return token
 
     def validate_session(self, token: str) -> bool:
-        expiry = self._sessions.get(token)
+        sessions = self._load_sessions()
+        expiry = sessions.get(token)
         if not expiry:
             return False
         if time.time() > expiry:
-            del self._sessions[token]
+            sessions.pop(token, None)
+            self._save_sessions(sessions)
             return False
         return True
 
     def revoke_session(self, token: str) -> None:
-        self._sessions.pop(token, None)
+        sessions = self._load_sessions()
+        sessions.pop(token, None)
+        self._save_sessions(sessions)
 
     def cleanup_sessions(self) -> None:
         now = time.time()
-        expired = [t for t, exp in self._sessions.items() if now > exp]
-        for t in expired:
-            del self._sessions[t]
+        sessions = self._load_sessions()
+        cleaned = {t: exp for t, exp in sessions.items() if now <= exp}
+        self._save_sessions(cleaned)

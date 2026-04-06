@@ -70,11 +70,15 @@ OllamaAdapter = OllamaCompatAdapter
 LlamaCppAdapter = OpenAICompatAdapter
 VllmAdapter = OpenAICompatAdapter
 
+ExoAdapter = OpenAICompatAdapter  # Exo exposes OpenAI-compatible API
+
 _ADAPTERS: dict[str, BackendAdapter] = {
     "rkllama": OllamaCompatAdapter(),
     "ollama": OllamaCompatAdapter(),
     "llama-cpp": OpenAICompatAdapter(),
     "vllm": OpenAICompatAdapter(),
+    "exo": OpenAICompatAdapter(),  # Exo distributed inference — OpenAI-compatible API
+    "mlx": OpenAICompatAdapter(),  # MLX via mlx-lm server — OpenAI-compatible
 }
 
 
