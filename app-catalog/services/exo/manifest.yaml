@@ -1,0 +1,22 @@
+id: exo
+name: Exo Distributed Inference
+type: service
+version: 0.1.0
+description: "Split large models across multiple devices — peer-to-peer distributed AI inference. Run 70B models across your cluster."
+homepage: https://github.com/exo-explore/exo
+license: GPL-3.0
+
+requires:
+  ram_mb: 2048
+  python: ">=3.12"
+
+install:
+  method: pip
+  package: exo
+
+hardware_tiers:
+  arm-npu-16gb: full
+  arm-npu-32gb: full
+  x86-cuda-12gb: full
+  x86-vulkan-8gb: full
+  cpu-only: degraded

@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Dashboard — TinyAgentOS{% endblock %}
 {% block content %}
-<h2>Dashboard</h2>
+<div style="background: linear-gradient(135deg, rgba(126, 207, 255, 0.08) 0%, rgba(152, 251, 152, 0.05) 100%); border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem;">
+    <h2 style="margin-bottom: 0;">Dashboard</h2>
+</div>
 
 <section id="kpi-cards" aria-label="KPI Cards" hx-get="/api/partials/kpi-cards" hx-trigger="load, every 30s" hx-swap="innerHTML">
     <article aria-busy="true">Loading...</article>

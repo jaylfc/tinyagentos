@@ -18,6 +18,26 @@
         <ul>
             <li><strong>TinyAgentOS</strong></li>
         </ul>
+        <details class="nav-menu" role="navigation" aria-label="Mobile menu">
+            <summary aria-label="Menu">&#9776;</summary>
+            <ul>
+                <li><a href="/" {% if active_page == 'dashboard' %}class="active"{% endif %}>Dashboard</a></li>
+                <li><a href="/store" {% if active_page == 'store' %}class="active"{% endif %}>Store</a></li>
+                <li><a href="/models" {% if active_page == 'models' %}class="active"{% endif %}>Models</a></li>
+                <li>{% if cap.is_available("image-generation-cpu") or cap.is_available("image-generation-gpu") or cap.is_available("image-generation-npu") %}<a href="/images" {% if active_page == 'images' %}class="active"{% endif %}>Images</a>{% else %}<a href="/images" class="locked{% if active_page == 'images' %} active{% endif %}" title="{{ cap.get_unlock_hint('image-generation-gpu') or 'Hardware requirements not met' }}" aria-label="Images (locked)">Images</a>{% endif %}</li>
+                <li><a href="/video" {% if active_page == 'video' %}class="active"{% endif %}>Video</a></li>
+                <li>{% if cap.is_available("lora-training") %}<a href="/training" {% if active_page == 'training' %}class="active"{% endif %}>Training</a>{% else %}<a href="/training" class="locked{% if active_page == 'training' %} active{% endif %}" title="{{ cap.get_unlock_hint('lora-training') or 'Hardware requirements not met' }}" aria-label="Training (locked)">Training</a>{% endif %}</li>
+                <li><a href="/memory" {% if active_page == 'memory' %}class="active"{% endif %}>Memory</a></li>
+                <li><a href="/channels" {% if active_page == 'channels' %}class="active"{% endif %}>Channels</a></li>
+                <li><a href="/agents" {% if active_page == 'agents' %}class="active"{% endif %}>Agents</a></li>
+                <li><a href="/relationships" {% if active_page == 'relationships' %}class="active"{% endif %}>Relationships</a></li>
+                <li><a href="/tasks" {% if active_page == 'tasks' %}class="active"{% endif %}>Tasks</a></li>
+                <li><a href="/import" {% if active_page == 'import' %}class="active"{% endif %}>Import</a></li>
+                <li><a href="/secrets" {% if active_page == 'secrets' %}class="active"{% endif %}>Secrets</a></li>
+                <li><a href="/settings" {% if active_page == 'settings' %}class="active"{% endif %}>Settings</a></li>
+                <li><a href="/cluster" {% if active_page == 'cluster' %}class="active"{% endif %}>Cluster</a></li>
+            </ul>
+        </details>
         <ul>
             <li><a href="/" {% if active_page == 'dashboard' %}class="active"{% endif %}>Dashboard</a></li>
             <li><a href="/store" {% if active_page == 'store' %}class="active"{% endif %}>Store</a></li>
