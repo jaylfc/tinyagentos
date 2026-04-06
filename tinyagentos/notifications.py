@@ -19,11 +19,20 @@ CREATE TABLE IF NOT EXISTS notifications (
     source TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_notif_ts ON notifications(timestamp DESC);
+CREATE TABLE IF NOT EXISTS notification_prefs (
+    event_type TEXT PRIMARY KEY,
+    muted INTEGER NOT NULL DEFAULT 0
+);
 """
 
 
 class NotificationStore(BaseStore):
     SCHEMA = NOTIF_SCHEMA
+
+    EVENT_TYPES = [
+        "worker.join", "worker.leave", "backend.up", "backend.down",
+        "training.complete", "training.failed", "app.installed", "app.failed",
+    ]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -78,3 +87,33 @@ class NotificationStore(BaseStore):
         cursor = await self._db.execute("DELETE FROM notifications WHERE timestamp < ?", (cutoff,))
         await self._db.commit()
         return cursor.rowcount
+
+    async def emit_event(self, event_type: str, title: str, message: str, level: str = "info") -> None:
+        if await self._is_event_muted(event_type):
+            return
+        await self.add(title, message, level=level, source=event_type)
+
+    async def _is_event_muted(self, event_type: str) -> bool:
+        async with self._db.execute(
+            "SELECT muted FROM notification_prefs WHERE event_type = ?", (event_type,)
+        ) as cursor:
+            row = await cursor.fetchone()
+        return bool(row[0]) if row else False
+
+    async def set_event_muted(self, event_type: str, muted: bool) -> None:
+        await self._db.execute(
+            "INSERT OR REPLACE INTO notification_prefs (event_type, muted) VALUES (?, ?)",
+            (event_type, int(muted)),
+        )
+        await self._db.commit()
+
+    async def get_event_prefs(self) -> list[dict]:
+        async with self._db.execute(
+            "SELECT event_type, muted FROM notification_prefs"
+        ) as cursor:
+            rows = await cursor.fetchall()
+        stored = {r[0]: bool(r[1]) for r in rows}
+        return [
+            {"event_type": et, "muted": stored.get(et, False)}
+            for et in self.EVENT_TYPES
+        ]
