@@ -228,6 +228,35 @@ async def api_workspace_delete(request: Request, name: str, filename: str):
     return {"name": filename, "status": "deleted"}
 
 
+# ---------------------------------------------------------------------------
+# LLM Usage
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/agents/{name}/workspace/usage")
+async def api_agent_usage(request: Request, name: str):
+    """Get LLM usage stats for an agent's virtual key."""
+    proxy = getattr(request.app.state, "llm_proxy", None)
+    if not proxy or not proxy.is_running():
+        return {"available": False, "message": "LLM proxy not running"}
+    # Look up the agent's key alias
+    config = request.app.state.config
+    agent = None
+    for a in config.agents:
+        if a.get("name") == name:
+            agent = a
+            break
+    if not agent:
+        return JSONResponse({"error": f"Agent '{name}' not found"}, status_code=404)
+    llm_key = agent.get("llm_key")
+    if not llm_key:
+        return {"available": False, "message": "No LLM key assigned to this agent"}
+    usage = await proxy.get_key_usage(llm_key)
+    if usage is None:
+        return {"available": False, "message": "Could not fetch usage data"}
+    return {"available": True, "usage": usage}
+
+
 # Keep legacy files endpoint for backward compatibility
 @router.get("/api/agents/{name}/files")
 async def api_agent_files(request: Request, name: str):

@@ -119,7 +119,28 @@ async def deploy_agent(req: DeployRequest) -> dict:
                 logger.warning(f"Framework install warning: {output}")
             steps.append("framework_installed")
 
-        # Step 7: Get container IP
+        # Step 7: Inject LLM proxy env vars if proxy is running
+        llm_key = None
+        if req.extra_config and req.extra_config.get("llm_proxy"):
+            proxy = req.extra_config["llm_proxy"]
+            if proxy.is_running():
+                llm_key = await proxy.create_agent_key(req.name)
+                if llm_key:
+                    # Inject OpenAI-compatible env vars so agent frameworks auto-discover the proxy
+                    env_lines = [
+                        f'export OPENAI_API_KEY="{llm_key}"',
+                        f'export OPENAI_BASE_URL="{proxy.url}/v1"',
+                    ]
+                    env_script = "\n".join(env_lines) + "\n"
+                    import tempfile
+                    with tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False) as ef:
+                        ef.write(env_script)
+                        env_tmp = ef.name
+                    await push_file(container_name, env_tmp, "/etc/profile.d/llm-proxy.sh")
+                    Path(env_tmp).unlink()
+                    steps.append("llm_proxy_key_injected")
+
+        # Step 8: Get container IP
         code, output = await exec_in_container(container_name, ["hostname", "-I"])
         container_ip = output.strip().split()[0] if code == 0 and output.strip() else None
         steps.append("deployment_complete")
@@ -130,6 +151,7 @@ async def deploy_agent(req: DeployRequest) -> dict:
             "container": container_name,
             "ip": container_ip,
             "qmd_url": f"http://{container_ip}:7832" if container_ip else None,
+            "llm_key": llm_key,
             "steps": steps,
         }
 

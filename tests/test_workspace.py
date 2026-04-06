@@ -232,3 +232,19 @@ class TestWorkspaceFilesView:
     async def test_files_404_for_unknown_agent(self, client):
         resp = await client.get("/agents/nonexistent/workspace/files")
         assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+class TestWorkspaceUsage:
+    async def test_usage_returns_not_available_when_no_proxy(self, client):
+        resp = await client.get("/api/agents/test-agent/workspace/usage")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["available"] is False
+
+    async def test_usage_404_for_unknown_agent(self, client):
+        # LLM proxy not running, so it returns "not running" before checking agent
+        resp = await client.get("/api/agents/nonexistent/workspace/usage")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["available"] is False
