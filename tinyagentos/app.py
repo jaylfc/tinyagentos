@@ -29,6 +29,8 @@ from tinyagentos.agent_messages import AgentMessageStore
 from tinyagentos.shared_folders import SharedFolderManager
 from tinyagentos.webhook_notifier import WebhookNotifier
 from tinyagentos.llm_proxy import LLMProxy
+from tinyagentos.channel_hub.router import MessageRouter
+from tinyagentos.channel_hub.adapter_manager import AdapterManager
 
 PROJECT_DIR = Path(__file__).parent.parent
 
@@ -75,6 +77,8 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     webhook_notifier = WebhookNotifier(config.to_dict())
     notif_store.set_webhook_notifier(webhook_notifier)
     llm_proxy = LLMProxy(port=4000)
+    channel_hub_router = MessageRouter()
+    adapter_manager = AdapterManager(channel_hub_router)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -111,6 +115,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.auth = auth_manager
         app.state.webhook_notifier = webhook_notifier
         app.state.llm_proxy = llm_proxy
+        app.state.channel_hub_router = channel_hub_router
+        app.state.adapter_manager = adapter_manager
+        app.state.channel_hub_connectors = {}
         # Optionally start LiteLLM proxy (non-fatal if not installed)
         try:
             await llm_proxy.start(config.backends)
@@ -125,6 +132,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         await monitor.start()
         await cluster_manager.start()
         yield
+        adapter_manager.stop_all()
+        for c in list(getattr(app.state, "channel_hub_connectors", {}).values()):
+            await c.stop()
         await cluster_manager.stop()
         llm_proxy.stop()
         await monitor.stop()
@@ -175,6 +185,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     app.state.auth = auth_manager
     app.state.webhook_notifier = webhook_notifier
     app.state.llm_proxy = llm_proxy
+    app.state.channel_hub_router = channel_hub_router
+    app.state.adapter_manager = adapter_manager
+    app.state.channel_hub_connectors = {}
 
     # Mount static files
     static_dir = PROJECT_DIR / "static"
@@ -250,6 +263,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     from tinyagentos.routes.providers import router as providers_router
     app.include_router(providers_router)
+
+    from tinyagentos.routes.channel_hub import router as channel_hub_router_routes
+    app.include_router(channel_hub_router_routes)
 
     # Lobby demo (internal only — not included in public builds)
     try:
