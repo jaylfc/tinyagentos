@@ -1,0 +1,22 @@
+id: qwen3-30b-a3b
+name: Qwen 3 30B-A3B (MoE)
+type: model
+version: 3.0.0
+description: "MoE model with 3B active params — outperforms QwQ-32B with 10x fewer active parameters. Best quality/size ratio."
+homepage: https://huggingface.co/Qwen/Qwen3-30B-A3B
+capabilities: [chat, tool-calling, code, reasoning]
+
+variants:
+  - id: q4_k_m
+    name: "Q4_K_M (4.5GB)"
+    format: gguf
+    size_mb: 4500
+    min_ram_mb: 6144
+    download_url: https://huggingface.co/Qwen/Qwen3-30B-A3B-GGUF/resolve/main/qwen3-30b-a3b-q4_k_m.gguf
+    backend: [ollama, llama-cpp]
+
+hardware_tiers:
+  arm-npu-16gb: {recommended: q4_k_m}
+  x86-cuda-8gb: {recommended: q4_k_m}
+  x86-vulkan-8gb: {recommended: q4_k_m}
+  cpu-only: {recommended: q4_k_m, notes: "Slow but MoE keeps it efficient"}

@@ -1,0 +1,30 @@
+id: ministral-3b
+name: Ministral 3B Instruct
+type: model
+version: 25.12.0
+description: "Mistral's edge-optimized model — built-in function calling, structured JSON, perfect for tool-using agents"
+homepage: https://huggingface.co/mistralai/Ministral-3B-Instruct
+capabilities: [chat, tool-calling, structured-output]
+
+variants:
+  - id: q4_k_m
+    name: "Q4_K_M (2GB)"
+    format: gguf
+    size_mb: 2000
+    min_ram_mb: 3072
+    download_url: https://huggingface.co/bartowski/Ministral-3B-Instruct-GGUF/resolve/main/Ministral-3B-Instruct-Q4_K_M.gguf
+    backend: [ollama, llama-cpp]
+  - id: q8_0
+    name: "Q8_0 (3.3GB)"
+    format: gguf
+    size_mb: 3300
+    min_ram_mb: 4096
+    download_url: https://huggingface.co/bartowski/Ministral-3B-Instruct-GGUF/resolve/main/Ministral-3B-Instruct-Q8_0.gguf
+    backend: [ollama, llama-cpp]
+
+hardware_tiers:
+  arm-npu-16gb: {recommended: q4_k_m}
+  arm-cpu-8gb: {recommended: q4_k_m}
+  x86-cuda-8gb: {recommended: q4_k_m}
+  x86-vulkan-4gb: {recommended: q4_k_m}
+  cpu-only: {recommended: q4_k_m}
