@@ -228,6 +228,13 @@ async def agent_summary(request: Request):
     })
 
 
+@router.get("/api/partials/quick-actions", response_class=HTMLResponse)
+async def quick_actions(request: Request):
+    """HTMX partial: quick action buttons for the dashboard."""
+    templates = request.app.state.templates
+    return templates.TemplateResponse(request, "partials/quick_actions.html", {})
+
+
 @router.get("/api/partials/activity-feed", response_class=HTMLResponse)
 async def activity_feed(request: Request):
     """HTMX partial: recent activity timeline."""

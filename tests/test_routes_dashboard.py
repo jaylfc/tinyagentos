@@ -56,6 +56,16 @@ class TestOfflinePage:
         assert b"Offline" in resp.content
 
 
+class TestQuickActions:
+    @pytest.mark.asyncio
+    async def test_quick_actions_partial(self, client):
+        resp = await client.get("/api/partials/quick-actions")
+        assert resp.status_code == 200
+        assert b"Deploy Agent" in resp.content
+        assert b"Install App" in resp.content
+        assert b"Download Model" in resp.content
+
+
 class TestActivityFeed:
     @pytest.mark.asyncio
     async def test_activity_json(self, client):
