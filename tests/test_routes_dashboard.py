@@ -46,3 +46,23 @@ class TestClusterSummary:
         assert "total_ram_gb" in data
         assert "total_vram_gb" in data
         assert data["workers"] == 0
+
+
+class TestActivityFeed:
+    @pytest.mark.asyncio
+    async def test_activity_json(self, client):
+        resp = await client.get("/api/dashboard/activity")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "events" in data
+        assert isinstance(data["events"], list)
+
+    @pytest.mark.asyncio
+    async def test_activity_with_events(self, client):
+        # Add a notification first
+        notif_store = client._transport.app.state.notifications
+        await notif_store.add("Test event", "Something happened", level="info", source="test")
+        resp = await client.get("/api/dashboard/activity")
+        data = resp.json()
+        assert len(data["events"]) >= 1
+        assert data["events"][0]["title"] == "Test event"

@@ -222,6 +222,24 @@ async def agent_summary(request: Request):
     })
 
 
+@router.get("/api/partials/activity-feed", response_class=HTMLResponse)
+async def activity_feed(request: Request):
+    """HTMX partial: recent activity timeline."""
+    notif_store = request.app.state.notifications
+    templates = request.app.state.templates
+    events = await notif_store.list(limit=15)
+    return templates.TemplateResponse(request, "partials/activity_feed.html", {
+        "events": events,
+    })
+
+
+@router.get("/api/dashboard/activity")
+async def dashboard_activity(request: Request, limit: int = 15):
+    """Recent platform activity as JSON."""
+    notif_store = request.app.state.notifications
+    return {"events": await notif_store.list(limit=limit)}
+
+
 @router.get("/api/metrics/{name}")
 async def api_metrics(request: Request, name: str, range: str = "24h"):
     """Query time-series metrics by name and time range."""
