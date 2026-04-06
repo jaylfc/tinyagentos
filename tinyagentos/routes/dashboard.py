@@ -137,6 +137,19 @@ def _get_cluster_stats(request) -> dict:
     }
 
 
+@router.get("/api/dashboard/cluster-summary")
+async def cluster_summary(request: Request):
+    """Cluster KPIs for the dashboard."""
+    stats = _get_cluster_stats(request)
+    return {
+        "workers": stats["workers"],
+        "online": stats["online"],
+        "total_ram_gb": round(stats["total_ram_mb"] / 1024, 1),
+        "total_vram_gb": round(stats["total_vram_mb"] / 1024, 1),
+        "capabilities": stats["capabilities"],
+    }
+
+
 @router.get("/api/backends")
 async def api_backends(request: Request):
     """List all configured backends with live health status and fallback info."""

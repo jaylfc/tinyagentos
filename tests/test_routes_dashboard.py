@@ -33,3 +33,16 @@ class TestDashboardPage:
         assert resp.status_code == 200
         data = resp.json()
         assert isinstance(data, list)
+
+
+@pytest.mark.asyncio
+class TestClusterSummary:
+    async def test_cluster_summary_endpoint(self, client):
+        resp = await client.get("/api/dashboard/cluster-summary")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "workers" in data
+        assert "online" in data
+        assert "total_ram_gb" in data
+        assert "total_vram_gb" in data
+        assert data["workers"] == 0
