@@ -1,33 +1,42 @@
 {% extends "base.html" %}
 {% block title %}{{ agent.name }} Messages — TinyAgentOS{% endblock %}
 {% block content %}
-<div style="max-width: 900px; margin: 0 auto;">
+<div style="max-width: 1000px; margin: 0 auto;">
     <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
-        <a href="/agents/{{ agent.name }}/workspace" style="text-decoration: none; font-size: 1.25rem;">&larr;</a>
+        <a href="/agents/{{ agent.name }}/workspace" style="text-decoration: none; font-size: 1.25rem;" aria-label="Back to workspace">&larr;</a>
         <h2 style="margin: 0;">{{ agent.name }} &mdash; Messages</h2>
-        <div style="margin-left: auto; display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem;">
-            <span>Detail Level:</span>
-            <button class="depth-btn outline{% if depth_level == 1 %} contrast{% endif %}" onclick="setDepth(1)" style="padding: 0.2rem 0.6rem; font-size: 0.8rem; margin: 0;">1</button>
-            <button class="depth-btn outline{% if depth_level == 2 %} contrast{% endif %}" onclick="setDepth(2)" style="padding: 0.2rem 0.6rem; font-size: 0.8rem; margin: 0;">2</button>
-            <button class="depth-btn outline{% if depth_level == 3 %} contrast{% endif %}" onclick="setDepth(3)" style="padding: 0.2rem 0.6rem; font-size: 0.8rem; margin: 0;">3</button>
+        <div style="margin-left: auto; display: flex; align-items: center; gap: 0.25rem; font-size: 0.85rem;" role="group" aria-label="Transcript depth">
+            <a href="?with={{ selected_partner }}&depth=1"
+               class="outline{% if depth_level == 1 %} contrast{% endif %}" role="button"
+               style="padding: 0.2rem 0.6rem; font-size: 0.8rem; margin: 0; text-decoration: none;"
+               aria-label="Show responses only"
+               aria-pressed="{{ 'true' if depth_level == 1 else 'false' }}">Responses</a>
+            <a href="?with={{ selected_partner }}&depth=2"
+               class="outline{% if depth_level == 2 %} contrast{% endif %}" role="button"
+               style="padding: 0.2rem 0.6rem; font-size: 0.8rem; margin: 0; text-decoration: none;"
+               aria-label="Show responses and tools"
+               aria-pressed="{{ 'true' if depth_level == 2 else 'false' }}">+ Tools</a>
+            <a href="?with={{ selected_partner }}&depth=3"
+               class="outline{% if depth_level == 3 %} contrast{% endif %}" role="button"
+               style="padding: 0.2rem 0.6rem; font-size: 0.8rem; margin: 0; text-decoration: none;"
+               aria-label="Show responses, tools, and reasoning"
+               aria-pressed="{{ 'true' if depth_level == 3 else 'false' }}">+ Reasoning</a>
         </div>
     </div>
-    <script>
-    function setDepth(level) {
-        const url = new URL(window.location.href);
-        url.searchParams.set('depth', level);
-        window.location.href = url.toString();
-    }
-    </script>
 
-    <div style="display: grid; grid-template-columns: 200px 1fr; gap: 1rem; min-height: 400px;">
-        <!-- Sidebar: conversation partners -->
-        <div style="border: 1px solid var(--pico-muted-border-color); border-radius: 8px; padding: 0.75rem; overflow-y: auto;">
+    <div style="display: grid; grid-template-columns: 25% 1fr; gap: 1rem; min-height: 500px;">
+        <!-- Left sidebar: contacts -->
+        <div style="border: 1px solid var(--pico-muted-border-color); border-radius: 8px; padding: 0.75rem; overflow-y: auto;" role="navigation" aria-label="Conversations">
             <strong style="font-size: 0.85rem; display: block; margin-bottom: 0.5rem;">Conversations</strong>
-            {% for p in partners %}
-            <a href="/agents/{{ agent.name }}/workspace/messages?with={{ p }}"
-               style="display: block; padding: 0.4rem 0.5rem; border-radius: 6px; text-decoration: none; color: inherit; font-size: 0.9rem; margin-bottom: 0.25rem; background: {% if request.query_params.get('with') == p %}var(--pico-primary-focus){% else %}transparent{% endif %};">
-                {{ p }}
+            {% for c in contacts %}
+            <a href="/agents/{{ agent.name }}/workspace/messages/{{ c.name }}"
+               aria-label="Conversation with {{ c.name }}{% if c.unread_count %}, {{ c.unread_count }} unread{% endif %}"
+               style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; border-radius: 6px; text-decoration: none; color: inherit; font-size: 0.9rem; margin-bottom: 0.25rem; background: {% if selected_partner == c.name %}var(--pico-primary-focus){% else %}transparent{% endif %};">
+                <span style="display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem; border-radius: 50%; background: #6c63ff; color: #fff; font-size: 0.75rem; font-weight: bold; flex-shrink: 0;">{{ c.name[:2]|upper }}</span>
+                <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ c.name }}</span>
+                {% if c.unread_count %}
+                <span style="background: var(--pico-primary); color: var(--pico-primary-inverse); border-radius: 10px; padding: 0.1rem 0.45rem; font-size: 0.7rem; font-weight: bold;" aria-hidden="true">{{ c.unread_count }}</span>
+                {% endif %}
             </a>
             {% else %}
             <p style="color: var(--pico-muted-color); font-size: 0.85rem;">No conversations yet</p>
@@ -38,8 +47,9 @@
             <strong style="font-size: 0.8rem; display: block; margin-bottom: 0.25rem;">All Agents</strong>
             {% for a in all_agents %}
             {% if a not in partners %}
-            <a href="/agents/{{ agent.name }}/workspace/messages?with={{ a }}"
-               style="display: block; padding: 0.3rem 0.5rem; font-size: 0.8rem; color: var(--pico-muted-color); text-decoration: none;">
+            <a href="/agents/{{ agent.name }}/workspace/messages/{{ a }}"
+               style="display: block; padding: 0.3rem 0.5rem; font-size: 0.8rem; color: var(--pico-muted-color); text-decoration: none;"
+               aria-label="Start conversation with {{ a }}">
                 {{ a }}
             </a>
             {% endif %}
@@ -47,55 +57,117 @@
             {% endif %}
         </div>
 
-        <!-- Main panel: messages -->
-        <div style="border: 1px solid var(--pico-muted-border-color); border-radius: 8px; display: flex; flex-direction: column;">
+        <!-- Right panel: conversation thread -->
+        <div style="border: 1px solid var(--pico-muted-border-color); border-radius: 8px; display: flex; flex-direction: column;" role="log" aria-label="Message thread{% if selected_partner %} with {{ selected_partner }}{% endif %}">
+            {% if selected_partner %}
+            <div style="padding: 0.6rem 1rem; border-bottom: 1px solid var(--pico-muted-border-color); font-size: 0.9rem; font-weight: bold;">
+                <span style="display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem; border-radius: 50%; background: #6c63ff; color: #fff; font-size: 0.65rem; font-weight: bold; margin-right: 0.4rem; vertical-align: middle;">{{ selected_partner[:2]|upper }}</span>
+                {{ selected_partner }}
+            </div>
+            {% endif %}
+
             <div id="message-list" style="flex: 1; overflow-y: auto; padding: 1rem; max-height: 500px;">
                 {% for m in messages %}
-                <div style="margin-bottom: 1rem; {% if m['from'] == agent.name %}text-align: right;{% endif %}">
-                    <div style="display: inline-block; max-width: 80%; padding: 0.6rem 1rem; border-radius: 12px; {% if m['from'] == agent.name %}background: var(--pico-primary-background); color: var(--pico-primary-inverse);{% else %}background: var(--pico-card-background-color); border: 1px solid var(--pico-muted-border-color);{% endif %}">
-                        <div style="font-size: 0.75rem; font-weight: bold; margin-bottom: 0.2rem;">{{ m['from'] }} &rarr; {{ m['to'] }}</div>
-                        <div style="font-size: 0.9rem;">{{ m.message }}</div>
-                        {% if m.tool_calls %}
-                        <details style="margin-top: 0.4rem; font-size: 0.8rem;">
-                            <summary>Tool calls ({{ m.tool_calls|length }})</summary>
-                            <pre style="font-size: 0.75rem; white-space: pre-wrap;">{{ m.tool_calls }}</pre>
-                        </details>
-                        {% endif %}
-                        {% if m.tool_results %}
-                        <details style="margin-top: 0.4rem; font-size: 0.8rem;">
-                            <summary>Tool results ({{ m.tool_results|length }})</summary>
-                            <pre style="font-size: 0.75rem; white-space: pre-wrap;">{{ m.tool_results }}</pre>
-                        </details>
-                        {% endif %}
-                        {% if m.reasoning %}
-                        <details style="margin-top: 0.4rem; font-size: 0.8rem;">
-                            <summary>Reasoning</summary>
-                            <pre style="font-size: 0.75rem; white-space: pre-wrap;">{{ m.reasoning }}</pre>
-                        </details>
-                        {% endif %}
+                <div style="margin-bottom: 1rem; {% if m['from'] == agent.name %}text-align: right;{% endif %}" role="article" aria-label="Message from {{ m['from'] }}">
+                    {% if m['from'] != agent.name %}
+                    <div style="display: flex; align-items: flex-start; gap: 0.5rem;">
+                        <span style="display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem; border-radius: 50%; background: #e07c24; color: #fff; font-size: 0.7rem; font-weight: bold; flex-shrink: 0;" aria-hidden="true">{{ m['from'][:2]|upper }}</span>
+                        <div style="max-width: 75%;">
+                            <div style="font-size: 0.75rem; font-weight: bold; margin-bottom: 0.15rem;">{{ m['from'] }}</div>
+                            <div class="msg-bubble" style="padding: 0.6rem 1rem; border-radius: 12px; background: var(--pico-card-background-color); border: 1px solid var(--pico-muted-border-color); text-align: left; cursor: pointer;" onclick="this.querySelector('.msg-detail')&&this.querySelector('.msg-detail').toggleAttribute('open')">
+                                <div style="font-size: 0.9rem;">{{ m.message }}</div>
+                                {% if m.tool_calls or m.tool_results or m.reasoning %}
+                                <details class="msg-detail" style="margin-top: 0.4rem; font-size: 0.8rem;">
+                                    <summary style="cursor: pointer; color: var(--pico-muted-color);">Details</summary>
+                                    {% if m.tool_calls %}
+                                    <div style="margin-top: 0.3rem;">
+                                        <strong style="font-size: 0.75rem;">Tool calls ({{ m.tool_calls|length }}):</strong>
+                                        <pre style="font-size: 0.75rem; white-space: pre-wrap; margin: 0.2rem 0;">{{ m.tool_calls }}</pre>
+                                    </div>
+                                    {% endif %}
+                                    {% if m.tool_results %}
+                                    <div style="margin-top: 0.3rem;">
+                                        <strong style="font-size: 0.75rem;">Tool results ({{ m.tool_results|length }}):</strong>
+                                        <pre style="font-size: 0.75rem; white-space: pre-wrap; margin: 0.2rem 0;">{{ m.tool_results }}</pre>
+                                    </div>
+                                    {% endif %}
+                                    {% if m.reasoning %}
+                                    <div style="margin-top: 0.3rem;">
+                                        <strong style="font-size: 0.75rem;">Reasoning:</strong>
+                                        <pre style="font-size: 0.75rem; white-space: pre-wrap; margin: 0.2rem 0;">{{ m.reasoning }}</pre>
+                                    </div>
+                                    {% endif %}
+                                </details>
+                                {% endif %}
+                            </div>
+                            <div style="font-size: 0.7rem; color: var(--pico-muted-color); margin-top: 0.15rem;">{{ m.timestamp }}</div>
+                        </div>
                     </div>
-                    <div style="font-size: 0.7rem; color: var(--pico-muted-color); margin-top: 0.15rem;">{{ m.timestamp }}</div>
+                    {% else %}
+                    <div style="display: flex; align-items: flex-start; gap: 0.5rem; justify-content: flex-end;">
+                        <div style="max-width: 75%;">
+                            <div style="font-size: 0.75rem; font-weight: bold; margin-bottom: 0.15rem; text-align: right;">{{ m['from'] }}</div>
+                            <div class="msg-bubble" style="padding: 0.6rem 1rem; border-radius: 12px; background: var(--pico-primary-background); color: var(--pico-primary-inverse); text-align: left; cursor: pointer;" onclick="this.querySelector('.msg-detail')&&this.querySelector('.msg-detail').toggleAttribute('open')">
+                                <div style="font-size: 0.9rem;">{{ m.message }}</div>
+                                {% if m.tool_calls or m.tool_results or m.reasoning %}
+                                <details class="msg-detail" style="margin-top: 0.4rem; font-size: 0.8rem;">
+                                    <summary style="cursor: pointer;">Details</summary>
+                                    {% if m.tool_calls %}
+                                    <div style="margin-top: 0.3rem;">
+                                        <strong style="font-size: 0.75rem;">Tool calls ({{ m.tool_calls|length }}):</strong>
+                                        <pre style="font-size: 0.75rem; white-space: pre-wrap; margin: 0.2rem 0;">{{ m.tool_calls }}</pre>
+                                    </div>
+                                    {% endif %}
+                                    {% if m.tool_results %}
+                                    <div style="margin-top: 0.3rem;">
+                                        <strong style="font-size: 0.75rem;">Tool results ({{ m.tool_results|length }}):</strong>
+                                        <pre style="font-size: 0.75rem; white-space: pre-wrap; margin: 0.2rem 0;">{{ m.tool_results }}</pre>
+                                    </div>
+                                    {% endif %}
+                                    {% if m.reasoning %}
+                                    <div style="margin-top: 0.3rem;">
+                                        <strong style="font-size: 0.75rem;">Reasoning:</strong>
+                                        <pre style="font-size: 0.75rem; white-space: pre-wrap; margin: 0.2rem 0;">{{ m.reasoning }}</pre>
+                                    </div>
+                                    {% endif %}
+                                </details>
+                                {% endif %}
+                            </div>
+                            <div style="font-size: 0.7rem; color: var(--pico-muted-color); margin-top: 0.15rem; text-align: right;">{{ m.timestamp }}</div>
+                        </div>
+                        <span style="display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem; border-radius: 50%; background: #38b764; color: #fff; font-size: 0.7rem; font-weight: bold; flex-shrink: 0;" aria-hidden="true">{{ m['from'][:2]|upper }}</span>
+                    </div>
+                    {% endif %}
                 </div>
                 {% else %}
-                <p style="color: var(--pico-muted-color); text-align: center; padding: 3rem 0;">No messages yet. Send one below.</p>
+                <p style="color: var(--pico-muted-color); text-align: center; padding: 3rem 0;">
+                    {% if selected_partner %}No messages with {{ selected_partner }} yet. Send one below.{% else %}Select a conversation from the sidebar, or send a new message.{% endif %}
+                </p>
                 {% endfor %}
             </div>
 
-            <!-- Send form -->
-            <form style="border-top: 1px solid var(--pico-muted-border-color); padding: 0.75rem; display: flex; gap: 0.5rem;"
-                  hx-post="/api/agents/{{ agent.name }}/messages" hx-target="#message-list" hx-swap="innerHTML"
-                  hx-on::after-request="this.reset();">
-                <input type="hidden" name="from_agent" value="{{ all_agents[0] if all_agents else '' }}">
+            <!-- Send message form -->
+            <form id="send-form" style="border-top: 1px solid var(--pico-muted-border-color); padding: 0.75rem; display: flex; gap: 0.5rem;"
+                  hx-post="/api/agents/{{ agent.name }}/messages" hx-swap="none"
+                  hx-on::after-request="if(event.detail.successful){this.reset(); window.location.reload();}"
+                  aria-label="Send a message">
                 <select name="from_agent" style="width: auto; min-width: 120px; padding: 0.3rem; font-size: 0.85rem;" aria-label="Send as agent">
                     {% for a in all_agents %}
-                    <option value="{{ a }}">{{ a }}</option>
+                    <option value="{{ a }}" {% if selected_partner == a %}selected{% endif %}>{{ a }}</option>
                     {% endfor %}
                 </select>
                 <input type="text" name="message" placeholder="Type a message..." required
                        style="flex: 1; padding: 0.3rem 0.75rem; font-size: 0.9rem; margin: 0;" aria-label="Message text">
-                <button type="submit" style="padding: 0.3rem 1rem; font-size: 0.85rem; margin: 0;">Send</button>
+                <button type="submit" style="padding: 0.3rem 1rem; font-size: 0.85rem; margin: 0;" aria-label="Send message">Send</button>
             </form>
         </div>
     </div>
 </div>
+<script>
+// Auto-scroll to bottom of message list
+(function() {
+    const list = document.getElementById('message-list');
+    if (list) list.scrollTop = list.scrollHeight;
+})();
+</script>
 {% endblock %}

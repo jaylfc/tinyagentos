@@ -93,6 +93,23 @@ class AgentMessageStore(BaseStore):
             rows = await cursor.fetchall()
         return [self._format_message(r, depth) for r in rows]
 
+    async def get_contacts(self, agent_name: str) -> list[dict]:
+        """Get list of agents this agent has communicated with + unread counts."""
+        async with self._db.execute(
+            """SELECT partner, SUM(unread) as unread_count FROM (
+                SELECT from_agent as partner, SUM(CASE WHEN read = 0 THEN 1 ELSE 0 END) as unread
+                FROM agent_messages WHERE to_agent = ?
+                GROUP BY from_agent
+                UNION ALL
+                SELECT to_agent as partner, 0 as unread
+                FROM agent_messages WHERE from_agent = ?
+                GROUP BY to_agent
+            ) GROUP BY partner ORDER BY partner""",
+            (agent_name, agent_name)
+        ) as cursor:
+            rows = await cursor.fetchall()
+        return [{"name": r[0], "unread_count": r[1]} for r in rows]
+
     async def mark_read(self, agent_name: str):
         await self._db.execute("UPDATE agent_messages SET read = 1 WHERE to_agent = ?", (agent_name,))
         await self._db.commit()

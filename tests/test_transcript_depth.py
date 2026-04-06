@@ -139,5 +139,7 @@ async def test_api_messages_with_depth_param(client):
 async def test_workspace_messages_depth_toggle(client):
     resp = await client.get("/agents/test-agent/workspace/messages?depth=3")
     assert resp.status_code == 200
-    assert "Detail Level:" in resp.text
-    assert "setDepth" in resp.text
+    assert "Transcript depth" in resp.text
+    assert "Responses" in resp.text
+    assert "+ Tools" in resp.text
+    assert "+ Reasoning" in resp.text

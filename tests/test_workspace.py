@@ -137,3 +137,98 @@ async def test_api_agent_files_empty(client):
     resp = await client.get("/api/agents/test-agent/files")
     assert resp.status_code == 200
     assert resp.json() == []
+
+
+# --- Messages sub-view route tests ---
+
+
+@pytest.mark.asyncio
+class TestWorkspaceMessagesView:
+    async def test_messages_conversation_page_renders(self, client):
+        resp = await client.get("/agents/test-agent/workspace/messages/other-agent")
+        assert resp.status_code == 200
+        assert "Messages" in resp.text
+
+    async def test_contacts_endpoint_returns_partners(self, client):
+        # Send a message first so there is a contact
+        resp = await client.post("/api/agents/test-agent/messages", json={
+            "from_agent": "sender-bot",
+            "message": "Hello from sender",
+        })
+        assert resp.status_code == 200
+
+        resp = await client.get("/api/agents/test-agent/workspace/messages/contacts")
+        assert resp.status_code == 200
+        contacts = resp.json()
+        names = [c["name"] for c in contacts]
+        assert "sender-bot" in names
+
+    async def test_contacts_empty_by_default(self, client):
+        resp = await client.get("/api/agents/test-agent/workspace/messages/contacts")
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    async def test_depth_toggle(self, client):
+        resp = await client.get("/agents/test-agent/workspace/messages?depth=1")
+        assert resp.status_code == 200
+        assert "Responses" in resp.text
+
+    async def test_messages_404_for_unknown_agent(self, client):
+        resp = await client.get("/agents/nonexistent/workspace/messages")
+        assert resp.status_code == 404
+
+
+# --- Files sub-view route tests ---
+
+
+@pytest.mark.asyncio
+class TestWorkspaceFilesView:
+    async def test_files_page_renders(self, client):
+        resp = await client.get("/agents/test-agent/workspace/files")
+        assert resp.status_code == 200
+        assert "Files" in resp.text
+
+    async def test_workspace_files_list_empty_by_default(self, client):
+        resp = await client.get("/api/agents/test-agent/workspace/files")
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    async def test_file_upload_and_listing(self, client):
+        # Upload a file
+        resp = await client.post(
+            "/api/agents/test-agent/workspace/files/upload",
+            files={"file": ("hello.txt", b"Hello, world!", "text/plain")},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["name"] == "hello.txt"
+        assert data["size"] == 13
+
+        # List files and verify it appears
+        resp = await client.get("/api/agents/test-agent/workspace/files")
+        assert resp.status_code == 200
+        files = resp.json()
+        assert len(files) == 1
+        assert files[0]["name"] == "hello.txt"
+
+    async def test_file_delete(self, client):
+        # Upload then delete
+        await client.post(
+            "/api/agents/test-agent/workspace/files/upload",
+            files={"file": ("temp.txt", b"temp content", "text/plain")},
+        )
+        resp = await client.delete("/api/agents/test-agent/workspace/files/temp.txt")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "deleted"
+
+        # Verify it's gone
+        resp = await client.get("/api/agents/test-agent/workspace/files")
+        assert resp.json() == []
+
+    async def test_delete_nonexistent_file(self, client):
+        resp = await client.delete("/api/agents/test-agent/workspace/files/nope.txt")
+        assert resp.status_code == 404
+
+    async def test_files_404_for_unknown_agent(self, client):
+        resp = await client.get("/agents/nonexistent/workspace/files")
+        assert resp.status_code == 404
