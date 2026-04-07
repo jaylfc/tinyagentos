@@ -6,7 +6,9 @@ Self-hosted AI agent platform that runs on whatever hardware you have. An old la
 
 75 apps, 18 agent frameworks, 167k+ searchable models, agent deployment, training, image/video/audio generation, and full system monitoring — all from a single web dashboard. Supports Apple Silicon (MLX), NVIDIA, AMD, Rockchip NPU, Raspberry Pi, Android phones, and more.
 
-**Framework-agnostic by design** — switch agent frameworks without losing messaging connections, model assignments, or API keys. The Channel Hub owns your communication channels (Telegram, Discord, Slack, Email, Web Chat, Webhooks) and the LLM Proxy manages model access, so agents are always portable.
+**Framework-agnostic by design** — TinyAgentOS owns everything that matters: your agent's memory, files, communication channels, model access, and configuration. The agent framework is just a replaceable execution engine. Switch from SmolAgents to LangChain to OpenClaw and your agent keeps its entire history, all its Telegram/Discord/Slack connections, its trained LoRA adapters, its files, and its API keys. No migration, no data loss, no reconfiguration. This is possible because TinyAgentOS manages the full agent lifecycle outside the framework.
+
+**Offline-first memory system** — every agent gets a persistent memory store (QMD) running inside its own container. Documents are chunked, embedded, and indexed locally using your own hardware (NPU, GPU, or CPU). Keyword search via FTS5, semantic vector search via sqlite-vec, and hybrid search combining both. Memory survives framework swaps, container restarts, and even full platform reinstalls (backup/restore). No cloud vector database, no API calls, no data leaving your network.
 
 ## Quick Start
 
@@ -40,10 +42,10 @@ Pick from 1,467 agent templates — 12 built-in plus 196 from awesome-openclaw-a
 One-click install for agent frameworks, AI models, and services. Hardware-aware — only shows what works on your device.
 
 ### Agent Deployment
-5-step wizard: pick framework → choose model → configure → deploy into isolated LXC container. Each agent gets its own memory system.
+5-step wizard: pick framework → choose model → configure → deploy into isolated LXC container. Each agent gets its own memory system, its own QMD instance, its own file storage, and its own network identity. The framework runs inside the container but TinyAgentOS manages everything around it: memory, channels, secrets, model access, scheduled tasks, and inter-agent communication. This means the framework is a swappable component, not a lock-in decision.
 
 ### Channel Hub (Framework-Agnostic Messaging)
-TinyAgentOS owns the messaging connections — not the agent framework. Telegram bots, Discord bots, Slack apps, email accounts, web chat widgets, and generic webhooks all connect once at the platform level. Switch an agent from SmolAgents to LangChain and it keeps all its channels, history, and connections.
+Most agent frameworks force you to wire up Telegram, Discord, or Slack directly into their code. If you switch frameworks, you rebuild all those integrations from scratch. TinyAgentOS flips this: the platform owns the messaging connections and routes messages to whichever framework the agent currently uses. Switch an agent from SmolAgents to LangChain and it keeps every channel, every conversation, every connection. The framework never touches the bot tokens.
 
 - **6 connectors** — Telegram, Discord, Slack, Email (IMAP/SMTP), Web Chat (WebSocket), Webhooks
 - **18 framework adapters** — thin HTTP bridges (~25 lines each) that translate the universal message format to framework-specific APIs
@@ -51,7 +53,7 @@ TinyAgentOS owns the messaging connections — not the agent framework. Telegram
 - **Per-agent or shared bots** — each agent gets its own bot, or share one across a group
 
 ### LLM Proxy (LiteLLM)
-Hidden internal gateway that unifies all inference providers. Per-agent virtual keys with budget/rate limits. Auto-configured from your backend list. Hot-swap providers without touching agent config.
+Hidden internal gateway that unifies all inference providers behind a single OpenAI-compatible API. Each agent gets a virtual API key with budget and rate limits. The proxy is auto-configured from your backend list. Switch from a local Ollama backend to a cloud provider (or add both as fallbacks) and no agent config changes. The agent just calls its local API key and TinyAgentOS routes to the best available backend.
 
 ### Dynamic Capabilities
 Features unlock automatically based on your hardware and cluster. Solo Pi sees core features. Add a GPU worker and image generation, video, and training appear. No configuration — the platform just knows what's possible.
@@ -67,6 +69,20 @@ Features unlock automatically based on your hardware and cluster. Solo Pi sees c
 - **Per-agent LoRAs** — each agent gets its own specialisation on a shared base model
 - **Smart routing** — GPU workers get instant LoRA hot-swap, NPU uses time-shared merged models
 - **Deployment** — auto-converts and deploys to all backends in the cluster
+
+### Agent Memory System
+Each agent runs its own QMD (Query Markup Documents) instance inside its container. This is a local, offline-first knowledge base that the agent reads and writes to.
+
+- **Document ingestion** — drag-and-drop files into agent memory via the web UI or API. Supports text, markdown, PDFs, code.
+- **Automatic embedding** — documents are chunked and embedded using your local inference backend (NPU, GPU, or CPU). No external API calls.
+- **Keyword search** — FTS5 full-text search across all documents with ranking
+- **Vector search** — semantic similarity search via sqlite-vec using locally-generated embeddings
+- **Hybrid search** — combines keyword + vector results using Reciprocal Rank Fusion for best-of-both accuracy
+- **Memory browser** — web UI to search across all agents' knowledge bases from one place
+- **Framework-independent** — memory lives in the container, not in the framework. Switch frameworks and the agent's entire knowledge base stays intact.
+- **Portable** — export an agent's config, channels, and memory. Import on another TinyAgentOS instance.
+
+The QMD fork adds a remote model server (`qmd serve`) with an Ollama-compatible embedding backend, batch embedding, and retry logic. Each agent's QMD is accessible over HTTP so the platform can query it without touching the container filesystem.
 
 ### Agent Workspace
 Click on any agent to enter their "virtual computer" — a tablet-like interface with app icons: Messages, Memory, Files, Tasks, Channels, Logs. Browse their conversations, search their knowledge, manage their files. Like logging into their personal device.
@@ -143,6 +159,7 @@ TinyAgentOS Controller (FastAPI + htmx)
 ├── App Store + Registry (73 apps, manifest-based)
 ├── Live Model Browser (HuggingFace + Ollama search)
 ├── Container Manager (LXC via incus)
+├── Agent Memory (QMD per agent — FTS5 + sqlite-vec + hybrid)
 ├── Health Monitor + Notifications
 ├── Secrets Manager (encrypted, per-agent access)
 ├── Task Scheduler (cron with presets)
