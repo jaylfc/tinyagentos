@@ -166,7 +166,7 @@ function AppCard({
 /*  StoreApp                                                           */
 /* ------------------------------------------------------------------ */
 
-export function StoreApp({ _windowId }: { _windowId: string }) {
+export function StoreApp({ windowId: _windowId }: { windowId: string }) {
   const [apps, setApps] = useState<StoreApp[]>([]);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");

@@ -10,7 +10,7 @@ function normalizeUrl(input: string): string {
   return `https://${trimmed}`;
 }
 
-export function BrowserApp({ _windowId }: { _windowId: string }) {
+export function BrowserApp({ windowId: _windowId }: { windowId: string }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [url, setUrl] = useState(DEFAULT_URL);
   const [inputValue, setInputValue] = useState(DEFAULT_URL);
@@ -35,16 +35,16 @@ export function BrowserApp({ _windowId }: { _windowId: string }) {
     if (!canGoBack) return;
     const newIndex = historyIndex - 1;
     setHistoryIndex(newIndex);
-    setUrl(history[newIndex]);
-    setInputValue(history[newIndex]);
+    setUrl(history[newIndex] ?? DEFAULT_URL);
+    setInputValue(history[newIndex] ?? DEFAULT_URL);
   }, [canGoBack, history, historyIndex]);
 
   const goForward = useCallback(() => {
     if (!canGoForward) return;
     const newIndex = historyIndex + 1;
     setHistoryIndex(newIndex);
-    setUrl(history[newIndex]);
-    setInputValue(history[newIndex]);
+    setUrl(history[newIndex] ?? DEFAULT_URL);
+    setInputValue(history[newIndex] ?? DEFAULT_URL);
   }, [canGoForward, history, historyIndex]);
 
   const refresh = useCallback(() => {
