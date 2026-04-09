@@ -60,7 +60,7 @@ At the end, it prints your device's IP address:
 ```
   TinyAgentOS installed successfully!
 
-  Open: http://192.168.1.42:8888
+  Open: http://your-device-ip:8888
 
   Service: systemctl status tinyagentos
   Logs:    journalctl -u tinyagentos -f
