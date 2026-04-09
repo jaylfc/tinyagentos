@@ -270,6 +270,11 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     if static_dir.exists():
         app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
+    # Mount desktop SPA assets (CSS/JS bundles)
+    spa_dir = PROJECT_DIR / "static" / "desktop"
+    if spa_dir.exists():
+        app.mount("/desktop/assets", StaticFiles(directory=str(spa_dir / "assets")), name="desktop-assets")
+
     # Templates
     templates_dir = Path(__file__).parent / "templates"
     templates = Jinja2Templates(directory=str(templates_dir))
