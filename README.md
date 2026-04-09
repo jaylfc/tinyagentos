@@ -42,7 +42,7 @@ Pick from 1,467 agent templates — 12 built-in plus 196 from awesome-openclaw-a
 One-click install for agent frameworks, AI models, and services. Hardware-aware — only shows what works on your device.
 
 ### Agent Deployment
-5-step wizard: pick framework → choose model → configure → deploy into isolated LXC container. Each agent gets its own memory system, its own QMD instance, its own file storage, and its own network identity. The framework runs inside the container but TinyAgentOS manages everything around it: memory, channels, secrets, model access, scheduled tasks, and inter-agent communication. This means the framework is a swappable component, not a lock-in decision.
+5-step wizard: pick framework → choose model → configure → deploy into an isolated container (LXC on bare metal, Docker on VPS, auto-detected). Each agent gets its own memory system, its own QMD instance, its own file storage, and its own network identity. The framework runs inside the container but TinyAgentOS manages everything around it: memory, channels, secrets, model access, scheduled tasks, and inter-agent communication. This means the framework is a swappable component, not a lock-in decision.
 
 ### Channel Hub (Framework-Agnostic Messaging)
 Most agent frameworks force you to wire up Telegram, Discord, or Slack directly into their code. If you switch frameworks, you rebuild all those integrations from scratch. TinyAgentOS flips this: the platform owns the messaging connections and routes messages to whichever framework the agent currently uses. Switch an agent from SmolAgents to LangChain and it keeps every channel, every conversation, every connection. The framework never touches the bot tokens.
@@ -163,7 +163,7 @@ TinyAgentOS Controller (FastAPI + htmx)
 ├── Computer Use (vision + keyboard/mouse, agent escalation)
 ├── App Store + Registry (87 apps, manifest-based)
 ├── Live Model Browser (HuggingFace + Ollama search)
-├── Container Manager (LXC via incus)
+├── Container Manager (LXC or Docker, auto-detected)
 ├── Agent Memory (QMD per agent — FTS5 + sqlite-vec + hybrid)
 ├── Health Monitor + Notifications
 ├── Secrets Manager (encrypted, per-agent access)
@@ -190,7 +190,7 @@ Platform overhead: **~345 MB RAM** (without models or agents)
 
 ```bash
 pip install -e ".[dev]"
-pytest tests/ -v          # 858 tests
+pytest tests/ -v          # 877 tests
 ```
 
 CI runs automatically on every push (Python 3.10-3.13 + security audit).

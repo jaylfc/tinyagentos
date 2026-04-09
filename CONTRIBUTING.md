@@ -184,7 +184,7 @@ Run a specific test file:
 pytest tests/test_catalog_sync.py -v
 ```
 
-The project has 858 tests. CI runs against Python 3.10, 3.11, 3.12, and 3.13 via GitHub Actions on every pull request. A PR cannot be merged until all four matrix jobs pass.
+The project has 877 tests. CI runs against Python 3.10, 3.11, 3.12, and 3.13 via GitHub Actions on every pull request. A PR cannot be merged until all four matrix jobs pass.
 
 When adding a feature, add tests that cover the new behaviour. When fixing a bug, add a regression test.
 
