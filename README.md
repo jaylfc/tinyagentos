@@ -105,6 +105,16 @@ Password-protected dashboard with persistent sessions. Per-agent API keys. Exemp
 ### Model Conversion
 Convert models between formats (GGUF→RKLLM, HF→GGUF, GGUF→MLX). Capability-gated — "Convert for NPU" button appears when an x86 worker joins the cluster.
 
+### Message Hub (Built-in Chat)
+Discord-style messaging built into the platform. Chat with your agents, create topic channels, share files, view rich embeds and interactive components. Available as a standalone PWA (install it like a private Discord app) or within the main dashboard.
+
+- **Channels** -- DMs, groups, topics, threads, agent sessions
+- **Rich messages** -- markdown, code blocks, embeds with fields/images, interactive buttons and selects
+- **Canvas** -- agents present visual content (charts, mockups, interactive choices) in a split view alongside the chat. Powered by CanvasX with live updates.
+- **Real-time** -- WebSocket hub with typing indicators, presence, and token-by-token streaming of agent responses
+- **File sharing** -- drag-and-drop upload, inline preview for images/video/audio/PDF
+- **Dual PWA** -- install the chat as a separate app from the management dashboard
+
 ### Global Search
 Search across agents, apps, messages, and files from a single endpoint. Finds anything on the platform instantly.
 
@@ -151,7 +161,7 @@ Search across agents, apps, messages, and files from a single endpoint. Finds an
 
 ```
 TinyAgentOS Controller (FastAPI + htmx)
-├── Web Dashboard (26 route modules, 44 templates)
+├── Web Dashboard (27 route modules, 48 templates)
 ├── Channel Hub (6 connectors, 18 framework adapters)
 │   ├── Telegram, Discord, Slack, Email, Web Chat, Webhooks
 │   └── Universal message format → framework-specific translation
@@ -161,6 +171,7 @@ TinyAgentOS Controller (FastAPI + htmx)
 ├── App Orchestrator (worker selection, container lifecycle)
 ├── User Workspace (NAS-like file browser, shared with apps + agents)
 ├── Computer Use (vision + keyboard/mouse, agent escalation)
+├── Message Hub (chat, channels, threads, canvas, dual PWA)
 ├── App Store + Registry (87 apps, manifest-based)
 ├── Live Model Browser (HuggingFace + Ollama search)
 ├── Container Manager (LXC or Docker, auto-detected)
@@ -190,7 +201,7 @@ Platform overhead: **~345 MB RAM** (without models or agents)
 
 ```bash
 pip install -e ".[dev]"
-pytest tests/ -v          # 877 tests
+pytest tests/ -v          # 963 tests
 ```
 
 CI runs automatically on every push (Python 3.10-3.13 + security audit).
@@ -230,6 +241,8 @@ CI runs automatically on every push (Python 3.10-3.13 + security audit).
 - [x] Bulk agent operations (start/stop/restart all)
 - [x] Notification preferences (mute by event type)
 - [x] Playwright E2E test scaffolding
+- [x] Message Hub — built-in chat with channels, threads, canvas, dual PWA
+- [x] Dual container runtime (LXC + Docker, auto-detected)
 
 ### In Progress
 - [ ] Fresh install test on clean hardware (#2)
