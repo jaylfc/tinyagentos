@@ -444,3 +444,20 @@ async def chat_channel_page(request: Request, channel_id: str):
         "channel": channel,
         "channel_id": channel_id,
     })
+
+
+@router.get("/chat/{channel_id}/canvas/{canvas_id}", response_class=HTMLResponse)
+async def chat_canvas_view(request: Request, channel_id: str, canvas_id: str):
+    """Split view: canvas on left, chat on right."""
+    templates = request.app.state.templates
+    ch_store = request.app.state.chat_channels
+    canvas_store = request.app.state.canvas_store
+    channel = await ch_store.get_channel(channel_id)
+    canvas = await canvas_store.get(canvas_id)
+    return templates.TemplateResponse(request, "chat_canvas_split.html", {
+        "active_page": "chat",
+        "channel": channel,
+        "channel_id": channel_id,
+        "canvas": canvas,
+        "canvas_id": canvas_id,
+    })

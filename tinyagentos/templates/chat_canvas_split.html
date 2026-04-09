@@ -1,0 +1,54 @@
+{% extends "chat_base.html" %}
+{% block title %}Canvas — {{ canvas.title if canvas else 'Loading' }}{% endblock %}
+{% block content %}
+<div style="display:flex; height:calc(100vh - 50px);">
+  <!-- Canvas panel -->
+  <div style="flex:1; border-right:1px solid var(--pico-muted-border-color); overflow:hidden;">
+    <iframe src="/canvas/{{ canvas_id }}" style="width:100%; height:100%; border:none;" title="Canvas: {{ canvas.title if canvas else 'Loading' }}"></iframe>
+  </div>
+  <!-- Chat panel -->
+  <div style="width:380px; display:flex; flex-direction:column;">
+    <div style="padding:0.5rem 0.75rem; border-bottom:1px solid var(--pico-muted-border-color); font-size:0.85rem; font-weight:bold;">
+      {{ channel.name if channel else 'Chat' }}
+    </div>
+    <div id="message-list" style="flex:1; overflow-y:auto; padding:0.5rem;" role="log" aria-label="Messages" aria-live="polite" hx-get="/api/chat/channels/{{ channel_id }}/messages?limit=20" hx-trigger="load" hx-swap="innerHTML">
+      <p aria-busy="true" style="font-size:0.8rem;">Loading...</p>
+    </div>
+    <form style="padding:0.5rem; border-top:1px solid var(--pico-muted-border-color); display:flex; gap:0.5rem;" onsubmit="sendCanvasChat(event)" aria-label="Send message about canvas">
+      <label for="canvas-chat-input" class="sr-only">Chat about canvas</label>
+      <input type="text" id="canvas-chat-input" placeholder="Discuss..." aria-label="Chat about canvas" style="margin:0; font-size:0.85rem; flex:1;">
+      <button type="submit" style="margin:0; padding:0.4rem 0.8rem; font-size:0.85rem;">Send</button>
+    </form>
+  </div>
+</div>
+<script>
+function sendCanvasChat(e) {
+    e.preventDefault();
+    const input = document.getElementById('canvas-chat-input');
+    const msg = input.value.trim();
+    if (!msg) return;
+    fetch('/api/chat/messages', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({channel_id: '{{ channel_id }}', author_id: 'user', author_type: 'user', content: msg}),
+    }).then(() => { input.value = ''; htmx.trigger('#message-list', 'load'); });
+}
+// Listen for canvas actions from iframe
+window.addEventListener('message', function(e) {
+    if (e.data && e.data.type === 'canvas_action') {
+        fetch('/api/chat/messages', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                channel_id: '{{ channel_id }}',
+                author_id: 'user',
+                author_type: 'system',
+                content: 'Selected: ' + (e.data.value || e.data.action),
+                content_type: 'text',
+                metadata: {canvas_action: e.data},
+            }),
+        }).then(() => htmx.trigger('#message-list', 'load'));
+    }
+});
+</script>
+{% endblock %}

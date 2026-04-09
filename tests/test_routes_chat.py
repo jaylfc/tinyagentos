@@ -296,3 +296,35 @@ async def test_unread_counts(client):
 async def test_chat_page(client):
     resp = await client.get("/chat")
     assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_chat_page_uses_template(client):
+    """GET /chat should return 200 and include 'TinyAgentOS Chat' from chat_base.html."""
+    resp = await client.get("/chat")
+    assert resp.status_code == 200
+    assert "TinyAgentOS Chat" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_chat_canvas_split_view(client):
+    """GET /chat/{channel_id}/canvas/{canvas_id} should return 200 with split view."""
+    # Create a channel
+    ch = await _create_channel(client, "canvas-test-ch")
+    channel_id = ch["id"]
+
+    # Create a canvas via the store directly
+    app = client._transport.app
+    canvas_store = app.state.canvas_store
+    canvas = await canvas_store.create(
+        title="Test Canvas",
+        content="# Hello",
+        style="auto",
+        format="markdown",
+        created_by="user",
+    )
+    canvas_id = canvas["id"]
+
+    resp = await client.get(f"/chat/{channel_id}/canvas/{canvas_id}")
+    assert resp.status_code == 200
+    assert "TinyAgentOS Chat" in resp.text

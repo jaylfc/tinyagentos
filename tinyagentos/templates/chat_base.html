@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Chat — TinyAgentOS{% endblock %}</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <link rel="stylesheet" href="/static/app.css">
+    <link rel="manifest" href="/static/manifest-chat.json">
+    <meta name="theme-color" content="#1a1a2e">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+</head>
+<body>
+    <nav style="padding:0.5rem 1rem; border-bottom:1px solid var(--pico-muted-border-color); display:flex; align-items:center; gap:1rem;" role="navigation" aria-label="Chat navigation">
+        <a href="/chat" style="text-decoration:none; font-weight:bold; font-size:0.95rem;">TinyAgentOS Chat</a>
+        <div style="flex:1;"></div>
+        <input type="search" placeholder="Search messages..." aria-label="Search messages"
+               style="margin:0; padding:0.3rem 0.6rem; font-size:0.8rem; width:180px; max-width:40vw;"
+               hx-get="/api/chat/search" hx-trigger="keyup changed delay:300ms"
+               hx-target="#chat-search-results" hx-swap="innerHTML" name="q">
+        <div id="chat-search-results" style="display:none; position:absolute; top:100%; right:1rem; z-index:100;"></div>
+        <a href="/" aria-label="Back to dashboard" style="font-size:0.8rem; text-decoration:none; color:var(--pico-muted-color);">Dashboard</a>
+        <a href="#" id="fullscreen-toggle" aria-label="Toggle fullscreen" onclick="toggleFullscreen(); return false;">&#x26F6;</a>
+    </nav>
+    {% block content %}{% endblock %}
+    <script>
+    function toggleFullscreen() {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(function(){});
+        } else {
+            document.exitFullscreen();
+        }
+    }
+    (function() {
+        const saved = localStorage.getItem('theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', saved);
+    })();
+    </script>
+    <script>
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/static/sw.js').catch(() => {});
+    }
+    </script>
+</body>
+</html>
