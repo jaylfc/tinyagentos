@@ -13,12 +13,9 @@ export interface AppManifest {
   launchpadOrder: number;
 }
 
-const placeholder = () =>
-  import("@/apps/PlaceholderApp").then((m) => ({ default: m.PlaceholderApp }));
-
 const apps: AppManifest[] = [
   // Platform apps
-  { id: "messages", name: "Messages", icon: "message-circle", category: "platform", component: placeholder, defaultSize: { w: 900, h: 600 }, minSize: { w: 400, h: 300 }, singleton: true, pinned: true, launchpadOrder: 1 },
+  { id: "messages", name: "Messages", icon: "message-circle", category: "platform", component: () => import("@/apps/MessagesApp").then((m) => ({ default: m.MessagesApp })), defaultSize: { w: 900, h: 600 }, minSize: { w: 400, h: 300 }, singleton: true, pinned: true, launchpadOrder: 1 },
   { id: "agents", name: "Agents", icon: "bot", category: "platform", component: () => import("@/apps/AgentsApp").then((m) => ({ default: m.AgentsApp })), defaultSize: { w: 1000, h: 650 }, minSize: { w: 500, h: 400 }, singleton: true, pinned: true, launchpadOrder: 2 },
   { id: "files", name: "Files", icon: "folder", category: "platform", component: () => import("@/apps/FilesApp").then((m) => ({ default: m.FilesApp })), defaultSize: { w: 900, h: 550 }, minSize: { w: 400, h: 300 }, singleton: true, pinned: true, launchpadOrder: 3 },
   { id: "store", name: "Store", icon: "shopping-bag", category: "platform", component: () => import("@/apps/StoreApp").then((m) => ({ default: m.StoreApp })), defaultSize: { w: 1000, h: 700 }, minSize: { w: 600, h: 400 }, singleton: true, pinned: true, launchpadOrder: 4 },
