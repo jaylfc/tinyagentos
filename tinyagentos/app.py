@@ -35,6 +35,8 @@ from tinyagentos.webhook_notifier import WebhookNotifier
 from tinyagentos.llm_proxy import LLMProxy
 from tinyagentos.channel_hub.router import MessageRouter
 from tinyagentos.channel_hub.adapter_manager import AdapterManager
+from tinyagentos.chat.message_store import ChatMessageStore
+from tinyagentos.chat.channel_store import ChatChannelStore
 
 PROJECT_DIR = Path(__file__).parent.parent
 
@@ -87,6 +89,8 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     llm_proxy = LLMProxy(port=4000)
     channel_hub_router = MessageRouter()
     adapter_manager = AdapterManager(channel_hub_router)
+    chat_messages = ChatMessageStore(data_dir / "chat.db")
+    chat_channels = ChatChannelStore(data_dir / "chat.db")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -103,6 +107,8 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         await shared_folders.init()
         await streaming_sessions.init()
         await expert_agents.init()
+        await chat_messages.init()
+        await chat_channels.init()
         app.state.config = config
         app.state.config_path = config_path
         app.state.metrics = metrics_store
@@ -133,6 +139,8 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.adapter_manager = adapter_manager
         app.state.channel_hub_connectors = {}
         app.state.deploy_tasks = {}
+        app.state.chat_messages = chat_messages
+        app.state.chat_channels = chat_channels
         # Optionally start LiteLLM proxy (non-fatal if not installed)
         try:
             await llm_proxy.start(config.backends)
@@ -164,6 +172,8 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         await cluster_manager.stop()
         llm_proxy.stop()
         await monitor.stop()
+        await chat_channels.close()
+        await chat_messages.close()
         await expert_agents.close()
         await streaming_sessions.close()
         await shared_folders.close()
@@ -221,6 +231,8 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     app.state.adapter_manager = adapter_manager
     app.state.channel_hub_connectors = {}
     app.state.deploy_tasks = {}
+    app.state.chat_messages = chat_messages
+    app.state.chat_channels = chat_channels
 
     # Detect and set container runtime (eager, so tests work without lifespan)
     try:

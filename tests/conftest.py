@@ -87,9 +87,19 @@ async def client(app):
     if expert_agents._db is not None:
         await expert_agents.close()
     await expert_agents.init()
+    chat_messages = app.state.chat_messages
+    if chat_messages._db is not None:
+        await chat_messages.close()
+    await chat_messages.init()
+    chat_channels = app.state.chat_channels
+    if chat_channels._db is not None:
+        await chat_channels.close()
+    await chat_channels.init()
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
+    await chat_channels.close()
+    await chat_messages.close()
     await expert_agents.close()
     await streaming_sessions.close()
     await shared_folders.close()
@@ -215,9 +225,19 @@ async def client_with_qmd(app_with_qmd):
     if expert_agents._db is not None:
         await expert_agents.close()
     await expert_agents.init()
+    chat_messages = app_with_qmd.state.chat_messages
+    if chat_messages._db is not None:
+        await chat_messages.close()
+    await chat_messages.init()
+    chat_channels = app_with_qmd.state.chat_channels
+    if chat_channels._db is not None:
+        await chat_channels.close()
+    await chat_channels.init()
     transport = ASGITransport(app=app_with_qmd)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
+    await chat_channels.close()
+    await chat_messages.close()
     await expert_agents.close()
     await streaming_sessions.close()
     await shared_folders.close()
