@@ -37,6 +37,7 @@ from tinyagentos.channel_hub.router import MessageRouter
 from tinyagentos.channel_hub.adapter_manager import AdapterManager
 from tinyagentos.chat.message_store import ChatMessageStore
 from tinyagentos.chat.channel_store import ChatChannelStore
+from tinyagentos.chat.hub import ChatHub
 
 PROJECT_DIR = Path(__file__).parent.parent
 
@@ -91,6 +92,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     adapter_manager = AdapterManager(channel_hub_router)
     chat_messages = ChatMessageStore(data_dir / "chat.db")
     chat_channels = ChatChannelStore(data_dir / "chat.db")
+    chat_hub = ChatHub()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -141,6 +143,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.deploy_tasks = {}
         app.state.chat_messages = chat_messages
         app.state.chat_channels = chat_channels
+        app.state.chat_hub = chat_hub
         # Optionally start LiteLLM proxy (non-fatal if not installed)
         try:
             await llm_proxy.start(config.backends)
@@ -233,6 +236,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     app.state.deploy_tasks = {}
     app.state.chat_messages = chat_messages
     app.state.chat_channels = chat_channels
+    app.state.chat_hub = chat_hub
 
     # Detect and set container runtime (eager, so tests work without lifespan)
     try:
@@ -338,6 +342,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     from tinyagentos.routes.templates import router as templates_router
     app.include_router(templates_router)
+
+    from tinyagentos.routes.chat import router as chat_router
+    app.include_router(chat_router)
 
     # Lobby demo (internal only — not included in public builds)
     try:
