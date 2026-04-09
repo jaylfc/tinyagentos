@@ -184,7 +184,7 @@ Run a specific test file:
 pytest tests/test_catalog_sync.py -v
 ```
 
-The project has 858 tests. CI runs against Python 3.10, 3.11, and 3.12 via GitHub Actions on every pull request. A PR cannot be merged until all three matrix jobs pass.
+The project has 858 tests. CI runs against Python 3.10, 3.11, 3.12, and 3.13 via GitHub Actions on every pull request. A PR cannot be merged until all four matrix jobs pass.
 
 When adding a feature, add tests that cover the new behaviour. When fixing a bug, add a regression test.
 
@@ -196,15 +196,15 @@ When adding a feature, add tests that cover the new behaviour. When fixing a bug
 tinyagentos/
   app.py               # FastAPI application factory, lifespan, route registration
   config.py            # Platform config, hardware detection
-  routes/              # One module per feature area (23 route modules)
-  templates/           # Jinja2 + htmx HTML templates (24 templates)
+  routes/              # One module per feature area (26 route modules)
+  templates/           # Jinja2 + htmx HTML templates (44 templates)
   channel_hub/         # Framework-agnostic messaging (6 connectors + message router)
   adapters/            # Framework adapters (17 adapters, ~25 lines each)
   cluster/             # Distributed compute (worker registration, task routing, optimiser)
   worker/              # Cross-platform worker apps (system tray, Android, iOS)
   stores/              # Data access layer (SQLite via aiosqlite)
-app-catalog/           # YAML manifests for installable apps (73 apps)
-tests/                 # pytest test suite (697 tests)
+app-catalog/           # YAML manifests for installable apps (87 apps)
+tests/                 # pytest test suite (858 tests)
 ```
 
 Routes are registered in `app.py`. Each route module imports its own store. Templates use htmx for partial page updates — full-page navigations are rare.

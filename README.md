@@ -151,8 +151,8 @@ Search across agents, apps, messages, and files from a single endpoint. Finds an
 
 ```
 TinyAgentOS Controller (FastAPI + htmx)
-├── Web Dashboard (23 route modules, 24 templates)
-├── Channel Hub (6 connectors, 17 framework adapters)
+├── Web Dashboard (26 route modules, 44 templates)
+├── Channel Hub (6 connectors, 18 framework adapters)
 │   ├── Telegram, Discord, Slack, Email, Web Chat, Webhooks
 │   └── Universal message format → framework-specific translation
 ├── LLM Proxy (LiteLLM, per-agent virtual keys)
@@ -198,7 +198,7 @@ CI runs automatically on every push (Python 3.10-3.13 + security audit).
 ## Roadmap
 
 ### Done ✅
-- [x] Web GUI with 23 pages
+- [x] Web GUI with 26 pages
 - [x] App Store (87 apps, 18 agent frameworks)
 - [x] Live model browser (HuggingFace + Ollama, 167k+ models)
 - [x] Agent deployment wizard (LXC containers)
