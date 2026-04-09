@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
+from pathlib import Path
 
-from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, File, Request, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -177,3 +180,171 @@ async def update_message_state(request: Request, message_id: str):
             "state": body["state"],
         })
     return {"status": "updated"}
+
+
+# ── Channel CRUD ──────────────────────────────────────────────────────────────
+
+@router.get("/api/chat/channels")
+async def list_channels(request: Request, member: str | None = None):
+    ch_store = request.app.state.chat_channels
+    channels = await ch_store.list_channels(member_id=member)
+    return {"channels": channels}
+
+
+@router.post("/api/chat/channels")
+async def create_channel(request: Request):
+    body = await request.json()
+    ch_store = request.app.state.chat_channels
+    channel = await ch_store.create_channel(
+        name=body["name"],
+        type=body.get("type", "topic"),
+        created_by=body.get("created_by", "user"),
+        members=body.get("members"),
+        description=body.get("description", ""),
+        topic=body.get("topic", ""),
+    )
+    return channel
+
+
+@router.get("/api/chat/channels/{channel_id}")
+async def get_channel(request: Request, channel_id: str):
+    ch_store = request.app.state.chat_channels
+    channel = await ch_store.get_channel(channel_id)
+    if not channel:
+        return JSONResponse({"error": "Channel not found"}, status_code=404)
+    return channel
+
+
+@router.put("/api/chat/channels/{channel_id}")
+async def update_channel(request: Request, channel_id: str):
+    body = await request.json()
+    ch_store = request.app.state.chat_channels
+    channel = await ch_store.get_channel(channel_id)
+    if not channel:
+        return JSONResponse({"error": "Channel not found"}, status_code=404)
+    await ch_store.update_channel(
+        channel_id,
+        name=body.get("name"),
+        description=body.get("description"),
+        topic=body.get("topic"),
+    )
+    return {"status": "updated"}
+
+
+@router.delete("/api/chat/channels/{channel_id}")
+async def delete_channel(request: Request, channel_id: str):
+    ch_store = request.app.state.chat_channels
+    deleted = await ch_store.delete_channel(channel_id)
+    if not deleted:
+        return JSONResponse({"error": "Channel not found"}, status_code=404)
+    return {"status": "deleted"}
+
+
+@router.get("/api/chat/channels/{channel_id}/messages")
+async def get_channel_messages(
+    request: Request, channel_id: str, limit: int = 50, before: float | None = None
+):
+    msg_store = request.app.state.chat_messages
+    messages = await msg_store.get_messages(channel_id, limit=limit, before=before)
+    return {"messages": messages}
+
+
+@router.post("/api/chat/channels/{channel_id}/members")
+async def add_channel_member(request: Request, channel_id: str):
+    body = await request.json()
+    ch_store = request.app.state.chat_channels
+    await ch_store.add_member(channel_id, body["member_id"])
+    return {"status": "added"}
+
+
+@router.delete("/api/chat/channels/{channel_id}/members/{member_id}")
+async def remove_channel_member(request: Request, channel_id: str, member_id: str):
+    ch_store = request.app.state.chat_channels
+    await ch_store.remove_member(channel_id, member_id)
+    return {"status": "removed"}
+
+
+# ── File upload / serve ───────────────────────────────────────────────────────
+
+@router.post("/api/chat/upload")
+async def upload_file(request: Request, file: UploadFile = File(...), channel_id: str = ""):
+    """Upload a file attachment for use in chat messages."""
+    data_dir = request.app.state.config_path.parent
+    upload_dir = data_dir / "chat-files"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    file_id = uuid.uuid4().hex[:12]
+    ext = Path(file.filename).suffix if file.filename else ""
+    stored_name = f"{file_id}{ext}"
+    dest = upload_dir / stored_name
+    content = await file.read()
+    dest.write_bytes(content)
+
+    attachment = {
+        "id": file_id,
+        "filename": file.filename or "unnamed",
+        "content_type": file.content_type or "application/octet-stream",
+        "size": len(content),
+        "url": f"/api/chat/files/{stored_name}",
+    }
+    return attachment
+
+
+@router.get("/api/chat/files/{filename}")
+async def serve_file(request: Request, filename: str):
+    """Serve an uploaded chat file."""
+    data_dir = request.app.state.config_path.parent
+    file_path = data_dir / "chat-files" / filename
+    if not file_path.exists() or not file_path.resolve().is_relative_to(
+        (data_dir / "chat-files").resolve()
+    ):
+        return JSONResponse({"error": "File not found"}, status_code=404)
+    return FileResponse(file_path)
+
+
+# ── Search & unread ───────────────────────────────────────────────────────────
+
+@router.get("/api/chat/search")
+async def search_messages(
+    request: Request, q: str = "", channel_id: str | None = None, limit: int = 20
+):
+    if not q or len(q) < 2:
+        return {"results": [], "query": q}
+    msg_store = request.app.state.chat_messages
+    results = await msg_store.search(q, channel_id=channel_id, limit=limit)
+    return {"results": results, "query": q}
+
+
+@router.get("/api/chat/unread")
+async def get_unread(request: Request):
+    ch_store = request.app.state.chat_channels
+    counts = await ch_store.get_unread_counts("user")
+    return {"unread": counts}
+
+
+@router.post("/api/chat/channels/{channel_id}/mark-read")
+async def mark_read(request: Request, channel_id: str):
+    body = await request.json()
+    ch_store = request.app.state.chat_channels
+    await ch_store.update_read_position("user", channel_id, body.get("message_id", ""))
+    return {"status": "marked"}
+
+
+# ── Chat page ─────────────────────────────────────────────────────────────────
+
+@router.get("/chat", response_class=HTMLResponse)
+async def chat_page(request: Request):
+    templates = request.app.state.templates
+    return templates.TemplateResponse(request, "chat.html", {"active_page": "chat"})
+
+
+@router.get("/chat/{channel_id}", response_class=HTMLResponse)
+async def chat_channel_page(request: Request, channel_id: str):
+    templates = request.app.state.templates
+    ch_store = request.app.state.chat_channels
+    channel = await ch_store.get_channel(channel_id)
+    return templates.TemplateResponse(request, "chat.html", {
+        "active_page": "chat",
+        "channel": channel,
+        "channel_id": channel_id,
+    })

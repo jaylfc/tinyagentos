@@ -25,6 +25,7 @@
                 <li><a href="/store" {% if active_page == 'store' %}class="active"{% endif %}>Store</a></li>
                 <li><a href="/workspace" {% if active_page == 'workspace' %}class="active"{% endif %}>Workspace</a></li>
                 <li><a href="/streaming" {% if active_page == 'streaming' %}class="active"{% endif %}>Apps</a></li>
+                <li><a href="/chat" {% if active_page == 'chat' %}class="active"{% endif %}>Chat</a></li>
                 <li><a href="/models" {% if active_page == 'models' %}class="active"{% endif %}>Models</a></li>
                 <li>{% if cap.is_available("image-generation-cpu") or cap.is_available("image-generation-gpu") or cap.is_available("image-generation-npu") %}<a href="/images" {% if active_page == 'images' %}class="active"{% endif %}>Images</a>{% else %}<a href="/images" class="locked{% if active_page == 'images' %} active{% endif %}" title="{{ cap.get_unlock_hint('image-generation-gpu') or 'Hardware requirements not met' }}" aria-label="Images (locked)">Images</a>{% endif %}</li>
                 <li><a href="/video" {% if active_page == 'video' %}class="active"{% endif %}>Video</a></li>
@@ -49,6 +50,7 @@
             <li><a href="/store" {% if active_page == 'store' %}class="active"{% endif %}>Store</a></li>
             <li><a href="/workspace" {% if active_page == 'workspace' %}class="active"{% endif %}>Workspace</a></li>
             <li><a href="/streaming" {% if active_page == 'streaming' %}class="active"{% endif %}>Apps</a></li>
+            <li><a href="/chat" {% if active_page == 'chat' %}class="active"{% endif %}>Chat</a></li>
             <li><a href="/models" {% if active_page == 'models' %}class="active"{% endif %}>Models</a></li>
             <li>{% if cap.is_available("image-generation-cpu") or cap.is_available("image-generation-gpu") or cap.is_available("image-generation-npu") %}<a href="/images" {% if active_page == 'images' %}class="active"{% endif %}>Images</a>{% else %}<a href="/images" class="locked{% if active_page == 'images' %} active{% endif %}" title="{{ cap.get_unlock_hint('image-generation-gpu') or 'Hardware requirements not met' }}" aria-label="Images (locked)">Images</a>{% endif %}</li>
             <li><a href="/video" {% if active_page == 'video' %}class="active"{% endif %}>Video</a></li>

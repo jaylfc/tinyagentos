@@ -1,6 +1,8 @@
 """Tests for chat HTTP routes."""
 from __future__ import annotations
 
+import io
+
 import pytest
 
 from tinyagentos.chat.hub import ChatHub
@@ -145,3 +147,152 @@ async def test_update_state_unknown_message(client):
 def test_chat_hub_in_app_state(app):
     assert hasattr(app.state, "chat_hub")
     assert isinstance(app.state.chat_hub, ChatHub)
+
+
+# ── Channel CRUD ──────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_create_channel(client):
+    resp = await client.post("/api/chat/channels", json={
+        "name": "my-channel",
+        "type": "topic",
+    })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["id"]
+    assert body["name"] == "my-channel"
+    assert body["type"] == "topic"
+
+
+@pytest.mark.asyncio
+async def test_list_channels(client):
+    await client.post("/api/chat/channels", json={"name": "alpha", "type": "topic"})
+    resp = await client.get("/api/chat/channels")
+    assert resp.status_code == 200
+    channels = resp.json()["channels"]
+    names = [c["name"] for c in channels]
+    assert "alpha" in names
+
+
+@pytest.mark.asyncio
+async def test_get_channel(client):
+    create_resp = await client.post("/api/chat/channels", json={"name": "beta", "type": "text"})
+    ch_id = create_resp.json()["id"]
+
+    resp = await client.get(f"/api/chat/channels/{ch_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["id"] == ch_id
+    assert body["name"] == "beta"
+
+
+@pytest.mark.asyncio
+async def test_get_channel_not_found(client):
+    resp = await client.get("/api/chat/channels/does-not-exist")
+    assert resp.status_code == 404
+    assert resp.json()["error"] == "Channel not found"
+
+
+@pytest.mark.asyncio
+async def test_update_channel(client):
+    create_resp = await client.post("/api/chat/channels", json={"name": "gamma", "type": "topic"})
+    ch_id = create_resp.json()["id"]
+
+    resp = await client.put(f"/api/chat/channels/{ch_id}", json={"description": "updated desc"})
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "updated"
+
+
+@pytest.mark.asyncio
+async def test_delete_channel(client):
+    create_resp = await client.post("/api/chat/channels", json={"name": "delta", "type": "topic"})
+    ch_id = create_resp.json()["id"]
+
+    resp = await client.delete(f"/api/chat/channels/{ch_id}")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "deleted"
+
+    # Confirm gone
+    get_resp = await client.get(f"/api/chat/channels/{ch_id}")
+    assert get_resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_channel_messages(client):
+    create_resp = await client.post("/api/chat/channels", json={"name": "msgs-ch", "type": "topic"})
+    ch_id = create_resp.json()["id"]
+
+    await client.post("/api/chat/messages", json={
+        "channel_id": ch_id,
+        "author_id": "user",
+        "author_type": "user",
+        "content": "hello channel",
+    })
+
+    resp = await client.get(f"/api/chat/channels/{ch_id}/messages")
+    assert resp.status_code == 200
+    messages = resp.json()["messages"]
+    assert len(messages) >= 1
+    assert messages[0]["content"] == "hello channel"
+
+
+# ── File upload ───────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_upload_file(client):
+    file_content = b"hello file content"
+    resp = await client.post(
+        "/api/chat/upload",
+        files={"file": ("test.txt", io.BytesIO(file_content), "text/plain")},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["id"]
+    assert body["filename"] == "test.txt"
+    assert body["size"] == len(file_content)
+    assert body["url"].startswith("/api/chat/files/")
+
+
+# ── Search ────────────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_search_messages(client):
+    ch = await _create_channel(client, "search-ch")
+    await client.post("/api/chat/messages", json={
+        "channel_id": ch["id"],
+        "author_id": "user",
+        "author_type": "user",
+        "content": "unique-searchterm-xyz",
+    })
+
+    resp = await client.get("/api/chat/search", params={"q": "unique-searchterm-xyz"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["query"] == "unique-searchterm-xyz"
+    assert len(body["results"]) >= 1
+    assert body["results"][0]["content"] == "unique-searchterm-xyz"
+
+
+@pytest.mark.asyncio
+async def test_search_empty_query(client):
+    resp = await client.get("/api/chat/search", params={"q": ""})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["results"] == []
+
+
+# ── Unread counts ─────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_unread_counts(client):
+    resp = await client.get("/api/chat/unread")
+    assert resp.status_code == 200
+    assert "unread" in resp.json()
+
+
+# ── Chat page ─────────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_chat_page(client):
+    resp = await client.get("/chat")
+    assert resp.status_code == 200
