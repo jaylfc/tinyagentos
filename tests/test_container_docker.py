@@ -7,7 +7,7 @@ from tinyagentos.containers.docker import DockerBackend
 class TestDockerList:
     @pytest.mark.asyncio
     async def test_parses_docker_output(self):
-        lines = '{"Names":"agent-test","State":"running","ID":"abc123"}\n'
+        lines = '{"Names":"taos-agent-test","State":"running","ID":"abc123"}\n'
         inspect_output = json.dumps([{"NetworkSettings": {"Networks": {"bridge": {"IPAddress": "172.17.0.2"}}}}])
 
         call_count = 0
@@ -24,7 +24,7 @@ class TestDockerList:
         with patch.object(backend, "_run", side_effect=mock_run):
             containers = await backend.list_containers()
             assert len(containers) == 1
-            assert containers[0].name == "agent-test"
+            assert containers[0].name == "taos-agent-test"
 
     @pytest.mark.asyncio
     async def test_handles_failure(self):

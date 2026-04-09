@@ -232,7 +232,7 @@ TELEGRAM_BOT_TOKEN=xxx
 # ... any user-defined secrets assigned to this agent
 
 # TinyAgentOS callback API
-TAOS_API_URL=http://localhost:8888
+TAOS_API_URL=http://localhost:6969
 TAOS_API_KEY=internal-agent-key
 ```
 

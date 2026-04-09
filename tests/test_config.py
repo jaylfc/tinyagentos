@@ -6,7 +6,7 @@ class TestLoadConfig:
     def test_loads_valid_config(self, tmp_data_dir):
         config = load_config(tmp_data_dir / "config.yaml")
         assert config.server["host"] == "0.0.0.0"
-        assert config.server["port"] == 8888
+        assert config.server["port"] == 6969
         assert len(config.backends) == 1
         assert config.backends[0]["name"] == "test-backend"
         assert config.qmd["url"] == "http://localhost:7832"
@@ -15,7 +15,7 @@ class TestLoadConfig:
 
     def test_returns_defaults_when_file_missing(self, tmp_path):
         config = load_config(tmp_path / "nonexistent.yaml")
-        assert config.server["port"] == 8888
+        assert config.server["port"] == 6969
         assert config.backends == []
         assert config.agents == []
 

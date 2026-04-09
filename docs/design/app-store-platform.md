@@ -489,7 +489,7 @@ Per supported board, two image variants:
 When the user boots a pre-built image for the first time:
 
 1. **Hardware detection** runs automatically, stores results in `hardware.json`
-2. **Welcome screen** in the browser (TinyAgentOS starts automatically on port 8888)
+2. **Welcome screen** in the browser (TinyAgentOS starts automatically on port 6969)
 3. **Network setup** — optionally configure Tailscale for remote access
 4. **Create first agent** — guided wizard:
    - Shows recommended models for detected hardware

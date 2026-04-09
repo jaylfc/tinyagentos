@@ -161,7 +161,7 @@ When `content_blocks` is non-empty, clients render blocks. When empty, clients r
 
 ### Connection
 
-Client connects to `ws://host:8888/ws/chat`. Authentication via session cookie (same as the rest of the platform). One connection per browser tab, can join multiple channels.
+Client connects to `ws://host:6969/ws/chat`. Authentication via session cookie (same as the rest of the platform). One connection per browser tab, can join multiple channels.
 
 ### Protocol
 

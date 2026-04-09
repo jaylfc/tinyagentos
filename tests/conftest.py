@@ -12,7 +12,7 @@ from tinyagentos.app import create_app
 def tmp_data_dir(tmp_path):
     """Create a temporary data directory with a default test config."""
     config = {
-        "server": {"host": "0.0.0.0", "port": 8888},
+        "server": {"host": "0.0.0.0", "port": 6969},
         "backends": [
             {"name": "test-backend", "type": "rkllama", "url": "http://localhost:8080", "priority": 1}
         ],

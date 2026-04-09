@@ -139,7 +139,7 @@ class AndroidWorker:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="TinyAgentOS Android Worker")
-    parser.add_argument("controller", help="Controller URL (e.g. http://192.168.1.100:8888)")
+    parser.add_argument("controller", help="Controller URL (e.g. http://192.168.1.100:6969)")
     parser.add_argument("--name", help="Worker name")
     parser.add_argument("--model", help="Path to GGUF model file")
     parser.add_argument("--port", type=int, default=8080, help="llama.cpp server port")
@@ -171,5 +171,5 @@ echo "  Download a model:"
 echo "    wget -O ~/model.gguf https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/resolve/main/qwen3-1.7b-q4_k_m.gguf"
 echo ""
 echo "  Start worker:"
-echo "    python ~/tinyagentos-worker.py http://YOUR-SERVER:8888 --model ~/model.gguf"
+echo "    python ~/tinyagentos-worker.py http://YOUR-SERVER:6969 --model ~/model.gguf"
 echo ""

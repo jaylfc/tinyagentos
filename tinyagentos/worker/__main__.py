@@ -5,7 +5,7 @@ import sys
 
 def main():
     parser = argparse.ArgumentParser(description="TinyAgentOS Worker")
-    parser.add_argument("controller", help="Controller URL (e.g. http://192.168.1.100:8888)")
+    parser.add_argument("controller", help="Controller URL (e.g. http://192.168.1.100:6969)")
     parser.add_argument("--name", help="Worker name (default: hostname)")
     parser.add_argument("--headless", action="store_true", help="Run without system tray (server mode)")
     args = parser.parse_args()

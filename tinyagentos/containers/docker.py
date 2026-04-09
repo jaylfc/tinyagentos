@@ -29,7 +29,7 @@ class DockerBackend(ContainerBackend):
         stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         return proc.returncode, stdout.decode() if stdout else ""
 
-    async def list_containers(self, prefix: str = "agent-") -> list[ContainerInfo]:
+    async def list_containers(self, prefix: str = "taos-agent-") -> list[ContainerInfo]:
         """List all containers whose name starts with prefix."""
         code, output = await self._run([
             self.binary, "ps", "-a",
@@ -97,7 +97,7 @@ class DockerBackend(ContainerBackend):
         cpu_limit: int = 2,
     ) -> dict:
         """Create and start a new container."""
-        agent_name = name.removeprefix("agent-")
+        agent_name = name.removeprefix("taos-agent-")
         code, output = await self._run([
             self.binary, "run", "-d",
             "--name", name,

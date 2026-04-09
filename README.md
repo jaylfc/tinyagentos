@@ -14,10 +14,10 @@ Self-hosted AI agent platform that runs on whatever hardware you have. An old la
 
 ```bash
 pip install -e .
-python -m uvicorn tinyagentos.app:create_app --factory --host 0.0.0.0 --port 8888
+python -m uvicorn tinyagentos.app:create_app --factory --host 0.0.0.0 --port 6969
 ```
 
-Open `http://your-host:8888` (or `http://tinyagentos.local:8888` with mDNS).
+Open `http://your-host:6969` (or `http://tinyagentos.local:6969` with mDNS).
 
 ## Key Features
 
@@ -26,7 +26,7 @@ Combine ANY device into one AI compute mesh — desktops, laptops, SBCs, even ph
 
 ```bash
 # Desktop — system tray worker app
-tinyagentos-worker http://your-server:8888
+tinyagentos-worker http://your-server:6969
 
 # Android — one-line Termux setup
 curl -sL https://raw.githubusercontent.com/jaylfc/tinyagentos/master/tinyagentos/worker/android_setup.sh | bash

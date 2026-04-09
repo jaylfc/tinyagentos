@@ -48,7 +48,7 @@ async def deploy_agent(req: DeployRequest) -> dict:
     import asyncio
     import tempfile
 
-    container_name = f"agent-{req.name}"
+    container_name = f"taos-agent-{req.name}"
     steps = []
 
     # Step 1: Create container
@@ -165,6 +165,6 @@ async def deploy_agent(req: DeployRequest) -> dict:
 
 async def undeploy_agent(name: str) -> dict:
     """Stop and destroy an agent's container."""
-    container_name = f"agent-{name}"
+    container_name = f"taos-agent-{name}"
     result = await destroy_container(container_name)
     return {"success": result["success"], "name": name}

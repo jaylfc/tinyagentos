@@ -75,7 +75,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=$INSTALL_DIR
-ExecStart=$INSTALL_DIR/venv/bin/python -m uvicorn tinyagentos.app:create_app --factory --host 0.0.0.0 --port 8888
+ExecStart=$INSTALL_DIR/venv/bin/python -m uvicorn tinyagentos.app:create_app --factory --host 0.0.0.0 --port 6969
 Restart=on-failure
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
@@ -107,7 +107,7 @@ echo "======================================"
 echo "  TinyAgentOS installed successfully!"
 echo "======================================"
 echo ""
-echo "  Open: http://$IP:8888"
+echo "  Open: http://$IP:6969"
 echo ""
 echo "  Service: systemctl status tinyagentos"
 echo "  Logs:    journalctl -u tinyagentos -f"

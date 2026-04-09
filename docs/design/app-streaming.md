@@ -165,7 +165,7 @@ The agent selector dropdown shows:
 ### WebSocket Proxy
 
 TinyAgentOS proxies the KasmVNC WebSocket through the main port:
-- `/ws/app/{session_id}` on port 8888 proxied to `worker_ip:6901`
+- `/ws/app/{session_id}` on port 6969 proxied to `worker_ip:6901`
 - Auth handled at TinyAgentOS level (session cookie), not per-container
 - Single port exposure, no firewall changes needed
 

@@ -366,4 +366,21 @@ def main():
     import uvicorn
     config = load_config(PROJECT_DIR / "data" / "config.yaml")
     app = create_app()
-    uvicorn.run(app, host=config.server.get("host", "0.0.0.0"), port=config.server.get("port", 8888))
+    uvicorn.run(app, host=config.server.get("host", "0.0.0.0"), port=config.server.get("port", 6969))
+
+
+def gui():
+    """Launch the TinyAgentOS web UI in a browser window."""
+    import subprocess
+    import webbrowser
+    port = 6969
+    url = f"http://localhost:{port}"
+    # Try Chromium in app mode first (cleanest look), fall back to default browser
+    for browser in ["chromium-browser", "chromium", "google-chrome"]:
+        try:
+            subprocess.Popen([browser, f"--app={url}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return
+        except FileNotFoundError:
+            continue
+    # Fallback: open in default browser
+    webbrowser.open(url)

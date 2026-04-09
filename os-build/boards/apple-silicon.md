@@ -51,7 +51,7 @@ tinyagentos
 
 # As worker (joins another machine's cluster)
 pip install tinyagentos[worker]
-tinyagentos-worker http://your-server:8888
+tinyagentos-worker http://your-server:6969
 ```
 
 ## Notes

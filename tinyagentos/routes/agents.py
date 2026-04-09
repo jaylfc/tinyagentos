@@ -46,11 +46,11 @@ async def list_agents(request: Request):
 async def list_agent_containers(request: Request):
     """List live LXC container status for all agent containers."""
     from tinyagentos.containers import list_containers
-    containers = await list_containers(prefix="agent-")
+    containers = await list_containers(prefix="taos-agent-")
     return [
         {
             "name": c.name,
-            "agent_name": c.name.removeprefix("agent-"),
+            "agent_name": c.name.removeprefix("taos-agent-"),
             "status": c.status,
             "ip": c.ip,
             "memory_mb": c.memory_mb,
@@ -217,7 +217,7 @@ async def bulk_start_agents(request: Request):
     for agent in config.agents:
         name = agent["name"]
         try:
-            result = await start_container(f"agent-{name}")
+            result = await start_container(f"taos-agent-{name}")
             results[name] = {"success": result.get("success", False)}
         except Exception as e:
             results[name] = {"success": False, "error": str(e)}
@@ -233,7 +233,7 @@ async def bulk_stop_agents(request: Request):
     for agent in config.agents:
         name = agent["name"]
         try:
-            result = await stop_container(f"agent-{name}")
+            result = await stop_container(f"taos-agent-{name}")
             results[name] = {"success": result.get("success", False)}
         except Exception as e:
             results[name] = {"success": False, "error": str(e)}
@@ -249,7 +249,7 @@ async def bulk_restart_agents(request: Request):
     for agent in config.agents:
         name = agent["name"]
         try:
-            result = await restart_container(f"agent-{name}")
+            result = await restart_container(f"taos-agent-{name}")
             results[name] = {"success": result.get("success", False)}
         except Exception as e:
             results[name] = {"success": False, "error": str(e)}
@@ -260,28 +260,28 @@ async def bulk_restart_agents(request: Request):
 async def start_agent(request: Request, name: str):
     """Start an agent's LXC container."""
     from tinyagentos.containers import start_container
-    return await start_container(f"agent-{name}")
+    return await start_container(f"taos-agent-{name}")
 
 
 @router.post("/api/agents/{name}/stop")
 async def stop_agent(request: Request, name: str):
     """Stop an agent's LXC container."""
     from tinyagentos.containers import stop_container
-    return await stop_container(f"agent-{name}")
+    return await stop_container(f"taos-agent-{name}")
 
 
 @router.post("/api/agents/{name}/restart")
 async def restart_agent(request: Request, name: str):
     """Restart an agent's LXC container."""
     from tinyagentos.containers import restart_container
-    return await restart_container(f"agent-{name}")
+    return await restart_container(f"taos-agent-{name}")
 
 
 @router.get("/api/partials/agent-logs/{name}", response_class=HTMLResponse)
 async def agent_logs_partial(request: Request, name: str, lines: int = 100):
     """Agent logs as HTML partial for htmx."""
     from tinyagentos.containers import get_container_logs
-    logs = await get_container_logs(f"agent-{name}", lines=lines)
+    logs = await get_container_logs(f"taos-agent-{name}", lines=lines)
     templates = request.app.state.templates
     return templates.TemplateResponse(request, "partials/agent_logs.html", {
         "name": name, "logs": logs,
@@ -292,7 +292,7 @@ async def agent_logs_partial(request: Request, name: str, lines: int = 100):
 async def agent_logs(request: Request, name: str, lines: int = 100):
     """Get recent journal logs from an agent's container."""
     from tinyagentos.containers import get_container_logs
-    logs = await get_container_logs(f"agent-{name}", lines=lines)
+    logs = await get_container_logs(f"taos-agent-{name}", lines=lines)
     return {"name": name, "logs": logs}
 
 

@@ -18,7 +18,7 @@ However, there are workarounds:
 ## Option 2: iPad as a dashboard viewer
 
 More practically, use your iPad/iPhone as a client:
-- Open http://your-server:8888 in Safari
+- Open http://your-server:6969 in Safari
 - Add to Home Screen (PWA) for app-like experience
 - Monitor agents, search memory, manage the platform
 

@@ -13,12 +13,12 @@ class TestDetectCapabilities:
     """Test capability detection from backend lists."""
 
     def test_empty_backends(self):
-        agent = WorkerAgent("http://localhost:8888")
+        agent = WorkerAgent("http://localhost:6969")
         with patch("shutil.which", return_value=None):
             assert agent.detect_capabilities([]) == []
 
     def test_ollama_backend(self):
-        agent = WorkerAgent("http://localhost:8888")
+        agent = WorkerAgent("http://localhost:6969")
         backends = [{"type": "ollama", "url": "http://localhost:11434"}]
         caps = agent.detect_capabilities(backends)
         assert "chat" in caps
@@ -26,7 +26,7 @@ class TestDetectCapabilities:
         assert "image-generation" in caps
 
     def test_rkllama_backend(self):
-        agent = WorkerAgent("http://localhost:8888")
+        agent = WorkerAgent("http://localhost:6969")
         backends = [{"type": "rkllama", "url": "http://localhost:8080"}]
         caps = agent.detect_capabilities(backends)
         assert "chat" in caps
@@ -35,7 +35,7 @@ class TestDetectCapabilities:
         assert "rerank" in caps
 
     def test_llama_cpp_backend(self):
-        agent = WorkerAgent("http://localhost:8888")
+        agent = WorkerAgent("http://localhost:6969")
         backends = [{"type": "llama-cpp", "url": "http://localhost:8080"}]
         caps = agent.detect_capabilities(backends)
         assert "chat" in caps
@@ -44,7 +44,7 @@ class TestDetectCapabilities:
         assert "rerank" not in caps
 
     def test_vllm_backend(self):
-        agent = WorkerAgent("http://localhost:8888")
+        agent = WorkerAgent("http://localhost:6969")
         backends = [{"type": "vllm", "url": "http://localhost:8000"}]
         caps = agent.detect_capabilities(backends)
         assert "chat" in caps
@@ -52,7 +52,7 @@ class TestDetectCapabilities:
         assert "image-generation" not in caps
 
     def test_multiple_backends_deduplicates(self):
-        agent = WorkerAgent("http://localhost:8888")
+        agent = WorkerAgent("http://localhost:6969")
         backends = [
             {"type": "ollama", "url": "http://localhost:11434"},
             {"type": "rkllama", "url": "http://localhost:8080"},
@@ -63,7 +63,7 @@ class TestDetectCapabilities:
         assert "rerank" in caps
 
     def test_capabilities_are_sorted(self):
-        agent = WorkerAgent("http://localhost:8888")
+        agent = WorkerAgent("http://localhost:6969")
         backends = [{"type": "rkllama", "url": "http://localhost:8080"}]
         caps = agent.detect_capabilities(backends)
         assert caps == sorted(caps)
@@ -74,25 +74,25 @@ class TestWorkerAgent:
 
     def test_default_name_is_hostname(self):
         import socket
-        agent = WorkerAgent("http://localhost:8888")
+        agent = WorkerAgent("http://localhost:6969")
         assert agent.name == socket.gethostname()
 
     def test_custom_name(self):
-        agent = WorkerAgent("http://localhost:8888", name="gpu-box")
+        agent = WorkerAgent("http://localhost:6969", name="gpu-box")
         assert agent.name == "gpu-box"
 
     def test_controller_url_strips_trailing_slash(self):
-        agent = WorkerAgent("http://localhost:8888/")
-        assert agent.controller_url == "http://localhost:8888"
+        agent = WorkerAgent("http://localhost:6969/")
+        assert agent.controller_url == "http://localhost:6969"
 
     def test_get_worker_url_with_port(self):
-        agent = WorkerAgent("http://localhost:8888", worker_port=9999)
+        agent = WorkerAgent("http://localhost:6969", worker_port=9999)
         url = agent.get_worker_url()
         assert ":9999" in url
         assert url.startswith("http://")
 
     def test_get_worker_url_without_port(self):
-        agent = WorkerAgent("http://localhost:8888", worker_port=0)
+        agent = WorkerAgent("http://localhost:6969", worker_port=0)
         url = agent.get_worker_url()
         assert url.startswith("http://")
         # Should not end with :0
@@ -104,7 +104,7 @@ class TestRegistration:
     """Test worker registration with mocked HTTP."""
 
     async def test_register_success(self):
-        agent = WorkerAgent("http://controller:8888", name="test-worker")
+        agent = WorkerAgent("http://controller:6969", name="test-worker")
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.raise_for_status = MagicMock()
@@ -125,7 +125,7 @@ class TestRegistration:
         assert agent._registered is True
 
     async def test_register_failure(self):
-        agent = WorkerAgent("http://controller:8888", name="test-worker")
+        agent = WorkerAgent("http://controller:6969", name="test-worker")
 
         with patch("tinyagentos.worker.agent.WorkerAgent.detect_backends", return_value=[]):
             with patch("tinyagentos.worker.agent.httpx.AsyncClient") as mock_client_cls:
@@ -146,7 +146,7 @@ class TestHeartbeat:
     """Test heartbeat sending with mocked HTTP."""
 
     async def test_heartbeat_success(self):
-        agent = WorkerAgent("http://controller:8888", name="test-worker")
+        agent = WorkerAgent("http://controller:6969", name="test-worker")
         mock_response = MagicMock()
         mock_response.status_code = 200
 
@@ -163,7 +163,7 @@ class TestHeartbeat:
         assert result is True
 
     async def test_heartbeat_failure(self):
-        agent = WorkerAgent("http://controller:8888", name="test-worker")
+        agent = WorkerAgent("http://controller:6969", name="test-worker")
 
         with patch("tinyagentos.worker.agent.httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
@@ -183,7 +183,7 @@ class TestDetectBackends:
     """Test backend discovery with mocked HTTP."""
 
     async def test_no_backends_running(self):
-        agent = WorkerAgent("http://localhost:8888")
+        agent = WorkerAgent("http://localhost:6969")
 
         with patch("tinyagentos.worker.agent.httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
@@ -197,7 +197,7 @@ class TestDetectBackends:
         assert backends == []
 
     async def test_ollama_running(self):
-        agent = WorkerAgent("http://localhost:8888")
+        agent = WorkerAgent("http://localhost:6969")
         mock_response = MagicMock()
         mock_response.status_code = 200
 

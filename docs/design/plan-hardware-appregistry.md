@@ -1613,7 +1613,7 @@ Start TinyAgentOS and verify:
 5. Type filter buttons work on the store page
 
 ```bash
-python3.12 -m uvicorn tinyagentos.app:create_app --factory --host 0.0.0.0 --port 8888
+python3.12 -m uvicorn tinyagentos.app:create_app --factory --host 0.0.0.0 --port 6969
 ```
 
 - [ ] **Step 3: Commit any fixes**

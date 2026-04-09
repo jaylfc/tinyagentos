@@ -60,7 +60,7 @@ At the end, it prints your device's IP address:
 ```
   TinyAgentOS installed successfully!
 
-  Open: http://your-device-ip:8888
+  Open: http://your-device-ip:6969
 
   Service: systemctl status tinyagentos
   Logs:    journalctl -u tinyagentos -f
@@ -68,7 +68,7 @@ At the end, it prints your device's IP address:
 
 Open that URL in your browser. You're done with installation.
 
-**If your network supports mDNS** (most home networks do), you can also use `http://tinyagentos.local:8888` from any device on the same network — no need to look up the IP.
+**If your network supports mDNS** (most home networks do), you can also use `http://tinyagentos.local:6969` from any device on the same network — no need to look up the IP.
 
 ---
 
@@ -89,10 +89,10 @@ source venv/bin/activate
 pip install -e .
 
 # Start the server
-python -m uvicorn tinyagentos.app:create_app --factory --host 0.0.0.0 --port 8888
+python -m uvicorn tinyagentos.app:create_app --factory --host 0.0.0.0 --port 6969
 ```
 
-Then open `http://your-device-ip:8888` in a browser.
+Then open `http://your-device-ip:6969` in a browser.
 
 To run it as a background service so it survives reboots, copy `tinyagentos.service` from the repo root into `/etc/systemd/system/`, then:
 

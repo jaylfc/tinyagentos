@@ -26,7 +26,7 @@ class TestConfigPage:
         data = resp.json()
         assert "yaml" in data
         parsed = yaml.safe_load(data["yaml"])
-        assert parsed["server"]["port"] == 8888
+        assert parsed["server"]["port"] == 6969
 
     async def test_save_valid_config(self, client, tmp_data_dir):
         new_yaml = yaml.dump({
@@ -48,7 +48,7 @@ class TestConfigPage:
 
     async def test_save_invalid_config_fails(self, client):
         bad_config = yaml.dump({
-            "server": {"host": "0.0.0.0", "port": 8888},
+            "server": {"host": "0.0.0.0", "port": 6969},
             "backends": [{"name": "bad", "type": "unsupported", "url": "http://x"}],
             "qmd": {"url": "http://localhost:7832"},
             "agents": [],
@@ -59,7 +59,7 @@ class TestConfigPage:
 
     async def test_validate_only(self, client):
         valid_config = yaml.dump({
-            "server": {"host": "0.0.0.0", "port": 8888},
+            "server": {"host": "0.0.0.0", "port": 6969},
             "backends": [],
             "qmd": {"url": "http://localhost:7832"},
             "agents": [],

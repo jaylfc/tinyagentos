@@ -27,7 +27,7 @@ class LXCBackend(ContainerBackend):
     async def _run(self, cmd: list[str], timeout: int = 120) -> tuple[int, str]:
         return await _run(cmd, timeout=timeout)
 
-    async def list_containers(self, prefix: str = "agent-") -> list[ContainerInfo]:
+    async def list_containers(self, prefix: str = "taos-agent-") -> list[ContainerInfo]:
         """List all agent containers."""
         code, output = await _run(["incus", "list", "-f", "json"])
         if code != 0:

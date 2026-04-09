@@ -7,7 +7,7 @@ Each agent runs its own `qmd serve` instance inside its LXC container. This keep
 ```
 Host (Orange Pi / x86)
 ├── rkllama (port 8080) — shared NPU/GPU inference
-├── TinyAgentOS (port 8888) — web GUI, talks to each agent's qmd serve
+├── TinyAgentOS (port 6969) — web GUI, talks to each agent's qmd serve
 │
 ├── LXC: agent-alpha
 │   ├── agent framework gateway

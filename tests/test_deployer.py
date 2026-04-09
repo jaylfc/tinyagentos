@@ -26,13 +26,13 @@ class TestDeployAgent:
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
              patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec), \
              patch("tinyagentos.deployer.push_file", new_callable=AsyncMock) as mock_push:
-            mock_create.return_value = {"success": True, "name": "agent-test"}
+            mock_create.return_value = {"success": True, "name": "taos-agent-test"}
             mock_push.return_value = (0, "")
 
             result = await deploy_agent(req)
             assert result["success"] is True
             assert result["name"] == "test"
-            assert result["container"] == "agent-test"
+            assert result["container"] == "taos-agent-test"
             assert result["ip"] == "10.0.0.5"
             assert "deployment_complete" in result["steps"]
 
@@ -70,7 +70,7 @@ class TestDeployAgent:
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
              patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
              patch("tinyagentos.deployer.push_file", new_callable=AsyncMock) as mock_push:
-            mock_create.return_value = {"success": True, "name": "agent-proxy-test"}
+            mock_create.return_value = {"success": True, "name": "taos-agent-proxy-test"}
             mock_push.return_value = (0, "")
 
             result = await deploy_agent(req)
@@ -97,7 +97,7 @@ class TestDeployAgent:
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
              patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
              patch("tinyagentos.deployer.push_file", new_callable=AsyncMock) as mock_push:
-            mock_create.return_value = {"success": True, "name": "agent-no-proxy"}
+            mock_create.return_value = {"success": True, "name": "taos-agent-no-proxy"}
             mock_push.return_value = (0, "")
 
             result = await deploy_agent(req)
@@ -144,4 +144,4 @@ class TestUndeployAgent:
             mock_destroy.return_value = {"success": True, "output": ""}
             result = await undeploy_agent("test")
             assert result["success"] is True
-            mock_destroy.assert_called_once_with("agent-test")
+            mock_destroy.assert_called_once_with("taos-agent-test")

@@ -38,7 +38,7 @@ async def _run(cmd: list[str], timeout: int = 120) -> tuple[int, str]:
 # ``patch("tinyagentos.containers._run")`` correctly intercepts them.
 # ---------------------------------------------------------------------------
 
-async def list_containers(prefix: str = "agent-") -> list[ContainerInfo]:
+async def list_containers(prefix: str = "taos-agent-") -> list[ContainerInfo]:
     """List all agent containers."""
     code, output = await _run(["incus", "list", "-f", "json"])
     if code != 0:

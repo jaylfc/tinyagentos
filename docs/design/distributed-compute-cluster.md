@@ -55,13 +55,13 @@ This is **much more practical** for consumer hardware.
 Each device runs a TinyAgentOS worker agent:
 ```bash
 # On the gaming PC
-tinyagentos worker --controller http://controller:8888 --name gaming-pc
+tinyagentos worker --controller http://controller:6969 --name gaming-pc
 
 # On the laptop  
-tinyagentos worker --controller http://controller:8888 --name laptop
+tinyagentos worker --controller http://controller:6969 --name laptop
 
 # On the Pi
-tinyagentos worker --controller http://controller:8888 --name pi-4
+tinyagentos worker --controller http://controller:6969 --name pi-4
 ```
 
 The worker:

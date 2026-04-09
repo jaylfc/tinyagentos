@@ -10,7 +10,7 @@ import yaml
 VALID_BACKEND_TYPES = {"rkllama", "ollama", "llama-cpp", "vllm", "exo", "mlx", "openai", "anthropic"}
 
 DEFAULT_CONFIG = {
-    "server": {"host": "0.0.0.0", "port": 8888},
+    "server": {"host": "0.0.0.0", "port": 6969},
     "backends": [],
     "qmd": {"url": "http://localhost:7832"},
     "agents": [],

@@ -33,6 +33,8 @@ include = ["tinyagentos*"]
 [project.scripts]
 tinyagentos = "tinyagentos.app:main"
 tinyagentos-worker = "tinyagentos.worker.__main__:main"
+taos = "tinyagentos.app:main"
+taos-gui = "tinyagentos.app:gui"
 
 [tool.pytest.ini_options]
 markers = [

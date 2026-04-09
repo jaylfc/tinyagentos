@@ -26,7 +26,7 @@ class TestListContainers:
     async def test_parses_incus_output(self):
         mock_output = json.dumps([
             {
-                "name": "agent-naira",
+                "name": "taos-agent-naira",
                 "status": "Running",
                 "config": {"limits.memory": "2GB", "limits.cpu": "2"},
                 "state": {
@@ -50,7 +50,7 @@ class TestListContainers:
             mock_run.return_value = (0, mock_output)
             containers = await list_containers()
             assert len(containers) == 1
-            assert containers[0].name == "agent-naira"
+            assert containers[0].name == "taos-agent-naira"
             assert containers[0].status == "Running"
             assert containers[0].ip == "10.0.0.5"
             assert containers[0].memory_mb == 2048
@@ -68,7 +68,7 @@ class TestCreateContainer:
     async def test_creates_and_configures(self):
         with patch("tinyagentos.containers._run", new_callable=AsyncMock) as mock_run:
             mock_run.return_value = (0, "")
-            result = await create_container("agent-test", memory_limit="1GB", cpu_limit=1)
+            result = await create_container("taos-agent-test", memory_limit="1GB", cpu_limit=1)
             assert result["success"] is True
             # Should have called: launch, set memory, set cpu
             assert mock_run.call_count == 3
@@ -77,7 +77,7 @@ class TestCreateContainer:
     async def test_handles_launch_failure(self):
         with patch("tinyagentos.containers._run", new_callable=AsyncMock) as mock_run:
             mock_run.return_value = (1, "launch failed")
-            result = await create_container("agent-test")
+            result = await create_container("taos-agent-test")
             assert result["success"] is False
 
 
@@ -86,21 +86,21 @@ class TestContainerLifecycle:
     async def test_start(self):
         with patch("tinyagentos.containers._run", new_callable=AsyncMock) as mock_run:
             mock_run.return_value = (0, "")
-            result = await start_container("agent-test")
+            result = await start_container("taos-agent-test")
             assert result["success"] is True
 
     @pytest.mark.asyncio
     async def test_stop(self):
         with patch("tinyagentos.containers._run", new_callable=AsyncMock) as mock_run:
             mock_run.return_value = (0, "")
-            result = await stop_container("agent-test")
+            result = await stop_container("taos-agent-test")
             assert result["success"] is True
 
     @pytest.mark.asyncio
     async def test_destroy(self):
         with patch("tinyagentos.containers._run", new_callable=AsyncMock) as mock_run:
             mock_run.return_value = (0, "")
-            result = await destroy_container("agent-test")
+            result = await destroy_container("taos-agent-test")
             assert result["success"] is True
             # Should have called stop --force then delete --force
             assert mock_run.call_count == 2

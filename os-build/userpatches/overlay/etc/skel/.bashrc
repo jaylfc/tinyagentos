@@ -25,6 +25,6 @@ alias l='ls -CF'
 if [ -d /opt/tinyagentos ]; then
     IP=$(hostname -I 2>/dev/null | awk '{print $1}')
     echo ""
-    echo "  TinyAgentOS Web GUI: http://${IP:-localhost}:8888"
+    echo "  TinyAgentOS Web GUI: http://${IP:-localhost}:6969"
     echo ""
 fi

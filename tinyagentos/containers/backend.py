@@ -36,7 +36,7 @@ class ContainerBackend(ABC):
     """Abstract base class for container runtime backends."""
 
     @abstractmethod
-    async def list_containers(self, prefix: str = "agent-") -> list[ContainerInfo]:
+    async def list_containers(self, prefix: str = "taos-agent-") -> list[ContainerInfo]:
         """List all containers matching the given name prefix."""
         ...
 

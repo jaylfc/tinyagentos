@@ -20,7 +20,7 @@ The `worker` extra installs `pystray` and `Pillow` for the system tray GUI. Thes
 ### Desktop (system tray)
 
 ```bash
-python -m tinyagentos.worker http://your-server:8888
+python -m tinyagentos.worker http://your-server:6969
 ```
 
 This places a small green icon in the notification area. The menu shows the worker name and connection status, with a Quit option.
@@ -28,7 +28,7 @@ This places a small green icon in the notification area. The menu shows the work
 ### Headless (servers, Raspberry Pi, etc.)
 
 ```bash
-python -m tinyagentos.worker http://your-server:8888 --headless
+python -m tinyagentos.worker http://your-server:6969 --headless
 ```
 
 No GUI dependencies required. Runs until interrupted with Ctrl+C.
@@ -36,7 +36,7 @@ No GUI dependencies required. Runs until interrupted with Ctrl+C.
 ### Custom worker name
 
 ```bash
-python -m tinyagentos.worker http://your-server:8888 --name "gpu-box-01"
+python -m tinyagentos.worker http://your-server:6969 --name "gpu-box-01"
 ```
 
 Default name is the machine's hostname.
@@ -93,7 +93,7 @@ curl -sL https://raw.githubusercontent.com/jaylfc/tinyagentos/master/tinyagentos
 wget -O ~/model.gguf https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/resolve/main/qwen3-1.7b-q4_k_m.gguf
 
 # Start the worker:
-python ~/tinyagentos-worker.py http://YOUR-SERVER:8888 --model ~/model.gguf
+python ~/tinyagentos-worker.py http://YOUR-SERVER:6969 --model ~/model.gguf
 ```
 
 The worker registers with platform `android` and runs llama.cpp in CPU mode.
