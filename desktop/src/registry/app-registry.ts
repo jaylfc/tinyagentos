@@ -43,9 +43,9 @@ const apps: AppManifest[] = [
   { id: "terminal", name: "Terminal", icon: "terminal", category: "os", component: () => import("@/apps/TerminalApp").then((m) => ({ default: m.TerminalApp })), defaultSize: { w: 800, h: 500 }, minSize: { w: 400, h: 250 }, singleton: false, pinned: false, launchpadOrder: 27 },
 
   // Games
-  { id: "chess", name: "Chess", icon: "crown", category: "game", component: placeholder, defaultSize: { w: 700, h: 700 }, minSize: { w: 500, h: 500 }, singleton: true, pinned: false, launchpadOrder: 40 },
-  { id: "wordle", name: "Wordle", icon: "spell-check", category: "game", component: placeholder, defaultSize: { w: 500, h: 650 }, minSize: { w: 400, h: 550 }, singleton: true, pinned: false, launchpadOrder: 41 },
-  { id: "crosswords", name: "Crosswords", icon: "grid-3x3", category: "game", component: placeholder, defaultSize: { w: 700, h: 600 }, minSize: { w: 500, h: 450 }, singleton: true, pinned: false, launchpadOrder: 42 },
+  { id: "chess", name: "Chess", icon: "crown", category: "game", component: () => import("@/apps/ChessApp").then((m) => ({ default: m.ChessApp })), defaultSize: { w: 700, h: 700 }, minSize: { w: 500, h: 500 }, singleton: true, pinned: false, launchpadOrder: 40 },
+  { id: "wordle", name: "Wordle", icon: "spell-check", category: "game", component: () => import("@/apps/WordleApp").then((m) => ({ default: m.WordleApp })), defaultSize: { w: 500, h: 650 }, minSize: { w: 400, h: 550 }, singleton: true, pinned: false, launchpadOrder: 41 },
+  { id: "crosswords", name: "Crosswords", icon: "grid-3x3", category: "game", component: () => import("@/apps/CrosswordsApp").then((m) => ({ default: m.CrosswordsApp as unknown as ComponentType<{ windowId: string }> })), defaultSize: { w: 700, h: 600 }, minSize: { w: 500, h: 450 }, singleton: true, pinned: false, launchpadOrder: 42 },
 ];
 
 export function getApp(id: string): AppManifest | undefined {
