@@ -406,13 +406,6 @@ class TestAdapterStructure:
         assert "/health" in routes
         assert "/message" in routes
 
-    def test_swarm_adapter_has_health(self):
-        """Swarm adapter module has /health endpoint."""
-        from tinyagentos.adapters.swarm_adapter import app
-        routes = [r.path for r in app.routes]
-        assert "/health" in routes
-        assert "/message" in routes
-
     def test_generic_adapter_has_health(self):
         """Verify existing generic adapter still works."""
         from tinyagentos.adapters.generic_adapter import app
@@ -1043,12 +1036,6 @@ class TestNewAdapterStructure:
 
     def test_hermes_adapter_has_health(self):
         from tinyagentos.adapters.hermes_adapter import app
-        routes = [r.path for r in app.routes]
-        assert "/health" in routes
-        assert "/message" in routes
-
-    def test_tinyagent_adapter_has_health(self):
-        from tinyagentos.adapters.tinyagent_adapter import app
         routes = [r.path for r in app.routes]
         assert "/health" in routes
         assert "/message" in routes

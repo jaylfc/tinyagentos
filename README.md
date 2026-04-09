@@ -4,7 +4,7 @@
 
 Self-hosted AI agent platform that runs on whatever hardware you have. An old laptop, a Raspberry Pi, a gaming PC, an SBC gathering dust — or all of them at once. TinyAgentOS turns your spare hardware into a distributed AI compute cluster.
 
-87 apps, 18 agent frameworks, 167k+ searchable models, agent deployment, training, image/video/audio generation, and full system monitoring — all from a single web dashboard. Supports Apple Silicon (MLX), NVIDIA, AMD, Rockchip NPU, Raspberry Pi, Android phones, and more.
+84 apps, 15 agent frameworks, 167k+ searchable models, agent deployment, training, image/video/audio generation, and full system monitoring — all from a single web dashboard. Supports Apple Silicon (MLX), NVIDIA, AMD, Rockchip NPU, Raspberry Pi, Android phones, and more.
 
 **Framework-agnostic by design** — TinyAgentOS owns everything that matters: your agent's memory, files, communication channels, model access, and configuration. The agent framework is just a replaceable execution engine. Switch from SmolAgents to LangChain to OpenClaw and your agent keeps its entire history, all its Telegram/Discord/Slack connections, its trained LoRA adapters, its files, and its API keys. No migration, no data loss, no reconfiguration. This is possible because TinyAgentOS manages the full agent lifecycle outside the framework.
 
@@ -48,7 +48,7 @@ One-click install for agent frameworks, AI models, and services. Hardware-aware 
 Most agent frameworks force you to wire up Telegram, Discord, or Slack directly into their code. If you switch frameworks, you rebuild all those integrations from scratch. TinyAgentOS flips this: the platform owns the messaging connections and routes messages to whichever framework the agent currently uses. Switch an agent from SmolAgents to LangChain and it keeps every channel, every conversation, every connection. The framework never touches the bot tokens.
 
 - **6 connectors** — Telegram, Discord, Slack, Email (IMAP/SMTP), Web Chat (WebSocket), Webhooks
-- **18 framework adapters** — thin HTTP bridges (~25 lines each) that translate the universal message format to framework-specific APIs
+- **15 framework adapters** — thin HTTP bridges (~25 lines each) that translate the universal message format to framework-specific APIs
 - **Rich responses** — buttons, images, cards via universal format with inline hint fallback for any framework
 - **Per-agent or shared bots** — each agent gets its own bot, or share one across a group
 
@@ -131,7 +131,7 @@ Search across agents, apps, messages, and files from a single endpoint. Finds an
 
 | Category | Apps |
 |----------|------|
-| **Agent Frameworks (18)** | SmolAgents, PocketFlow, OpenClaw, nanoclaw, PicoClaw (NPU-aware), ZeroClaw, MicroClaw, IronClaw, NullClaw, Moltis, NemoClaw, TinyAgent, Hermes, Agent Zero, Swarm, OpenAI Agents SDK, Langroid, ShibaClaw |
+| **Agent Frameworks (15)** | SmolAgents, PocketFlow, OpenClaw, nanoclaw, PicoClaw, ZeroClaw, MicroClaw, IronClaw, NullClaw, Moltis, Hermes, Agent Zero, OpenAI Agents SDK, Langroid, ShibaClaw |
 | **Streaming Apps (12)** | Blender, LibreOffice, Code Server, GIMP, Krita, FreeCAD, Obsidian, Excalidraw, JupyterLab, Grafana, n8n, Terminal |
 | **LLM Models** | Qwen3 0.6B-8B (GGUF + RKLLM + MLX), plus 167k+ searchable from HuggingFace |
 | **Image Models** | LCM Dreamshaper, SD 1.5 LCM, SDXL Turbo |
@@ -162,7 +162,7 @@ Search across agents, apps, messages, and files from a single endpoint. Finds an
 ```
 TinyAgentOS Controller (FastAPI + htmx)
 ├── Web Dashboard (27 route modules, 48 templates)
-├── Channel Hub (6 connectors, 18 framework adapters)
+├── Channel Hub (6 connectors, 15 framework adapters)
 │   ├── Telegram, Discord, Slack, Email, Web Chat, Webhooks
 │   └── Universal message format → framework-specific translation
 ├── LLM Proxy (LiteLLM, per-agent virtual keys)
@@ -172,7 +172,7 @@ TinyAgentOS Controller (FastAPI + htmx)
 ├── User Workspace (NAS-like file browser, shared with apps + agents)
 ├── Computer Use (vision + keyboard/mouse, agent escalation)
 ├── Message Hub (chat, channels, threads, canvas, dual PWA)
-├── App Store + Registry (87 apps, manifest-based)
+├── App Store + Registry (84 apps, manifest-based)
 ├── Live Model Browser (HuggingFace + Ollama search)
 ├── Container Manager (LXC or Docker, auto-detected)
 ├── Agent Memory (QMD per agent — FTS5 + sqlite-vec + hybrid)
@@ -210,7 +210,7 @@ CI runs automatically on every push (Python 3.10-3.13 + security audit).
 
 ### Done ✅
 - [x] Web GUI with 26 pages
-- [x] App Store (87 apps, 18 agent frameworks)
+- [x] App Store (84 apps, 15 agent frameworks)
 - [x] Live model browser (HuggingFace + Ollama, 167k+ models)
 - [x] Agent deployment wizard (LXC containers)
 - [x] Image + video generation (multi-backend)

@@ -1,6 +1,6 @@
-"""Tests for the 5 new framework adapters: microclaw, ironclaw, nullclaw, moltis, nemoclaw.
+"""Tests for framework adapters (HTTP proxy pattern).
 
-These adapters are now HTTP proxies to standalone binary frameworks. The health endpoint
+These adapters proxy to standalone binary frameworks. The health endpoint
 should always return ok. The message endpoint will return a connection error when the
 binary gateway is not running (expected in unit tests).
 """
@@ -13,7 +13,6 @@ ADAPTERS = [
     ("ironclaw", "tinyagentos.adapters.ironclaw_adapter"),
     ("nullclaw", "tinyagentos.adapters.nullclaw_adapter"),
     ("moltis", "tinyagentos.adapters.moltis_adapter"),
-    ("nemoclaw", "tinyagentos.adapters.nemoclaw_adapter"),
 ]
 
 
