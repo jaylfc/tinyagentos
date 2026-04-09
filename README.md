@@ -185,7 +185,7 @@ Platform overhead: **~345 MB RAM** (without models or agents)
 
 ```bash
 pip install -e ".[dev]"
-pytest tests/ -v          # 794 tests
+pytest tests/ -v          # 830 tests
 ```
 
 CI runs automatically on every push (Python 3.10-3.12 + security audit).
@@ -228,6 +228,7 @@ CI runs automatically on every push (Python 3.10-3.12 + security audit).
 
 ### In Progress
 - [ ] Fresh install test on clean hardware (#2)
+- [ ] Containerised app streaming (#22) — Phase 1 foundation complete (session store, streaming page, user workspace, agent-bridge)
 
 ### Planned
 - [ ] Local assistant LLM / Setup Agent (#4)
