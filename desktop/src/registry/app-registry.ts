@@ -19,7 +19,7 @@ const placeholder = () =>
 const apps: AppManifest[] = [
   // Platform apps
   { id: "messages", name: "Messages", icon: "message-circle", category: "platform", component: placeholder, defaultSize: { w: 900, h: 600 }, minSize: { w: 400, h: 300 }, singleton: true, pinned: true, launchpadOrder: 1 },
-  { id: "agents", name: "Agents", icon: "bot", category: "platform", component: placeholder, defaultSize: { w: 1000, h: 650 }, minSize: { w: 500, h: 400 }, singleton: true, pinned: true, launchpadOrder: 2 },
+  { id: "agents", name: "Agents", icon: "bot", category: "platform", component: () => import("@/apps/AgentsApp").then((m) => ({ default: m.AgentsApp })), defaultSize: { w: 1000, h: 650 }, minSize: { w: 500, h: 400 }, singleton: true, pinned: true, launchpadOrder: 2 },
   { id: "files", name: "Files", icon: "folder", category: "platform", component: placeholder, defaultSize: { w: 900, h: 550 }, minSize: { w: 400, h: 300 }, singleton: true, pinned: true, launchpadOrder: 3 },
   { id: "store", name: "Store", icon: "shopping-bag", category: "platform", component: placeholder, defaultSize: { w: 1000, h: 700 }, minSize: { w: 600, h: 400 }, singleton: true, pinned: true, launchpadOrder: 4 },
   { id: "settings", name: "Settings", icon: "settings", category: "platform", component: placeholder, defaultSize: { w: 800, h: 550 }, minSize: { w: 500, h: 400 }, singleton: true, pinned: true, launchpadOrder: 5 },
