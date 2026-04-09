@@ -1,6 +1,5 @@
 # Platform Plan 1: Hardware Detection + App Registry Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add hardware auto-detection and an app registry that can parse manifests, track installed apps, and manage app lifecycle (install/uninstall/start/stop) — the foundation for the App Store, Model Manager, and Agent Deployer.
 

@@ -1,6 +1,5 @@
 # App Streaming Foundation Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the foundation layer for containerised app streaming: session manager, streaming page with sidebar chat, user workspace file browser, WebSocket proxy, and the agent-bridge daemon spec.
 

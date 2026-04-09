@@ -1,6 +1,5 @@
 # Abstraction Plan 1: LLM Proxy (LiteLLM Integration)
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Run LiteLLM as a hidden internal proxy so all agent frameworks access models via a single OpenAI-compatible endpoint with per-agent virtual keys, auto-configured from TinyAgentOS backend config.
 

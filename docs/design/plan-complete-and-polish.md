@@ -1,6 +1,5 @@
 # TinyAgentOS Complete & Polish Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Fill all gaps identified in the codebase audit — background deploy, 3 missing UI pages, event system, store CRUD gaps, LLM proxy status card, and tests for 10 untested route modules.
 
