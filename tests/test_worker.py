@@ -14,7 +14,8 @@ class TestDetectCapabilities:
 
     def test_empty_backends(self):
         agent = WorkerAgent("http://localhost:8888")
-        assert agent.detect_capabilities([]) == []
+        with patch("shutil.which", return_value=None):
+            assert agent.detect_capabilities([]) == []
 
     def test_ollama_backend(self):
         agent = WorkerAgent("http://localhost:8888")

@@ -40,6 +40,19 @@ class WorkerAgent:
                     pass
         return backends
 
+    def get_container_runtime(self) -> str | None:
+        """Detect available container runtime (docker or podman). Returns None if neither found."""
+        import shutil
+        if shutil.which("docker"):
+            return "docker"
+        if shutil.which("podman"):
+            return "podman"
+        return None
+
+    def supports_streaming(self) -> bool:
+        """Return True if a container runtime is available for streaming apps."""
+        return self.get_container_runtime() is not None
+
     def detect_capabilities(self, backends: list[dict]) -> list[str]:
         """Determine capabilities from detected backends."""
         caps = set()
@@ -50,6 +63,8 @@ class WorkerAgent:
                 caps.add("image-generation")
             if b["type"] in ("rkllama",):
                 caps.add("rerank")
+        if self.supports_streaming():
+            caps.add("app-streaming")
         return sorted(caps)
 
     def get_worker_url(self) -> str:

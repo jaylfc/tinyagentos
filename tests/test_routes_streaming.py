@@ -56,7 +56,7 @@ async def test_launch_and_get_session(client):
     assert r.status_code == 200
     data = r.json()
     assert "session_id" in data
-    assert data["status"] == "starting"
+    assert data["status"] == "running"
 
     session_id = data["session_id"]
     r2 = await client.get(f"/api/streaming-apps/sessions/{session_id}")
@@ -64,7 +64,17 @@ async def test_launch_and_get_session(client):
     session = r2.json()
     assert session["session_id"] == session_id
     assert session["app_id"] == "test-app"
-    assert session["status"] == "starting"
+    assert session["status"] == "running"
+
+
+@pytest.mark.asyncio
+async def test_launcher_data(client):
+    resp = await client.get("/api/streaming-apps/launcher")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "apps" in data
+    assert "sessions" in data
+    assert "agents" in data
 
 
 @pytest.mark.asyncio

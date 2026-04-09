@@ -29,6 +29,7 @@ from tinyagentos.agent_messages import AgentMessageStore
 from tinyagentos.shared_folders import SharedFolderManager
 from tinyagentos.streaming import StreamingSessionStore
 from tinyagentos.expert_agents import ExpertAgentStore
+from tinyagentos.app_orchestrator import AppOrchestrator
 from tinyagentos.webhook_notifier import WebhookNotifier
 from tinyagentos.llm_proxy import LLMProxy
 from tinyagentos.channel_hub.router import MessageRouter
@@ -77,6 +78,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     shared_folders = SharedFolderManager(data_dir / "shared_folders.db", data_dir / "shared-folders")
     streaming_sessions = StreamingSessionStore(data_dir / "streaming.db")
     expert_agents = ExpertAgentStore(data_dir / "expert_agents.db")
+    app_orchestrator = AppOrchestrator(cluster_manager, streaming_sessions, http_client)
     auth_manager = AuthManager(data_dir)
     webhook_notifier = WebhookNotifier(config.to_dict())
     notif_store.set_webhook_notifier(webhook_notifier)
@@ -120,6 +122,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.shared_folders = shared_folders
         app.state.streaming_sessions = streaming_sessions
         app.state.expert_agents = expert_agents
+        app.state.app_orchestrator = app_orchestrator
         app.state.auth = auth_manager
         app.state.webhook_notifier = webhook_notifier
         app.state.llm_proxy = llm_proxy
@@ -195,6 +198,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     app.state.shared_folders = shared_folders
     app.state.streaming_sessions = streaming_sessions
     app.state.expert_agents = expert_agents
+    app.state.app_orchestrator = app_orchestrator
     app.state.auth = auth_manager
     app.state.webhook_notifier = webhook_notifier
     app.state.llm_proxy = llm_proxy

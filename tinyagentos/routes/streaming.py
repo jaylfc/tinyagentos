@@ -92,25 +92,33 @@ class LaunchRequest(BaseModel):
 
 @router.post("/api/streaming-apps/launch")
 async def launch_session(request: Request, body: LaunchRequest):
-    store = request.app.state.streaming_sessions
-    session_id = await store.create_session(
+    orchestrator = request.app.state.app_orchestrator
+    # Get app manifest from registry if available
+    registry = request.app.state.registry
+    manifest = {}
+    for app in registry.list_available():
+        m = getattr(app, "manifest", {}) or {}
+        if app.id == body.app_id or m.get("id") == body.app_id:
+            manifest = m
+            break
+
+    agent_name = body.agent_name or f"{body.app_id}-expert"
+    result = await orchestrator.launch(
         app_id=body.app_id,
-        agent_name=body.agent_name,
+        app_manifest=manifest,
+        agent_name=agent_name,
         agent_type=body.agent_type,
-        worker_name="local",
-        container_id="pending",
     )
-    return {"session_id": session_id, "status": "starting"}
+    return result
 
 
 @router.post("/api/streaming-apps/sessions/{session_id}/stop")
 async def stop_session(request: Request, session_id: str):
-    store = request.app.state.streaming_sessions
-    session = await store.get_session(session_id)
-    if session is None:
-        return JSONResponse({"error": "Session not found"}, status_code=404)
-    await store.update_status(session_id, "stopped")
-    return {"session_id": session_id, "status": "stopped"}
+    orchestrator = request.app.state.app_orchestrator
+    result = await orchestrator.stop(session_id)
+    if "error" in result:
+        return JSONResponse(result, status_code=404)
+    return result
 
 
 class SwapAgentRequest(BaseModel):
@@ -170,3 +178,30 @@ async def reset_expert(request: Request, app_id: str):
         return JSONResponse({"error": "Expert agent not found"}, status_code=404)
     await store.reset(app_id)
     return {"app_id": app_id, "status": "reset"}
+
+
+# ---------------------------------------------------------------------------
+# API — companion launcher
+# ---------------------------------------------------------------------------
+
+@router.get("/api/streaming-apps/launcher")
+async def launcher_data(request: Request):
+    """Data for the companion app launcher dropdown."""
+    registry = request.app.state.registry
+    streaming_store = request.app.state.streaming_sessions
+
+    # Available apps
+    apps = []
+    for app in registry.list_available():
+        manifest = getattr(app, "manifest", {}) or {}
+        if manifest.get("type") == "streaming-app" or manifest.get("streaming"):
+            apps.append({"id": app.id, "name": app.name})
+
+    # Active sessions
+    sessions = await streaming_store.list_sessions(active_only=True)
+
+    # Agents
+    config = request.app.state.config
+    agents = [{"name": a["name"], "status": a.get("status", "configured")} for a in config.agents]
+
+    return {"apps": apps, "sessions": sessions, "agents": agents}
