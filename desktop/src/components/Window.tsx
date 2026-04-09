@@ -93,6 +93,7 @@ export function Window({ win, onDrag, onDragStop }: Props) {
       onResizeStop={handleResizeStop}
       onMouseDown={() => focusWindow(win.id)}
       bounds="parent"
+      onContextMenu={(e: React.MouseEvent) => e.stopPropagation()}
     >
       <div
         className={`flex flex-col h-full rounded-[var(--spacing-window-radius)] overflow-hidden border ${
