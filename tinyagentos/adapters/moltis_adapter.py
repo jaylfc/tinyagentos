@@ -1,4 +1,4 @@
-"""Moltis adapter — multi-model orchestration framework."""
+"""Moltis adapter — proxies messages to the Moltis gateway."""
 import os
 import uvicorn
 from fastapi import FastAPI
@@ -9,12 +9,15 @@ app = FastAPI()
 @app.post("/message")
 async def handle_message(msg: dict):
     try:
-        import moltis
-        agent = moltis.Agent()
-        result = agent.run(msg.get("text", ""))
-        return {"content": str(result)}
-    except ImportError:
-        return {"content": f"[{os.environ.get('TAOS_AGENT_NAME', 'agent')}] Moltis not installed"}
+        import httpx
+        mt_url = os.environ.get("MOLTIS_URL", "http://localhost:3000")
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(f"{mt_url}/api/message", json={"text": msg.get("text", "")})
+            if resp.status_code == 200:
+                return {"content": resp.json().get("content", resp.text)}
+            return {"content": f"Moltis returned {resp.status_code}"}
+    except Exception as e:
+        return {"content": f"[{os.environ.get('TAOS_AGENT_NAME', 'agent')}] Moltis not available: {e}"}
 
 
 @app.get("/health")

@@ -1,4 +1,4 @@
-"""ShibaClaw adapter — security-focused AI assistant framework."""
+"""ShibaClaw adapter — proxies messages to the ShibaClaw gateway."""
 import os
 import uvicorn
 from fastapi import FastAPI
@@ -9,12 +9,15 @@ app = FastAPI()
 @app.post("/message")
 async def handle_message(msg: dict):
     try:
-        from shibaclaw import Agent
-        agent = Agent()
-        result = agent.run(msg.get("text", ""))
-        return {"content": str(result)}
-    except ImportError:
-        return {"content": f"[{os.environ.get('TAOS_AGENT_NAME', 'agent')}] ShibaClaw not installed"}
+        import httpx
+        sc_url = os.environ.get("SHIBACLAW_URL", "http://localhost:19999")
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(f"{sc_url}/api/message", json={"text": msg.get("text", "")})
+            if resp.status_code == 200:
+                return {"content": resp.json().get("content", resp.text)}
+            return {"content": f"ShibaClaw returned {resp.status_code}"}
+    except Exception as e:
+        return {"content": f"[{os.environ.get('TAOS_AGENT_NAME', 'agent')}] ShibaClaw not available: {e}"}
 
 
 @app.get("/health")

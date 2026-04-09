@@ -4,25 +4,22 @@ import uvicorn
 from fastapi import FastAPI
 
 app = FastAPI()
-agent = None
 
 
 @app.post("/message")
 async def handle_message(msg: dict):
-    global agent
-    if agent is None:
-        try:
-            from smolagents import CodeAgent, LiteLLMModel
-            model = LiteLLMModel(model_id="default")
-            agent = CodeAgent(model=model, tools=[])
-        except ImportError:
-            return {"content": "SmolAgents not installed in this environment"}
-
     try:
+        from smolagents import CodeAgent, OpenAIModel
+        model = OpenAIModel(
+            model_id=os.environ.get("TAOS_MODEL", "default"),
+            api_base=os.environ.get("OPENAI_BASE_URL"),
+            api_key=os.environ.get("OPENAI_API_KEY"),
+        )
+        agent = CodeAgent(tools=[], model=model)
         result = agent.run(msg.get("text", ""))
         return {"content": str(result)}
-    except Exception as e:
-        return {"content": f"Error: {e}"}
+    except ImportError:
+        return {"content": f"[{os.environ.get('TAOS_AGENT_NAME', 'agent')}] SmolAgents not installed"}
 
 
 @app.get("/health")

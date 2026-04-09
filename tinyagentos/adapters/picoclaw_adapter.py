@@ -1,4 +1,4 @@
-"""PicoClaw adapter — NPU-aware micro agent."""
+"""PicoClaw adapter — proxies messages to the PicoClaw gateway."""
 import os
 import uvicorn
 from fastapi import FastAPI
@@ -9,12 +9,15 @@ app = FastAPI()
 @app.post("/message")
 async def handle_message(msg: dict):
     try:
-        import picoclaw
-        agent = picoclaw.Agent()
-        result = agent.run(msg.get("text", ""))
-        return {"content": str(result)}
-    except ImportError:
-        return {"content": f"[{os.environ.get('TAOS_AGENT_NAME', 'agent')}] PicoClaw not installed"}
+        import httpx
+        pc_url = os.environ.get("PICOCLAW_URL", "http://localhost:18800")
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(f"{pc_url}/api/message", json={"text": msg.get("text", "")})
+            if resp.status_code == 200:
+                return {"content": resp.json().get("content", resp.text)}
+            return {"content": f"PicoClaw returned {resp.status_code}"}
+    except Exception as e:
+        return {"content": f"[{os.environ.get('TAOS_AGENT_NAME', 'agent')}] PicoClaw not available: {e}"}
 
 
 @app.get("/health")

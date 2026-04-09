@@ -1,4 +1,4 @@
-"""ZeroClaw adapter — zero-config agent framework."""
+"""ZeroClaw adapter — proxies messages to the ZeroClaw gateway."""
 import os
 import uvicorn
 from fastapi import FastAPI
@@ -9,12 +9,15 @@ app = FastAPI()
 @app.post("/message")
 async def handle_message(msg: dict):
     try:
-        import zeroclaw
-        agent = zeroclaw.Agent()
-        result = agent.run(msg.get("text", ""))
-        return {"content": str(result)}
-    except ImportError:
-        return {"content": f"[{os.environ.get('TAOS_AGENT_NAME', 'agent')}] ZeroClaw not installed"}
+        import httpx
+        zc_url = os.environ.get("ZEROCLAW_URL", "http://localhost:42617")
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(f"{zc_url}/api/message", json={"text": msg.get("text", "")})
+            if resp.status_code == 200:
+                return {"content": resp.json().get("content", resp.text)}
+            return {"content": f"ZeroClaw returned {resp.status_code}"}
+    except Exception as e:
+        return {"content": f"[{os.environ.get('TAOS_AGENT_NAME', 'agent')}] ZeroClaw not available: {e}"}
 
 
 @app.get("/health")

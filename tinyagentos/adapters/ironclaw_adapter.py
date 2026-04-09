@@ -1,4 +1,4 @@
-"""IronClaw adapter — hardened agent framework for production workloads."""
+"""IronClaw adapter — proxies messages to the IronClaw gateway."""
 import os
 import uvicorn
 from fastapi import FastAPI
@@ -9,12 +9,15 @@ app = FastAPI()
 @app.post("/message")
 async def handle_message(msg: dict):
     try:
-        import ironclaw
-        agent = ironclaw.Agent()
-        result = agent.run(msg.get("text", ""))
-        return {"content": str(result)}
-    except ImportError:
-        return {"content": f"[{os.environ.get('TAOS_AGENT_NAME', 'agent')}] IronClaw not installed"}
+        import httpx
+        ic_url = os.environ.get("IRONCLAW_URL", "http://localhost:8080")
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(f"{ic_url}/api/message", json={"text": msg.get("text", "")})
+            if resp.status_code == 200:
+                return {"content": resp.json().get("content", resp.text)}
+            return {"content": f"IronClaw returned {resp.status_code}"}
+    except Exception as e:
+        return {"content": f"[{os.environ.get('TAOS_AGENT_NAME', 'agent')}] IronClaw not available: {e}"}
 
 
 @app.get("/health")

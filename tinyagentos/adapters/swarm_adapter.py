@@ -4,30 +4,19 @@ import uvicorn
 from fastapi import FastAPI
 
 app = FastAPI()
-swarm_client = None
-swarm_agent = None
 
 
 @app.post("/message")
 async def handle_message(msg: dict):
-    global swarm_client, swarm_agent
-    if swarm_client is None:
-        try:
-            from swarm import Swarm, Agent
-            swarm_client = Swarm()
-            swarm_agent = Agent(name=os.environ.get("TAOS_AGENT_NAME", "agent"))
-        except ImportError:
-            return {"content": "Swarm not installed in this environment"}
-
     try:
-        response = swarm_client.run(
-            agent=swarm_agent,
-            messages=[{"role": "user", "content": msg.get("text", "")}],
-        )
-        content = response.messages[-1]["content"] if response.messages else ""
-        return {"content": content}
-    except Exception as e:
-        return {"content": f"Error: {e}"}
+        from swarm import Swarm, Agent
+        from openai import OpenAI
+        client = Swarm(client=OpenAI())
+        agent = Agent(name="assistant", instructions="You are a helpful assistant.")
+        response = client.run(agent=agent, messages=[{"role": "user", "content": msg.get("text", "")}])
+        return {"content": response.messages[-1]["content"]}
+    except ImportError:
+        return {"content": f"[{os.environ.get('TAOS_AGENT_NAME', 'agent')}] Swarm not installed"}
 
 
 @app.get("/health")

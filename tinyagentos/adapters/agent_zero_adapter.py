@@ -1,4 +1,4 @@
-"""Agent Zero adapter — autonomous agent framework."""
+"""Agent Zero adapter — proxies messages to the Agent Zero HTTP API."""
 import os
 import uvicorn
 from fastapi import FastAPI
@@ -9,12 +9,19 @@ app = FastAPI()
 @app.post("/message")
 async def handle_message(msg: dict):
     try:
-        import agent_zero
-        agent = agent_zero.Agent()
-        result = agent.run(msg.get("text", ""))
-        return {"content": str(result)}
-    except ImportError:
-        return {"content": f"[{os.environ.get('TAOS_AGENT_NAME', 'agent')}] Agent Zero not installed"}
+        import httpx
+        a0_url = os.environ.get("AGENT_ZERO_URL", "http://localhost:8080")
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(
+                f"{a0_url}/message",
+                json={"text": msg.get("text", "")},
+                headers={"X-API-KEY": os.environ.get("AGENT_ZERO_API_KEY", "")},
+            )
+            if resp.status_code == 200:
+                return {"content": resp.json().get("response", resp.text)}
+            return {"content": f"Agent Zero returned {resp.status_code}"}
+    except Exception as e:
+        return {"content": f"[{os.environ.get('TAOS_AGENT_NAME', 'agent')}] Agent Zero error: {e}"}
 
 
 @app.get("/health")
