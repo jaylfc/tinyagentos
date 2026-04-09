@@ -85,6 +85,7 @@
                     <div id="notif-list" style="font-size:0.85rem;">No notifications</div>
                 </div>
             </li>
+            <li><a href="#" id="fullscreen-toggle" aria-label="Toggle fullscreen" onclick="toggleFullscreen(); return false;">&#x26F6;</a></li>
             <li><a href="#" id="theme-toggle" aria-label="Toggle dark/light theme" onclick="toggleTheme(); return false;">🌙</a></li>
         </ul>
     </nav>
@@ -169,6 +170,13 @@ if ('serviceWorker' in navigator) {
 }
 </script>
     <script>
+    function toggleFullscreen() {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(function(){});
+        } else {
+            document.exitFullscreen();
+        }
+    }
     function toggleTheme() {
         const html = document.documentElement;
         const current = html.getAttribute('data-theme');
