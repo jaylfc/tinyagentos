@@ -11,9 +11,11 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@xterm/xterm": "^6.0.0",
     "lucide-react": "^0.500.0",
     "mathjs": "^15.2.0",
     "pell": "^1.0.6",
+    "plyr": "^3.8.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-rnd": "^10.4.0",
