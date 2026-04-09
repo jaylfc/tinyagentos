@@ -4,7 +4,7 @@
 
 Self-hosted AI agent platform that runs on whatever hardware you have. An old laptop, a Raspberry Pi, a gaming PC, an SBC gathering dust — or all of them at once. TinyAgentOS turns your spare hardware into a distributed AI compute cluster.
 
-75 apps, 18 agent frameworks, 167k+ searchable models, agent deployment, training, image/video/audio generation, and full system monitoring — all from a single web dashboard. Supports Apple Silicon (MLX), NVIDIA, AMD, Rockchip NPU, Raspberry Pi, Android phones, and more.
+87 apps, 18 agent frameworks, 167k+ searchable models, agent deployment, training, image/video/audio generation, and full system monitoring — all from a single web dashboard. Supports Apple Silicon (MLX), NVIDIA, AMD, Rockchip NPU, Raspberry Pi, Android phones, and more.
 
 **Framework-agnostic by design** — TinyAgentOS owns everything that matters: your agent's memory, files, communication channels, model access, and configuration. The agent framework is just a replaceable execution engine. Switch from SmolAgents to LangChain to OpenClaw and your agent keeps its entire history, all its Telegram/Discord/Slack connections, its trained LoRA adapters, its files, and its API keys. No migration, no data loss, no reconfiguration. This is possible because TinyAgentOS manages the full agent lifecycle outside the framework.
 
@@ -38,7 +38,7 @@ Search 167k+ GGUF models from HuggingFace and the Ollama library directly from t
 ### Agent Templates (1,467 Templates)
 Pick from 1,467 agent templates — 12 built-in plus 196 from awesome-openclaw-agents and 1,259 from the System Prompt Library — and deploy in one click. Browse by category (24 categories), filter by source, or search. Each template includes a system prompt, recommended framework, model, and resource limits. All templates vendored locally so nothing depends on external services.
 
-### App Store (75 Apps)
+### App Store (87 Apps, including 12 Streaming Apps)
 One-click install for agent frameworks, AI models, and services. Hardware-aware — only shows what works on your device.
 
 ### Agent Deployment
@@ -117,11 +117,12 @@ Search across agents, apps, messages, and files from a single endpoint. Finds an
 - **System Updates** — pull latest from GitHub via Settings page
 - **Provider Management** — add/test/remove inference providers with live connectivity checks
 
-## App Catalog (73 Apps)
+## App Catalog (87 Apps)
 
 | Category | Apps |
 |----------|------|
 | **Agent Frameworks (18)** | SmolAgents, PocketFlow, OpenClaw, nanoclaw, PicoClaw (NPU-aware), ZeroClaw, MicroClaw, IronClaw, NullClaw, Moltis, NemoClaw, TinyAgent, Hermes, Agent Zero, Swarm, OpenAI Agents SDK, Langroid, ShibaClaw |
+| **Streaming Apps (12)** | Blender, LibreOffice, Code Server, GIMP, Krita, FreeCAD, Obsidian, Excalidraw, JupyterLab, Grafana, n8n, Terminal |
 | **LLM Models** | Qwen3 0.6B-8B (GGUF + RKLLM + MLX), plus 167k+ searchable from HuggingFace |
 | **Image Models** | LCM Dreamshaper, SD 1.5 LCM, SDXL Turbo |
 | **Image Gen** | ComfyUI, Fooocus, SD Web UI, stable-diffusion.cpp, FastSD CPU, RKNN SD, rk-llama.cpp |
@@ -156,7 +157,11 @@ TinyAgentOS Controller (FastAPI + htmx)
 │   └── Universal message format → framework-specific translation
 ├── LLM Proxy (LiteLLM, per-agent virtual keys)
 ├── Cluster Manager (worker registration, task routing)
-├── App Store + Registry (73 apps, manifest-based)
+├── App Streaming (12 apps, KasmVNC, split-view + agent chat sidebar)
+├── App Orchestrator (worker selection, container lifecycle)
+├── User Workspace (NAS-like file browser, shared with apps + agents)
+├── Computer Use (vision + keyboard/mouse, agent escalation)
+├── App Store + Registry (87 apps, manifest-based)
 ├── Live Model Browser (HuggingFace + Ollama search)
 ├── Container Manager (LXC via incus)
 ├── Agent Memory (QMD per agent — FTS5 + sqlite-vec + hybrid)
@@ -185,16 +190,16 @@ Platform overhead: **~345 MB RAM** (without models or agents)
 
 ```bash
 pip install -e ".[dev]"
-pytest tests/ -v          # 830 tests
+pytest tests/ -v          # 858 tests
 ```
 
-CI runs automatically on every push (Python 3.10-3.12 + security audit).
+CI runs automatically on every push (Python 3.10-3.13 + security audit).
 
 ## Roadmap
 
 ### Done ✅
 - [x] Web GUI with 23 pages
-- [x] App Store (75 apps, 18 agent frameworks)
+- [x] App Store (87 apps, 18 agent frameworks)
 - [x] Live model browser (HuggingFace + Ollama, 167k+ models)
 - [x] Agent deployment wizard (LXC containers)
 - [x] Image + video generation (multi-backend)
@@ -228,7 +233,7 @@ CI runs automatically on every push (Python 3.10-3.12 + security audit).
 
 ### In Progress
 - [ ] Fresh install test on clean hardware (#2)
-- [ ] Containerised app streaming (#22) — Phase 1 foundation complete (session store, streaming page, user workspace, agent-bridge)
+- [ ] Containerised app streaming (#22) — all 5 plans complete: session store, streaming pages, user workspace, agent-bridge, expert agents, 12 app manifests (Blender/LibreOffice/GIMP/Code Server + 8 Phase 2), app orchestrator, computer-use with escalation, companion launcher API
 
 ### Planned
 - [ ] Local assistant LLM / Setup Agent (#4)
