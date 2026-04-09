@@ -181,6 +181,41 @@ async def reset_expert(request: Request, app_id: str):
 
 
 # ---------------------------------------------------------------------------
+# API — computer use
+# ---------------------------------------------------------------------------
+
+@router.get("/api/streaming-apps/sessions/{session_id}/computer-use")
+async def get_computer_use_state(request: Request, session_id: str):
+    """Get computer-use state for a session."""
+    cu_manager = request.app.state.computer_use
+    state = cu_manager.get_state(session_id)
+    return state
+
+
+@router.post("/api/streaming-apps/sessions/{session_id}/computer-use")
+async def toggle_computer_use(request: Request, session_id: str):
+    """Toggle computer use for a session."""
+    body = await request.json()
+    enabled = body.get("enabled", False)
+    cu_manager = request.app.state.computer_use
+    if enabled:
+        cu_manager.enable(session_id)
+    else:
+        cu_manager.disable(session_id)
+    return {"session_id": session_id, "enabled": enabled}
+
+
+@router.post("/api/streaming-apps/sessions/{session_id}/mcp-failure")
+async def report_mcp_failure(request: Request, session_id: str):
+    """Report an MCP tool failure. May return escalation suggestion."""
+    cu_manager = request.app.state.computer_use
+    suggestion = cu_manager.record_mcp_failure(session_id)
+    if suggestion:
+        return suggestion
+    return {"suggest_computer_use": False}
+
+
+# ---------------------------------------------------------------------------
 # API — companion launcher
 # ---------------------------------------------------------------------------
 
