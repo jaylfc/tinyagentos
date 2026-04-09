@@ -1,7 +1,8 @@
 from __future__ import annotations
 from fastapi import APIRouter, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pathlib import Path
+import httpx
 
 router = APIRouter()
 
@@ -52,6 +53,32 @@ async def save_windows(request: Request):
     body = await request.json()
     await store.save_windows("user", body.get("positions", []))
     return JSONResponse({"ok": True})
+
+
+@router.get("/api/desktop/proxy")
+async def browser_proxy(url: str):
+    """Proxy web pages for the desktop browser app, stripping X-Frame-Options."""
+    if not url.startswith(("http://", "https://")):
+        return JSONResponse({"error": "Invalid URL"}, status_code=400)
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
+            resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0 (compatible; TinyAgentOS)"})
+            # Strip headers that block iframe embedding
+            headers = dict(resp.headers)
+            for h in ("x-frame-options", "content-security-policy", "content-security-policy-report-only"):
+                headers.pop(h, None)
+            return StreamingResponse(
+                content=iter([resp.content]),
+                status_code=resp.status_code,
+                headers=headers,
+                media_type=resp.headers.get("content-type", "text/html"),
+            )
+    except httpx.ConnectError:
+        return JSONResponse({"error": f"Cannot connect to {url}"}, status_code=502)
+    except httpx.TimeoutException:
+        return JSONResponse({"error": "Request timed out"}, status_code=504)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 
 @router.get("/desktop")

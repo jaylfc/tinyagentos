@@ -3,6 +3,10 @@ import { ArrowLeft, ArrowRight, Globe, RotateCw } from "lucide-react";
 
 const DEFAULT_URL = "https://duckduckgo.com";
 
+function proxyUrl(url: string): string {
+  return `/api/desktop/proxy?url=${encodeURIComponent(url)}`;
+}
+
 function normalizeUrl(input: string): string {
   const trimmed = input.trim();
   if (!trimmed) return DEFAULT_URL;
@@ -49,7 +53,7 @@ export function BrowserApp({ windowId: _windowId }: { windowId: string }) {
 
   const refresh = useCallback(() => {
     if (iframeRef.current) {
-      iframeRef.current.src = url;
+      iframeRef.current.src = proxyUrl(url);
     }
   }, [url]);
 
@@ -105,10 +109,10 @@ export function BrowserApp({ windowId: _windowId }: { windowId: string }) {
         </div>
       </form>
 
-      {/* Browser content */}
+      {/* Browser content — proxied to strip X-Frame-Options */}
       <iframe
         ref={iframeRef}
-        src={url}
+        src={proxyUrl(url)}
         className="flex-1 w-full border-none bg-white"
         sandbox="allow-downloads allow-forms allow-modals allow-pointer-lock allow-popups allow-presentation allow-same-origin allow-scripts"
         title="Browser"

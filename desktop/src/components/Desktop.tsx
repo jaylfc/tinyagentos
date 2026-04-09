@@ -1,10 +1,25 @@
+import { useState, useCallback } from "react";
+import { FolderPlus, Image, Monitor, Settings, LayoutGrid } from "lucide-react";
 import { useProcessStore } from "@/stores/process-store";
+import { useThemeStore } from "@/stores/theme-store";
 import { useSnapZones } from "@/hooks/use-snap-zones";
+import { getApp } from "@/registry/app-registry";
 import { Window } from "./Window";
 import { SnapOverlay } from "./SnapOverlay";
+import { ContextMenu, type MenuItem } from "./ContextMenu";
+import { WallpaperPicker } from "./WallpaperPicker";
+
+type ContextMenuState = {
+  x: number;
+  y: number;
+} | null;
 
 export function Desktop() {
   const windows = useProcessStore((s) => s.windows);
+  const { openWindow } = useProcessStore();
+  const wallpaperStyle = useThemeStore((s) => s.wallpaperStyle);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
+  const [wallpaperPickerOpen, setWallpaperPickerOpen] = useState(false);
 
   const viewport = {
     width: typeof window !== "undefined" ? window.innerWidth : 1920,
@@ -15,17 +30,77 @@ export function Desktop() {
 
   const { previewBounds, onDrag, onDragStop } = useSnapZones(viewport);
 
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    // Only show on the desktop surface itself, not on windows
+    if (e.target === e.currentTarget || (e.target as HTMLElement).closest("[data-desktop-surface]")) {
+      e.preventDefault();
+      setContextMenu({ x: e.clientX, y: e.clientY });
+    }
+  }, []);
+
+  const openApp = useCallback((appId: string) => {
+    const app = getApp(appId);
+    if (app) openWindow(appId, app.defaultSize);
+  }, [openWindow]);
+
+  const menuItems: MenuItem[] = [
+    {
+      label: "New Folder",
+      icon: <FolderPlus size={14} />,
+      action: () => openApp("files"),
+    },
+    { label: "", separator: true },
+    {
+      label: "Change Wallpaper",
+      icon: <Image size={14} />,
+      action: () => setWallpaperPickerOpen(true),
+    },
+    {
+      label: "Display Settings",
+      icon: <Monitor size={14} />,
+      action: () => openApp("settings"),
+    },
+    { label: "", separator: true },
+    {
+      label: "Open Launchpad",
+      icon: <LayoutGrid size={14} />,
+      action: () => {
+        // Dispatch a custom event that App.tsx listens for
+        window.dispatchEvent(new CustomEvent("open-launchpad"));
+      },
+    },
+    {
+      label: "System Settings",
+      icon: <Settings size={14} />,
+      action: () => openApp("settings"),
+    },
+  ];
+
   return (
     <div
       className="relative flex-1 overflow-hidden"
-      style={{
-        background: "linear-gradient(160deg, #1a1b2e 0%, #1e2140 40%, #252848 100%)",
-      }}
+      style={{ background: wallpaperStyle }}
+      onContextMenu={handleContextMenu}
+      data-desktop-surface
     >
       <SnapOverlay bounds={previewBounds} />
       {windows.map((win) => (
         <Window key={win.id} win={win} onDrag={onDrag} onDragStop={onDragStop} />
       ))}
+
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={menuItems}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
+
+      <WallpaperPicker
+        open={wallpaperPickerOpen}
+        onClose={() => setWallpaperPickerOpen(false)}
+      />
     </div>
   );
 }

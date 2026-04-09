@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { TopBar } from "@/components/TopBar";
 import { Desktop } from "@/components/Desktop";
 import { Dock } from "@/components/Dock";
@@ -11,6 +11,13 @@ export function App() {
 
   const toggleLaunchpad = useCallback(() => setLaunchpadOpen((v) => !v), []);
   const toggleSearch = useCallback(() => setSearchOpen((v) => !v), []);
+
+  // Listen for launchpad open event from context menu
+  useEffect(() => {
+    const handler = () => setLaunchpadOpen(true);
+    window.addEventListener("open-launchpad", handler);
+    return () => window.removeEventListener("open-launchpad", handler);
+  }, []);
 
   useKeyboardShortcuts({
     onSearch: toggleSearch,
