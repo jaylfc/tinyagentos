@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+@theme {
+  /* Background layers */
+  --color-shell-bg: #1a1b2e;
+  --color-shell-bg-deep: #151625;
+  --color-shell-surface: rgba(255, 255, 255, 0.04);
+  --color-shell-surface-hover: rgba(255, 255, 255, 0.06);
+  --color-shell-surface-active: rgba(255, 255, 255, 0.08);
+  --color-shell-border: rgba(255, 255, 255, 0.06);
+  --color-shell-border-strong: rgba(255, 255, 255, 0.1);
+
+  /* Text */
+  --color-shell-text: rgba(255, 255, 255, 0.85);
+  --color-shell-text-secondary: rgba(255, 255, 255, 0.5);
+  --color-shell-text-tertiary: rgba(255, 255, 255, 0.3);
+
+  /* Traffic lights */
+  --color-traffic-close: #ff5f57;
+  --color-traffic-minimize: #febc2e;
+  --color-traffic-maximize: #28c840;
+
+  /* Accent */
+  --color-accent: #667eea;
+  --color-accent-glow: rgba(102, 126, 234, 0.3);
+
+  /* Dock */
+  --color-dock-bg: rgba(255, 255, 255, 0.06);
+  --color-dock-border: rgba(255, 255, 255, 0.06);
+
+  /* Snap zones */
+  --color-snap-preview: rgba(102, 126, 234, 0.15);
+  --color-snap-border: rgba(102, 126, 234, 0.4);
+
+  /* Spacing */
+  --spacing-topbar-h: 32px;
+  --spacing-dock-h: 64px;
+  --spacing-dock-padding: 8px;
+  --spacing-window-radius: 10px;
+  --spacing-dock-radius: 16px;
+
+  /* Shadows */
+  --shadow-window: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --shadow-window-unfocused: 0 4px 16px rgba(0, 0, 0, 0.2);
+  --shadow-dock: 0 4px 24px rgba(0, 0, 0, 0.3);
+}
