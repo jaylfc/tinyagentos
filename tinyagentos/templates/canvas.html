@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ canvas.title }} — Canvas</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css">
+    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        body { margin: 0; padding: 1rem; }
+        .canvas-content { max-width: 900px; margin: 0 auto; }
+        .canvas-content img { max-width: 100%; border-radius: 8px; }
+        .canvas-content pre code { border-radius: 8px; padding: 1rem; }
+        .canvas-content table { width: 100%; }
+        .canvas-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; margin: 1rem 0; }
+        .canvas-option { cursor: pointer; border: 2px solid var(--pico-muted-border-color); border-radius: 8px; padding: 0.75rem; transition: border-color 0.2s; }
+        .canvas-option:hover { border-color: var(--pico-primary); }
+        .canvas-option.selected { border-color: var(--pico-primary); background: rgba(126, 207, 255, 0.1); }
+    </style>
+</head>
+<body>
+    <main class="canvas-content" id="canvas-body" role="main" aria-label="{{ canvas.title }}">
+        <p aria-busy="true">Rendering...</p>
+    </main>
+    <script>
+    /* Canvas content is authored by local agents — treated as trusted internal content.
+       The canvas service is isolated behind edit_token auth and not exposed externally. */
+    const canvasData = {{ canvas | tojson }};
+    const body = document.getElementById('canvas-body');
+
+    if (canvasData.format === 'markdown') {
+        body.innerHTML = marked.parse(canvasData.content);
+        body.querySelectorAll('pre code').forEach(el => hljs.highlightElement(el));
+    } else if (canvasData.format === 'html') {
+        body.innerHTML = canvasData.content;
+    } else {
+        body.textContent = canvasData.content;
+    }
+
+    // Notify parent frame of interactions
+    document.addEventListener('click', function(e) {
+        const option = e.target.closest('.canvas-option');
+        if (option) {
+            document.querySelectorAll('.canvas-option').forEach(o => o.classList.remove('selected'));
+            option.classList.add('selected');
+            if (window.parent !== window) {
+                window.parent.postMessage({
+                    type: 'canvas_action',
+                    canvas_id: canvasData.id,
+                    action: option.dataset.action || 'select',
+                    value: option.dataset.value || option.textContent.trim(),
+                }, '*');
+            }
+        }
+    });
+
+    // Listen for live updates
+    const ws = new WebSocket(location.origin.replace('http', 'ws') + '/ws/canvas/' + canvasData.id);
+    ws.onmessage = function(e) {
+        try {
+            const update = JSON.parse(e.data);
+            if (update.content) {
+                if (canvasData.format === 'markdown') {
+                    body.innerHTML = marked.parse(update.content);
+                    body.querySelectorAll('pre code').forEach(el => hljs.highlightElement(el));
+                } else {
+                    body.innerHTML = update.content;
+                }
+            }
+        } catch(err) {}
+    };
+    ws.onerror = function() {};
+    </script>
+</body>
+</html>

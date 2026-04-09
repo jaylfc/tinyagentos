@@ -95,9 +95,14 @@ async def client(app):
     if chat_channels._db is not None:
         await chat_channels.close()
     await chat_channels.init()
+    canvas_store = app.state.canvas_store
+    if canvas_store._db is not None:
+        await canvas_store.close()
+    await canvas_store.init()
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
+    await canvas_store.close()
     await chat_channels.close()
     await chat_messages.close()
     await expert_agents.close()
@@ -233,9 +238,14 @@ async def client_with_qmd(app_with_qmd):
     if chat_channels._db is not None:
         await chat_channels.close()
     await chat_channels.init()
+    canvas_store = app_with_qmd.state.canvas_store
+    if canvas_store._db is not None:
+        await canvas_store.close()
+    await canvas_store.init()
     transport = ASGITransport(app=app_with_qmd)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
+    await canvas_store.close()
     await chat_channels.close()
     await chat_messages.close()
     await expert_agents.close()

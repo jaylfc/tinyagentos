@@ -38,6 +38,7 @@ from tinyagentos.channel_hub.adapter_manager import AdapterManager
 from tinyagentos.chat.message_store import ChatMessageStore
 from tinyagentos.chat.channel_store import ChatChannelStore
 from tinyagentos.chat.hub import ChatHub
+from tinyagentos.chat.canvas import CanvasStore
 
 PROJECT_DIR = Path(__file__).parent.parent
 
@@ -93,6 +94,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     chat_messages = ChatMessageStore(data_dir / "chat.db")
     chat_channels = ChatChannelStore(data_dir / "chat.db")
     chat_hub = ChatHub()
+    canvas_store = CanvasStore(data_dir / "canvas.db")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -111,6 +113,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         await expert_agents.init()
         await chat_messages.init()
         await chat_channels.init()
+        await canvas_store.init()
         app.state.config = config
         app.state.config_path = config_path
         app.state.metrics = metrics_store
@@ -144,6 +147,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.chat_messages = chat_messages
         app.state.chat_channels = chat_channels
         app.state.chat_hub = chat_hub
+        app.state.canvas_store = canvas_store
         # Optionally start LiteLLM proxy (non-fatal if not installed)
         try:
             await llm_proxy.start(config.backends)
@@ -175,6 +179,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         await cluster_manager.stop()
         llm_proxy.stop()
         await monitor.stop()
+        await canvas_store.close()
         await chat_channels.close()
         await chat_messages.close()
         await expert_agents.close()
@@ -237,6 +242,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     app.state.chat_messages = chat_messages
     app.state.chat_channels = chat_channels
     app.state.chat_hub = chat_hub
+    app.state.canvas_store = canvas_store
 
     # Detect and set container runtime (eager, so tests work without lifespan)
     try:
