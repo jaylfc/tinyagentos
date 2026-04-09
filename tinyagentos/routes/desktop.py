@@ -54,9 +54,24 @@ async def save_windows(request: Request):
     return JSONResponse({"ok": True})
 
 
-@router.get("/desktop/{rest:path}")
-async def serve_spa(rest: str = ""):
+@router.get("/desktop")
+async def serve_spa_root():
+    """Serve the SPA index.html at /desktop."""
     index = SPA_DIR / "index.html"
     if index.exists():
-        return FileResponse(index)
+        return FileResponse(index, media_type="text/html")
+    return JSONResponse({"error": "Desktop shell not built. Run: cd desktop && npm run build"}, status_code=404)
+
+
+@router.get("/desktop/{rest:path}")
+async def serve_spa(rest: str = ""):
+    """Serve static assets from the SPA build, fall back to index.html for client-side routes."""
+    # Try to serve the exact file first (CSS, JS, images)
+    file_path = SPA_DIR / rest
+    if file_path.is_file() and SPA_DIR in file_path.resolve().parents:
+        return FileResponse(file_path)
+    # Fall back to index.html for client-side routing
+    index = SPA_DIR / "index.html"
+    if index.exists():
+        return FileResponse(index, media_type="text/html")
     return JSONResponse({"error": "Desktop shell not built. Run: cd desktop && npm run build"}, status_code=404)
