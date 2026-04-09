@@ -79,9 +79,14 @@ async def client(app):
     if shared_folders._db is not None:
         await shared_folders.close()
     await shared_folders.init()
+    streaming_sessions = app.state.streaming_sessions
+    if streaming_sessions._db is not None:
+        await streaming_sessions.close()
+    await streaming_sessions.init()
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
+    await streaming_sessions.close()
     await shared_folders.close()
     await agent_messages.close()
     await conversion_mgr.close()
@@ -197,9 +202,14 @@ async def client_with_qmd(app_with_qmd):
     if shared_folders._db is not None:
         await shared_folders.close()
     await shared_folders.init()
+    streaming_sessions = app_with_qmd.state.streaming_sessions
+    if streaming_sessions._db is not None:
+        await streaming_sessions.close()
+    await streaming_sessions.init()
     transport = ASGITransport(app=app_with_qmd)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
+    await streaming_sessions.close()
     await shared_folders.close()
     await agent_messages.close()
     await conversion_mgr.close()

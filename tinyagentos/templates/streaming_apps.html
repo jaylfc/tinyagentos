@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+{% block title %}App Streaming — TinyAgentOS{% endblock %}
+{% block content %}
+<hgroup>
+  <h2>App Streaming</h2>
+  <p>Launch and manage interactive streaming app sessions with AI agent assistance.</p>
+</hgroup>
+
+<section aria-labelledby="active-sessions-heading">
+  <h3 id="active-sessions-heading">Active Sessions</h3>
+  <div id="active-sessions"
+       hx-get="/api/streaming-apps/sessions?active_only=true"
+       hx-trigger="load, every 10s"
+       hx-swap="innerHTML"
+       aria-live="polite"
+       aria-label="Active streaming sessions">
+    <p aria-busy="true">Loading sessions...</p>
+  </div>
+</section>
+
+<section aria-labelledby="available-apps-heading">
+  <h3 id="available-apps-heading">Available Apps</h3>
+  <div id="available-apps"
+       hx-get="/api/streaming-apps"
+       hx-trigger="load"
+       hx-swap="innerHTML"
+       aria-label="Available streaming apps">
+    <p aria-busy="true">Loading apps...</p>
+  </div>
+</section>
+
+<script>
+function escapeHtml(s) {
+  var d = document.createElement('div');
+  d.textContent = String(s);
+  return d.innerHTML;
+}
+
+function buildSessionCard(s) {
+  var article = document.createElement('article');
+  article.style.cssText = 'margin:0; padding:1rem;';
+
+  var row = document.createElement('div');
+  row.style.cssText = 'display:flex; justify-content:space-between; align-items:center;';
+
+  var info = document.createElement('div');
+
+  var name = document.createElement('strong');
+  name.textContent = s.app_id;
+  info.appendChild(name);
+
+  var status = document.createElement('span');
+  status.textContent = ' (' + s.status + ')';
+  status.style.cssText = 'font-size:0.8rem; color:var(--pico-muted-color);';
+  info.appendChild(status);
+
+  info.appendChild(document.createElement('br'));
+
+  var meta = document.createElement('small');
+  meta.style.color = 'var(--pico-muted-color)';
+  meta.textContent = 'Agent: ' + s.agent_name + ' \u2014 Session: ' + s.session_id;
+  info.appendChild(meta);
+
+  var actions = document.createElement('div');
+  actions.style.cssText = 'display:flex; gap:0.5rem;';
+
+  var openBtn = document.createElement('a');
+  openBtn.href = '/app/' + encodeURIComponent(s.session_id);
+  openBtn.setAttribute('role', 'button');
+  openBtn.style.cssText = 'font-size:0.85rem; padding:0.3rem 0.8rem;';
+  openBtn.textContent = 'Open';
+  actions.appendChild(openBtn);
+
+  var stopBtn = document.createElement('button');
+  stopBtn.className = 'outline secondary';
+  stopBtn.style.cssText = 'font-size:0.85rem; padding:0.3rem 0.8rem;';
+  stopBtn.setAttribute('aria-label', 'Stop session ' + s.session_id);
+  stopBtn.textContent = 'Stop';
+  stopBtn.addEventListener('click', function() {
+    fetch('/api/streaming-apps/sessions/' + encodeURIComponent(s.session_id) + '/stop', {method: 'POST'})
+      .then(function() { htmx.trigger(document.getElementById('active-sessions'), 'load'); });
+  });
+  actions.appendChild(stopBtn);
+
+  row.appendChild(info);
+  row.appendChild(actions);
+  article.appendChild(row);
+  return article;
+}
+
+function buildAppCard(a) {
+  var article = document.createElement('article');
+  article.style.cssText = 'margin:0; padding:1rem;';
+
+  var title = document.createElement('strong');
+  title.textContent = a.name;
+  article.appendChild(title);
+
+  var desc = document.createElement('p');
+  desc.style.cssText = 'font-size:0.85rem; color:var(--pico-muted-color); margin:0.25rem 0 0.75rem;';
+  desc.textContent = a.description;
+  article.appendChild(desc);
+
+  var btn = document.createElement('button');
+  btn.style.width = '100%';
+  btn.setAttribute('aria-label', 'Launch ' + a.name);
+  btn.textContent = 'Launch';
+  btn.addEventListener('click', function() {
+    fetch('/api/streaming-apps/launch', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({app_id: a.id})
+    }).then(function() {
+      htmx.trigger(document.getElementById('active-sessions'), 'load');
+    });
+  });
+  article.appendChild(btn);
+  return article;
+}
+
+document.addEventListener('htmx:afterRequest', function(evt) {
+  var target = evt.detail.target;
+  if (!target) return;
+
+  if (target.id === 'active-sessions') {
+    try {
+      var data = JSON.parse(evt.detail.xhr.response);
+      var sessions = data.sessions || [];
+      while (target.firstChild) target.removeChild(target.firstChild);
+      if (sessions.length === 0) {
+        var p = document.createElement('p');
+        p.style.color = 'var(--pico-muted-color)';
+        p.textContent = 'No active sessions. Launch an app below.';
+        target.appendChild(p);
+        return;
+      }
+      var grid = document.createElement('div');
+      grid.style.cssText = 'display:grid; gap:0.75rem;';
+      sessions.forEach(function(s) { grid.appendChild(buildSessionCard(s)); });
+      target.appendChild(grid);
+    } catch(e) {
+      var p = document.createElement('p');
+      p.style.color = 'var(--pico-muted-color)';
+      p.textContent = 'No active sessions.';
+      while (target.firstChild) target.removeChild(target.firstChild);
+      target.appendChild(p);
+    }
+  }
+
+  if (target.id === 'available-apps') {
+    try {
+      var data = JSON.parse(evt.detail.xhr.response);
+      var apps = data.apps || [];
+      while (target.firstChild) target.removeChild(target.firstChild);
+      if (apps.length === 0) {
+        var p = document.createElement('p');
+        p.style.color = 'var(--pico-muted-color)';
+        p.textContent = 'No streaming apps in the catalog yet. Install a streaming app from the Store.';
+        target.appendChild(p);
+        return;
+      }
+      var grid = document.createElement('div');
+      grid.style.cssText = 'display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:1rem;';
+      apps.forEach(function(a) { grid.appendChild(buildAppCard(a)); });
+      target.appendChild(grid);
+    } catch(e) {
+      var p = document.createElement('p');
+      p.style.color = 'var(--pico-muted-color)';
+      p.textContent = 'No streaming apps available.';
+      while (target.firstChild) target.removeChild(target.firstChild);
+      target.appendChild(p);
+    }
+  }
+});
+</script>
+{% endblock %}

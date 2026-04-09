@@ -1,0 +1,245 @@
+{% extends "base.html" %}
+{% block title %}{{ session.app_id }} — TinyAgentOS{% endblock %}
+{% block content %}
+<style>
+  .streaming-layout {
+    display: flex;
+    gap: 0;
+    height: calc(100vh - 180px);
+    min-height: 500px;
+    border: 1px solid var(--pico-muted-border-color);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .stream-panel {
+    flex: 1;
+    background: #000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    min-width: 0;
+  }
+  .stream-placeholder {
+    color: #666;
+    font-family: monospace;
+    font-size: 0.95rem;
+    text-align: center;
+  }
+  .stream-info {
+    position: absolute;
+    bottom: 0.75rem;
+    left: 0.75rem;
+    font-size: 0.75rem;
+    color: #444;
+    font-family: monospace;
+  }
+  .chat-sidebar {
+    width: 380px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid var(--pico-muted-border-color);
+    background: var(--pico-card-background-color);
+  }
+  .chat-agent-selector {
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--pico-muted-border-color);
+  }
+  .chat-agent-selector label {
+    margin: 0;
+    font-size: 0.8rem;
+  }
+  .chat-agent-selector select {
+    margin: 0.25rem 0 0;
+    padding: 0.3rem 0.5rem;
+    font-size: 0.85rem;
+  }
+  .chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .chat-msg {
+    padding: 0.5rem 0.75rem;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    max-width: 90%;
+    word-break: break-word;
+  }
+  .chat-msg.assistant {
+    background: var(--pico-secondary-background, #2a2a3e);
+    color: var(--pico-secondary-inverse, #eee);
+    align-self: flex-start;
+  }
+  .chat-msg.user {
+    background: var(--pico-primary-background);
+    color: var(--pico-primary-inverse);
+    align-self: flex-end;
+  }
+  .chat-controls {
+    padding: 0.5rem 0.75rem;
+    border-top: 1px solid var(--pico-muted-border-color);
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+  .chat-controls button {
+    flex: 1;
+    font-size: 0.75rem;
+    padding: 0.3rem 0.4rem;
+    margin: 0;
+  }
+  .toggle-switch {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.75rem;
+    color: var(--pico-muted-color);
+  }
+  .toggle-switch input[type="checkbox"] {
+    width: 2rem;
+    height: 1rem;
+    margin: 0;
+  }
+  .chat-input-area {
+    padding: 0.75rem;
+    border-top: 1px solid var(--pico-muted-border-color);
+    display: flex;
+    gap: 0.5rem;
+  }
+  .chat-input-area input {
+    flex: 1;
+    margin: 0;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.85rem;
+  }
+  .chat-input-area button {
+    margin: 0;
+    padding: 0.4rem 0.75rem;
+    font-size: 0.85rem;
+  }
+  canvas#stream-canvas {
+    display: none;
+    width: 100%;
+    height: 100%;
+  }
+</style>
+
+<div style="margin-bottom:0.5rem; display:flex; align-items:center; gap:1rem;">
+  <a href="/streaming" aria-label="Back to App Streaming">&larr; Back</a>
+  <h3 style="margin:0;">{{ session.app_id }}</h3>
+  <span id="session-status" style="font-size:0.8rem; color:var(--pico-muted-color);">{{ session.status }}</span>
+</div>
+
+<div class="streaming-layout" role="main">
+  <!-- Left: stream panel -->
+  <div class="stream-panel" aria-label="Streaming display area">
+    <div class="stream-placeholder" aria-live="polite" id="stream-placeholder">
+      <div>Connecting to {{ session.app_id }}...</div>
+      <div style="margin-top:0.5rem; font-size:0.8rem; color:#555;">Container not yet running (Plan 2)</div>
+    </div>
+    <canvas id="stream-canvas" aria-label="KasmVNC remote desktop canvas"></canvas>
+    <div class="stream-info">
+      Session: {{ session.session_id }} &nbsp;&bull;&nbsp;
+      Worker: {{ session.worker_name }} &nbsp;&bull;&nbsp;
+      Container: {{ session.container_id }}
+    </div>
+  </div>
+
+  <!-- Right: chat sidebar -->
+  <aside class="chat-sidebar" aria-label="AI assistant chat">
+    <!-- Agent selector -->
+    <div class="chat-agent-selector">
+      <label for="agent-select">AI Agent</label>
+      <select id="agent-select"
+              aria-label="Select AI agent"
+              onchange="swapAgent(this.value)">
+        <option value="{{ session.agent_name }}" selected>{{ session.agent_name }} ({{ session.agent_type }})</option>
+      </select>
+    </div>
+
+    <!-- Chat messages -->
+    <div class="chat-messages" id="chat-messages" role="log" aria-live="polite" aria-label="Chat messages">
+      <div class="chat-msg assistant">How can I help with {{ session.app_id }}?</div>
+    </div>
+
+    <!-- Controls row -->
+    <div class="chat-controls">
+      <button class="outline secondary" onclick="handleScreenshot()" aria-label="Take screenshot">Screenshot</button>
+      <button class="outline secondary" onclick="handleUndo()" aria-label="Undo last action">Undo</button>
+      <label class="toggle-switch" for="computer-use-toggle">
+        <input type="checkbox" id="computer-use-toggle" role="switch" onchange="handleComputerUse(this.checked)" aria-label="Computer use toggle">
+        <span>Computer Use</span>
+      </label>
+    </div>
+
+    <!-- Chat input -->
+    <form class="chat-input-area" id="chat-form" onsubmit="sendMessage(event)" aria-label="Send message">
+      <label for="chat-input" class="sr-only" style="position:absolute;left:-9999px;">Message</label>
+      <input type="text" id="chat-input" placeholder="Ask the agent..." aria-label="Message input" autocomplete="off">
+      <button type="submit" aria-label="Send message">Send</button>
+    </form>
+  </aside>
+</div>
+
+<script>
+var SESSION_ID = {{ session.session_id | tojson }};
+var APP_ID = {{ session.app_id | tojson }};
+
+function escapeHtml(s) {
+  var d = document.createElement('div');
+  d.textContent = String(s);
+  return d.innerHTML;
+}
+
+function addMessage(text, role) {
+  var messages = document.getElementById('chat-messages');
+  var div = document.createElement('div');
+  div.className = 'chat-msg ' + role;
+  div.textContent = text;
+  messages.appendChild(div);
+  messages.scrollTop = messages.scrollHeight;
+}
+
+function sendMessage(evt) {
+  evt.preventDefault();
+  var input = document.getElementById('chat-input');
+  var text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  addMessage(text, 'user');
+  // Local-only for now — Plan 2 wires up backend
+  setTimeout(function() {
+    addMessage('(Agent backend not yet connected — Plan 2 wires this up.)', 'assistant');
+  }, 400);
+}
+
+function swapAgent(agentName) {
+  fetch('/api/streaming-apps/sessions/' + encodeURIComponent(SESSION_ID) + '/swap-agent', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({agent_name: agentName, agent_type: 'app-expert'})
+  }).then(function(r) {
+    if (r.ok) showToast('Agent switched to ' + agentName);
+  });
+}
+
+function handleScreenshot() {
+  showToast('Screenshot requires a running container (Plan 2 wires this up).', 'error');
+}
+
+function handleUndo() {
+  showToast('Undo requires a running container (Plan 2 wires this up).', 'error');
+}
+
+function handleComputerUse(enabled) {
+  showToast('Computer Use requires a running container (Plan 2 wires this up).', 'error');
+  document.getElementById('computer-use-toggle').checked = false;
+}
+</script>
+{% endblock %}
