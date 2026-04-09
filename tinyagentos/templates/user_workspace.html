@@ -1,0 +1,390 @@
+{% extends "base.html" %}
+
+{% block title %}Workspace — TinyAgentOS{% endblock %}
+
+{% block content %}
+<section>
+    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem; margin-bottom:1.5rem;">
+        <div>
+            <h1 style="margin:0;">Workspace</h1>
+            <p style="margin:0; color:var(--pico-muted-color); font-size:0.9rem;">Your personal file storage</p>
+        </div>
+        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+            <button id="upload-btn" aria-label="Upload files">Upload Files</button>
+            <button class="outline" id="mkdir-btn" aria-label="Create new folder">New Folder</button>
+        </div>
+    </div>
+
+    <!-- Hidden file input -->
+    <input type="file" id="file-input" multiple style="display:none;" aria-label="Select files to upload">
+
+    <!-- Stats bar -->
+    <div id="workspace-stats"
+         aria-live="polite"
+         style="margin-bottom:1rem; padding:0.75rem 1rem; background:var(--pico-card-background-color); border-radius:8px; font-size:0.85rem; color:var(--pico-muted-color);">
+        Loading stats...
+    </div>
+
+    <!-- Breadcrumb navigation -->
+    <nav aria-label="File path breadcrumb" id="breadcrumb-nav" style="margin-bottom:1rem;">
+        <ol id="breadcrumb-list" style="list-style:none; display:flex; flex-wrap:wrap; gap:0.25rem; padding:0; margin:0; font-size:0.9rem;">
+        </ol>
+    </nav>
+
+    <!-- Drop zone hint -->
+    <div id="drop-hint" style="display:none; text-align:center; padding:1.5rem; border:2px dashed var(--pico-primary); border-radius:8px; color:var(--pico-muted-color); margin-bottom:1rem;">
+        Drop files here to upload
+    </div>
+
+    <!-- File list container -->
+    <div id="file-list"
+         aria-live="polite"
+         role="region"
+         aria-label="File browser">
+        <p>Loading files...</p>
+    </div>
+</section>
+
+<style>
+.file-row {
+    display:flex;
+    align-items:center;
+    gap:0.75rem;
+    padding:0.6rem 0.75rem;
+    border-bottom:1px solid var(--pico-muted-border-color);
+    border-radius:4px;
+    transition:background 0.15s;
+}
+.file-row:hover {
+    background:var(--pico-card-sectioning-background-color);
+}
+.file-icon {
+    font-size:1.25rem;
+    min-width:1.5rem;
+    text-align:center;
+}
+.file-name-cell {
+    flex:1;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+}
+.file-meta {
+    font-size:0.78rem;
+    color:var(--pico-muted-color);
+    white-space:nowrap;
+}
+.file-actions {
+    display:flex;
+    gap:0.35rem;
+}
+.file-actions button {
+    padding:0.2rem 0.5rem;
+    font-size:0.78rem;
+    margin:0;
+}
+</style>
+
+<script>
+(function() {
+    'use strict';
+
+    let currentPath = '';
+
+    function formatBytes(bytes) {
+        if (bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    }
+
+    function formatDate(ts) {
+        return new Date(ts * 1000).toLocaleDateString(undefined, {month:'short', day:'numeric', year:'numeric'});
+    }
+
+    function getFileIcon(name) {
+        const ext = name.split('.').pop().toLowerCase();
+        const icons = {
+            pdf: '📄', txt: '📝', md: '📝', doc: '📝', docx: '📝',
+            jpg: '🖼️', jpeg: '🖼️', png: '🖼️', gif: '🖼️', webp: '🖼️', svg: '🖼️',
+            mp4: '🎬', mov: '🎬', avi: '🎬', mkv: '🎬',
+            mp3: '🎵', wav: '🎵', flac: '🎵',
+            zip: '📦', tar: '📦', gz: '📦', rar: '📦',
+            py: '🐍', js: '📜', ts: '📜', html: '📜', css: '📜', json: '📜', yaml: '📜', yml: '📜',
+            csv: '📊', xlsx: '📊', xls: '📊',
+        };
+        return icons[ext] || '📄';
+    }
+
+    // ── DOM helpers ──────────────────────────────────────────────────────────
+
+    function el(tag, attrs, children) {
+        const node = document.createElement(tag);
+        if (attrs) {
+            Object.entries(attrs).forEach(([k, v]) => {
+                if (k === 'style') {
+                    node.style.cssText = v;
+                } else if (k.startsWith('on')) {
+                    node.addEventListener(k.slice(2), v);
+                } else {
+                    node.setAttribute(k, v);
+                }
+            });
+        }
+        if (children) {
+            (Array.isArray(children) ? children : [children]).forEach(c => {
+                if (c == null) return;
+                node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+            });
+        }
+        return node;
+    }
+
+    // ── Stats ────────────────────────────────────────────────────────────────
+
+    function refreshStats() {
+        fetch('/api/workspace/stats')
+            .then(r => r.json())
+            .then(data => {
+                const stats = document.getElementById('workspace-stats');
+                stats.textContent = data.total_files + ' file' + (data.total_files !== 1 ? 's' : '') +
+                    ' · ' + formatBytes(data.total_size) + ' total';
+            })
+            .catch(() => {});
+    }
+
+    // ── Breadcrumb ───────────────────────────────────────────────────────────
+
+    function updateBreadcrumb(path) {
+        const ol = document.getElementById('breadcrumb-list');
+        while (ol.firstChild) ol.removeChild(ol.firstChild);
+
+        const rootLi = document.createElement('li');
+        const rootA = document.createElement('a');
+        rootA.href = '#';
+        rootA.textContent = 'Workspace';
+        rootA.setAttribute('aria-label', 'Workspace root');
+        rootA.addEventListener('click', function(e) { e.preventDefault(); navigateTo(''); });
+        rootLi.appendChild(rootA);
+        ol.appendChild(rootLi);
+
+        if (path) {
+            const parts = path.split('/');
+            let accumulated = '';
+            parts.forEach((part, i) => {
+                accumulated += (i > 0 ? '/' : '') + part;
+                const isLast = i === parts.length - 1;
+                const sep = document.createTextNode(' / ');
+                const li = document.createElement('li');
+                if (isLast) {
+                    li.setAttribute('aria-current', 'page');
+                    li.style.color = 'var(--pico-muted-color)';
+                    li.appendChild(sep);
+                    li.appendChild(document.createTextNode(part));
+                } else {
+                    const acc = accumulated;
+                    const a = document.createElement('a');
+                    a.href = '#';
+                    a.textContent = part;
+                    a.addEventListener('click', function(e) { e.preventDefault(); navigateTo(acc); });
+                    li.appendChild(sep);
+                    li.appendChild(a);
+                }
+                ol.appendChild(li);
+            });
+        }
+    }
+
+    // ── File list ────────────────────────────────────────────────────────────
+
+    function renderFileList(entries) {
+        const container = document.getElementById('file-list');
+        while (container.firstChild) container.removeChild(container.firstChild);
+
+        if (!Array.isArray(entries) || entries.length === 0) {
+            const p = document.createElement('p');
+            p.textContent = 'No files here yet. Upload something!';
+            p.style.cssText = 'text-align:center; color:var(--pico-muted-color); padding:2rem 0;';
+            container.appendChild(p);
+            return;
+        }
+
+        entries.forEach(e => {
+            const row = document.createElement('div');
+            row.className = 'file-row';
+            row.setAttribute('role', 'row');
+
+            // Icon
+            const iconSpan = document.createElement('span');
+            iconSpan.className = 'file-icon';
+            iconSpan.setAttribute('aria-hidden', 'true');
+            iconSpan.textContent = e.is_dir ? '📁' : getFileIcon(e.name);
+            row.appendChild(iconSpan);
+
+            // Name cell
+            const nameCell = document.createElement('span');
+            nameCell.className = 'file-name-cell';
+            if (e.is_dir) {
+                const a = document.createElement('a');
+                a.href = '#';
+                a.textContent = e.name;
+                a.setAttribute('aria-label', 'Open folder ' + e.name);
+                a.addEventListener('click', function(ev) { ev.preventDefault(); navigateTo(e.path); });
+                nameCell.appendChild(a);
+            } else {
+                nameCell.textContent = e.name;
+            }
+            row.appendChild(nameCell);
+
+            // Meta
+            const meta = document.createElement('span');
+            meta.className = 'file-meta';
+            meta.textContent = (e.is_dir ? '' : formatBytes(e.size) + ' · ') + formatDate(e.modified);
+            row.appendChild(meta);
+
+            // Actions
+            const actions = document.createElement('div');
+            actions.className = 'file-actions';
+            const delBtn = document.createElement('button');
+            delBtn.className = 'outline';
+            delBtn.textContent = 'Delete';
+            delBtn.setAttribute('aria-label', 'Delete ' + e.name);
+            delBtn.addEventListener('click', function() { deleteItem(e.path, e.name); });
+            actions.appendChild(delBtn);
+            row.appendChild(actions);
+
+            container.appendChild(row);
+        });
+    }
+
+    function refreshList() {
+        const url = '/api/workspace/files' + (currentPath ? '?path=' + encodeURIComponent(currentPath) : '');
+        fetch(url)
+            .then(r => r.json())
+            .then(renderFileList)
+            .catch(() => {
+                const container = document.getElementById('file-list');
+                while (container.firstChild) container.removeChild(container.firstChild);
+                const p = document.createElement('p');
+                p.textContent = 'Error loading files.';
+                p.style.color = 'var(--pico-primary)';
+                container.appendChild(p);
+            });
+    }
+
+    // ── Actions ──────────────────────────────────────────────────────────────
+
+    function navigateTo(path) {
+        currentPath = path;
+        updateBreadcrumb(path);
+        refreshList();
+    }
+
+    async function uploadFiles(files) {
+        if (!files || files.length === 0) return;
+        let uploaded = 0;
+        let failed = 0;
+        for (const file of Array.from(files)) {
+            const fd = new FormData();
+            fd.append('file', file);
+            const url = '/api/workspace/files/upload' + (currentPath ? '?path=' + encodeURIComponent(currentPath) : '');
+            try {
+                const resp = await fetch(url, {method: 'POST', body: fd});
+                if (resp.ok) {
+                    uploaded++;
+                } else {
+                    const data = await resp.json().catch(() => ({}));
+                    failed++;
+                    showToast((data.error || 'Upload failed') + ': ' + file.name, 'error');
+                }
+            } catch (err) {
+                failed++;
+                showToast('Upload error: ' + file.name, 'error');
+            }
+        }
+        if (uploaded > 0) {
+            showToast(uploaded + ' file' + (uploaded > 1 ? 's' : '') + ' uploaded');
+        }
+        document.getElementById('file-input').value = '';
+        refreshList();
+        refreshStats();
+    }
+
+    async function deleteItem(itemPath, name) {
+        if (!confirm('Delete "' + name + '"?')) return;
+        try {
+            const resp = await fetch('/api/workspace/files/' + encodeURIComponent(itemPath), {method: 'DELETE'});
+            const data = await resp.json().catch(() => ({}));
+            if (resp.ok) {
+                showToast('"' + name + '" deleted');
+                refreshList();
+                refreshStats();
+            } else {
+                showToast(data.error || 'Delete failed', 'error');
+            }
+        } catch (err) {
+            showToast('Error deleting item', 'error');
+        }
+    }
+
+    async function createFolder() {
+        const name = prompt('Folder name:');
+        if (!name || !name.trim()) return;
+        const folderPath = currentPath ? currentPath + '/' + name.trim() : name.trim();
+        try {
+            const resp = await fetch('/api/workspace/mkdir', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({path: folderPath}),
+            });
+            const data = await resp.json().catch(() => ({}));
+            if (resp.ok) {
+                showToast('Folder created');
+                refreshList();
+            } else {
+                showToast(data.error || 'Failed to create folder', 'error');
+            }
+        } catch (err) {
+            showToast('Error creating folder', 'error');
+        }
+    }
+
+    // ── Wire up events ───────────────────────────────────────────────────────
+
+    document.addEventListener('DOMContentLoaded', function() {
+        document.getElementById('upload-btn').addEventListener('click', function() {
+            document.getElementById('file-input').click();
+        });
+        document.getElementById('mkdir-btn').addEventListener('click', createFolder);
+        document.getElementById('file-input').addEventListener('change', function() {
+            uploadFiles(this.files);
+        });
+
+        // Drag and drop
+        const dropHint = document.getElementById('drop-hint');
+        document.body.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            dropHint.style.display = 'block';
+        });
+        document.body.addEventListener('dragleave', function(e) {
+            if (!e.relatedTarget) {
+                dropHint.style.display = 'none';
+            }
+        });
+        document.body.addEventListener('drop', function(e) {
+            e.preventDefault();
+            dropHint.style.display = 'none';
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                uploadFiles(e.dataTransfer.files);
+            }
+        });
+
+        // Initial render
+        updateBreadcrumb('');
+        refreshList();
+        refreshStats();
+    });
+})();
+</script>
+{% endblock %}

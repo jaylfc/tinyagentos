@@ -1,0 +1,151 @@
+from __future__ import annotations
+
+import logging
+import shutil
+from pathlib import Path
+
+from fastapi import APIRouter, Request, UploadFile, File
+from fastapi.responses import HTMLResponse, JSONResponse
+from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+USER_WORKSPACE_DIR_NAME = "workspace"
+
+
+def _get_workspace_root(request: Request) -> Path:
+    """Return the user workspace root, creating it on first access."""
+    data_dir = request.app.state.config_path.parent
+    ws = data_dir / USER_WORKSPACE_DIR_NAME
+    ws.mkdir(parents=True, exist_ok=True)
+    return ws
+
+
+def _resolve_safe(workspace: Path, subpath: str) -> Path | None:
+    """Resolve subpath relative to workspace, returning None if outside workspace."""
+    try:
+        resolved = (workspace / subpath).resolve()
+        if resolved.is_relative_to(workspace.resolve()):
+            return resolved
+        return None
+    except Exception:
+        return None
+
+
+class MkdirRequest(BaseModel):
+    path: str
+
+
+@router.get("/workspace", response_class=HTMLResponse)
+async def user_workspace_page(request: Request):
+    templates = request.app.state.templates
+    return templates.TemplateResponse(request, "user_workspace.html", {
+        "active_page": "workspace",
+    })
+
+
+@router.get("/api/workspace/files")
+async def api_list_files(request: Request, path: str = ""):
+    """List files and directories in the user workspace, optionally in a subdirectory."""
+    workspace = _get_workspace_root(request)
+
+    if path:
+        target = _resolve_safe(workspace, path)
+        if target is None:
+            return JSONResponse({"error": "Invalid path"}, status_code=400)
+        if not target.exists() or not target.is_dir():
+            return JSONResponse({"error": "Directory not found"}, status_code=404)
+    else:
+        target = workspace
+
+    entries = []
+    for item in sorted(target.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower())):
+        stat = item.stat()
+        rel = item.relative_to(workspace)
+        entries.append({
+            "name": item.name,
+            "path": str(rel),
+            "is_dir": item.is_dir(),
+            "size": stat.st_size if item.is_file() else 0,
+            "modified": stat.st_mtime,
+        })
+
+    return entries
+
+
+@router.post("/api/workspace/files/upload")
+async def api_upload_file(request: Request, path: str = "", file: UploadFile = File(...)):
+    """Upload a file to the user workspace, optionally into a subdirectory."""
+    workspace = _get_workspace_root(request)
+
+    if path:
+        target_dir = _resolve_safe(workspace, path)
+        if target_dir is None:
+            return JSONResponse({"error": "Invalid path"}, status_code=400)
+        target_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        target_dir = workspace
+
+    filename = Path(file.filename).name  # strip any path component from filename
+    dest = target_dir / filename
+    content = await file.read()
+    dest.write_bytes(content)
+    rel = dest.relative_to(workspace)
+    return {"name": filename, "path": str(rel), "size": len(content), "status": "uploaded"}
+
+
+@router.post("/api/workspace/mkdir")
+async def api_mkdir(request: Request, body: MkdirRequest):
+    """Create a directory in the user workspace."""
+    workspace = _get_workspace_root(request)
+
+    if not body.path or not body.path.strip():
+        return JSONResponse({"error": "path is required"}, status_code=400)
+
+    target = _resolve_safe(workspace, body.path.strip())
+    if target is None:
+        return JSONResponse({"error": "Invalid path"}, status_code=400)
+
+    target.mkdir(parents=True, exist_ok=True)
+    rel = target.relative_to(workspace)
+    return {"path": str(rel), "status": "created"}
+
+
+@router.delete("/api/workspace/files/{file_path:path}")
+async def api_delete_file(request: Request, file_path: str):
+    """Delete a file or directory from the user workspace."""
+    workspace = _get_workspace_root(request)
+
+    target = _resolve_safe(workspace, file_path)
+    if target is None:
+        return JSONResponse({"error": "Invalid path"}, status_code=400)
+
+    if not target.exists():
+        return JSONResponse({"error": f"'{file_path}' not found"}, status_code=404)
+
+    if target.is_dir():
+        shutil.rmtree(target)
+    else:
+        target.unlink()
+
+    return {"path": file_path, "status": "deleted"}
+
+
+@router.get("/api/workspace/stats")
+async def api_workspace_stats(request: Request):
+    """Return total file count and total size of the user workspace."""
+    workspace = _get_workspace_root(request)
+
+    total_files = 0
+    total_size = 0
+    for item in workspace.rglob("*"):
+        if item.is_file():
+            total_files += 1
+            total_size += item.stat().st_size
+
+    return {
+        "total_files": total_files,
+        "total_size": total_size,
+    }
