@@ -92,6 +92,34 @@ class TestSettingsRoutes:
         assert resp.json()["frequency"] == "off"
 
     @pytest.mark.asyncio
+    async def test_get_container_runtime(self, client):
+        resp = await client.get("/api/settings/container-runtime")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "active" in data
+        assert "detected" in data
+        assert "configured" in data
+
+    @pytest.mark.asyncio
+    async def test_set_container_runtime(self, client):
+        resp = await client.put(
+            "/api/settings/container-runtime",
+            content='{"runtime": "docker"}',
+            headers={"content-type": "application/json"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "updated"
+
+    @pytest.mark.asyncio
+    async def test_set_invalid_runtime(self, client):
+        resp = await client.put(
+            "/api/settings/container-runtime",
+            content='{"runtime": "invalid"}',
+            headers={"content-type": "application/json"},
+        )
+        assert resp.status_code == 400
+
+    @pytest.mark.asyncio
     async def test_webhooks_crud(self, client):
         resp = await client.post("/api/settings/webhooks", json={
             "url": "https://example.com/hook",

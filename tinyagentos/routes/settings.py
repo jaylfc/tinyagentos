@@ -424,6 +424,44 @@ async def toggle_notification_pref(request: Request, event_type: str):
     return {"status": "updated", "event_type": event_type, "muted": muted}
 
 
+@router.get("/api/settings/container-runtime")
+async def get_container_runtime(request: Request):
+    """Return container runtime status."""
+    from tinyagentos.containers.backend import detect_runtime, get_backend
+    try:
+        backend = get_backend()
+        active = backend.__class__.__name__.replace("Backend", "").lower()
+    except RuntimeError:
+        active = "none"
+    detected = detect_runtime()
+    configured = getattr(request.app.state.config, "container_runtime", "auto")
+    return {"active": active, "detected": detected, "configured": configured}
+
+
+@router.put("/api/settings/container-runtime")
+async def set_container_runtime(request: Request):
+    """Set the container runtime preference."""
+    body = await request.json()
+    runtime = body.get("runtime", "auto")
+    if runtime not in ("auto", "lxc", "docker", "podman"):
+        return JSONResponse({"error": f"Invalid runtime: {runtime}"}, status_code=400)
+    config = request.app.state.config
+    config.container_runtime = runtime
+    await save_config_locked(config, request.app.state.config_path)
+    # Apply immediately
+    from tinyagentos.containers.backend import detect_runtime, set_backend
+    from tinyagentos.containers.lxc import LXCBackend
+    from tinyagentos.containers.docker import DockerBackend
+    effective = runtime
+    if runtime == "auto":
+        effective = detect_runtime()
+    if effective == "lxc":
+        set_backend(LXCBackend())
+    elif effective in ("docker", "podman"):
+        set_backend(DockerBackend(binary=effective))
+    return {"status": "updated", "runtime": effective}
+
+
 @router.get("/api/settings/update-check")
 async def check_for_updates(request: Request):
     """Check if a newer version of TinyAgentOS is available on GitHub."""

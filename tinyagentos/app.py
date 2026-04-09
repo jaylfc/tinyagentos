@@ -146,6 +146,17 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.health_monitor = monitor
         await monitor.start()
         await cluster_manager.start()
+        # Detect and set container runtime
+        from tinyagentos.containers.backend import detect_runtime, set_backend
+        from tinyagentos.containers.lxc import LXCBackend
+        from tinyagentos.containers.docker import DockerBackend
+        runtime = getattr(config, "container_runtime", "auto")
+        if runtime == "auto":
+            runtime = detect_runtime()
+        if runtime == "lxc":
+            set_backend(LXCBackend())
+        elif runtime in ("docker", "podman"):
+            set_backend(DockerBackend(binary=runtime))
         yield
         adapter_manager.stop_all()
         for c in list(getattr(app.state, "channel_hub_connectors", {}).values()):
@@ -210,6 +221,21 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     app.state.adapter_manager = adapter_manager
     app.state.channel_hub_connectors = {}
     app.state.deploy_tasks = {}
+
+    # Detect and set container runtime (eager, so tests work without lifespan)
+    try:
+        from tinyagentos.containers.backend import detect_runtime, set_backend
+        from tinyagentos.containers.lxc import LXCBackend
+        from tinyagentos.containers.docker import DockerBackend
+        _runtime = getattr(config, "container_runtime", "auto")
+        if _runtime == "auto":
+            _runtime = detect_runtime()
+        if _runtime == "lxc":
+            set_backend(LXCBackend())
+        elif _runtime in ("docker", "podman"):
+            set_backend(DockerBackend(binary=_runtime))
+    except Exception:
+        pass  # Container runtime detection is non-fatal
 
     # Mount static files
     static_dir = PROJECT_DIR / "static"
