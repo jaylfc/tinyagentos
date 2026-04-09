@@ -246,6 +246,7 @@ CI runs automatically on every push (Python 3.10-3.13 + security audit).
 - [ ] AI-aware desktop with containerised app streaming (#6) — wrap apps with pre-wired MCP, stream via browser/Moonlight, companion app launcher
 - [ ] Mobile worker native apps (iOS/Android)
 - [ ] Dynamic NPU core allocation (#13)
+- [ ] Ray as optional cluster backend for large-scale deployments (#23)
 
 ## Contributing
 
