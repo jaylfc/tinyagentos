@@ -83,9 +83,14 @@ async def client(app):
     if streaming_sessions._db is not None:
         await streaming_sessions.close()
     await streaming_sessions.init()
+    expert_agents = app.state.expert_agents
+    if expert_agents._db is not None:
+        await expert_agents.close()
+    await expert_agents.init()
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
+    await expert_agents.close()
     await streaming_sessions.close()
     await shared_folders.close()
     await agent_messages.close()
@@ -206,9 +211,14 @@ async def client_with_qmd(app_with_qmd):
     if streaming_sessions._db is not None:
         await streaming_sessions.close()
     await streaming_sessions.init()
+    expert_agents = app_with_qmd.state.expert_agents
+    if expert_agents._db is not None:
+        await expert_agents.close()
+    await expert_agents.init()
     transport = ASGITransport(app=app_with_qmd)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
+    await expert_agents.close()
     await streaming_sessions.close()
     await shared_folders.close()
     await agent_messages.close()

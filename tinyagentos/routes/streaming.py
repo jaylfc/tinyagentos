@@ -126,3 +126,47 @@ async def swap_agent(request: Request, session_id: str, body: SwapAgentRequest):
         return JSONResponse({"error": "Session not found"}, status_code=404)
     await store.swap_agent(session_id, body.agent_name, body.agent_type)
     return {"session_id": session_id, "agent_name": body.agent_name, "agent_type": body.agent_type}
+
+
+# ---------------------------------------------------------------------------
+# API — expert agents
+# ---------------------------------------------------------------------------
+
+@router.get("/api/streaming-apps/experts")
+async def list_experts(request: Request):
+    store = request.app.state.expert_agents
+    agents = await store.list_all()
+    return {"experts": agents}
+
+
+@router.get("/api/streaming-apps/experts/{app_id}")
+async def get_expert(request: Request, app_id: str):
+    store = request.app.state.expert_agents
+    agent = await store.get_by_app(app_id)
+    if agent is None:
+        return JSONResponse({"error": "Expert agent not found"}, status_code=404)
+    return agent
+
+
+class UpdatePromptRequest(BaseModel):
+    system_prompt: str
+
+
+@router.put("/api/streaming-apps/experts/{app_id}/prompt")
+async def update_expert_prompt(request: Request, app_id: str, body: UpdatePromptRequest):
+    store = request.app.state.expert_agents
+    agent = await store.get_by_app(app_id)
+    if agent is None:
+        return JSONResponse({"error": "Expert agent not found"}, status_code=404)
+    await store.update_prompt(app_id, body.system_prompt)
+    return {"app_id": app_id, "system_prompt": body.system_prompt}
+
+
+@router.post("/api/streaming-apps/experts/{app_id}/reset")
+async def reset_expert(request: Request, app_id: str):
+    store = request.app.state.expert_agents
+    agent = await store.get_by_app(app_id)
+    if agent is None:
+        return JSONResponse({"error": "Expert agent not found"}, status_code=404)
+    await store.reset(app_id)
+    return {"app_id": app_id, "status": "reset"}
