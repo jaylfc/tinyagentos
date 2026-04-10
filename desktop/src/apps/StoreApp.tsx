@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { ShoppingBag, Search, Download, Trash2, Check, Package, Loader2, Bot, Brain, Server, Plug, Wrench, Image, Music, Video, Globe, Home, Cpu, Gamepad2 } from "lucide-react";
+import { Button, Card, CardContent, CardFooter, CardHeader, Input } from "@/components/ui";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -162,43 +163,48 @@ function AppCard({ app, onInstall, onUninstall }: { app: CatalogApp; onInstall: 
   };
 
   return (
-    <div className="bg-white/[0.04] border border-white/[0.06] rounded-2xl p-5 flex flex-col gap-3 hover:-translate-y-0.5 hover:shadow-2xl hover:border-white/[0.12] transition-all duration-200 backdrop-blur-sm">
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
-            style={{ background: TYPE_ICON_GRADIENTS[app.type] ?? "rgba(255,255,255,0.06)" }}
-          >
-            <Package className="w-5 h-5 text-white/60" />
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="font-medium text-white/90 truncate text-sm">{app.name}</span>
-              {app.installed && <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
+    <Card className="flex flex-col rounded-2xl hover:-translate-y-0.5 hover:shadow-2xl hover:border-white/[0.12] transition-all duration-200">
+      <CardHeader className="p-5 pb-2">
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
+              style={{ background: TYPE_ICON_GRADIENTS[app.type] ?? "rgba(255,255,255,0.06)" }}
+            >
+              <Package className="w-5 h-5 text-white/60" />
             </div>
-            <span className="text-[11px] text-white/30">v{app.version}</span>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-white/90 truncate text-sm">{app.name}</span>
+                {app.installed && <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
+              </div>
+              <span className="text-[11px] text-white/30">v{app.version}</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-1" title={COMPAT_LABELS[app.compat]}>
+            <span className={`w-1.5 h-1.5 rounded-full ${COMPAT_COLORS[app.compat]}`} />
           </div>
         </div>
-        <div className="flex items-center gap-1" title={COMPAT_LABELS[app.compat]}>
-          <span className={`w-1.5 h-1.5 rounded-full ${COMPAT_COLORS[app.compat]}`} />
-        </div>
-      </div>
+      </CardHeader>
 
-      <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full w-fit ${TYPE_COLORS[app.type] ?? "bg-white/10 text-white/50"}`}>
-        {TYPE_LABELS[app.type] ?? app.type}
-      </span>
+      <CardContent className="px-5 py-2 flex flex-col gap-3 flex-1">
+        <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full w-fit ${TYPE_COLORS[app.type] ?? "bg-white/10 text-white/50"}`}>
+          {TYPE_LABELS[app.type] ?? app.type}
+        </span>
+        <p className="text-xs text-white/45 leading-relaxed flex-1">{app.description}</p>
+      </CardContent>
 
-      <p className="text-xs text-white/45 leading-relaxed flex-1">{app.description}</p>
-
-      <button
-        onClick={handleAction}
-        disabled={busy}
-        className={`mt-auto w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all duration-200 ${
-          app.installed ? "bg-red-500/10 text-red-400 hover:bg-red-500/20" : "bg-accent/15 text-accent hover:bg-accent/25"
-        } disabled:opacity-50`}
-      >
-        {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : app.installed ? <><Trash2 className="w-3.5 h-3.5" /> Uninstall</> : <><Download className="w-3.5 h-3.5" /> Install</>}
-      </button>
-    </div>
+      <CardFooter className="p-5 pt-2">
+        <Button
+          variant={app.installed ? "destructive" : "default"}
+          size="sm"
+          className="w-full"
+          onClick={handleAction}
+          disabled={busy}
+        >
+          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : app.installed ? <><Trash2 className="w-3.5 h-3.5" /> Uninstall</> : <><Download className="w-3.5 h-3.5" /> Install</>}
+        </Button>
+      </CardFooter>
+    </Card>
   );
 }
 
@@ -264,17 +270,17 @@ export function StoreApp({ windowId: _windowId }: { windowId: string }) {
       {isMobile ? (
         <div className="flex overflow-x-auto gap-2 px-3 py-2 border-b border-shell-border shrink-0">
           {CATEGORIES.map((cat) => (
-            <button
+            <Button
               key={cat.id}
+              variant="outline"
+              size="sm"
               onClick={() => setActiveCategory(cat.id)}
-              className={`whitespace-nowrap px-3 py-1 rounded-full text-xs ${
-                activeCategory === cat.id
-                  ? "bg-accent/15 text-accent"
-                  : "bg-shell-surface text-shell-text-secondary"
+              className={`whitespace-nowrap rounded-full ${
+                activeCategory === cat.id ? "bg-accent/15 text-accent border-accent/30" : ""
               }`}
             >
               {cat.label}
-            </button>
+            </Button>
           ))}
         </div>
       ) : (
@@ -285,23 +291,23 @@ export function StoreApp({ windowId: _windowId }: { windowId: string }) {
               <span className="text-sm font-medium text-shell-text">Store</span>
             </div>
           </div>
-          <nav className="flex-1 py-2">
+          <nav className="flex-1 py-2 px-2 space-y-0.5">
             {CATEGORIES.map((cat) => (
-              <button
+              <Button
                 key={cat.id}
+                variant="ghost"
+                size="sm"
                 onClick={() => setActiveCategory(cat.id)}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-xs transition-colors ${
-                  activeCategory === cat.id
-                    ? "bg-accent/15 text-accent"
-                    : "text-shell-text-secondary hover:bg-white/5 hover:text-shell-text"
+                className={`w-full justify-start gap-2.5 text-xs ${
+                  activeCategory === cat.id ? "bg-accent/15 text-accent hover:bg-accent/20 hover:text-accent" : ""
                 }`}
               >
                 <span className="shrink-0">{cat.icon}</span>
-                <span className="flex-1 truncate">{cat.label}</span>
+                <span className="flex-1 truncate text-left">{cat.label}</span>
                 {counts[cat.id] ? (
                   <span className="text-[10px] text-shell-text-tertiary">{counts[cat.id]}</span>
                 ) : null}
-              </button>
+              </Button>
             ))}
           </nav>
         </div>
@@ -319,13 +325,14 @@ export function StoreApp({ windowId: _windowId }: { windowId: string }) {
             <span className="text-xs text-shell-text-tertiary">{filtered.length} apps</span>
           </div>
           <div className="relative mt-3">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-shell-text-tertiary pointer-events-none" />
-            <input
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-shell-text-tertiary pointer-events-none z-10" />
+            <Input
               type="text"
               placeholder="Search..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full bg-shell-surface border border-shell-border rounded-lg pl-9 pr-4 py-1.5 text-sm text-shell-text placeholder:text-shell-text-tertiary focus:outline-none focus:border-accent/30 transition-colors"
+              className="pl-9"
+              aria-label="Search apps"
             />
           </div>
         </header>
