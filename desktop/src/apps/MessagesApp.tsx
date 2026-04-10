@@ -14,6 +14,16 @@ import {
   WifiOff,
   ChevronLeft,
 } from "lucide-react";
+import {
+  Button,
+  Card,
+  CardHeader,
+  CardTitle,
+  CardContent,
+  Input,
+  Textarea,
+  Label,
+} from "@/components/ui";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -413,13 +423,15 @@ export function MessagesApp({ windowId: _windowId }: { windowId: string }) {
           <MessageCircle size={15} />
           Messages
         </div>
-        <button
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={() => setShowCreate(true)}
-          className="p-1 rounded hover:bg-white/10 text-white/50 hover:text-white/80 transition-colors"
+          className="h-7 w-7"
           aria-label="New channel"
         >
           <Plus size={15} />
-        </button>
+        </Button>
       </div>
 
       {/* connection status */}
@@ -448,23 +460,20 @@ export function MessagesApp({ windowId: _windowId }: { windowId: string }) {
               <div className="px-3 py-1 text-[11px] text-white/20 italic">None yet</div>
             )}
             {section.items.map((ch) => (
-              <button
+              <Button
                 key={ch.id}
+                variant={selectedChannel === ch.id ? "secondary" : "ghost"}
                 onClick={() => setSelectedChannel(ch.id)}
-                className={`w-full text-left px-3 py-1.5 flex items-center gap-2 text-[13px] transition-colors ${
-                  selectedChannel === ch.id
-                    ? "bg-white/10 text-white"
-                    : "text-white/60 hover:bg-white/[0.05] hover:text-white/80"
-                }`}
+                className="w-full justify-start h-auto py-1.5 px-3 text-[13px] rounded-none font-normal"
                 aria-label={`Channel ${ch.name}`}
               >
-                <span className="truncate flex-1">{ch.name}</span>
+                <span className="truncate flex-1 text-left">{ch.name}</span>
                 {(unread[ch.id] ?? 0) > 0 && (
                   <span className="shrink-0 bg-blue-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
                     {unread[ch.id]}
                   </span>
                 )}
-              </button>
+              </Button>
             ))}
           </div>
         ))}
@@ -621,36 +630,35 @@ export function MessagesApp({ windowId: _windowId }: { windowId: string }) {
 
           {/* input area */}
           <div className="px-4 py-3 border-t border-white/[0.06] shrink-0">
-            <div className="flex items-end gap-2 bg-white/[0.06] rounded-xl border border-white/[0.08] px-3 py-2">
-              <button
+            <div className="flex items-end gap-2 bg-white/[0.06] rounded-xl border border-white/[0.08] px-2 py-1.5">
+              <Button
+                variant="ghost"
+                size="icon"
                 onClick={handleFileUpload}
-                className="p-1 text-white/30 hover:text-white/60 transition-colors shrink-0 mb-0.5"
+                className="h-8 w-8 shrink-0 mb-0.5"
                 aria-label="Upload file"
               >
                 <Paperclip size={16} />
-              </button>
-              <textarea
+              </Button>
+              <Textarea
                 ref={inputRef}
                 value={input}
                 onChange={(e) => handleInputChange(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder={`Message #${currentChannel?.name ?? ""}...`}
                 rows={1}
-                className="flex-1 bg-transparent text-[13px] text-white/90 placeholder-white/25 outline-none resize-none max-h-[120px]"
+                className="flex-1 bg-transparent border-0 px-1 py-1.5 min-h-0 text-[13px] focus-visible:ring-0 focus-visible:border-0 max-h-[120px]"
                 aria-label="Message input"
               />
-              <button
+              <Button
+                size="icon"
                 onClick={sendMessage}
                 disabled={!input.trim()}
-                className={`p-1.5 rounded-lg transition-colors shrink-0 mb-0.5 ${
-                  input.trim()
-                    ? "bg-blue-500 text-white hover:bg-blue-400"
-                    : "text-white/15"
-                }`}
+                className="h-8 w-8 shrink-0 mb-0.5"
                 aria-label="Send message"
               >
                 <Send size={15} />
-              </button>
+              </Button>
             </div>
           </div>
         </>
@@ -672,31 +680,34 @@ export function MessagesApp({ windowId: _windowId }: { windowId: string }) {
       {/* ---- Create Channel Dialog ---- */}
       {showCreate && (
         <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-zinc-900 border border-white/10 rounded-xl w-[380px] shadow-2xl">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
-              <span className="text-sm font-medium">New Channel</span>
-              <button
+          <Card className="w-[380px] shadow-2xl bg-zinc-900">
+            <CardHeader className="flex flex-row items-center justify-between gap-2 p-0 px-4 py-3 border-b border-white/[0.06]">
+              <CardTitle className="text-sm font-medium">New Channel</CardTitle>
+              <Button
+                variant="ghost"
+                size="icon"
                 onClick={() => setShowCreate(false)}
-                className="p-1 hover:bg-white/10 rounded transition-colors text-white/40"
+                className="h-7 w-7"
                 aria-label="Close"
               >
                 <X size={15} />
-              </button>
-            </div>
-            <div className="p-4 space-y-3">
-              <div>
-                <label className="block text-[11px] text-white/40 mb-1 font-medium uppercase tracking-wider">Name</label>
-                <input
+              </Button>
+            </CardHeader>
+            <CardContent className="p-4 pt-4 space-y-3">
+              <div className="space-y-1">
+                <Label htmlFor="new-channel-name" className="block uppercase tracking-wider">Name</Label>
+                <Input
+                  id="new-channel-name"
                   value={newChannel.name}
                   onChange={(e) => setNewChannel((s) => ({ ...s, name: e.target.value }))}
                   placeholder="general"
-                  className="w-full bg-white/[0.06] border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/20 outline-none focus:border-blue-500/50"
                   aria-label="Channel name"
                 />
               </div>
-              <div>
-                <label className="block text-[11px] text-white/40 mb-1 font-medium uppercase tracking-wider">Type</label>
+              <div className="space-y-1">
+                <Label htmlFor="new-channel-type" className="block uppercase tracking-wider">Type</Label>
                 <select
+                  id="new-channel-type"
                   value={newChannel.type}
                   onChange={(e) => setNewChannel((s) => ({ ...s, type: e.target.value as "topic" | "group" }))}
                   className="w-full bg-white/[0.06] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500/50"
@@ -706,25 +717,25 @@ export function MessagesApp({ windowId: _windowId }: { windowId: string }) {
                   <option value="group">Group</option>
                 </select>
               </div>
-              <div>
-                <label className="block text-[11px] text-white/40 mb-1 font-medium uppercase tracking-wider">Description</label>
-                <input
+              <div className="space-y-1">
+                <Label htmlFor="new-channel-description" className="block uppercase tracking-wider">Description</Label>
+                <Input
+                  id="new-channel-description"
                   value={newChannel.description}
                   onChange={(e) => setNewChannel((s) => ({ ...s, description: e.target.value }))}
                   placeholder="What's this channel about?"
-                  className="w-full bg-white/[0.06] border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/20 outline-none focus:border-blue-500/50"
                   aria-label="Channel description"
                 />
               </div>
-              <button
+              <Button
                 onClick={createChannel}
                 disabled={!newChannel.name.trim()}
-                className="w-full bg-blue-500 hover:bg-blue-400 disabled:opacity-30 disabled:hover:bg-blue-500 text-white text-sm font-medium py-2 rounded-lg transition-colors"
+                className="w-full"
               >
                 Create Channel
-              </button>
-            </div>
-          </div>
+              </Button>
+            </CardContent>
+          </Card>
         </div>
       )}
     </div>
