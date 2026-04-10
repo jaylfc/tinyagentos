@@ -101,10 +101,10 @@ export function WidgetLayer() {
           className="widget-grid"
           layout={gridLayout}
           cols={12}
-          rowHeight={60}
+          rowHeight={72}
           width={containerWidth}
-          margin={[12, 12]}
-          containerPadding={[16, 16]}
+          margin={[16, 16]}
+          containerPadding={[24, 24]}
           isDraggable
           isResizable
           compactType={null}

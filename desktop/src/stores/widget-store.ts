@@ -20,11 +20,11 @@ interface WidgetStore {
 }
 
 const WIDGET_DEFAULTS: Record<string, { w: number; h: number }> = {
-  clock: { w: 3, h: 2 },
-  "agent-status": { w: 3, h: 3 },
-  "quick-notes": { w: 3, h: 4 },
-  "system-stats": { w: 3, h: 2 },
-  weather: { w: 3, h: 2 },
+  clock: { w: 4, h: 3 },
+  "agent-status": { w: 4, h: 4 },
+  "quick-notes": { w: 4, h: 5 },
+  "system-stats": { w: 4, h: 3 },
+  weather: { w: 4, h: 3 },
 };
 
 let nextId = 1;
@@ -52,8 +52,8 @@ function findOpenSpot(widgets: Widget[], w: number, h: number): { x: number; y: 
 
 export const useWidgetStore = create<WidgetStore>((set, get) => ({
   widgets: [
-    { id: "default-clock", type: "clock", x: 0, y: 0, w: 3, h: 2 },
-    { id: "default-agents", type: "agent-status", x: 3, y: 0, w: 3, h: 3 },
+    { id: "default-clock", type: "clock", x: 0, y: 0, w: 4, h: 3 },
+    { id: "default-agents", type: "agent-status", x: 4, y: 0, w: 4, h: 4 },
   ],
   showWidgets: true,
 
