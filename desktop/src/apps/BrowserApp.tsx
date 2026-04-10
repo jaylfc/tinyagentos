@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -9,6 +9,7 @@ import {
   Bookmark,
   Bot,
   Star,
+  AlertTriangle,
 } from "lucide-react";
 
 const DEFAULT_URL = "https://duckduckgo.com";
@@ -31,6 +32,15 @@ function normalizeUrl(input: string): string {
   return `https://${trimmed}`;
 }
 
+function isIOS(): boolean {
+  return (
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+  );
+}
+
+type BrowserMode = "embedded" | "external";
+
 export function BrowserApp({ windowId: _windowId }: { windowId: string }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [url, setUrl] = useState(DEFAULT_URL);
@@ -38,8 +48,12 @@ export function BrowserApp({ windowId: _windowId }: { windowId: string }) {
   const [history, setHistory] = useState<string[]>([DEFAULT_URL]);
   const [historyIndex, setHistoryIndex] = useState(0);
   const [loadError, setLoadError] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [agentTooltip, setAgentTooltip] = useState(false);
+  const [mode, setMode] = useState<BrowserMode>(
+    isIOS() ? "external" : "embedded",
+  );
 
   const canGoBack = historyIndex > 0;
   const canGoForward = historyIndex < history.length - 1;
@@ -50,6 +64,7 @@ export function BrowserApp({ windowId: _windowId }: { windowId: string }) {
       setUrl(normalized);
       setInputValue(normalized);
       setLoadError(false);
+      setLoading(true);
       setHistory((prev) => [...prev.slice(0, historyIndex + 1), normalized]);
       setHistoryIndex((i) => i + 1);
     },
@@ -64,6 +79,7 @@ export function BrowserApp({ windowId: _windowId }: { windowId: string }) {
     setUrl(target);
     setInputValue(target);
     setLoadError(false);
+    setLoading(true);
   }, [canGoBack, history, historyIndex]);
 
   const goForward = useCallback(() => {
@@ -74,10 +90,12 @@ export function BrowserApp({ windowId: _windowId }: { windowId: string }) {
     setUrl(target);
     setInputValue(target);
     setLoadError(false);
+    setLoading(true);
   }, [canGoForward, history, historyIndex]);
 
   const refresh = useCallback(() => {
     setLoadError(false);
+    setLoading(true);
     if (iframeRef.current) {
       iframeRef.current.src = proxyUrl(url);
     }
@@ -99,21 +117,53 @@ export function BrowserApp({ windowId: _windowId }: { windowId: string }) {
     });
   }, [url]);
 
+  const handleIframeLoad = useCallback(() => {
+    setLoading(false);
+    // Check if iframe loaded successfully by trying to detect error responses
+    try {
+      const iframe = iframeRef.current;
+      if (iframe) {
+        // We can't access cross-origin content, but if the proxy returned
+        // an error JSON, it will be same-origin and we can check
+        try {
+          const doc = iframe.contentDocument;
+          if (doc) {
+            const body = doc.body?.textContent?.trim() ?? "";
+            // Proxy returns JSON errors like {"error": "..."}
+            if (body.startsWith("{") && body.includes('"error"')) {
+              setLoadError(true);
+              return;
+            }
+          }
+        } catch {
+          // Cross-origin access blocked — means content loaded (good)
+        }
+      }
+    } catch {
+      // Ignore any inspection errors
+    }
+  }, []);
+
   const handleIframeError = useCallback(() => {
+    setLoading(false);
     setLoadError(true);
+  }, []);
+
+  // Auto-detect: if on iOS, start in external mode
+  useEffect(() => {
+    if (isIOS()) {
+      setMode("external");
+    }
+  }, []);
+
+  // When in external mode and URL changes, don't auto-open — user clicks the button
+  const toggleMode = useCallback(() => {
+    setMode((m) => (m === "embedded" ? "external" : "embedded"));
+    setLoadError(false);
   }, []);
 
   return (
     <div className="flex flex-col h-full">
-      {/* Notice banner */}
-      <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-800 text-xs text-amber-700 dark:text-amber-400">
-        <Globe size={12} className="shrink-0" />
-        <span>
-          Some sites may not render correctly in the embedded viewer. Use
-          &lsquo;Open in Tab&rsquo; for full functionality.
-        </span>
-      </div>
-
       {/* Navigation bar */}
       <form
         onSubmit={handleSubmit}
@@ -143,7 +193,10 @@ export function BrowserApp({ windowId: _windowId }: { windowId: string }) {
           className="p-1.5 rounded-md hover:bg-shell-surface-hover transition-colors"
           aria-label="Refresh"
         >
-          <RotateCw size={16} className="text-shell-text-secondary" />
+          <RotateCw
+            size={16}
+            className={`text-shell-text-secondary ${loading ? "animate-spin" : ""}`}
+          />
         </button>
 
         <div className="flex-1 flex items-center gap-2 px-2.5 py-1 rounded-md bg-shell-bg-deep border border-shell-border">
@@ -158,16 +211,39 @@ export function BrowserApp({ windowId: _windowId }: { windowId: string }) {
           />
         </div>
 
-        {/* Action buttons */}
+        {/* Open in Tab — prominent on all platforms */}
         <button
           type="button"
           onClick={openInTab}
-          className="flex items-center gap-1 px-2 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium transition-colors"
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium transition-colors"
           aria-label="Open in new tab"
           title="Open in new tab"
         >
           <ExternalLink size={14} />
           <span className="hidden sm:inline">Open in Tab</span>
+        </button>
+
+        {/* Mode toggle */}
+        <button
+          type="button"
+          onClick={toggleMode}
+          className={`p-1.5 rounded-md transition-colors text-xs font-medium ${
+            mode === "embedded"
+              ? "bg-green-600/20 text-green-700 dark:text-green-400 border border-green-600/30 hover:bg-green-600/30"
+              : "bg-shell-surface-hover text-shell-text-secondary hover:bg-shell-surface-hover/80"
+          }`}
+          aria-label={
+            mode === "embedded"
+              ? "Switch to external mode"
+              : "Switch to embedded mode"
+          }
+          title={
+            mode === "embedded"
+              ? "Embedded mode (click for external)"
+              : "External mode (click for embedded)"
+          }
+        >
+          <Globe size={14} />
         </button>
 
         <button
@@ -207,7 +283,10 @@ export function BrowserApp({ windowId: _windowId }: { windowId: string }) {
 
       {/* Bookmarks bar */}
       <div className="flex items-center gap-1 px-2 py-1 bg-shell-surface/50 border-b border-shell-border">
-        <Bookmark size={12} className="text-shell-text-tertiary shrink-0 mr-1" />
+        <Bookmark
+          size={12}
+          className="text-shell-text-tertiary shrink-0 mr-1"
+        />
         {BOOKMARKS.map((bm) => (
           <button
             key={bm.url}
@@ -223,34 +302,77 @@ export function BrowserApp({ windowId: _windowId }: { windowId: string }) {
       </div>
 
       {/* Browser content */}
-      {loadError ? (
+      {mode === "external" ? (
+        /* External mode — show prompt to open in tab */
         <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center">
           <Globe size={48} className="text-shell-text-tertiary" />
           <div>
             <h3 className="text-lg font-medium text-shell-text mb-1">
-              Could not load this page
+              External Browser Mode
             </h3>
             <p className="text-sm text-shell-text-secondary max-w-md">
-              This site blocks embedded viewing. You can open it directly in a
-              new browser tab instead.
+              Pages open in a new browser tab for full compatibility. This is the
+              default on iOS and recommended for sites that don't render well
+              embedded.
             </p>
           </div>
           <button
             type="button"
             onClick={openInTab}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition-colors"
+            className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors"
           >
-            <ExternalLink size={16} />
+            <ExternalLink size={18} />
+            Open {new URL(url).hostname} in Tab
+          </button>
+          <button
+            type="button"
+            onClick={toggleMode}
+            className="text-xs text-shell-text-tertiary hover:text-shell-text-secondary transition-colors underline"
+          >
+            Switch to embedded mode
+          </button>
+        </div>
+      ) : loadError ? (
+        /* Embedded mode — load error fallback */
+        <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center">
+          <AlertTriangle size={48} className="text-amber-500" />
+          <div>
+            <h3 className="text-lg font-medium text-shell-text mb-1">
+              Could not load this page
+            </h3>
+            <p className="text-sm text-shell-text-secondary max-w-md">
+              This site could not be loaded through the proxy. Open it directly
+              in a new tab instead.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={openInTab}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors"
+          >
+            <ExternalLink size={18} />
             Open in Tab
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setLoadError(false);
+              setLoading(true);
+            }}
+            className="text-xs text-shell-text-tertiary hover:text-shell-text-secondary transition-colors underline"
+          >
+            Try again in embedded mode
           </button>
         </div>
       ) : (
+        /* Embedded mode — proxy iframe */
         <iframe
           ref={iframeRef}
           src={proxyUrl(url)}
           className="flex-1 w-full border-none bg-white"
           sandbox="allow-downloads allow-forms allow-modals allow-pointer-lock allow-popups allow-presentation allow-same-origin allow-scripts"
           title="Browser"
+          onLoad={handleIframeLoad}
           onError={handleIframeError}
         />
       )}
