@@ -11,7 +11,13 @@ export default defineConfig({
   },
   build: {
     outDir: "../static/desktop",
-    emptyDirBeforeWrite: true,
+    emptyOutDir: true,
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, "index.html"),
+        chat: path.resolve(__dirname, "chat.html"),
+      },
+    },
   },
   server: {
     proxy: {

@@ -142,6 +142,25 @@ def _rewrite_html_urls(html: str, base_url: str) -> str:
     return html
 
 
+@router.get("/chat-pwa")
+async def serve_chat_pwa():
+    """Serve the standalone chat PWA."""
+    chat_html = SPA_DIR / "chat.html"
+    if chat_html.exists():
+        return FileResponse(chat_html, media_type="text/html")
+    return JSONResponse({"error": "Chat PWA not built"}, status_code=404)
+
+
+@router.get("/chat-pwa/{rest:path}")
+async def serve_chat_pwa_assets(rest: str = ""):
+    """Serve assets for the chat PWA (uses same /desktop/assets base)."""
+    # Assets are at /desktop/assets/... due to base path — this route just serves index
+    chat_html = SPA_DIR / "chat.html"
+    if chat_html.exists():
+        return FileResponse(chat_html, media_type="text/html")
+    return JSONResponse({"error": "Chat PWA not built"}, status_code=404)
+
+
 @router.get("/desktop")
 async def serve_spa_root():
     """Serve the SPA index.html at /desktop."""
