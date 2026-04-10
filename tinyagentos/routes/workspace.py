@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import shutil
@@ -211,6 +212,31 @@ async def api_workspace_upload(request: Request, name: str, file: UploadFile = F
     dest = ws_dir / file.filename
     content = await file.read()
     dest.write_bytes(content)
+
+    # Capture file activity into user memory (async, non-blocking)
+    user_memory = getattr(request.app.state, "user_memory", None)
+    if user_memory:
+        async def _capture():
+            try:
+                settings = await user_memory.get_settings("user")
+                if not settings.get("capture_files"):
+                    return
+                await user_memory.save_chunk(
+                    "user",
+                    content=f"File uploaded to agent {name}: {file.filename}",
+                    title=file.filename or "",
+                    collection="files",
+                    metadata={
+                        "path": str(dest),
+                        "size": len(content),
+                        "action": "upload",
+                        "agent": name,
+                    },
+                )
+            except Exception as e:
+                logger.debug(f"user memory file capture failed: {e}")
+        asyncio.create_task(_capture())
+
     return {"name": file.filename, "size": len(content), "status": "uploaded"}
 
 

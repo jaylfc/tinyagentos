@@ -14,13 +14,14 @@ import {
   Check,
   AlertCircle,
   ChevronLeft,
+  Brain,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
-type Section = "system" | "storage" | "providers" | "backup" | "updates" | "advanced";
+type Section = "system" | "storage" | "providers" | "memory" | "backup" | "updates" | "advanced";
 
 interface SectionDef {
   id: Section;
@@ -60,6 +61,7 @@ const SECTIONS: SectionDef[] = [
   { id: "system", label: "System Info", icon: Info },
   { id: "storage", label: "Storage", icon: HardDrive },
   { id: "providers", label: "Providers", icon: Server },
+  { id: "memory", label: "Memory", icon: Brain },
   { id: "backup", label: "Backup & Restore", icon: Download },
   { id: "updates", label: "Updates", icon: RefreshCw },
   { id: "advanced", label: "Advanced", icon: Code },
@@ -368,6 +370,135 @@ function ProvidersSection() {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Memory Capture                                                     */
+/* ------------------------------------------------------------------ */
+
+interface MemorySettings {
+  capture_conversations?: boolean;
+  capture_notes?: boolean;
+  capture_files?: boolean;
+  capture_searches?: boolean;
+  [key: string]: boolean | undefined;
+}
+
+const MEMORY_TOGGLES: { key: keyof MemorySettings; label: string; desc: string }[] = [
+  { key: "capture_conversations", label: "Conversations", desc: "Messages you send to agents in the Message Hub" },
+  { key: "capture_notes", label: "Notes", desc: "Notes from the Text Editor app" },
+  { key: "capture_files", label: "File activity", desc: "Files you upload or open" },
+  { key: "capture_searches", label: "Search queries", desc: "What you search for in global search" },
+];
+
+function MemorySection() {
+  const [settings, setSettings] = useState<MemorySettings | null>(null);
+  const [stats, setStats] = useState<{ total: number; collections: Record<string, number> } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/user-memory/settings")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data) setSettings(data);
+        else setSettings({});
+      })
+      .catch(() => {
+        setSettings({});
+        setError("Could not load memory settings.");
+      });
+
+    fetch("/api/user-memory/stats")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data) setStats(data);
+      })
+      .catch(() => {});
+  }, []);
+
+  const update = (key: keyof MemorySettings, value: boolean) => {
+    const next: MemorySettings = { ...(settings || {}), [key]: value };
+    setSettings(next);
+    fetch("/api/user-memory/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [key]: value }),
+    })
+      .then((r) => {
+        if (!r.ok) setError(`Failed to save setting (${r.status})`);
+        else setError(null);
+      })
+      .catch(() => setError("Could not reach backend."));
+  };
+
+  if (!settings) {
+    return (
+      <section aria-label="Memory capture settings">
+        <h2 className="text-lg font-semibold mb-5">Memory Capture</h2>
+        <p className="text-sm text-shell-text-tertiary">Loading...</p>
+      </section>
+    );
+  }
+
+  return (
+    <section aria-label="Memory capture settings">
+      <h2 className="text-lg font-semibold mb-2">Memory Capture</h2>
+      <p className="text-sm text-shell-text-tertiary mb-5">
+        Choose what activity gets saved to your personal memory index. All data stays on this device.
+      </p>
+
+      {error && (
+        <p className="mb-3 text-xs text-amber-400 flex items-center gap-1.5">
+          <AlertCircle size={12} /> {error}
+        </p>
+      )}
+
+      <div className="space-y-2">
+        {MEMORY_TOGGLES.map((item) => {
+          const checked = !!settings[item.key];
+          return (
+            <label
+              key={String(item.key)}
+              className="flex items-start gap-3 p-4 rounded-xl bg-shell-surface/60 border border-white/5 cursor-pointer hover:bg-shell-surface transition-colors"
+            >
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={(e) => update(item.key, e.target.checked)}
+                className="mt-1 h-4 w-4 accent-sky-500"
+                aria-label={`Capture ${item.label}`}
+              />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium">{item.label}</div>
+                <div className="text-xs text-shell-text-tertiary mt-0.5">{item.desc}</div>
+              </div>
+            </label>
+          );
+        })}
+      </div>
+
+      {stats && (
+        <div className="mt-6 p-4 rounded-xl bg-shell-surface/60 border border-white/5">
+          <h3 className="text-sm font-medium mb-3">Stored chunks</h3>
+          <div className="text-xs text-shell-text-secondary mb-2 tabular-nums">
+            Total: {stats.total}
+          </div>
+          {Object.keys(stats.collections || {}).length > 0 ? (
+            <ul className="space-y-1 text-xs text-shell-text-tertiary">
+              {Object.entries(stats.collections).map(([name, count]) => (
+                <li key={name} className="flex justify-between tabular-nums">
+                  <span>{name}</span>
+                  <span>{count}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-shell-text-tertiary">No memories captured yet.</p>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Backup & Restore                                                   */
 /* ------------------------------------------------------------------ */
 
@@ -599,6 +730,7 @@ export function SettingsApp({ windowId: _windowId }: { windowId: string }) {
     system: <SystemInfoSection />,
     storage: <StorageSection />,
     providers: <ProvidersSection />,
+    memory: <MemorySection />,
     backup: <BackupSection />,
     updates: <UpdatesSection />,
     advanced: <AdvancedSection />,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import shutil
 from pathlib import Path
@@ -9,6 +10,33 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
+
+
+async def _capture_file_activity(
+    user_memory,
+    *,
+    filename: str,
+    path: str,
+    size: int,
+    action: str,
+    user_id: str = "user",
+) -> None:
+    """Fire-and-forget file activity capture. Never raises."""
+    if not user_memory:
+        return
+    try:
+        settings = await user_memory.get_settings(user_id)
+        if not settings.get("capture_files"):
+            return
+        await user_memory.save_chunk(
+            user_id,
+            content=f"File {action}: {filename}",
+            title=filename,
+            collection="files",
+            metadata={"path": path, "size": size, "action": action},
+        )
+    except Exception as e:  # pragma: no cover - best-effort
+        logger.debug(f"file activity capture failed: {e}")
 
 router = APIRouter()
 
@@ -93,6 +121,18 @@ async def api_upload_file(request: Request, path: str = "", file: UploadFile = F
     content = await file.read()
     dest.write_bytes(content)
     rel = dest.relative_to(workspace)
+
+    # Capture file activity into user memory (async, non-blocking)
+    user_memory = getattr(request.app.state, "user_memory", None)
+    if user_memory:
+        asyncio.create_task(_capture_file_activity(
+            user_memory,
+            filename=filename,
+            path=str(rel),
+            size=len(content),
+            action="upload",
+        ))
+
     return {"name": filename, "path": str(rel), "size": len(content), "status": "uploaded"}
 
 

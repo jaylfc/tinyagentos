@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import uuid
@@ -10,6 +11,34 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+async def _capture_user_memory(
+    user_memory,
+    *,
+    content: str,
+    title: str,
+    collection: str,
+    metadata: dict,
+    setting_key: str,
+    user_id: str = "user",
+) -> None:
+    """Fire-and-forget user memory capture. Never raises."""
+    if not user_memory or not content:
+        return
+    try:
+        settings = await user_memory.get_settings(user_id)
+        if not settings.get(setting_key):
+            return
+        await user_memory.save_chunk(
+            user_id,
+            content=content,
+            title=title,
+            collection=collection,
+            metadata=metadata,
+        )
+    except Exception as e:  # pragma: no cover - capture is best-effort
+        logger.debug(f"user memory capture failed: {e}")
 
 
 @router.websocket("/ws/chat")
@@ -47,6 +76,23 @@ async def chat_ws(websocket: WebSocket):
                 )
                 await ch_store.update_last_message_at(data["channel_id"])
                 await hub.broadcast(data["channel_id"], {"type": "message", "seq": hub.next_seq(), **message})
+
+                # Capture user message into user memory (async, non-blocking)
+                user_memory = getattr(websocket.app.state, "user_memory", None)
+                if user_memory:
+                    asyncio.create_task(_capture_user_memory(
+                        user_memory,
+                        content=data.get("content", ""),
+                        title=f"Message in {data['channel_id']}",
+                        collection="conversations",
+                        metadata={
+                            "channel_id": data["channel_id"],
+                            "message_id": message.get("id"),
+                            "timestamp": message.get("created_at"),
+                        },
+                        setting_key="capture_conversations",
+                        user_id=user_id,
+                    ))
 
             elif msg_type == "typing":
                 hub.set_typing(data["channel_id"], user_id)
@@ -145,6 +191,23 @@ async def post_message(request: Request):
     )
     await ch_store.update_last_message_at(body["channel_id"])
     await hub.broadcast(body["channel_id"], {"type": "message", "seq": hub.next_seq(), **message})
+
+    # Capture user messages into user memory (skip agent messages)
+    if body.get("author_type", "agent") == "user":
+        user_memory = getattr(request.app.state, "user_memory", None)
+        if user_memory:
+            asyncio.create_task(_capture_user_memory(
+                user_memory,
+                content=body.get("content", ""),
+                title=f"Message in {body['channel_id']}",
+                collection="conversations",
+                metadata={
+                    "channel_id": body["channel_id"],
+                    "message_id": message.get("id"),
+                    "timestamp": message.get("created_at"),
+                },
+                setting_key="capture_conversations",
+            ))
     return message
 
 

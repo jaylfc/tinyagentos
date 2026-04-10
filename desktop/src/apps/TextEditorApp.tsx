@@ -41,6 +41,21 @@ function notePreview(content: string): string {
   return (lines[1] || "").slice(0, 60);
 }
 
+function saveToUserMemory(note: Note) {
+  if (!note.content || !note.content.trim()) return;
+  const title = noteTitle(note.content);
+  fetch("/api/user-memory/save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      content: note.content,
+      title,
+      collection: "notes",
+      metadata: { noteId: note.id, updatedAt: note.updatedAt },
+    }),
+  }).catch(() => {});
+}
+
 /* ── Obsidian-style theme ────────────────────────────────── */
 
 const obsidianTheme = EditorView.theme({
@@ -161,6 +176,14 @@ export function TextEditorApp({ windowId: _windowId }: { windowId: string }) {
   useEffect(() => {
     saveNotesToStorage(notes);
   }, [notes]);
+
+  // Debounced user-memory capture when active note changes
+  useEffect(() => {
+    if (!activeNote) return;
+    const timer = setTimeout(() => saveToUserMemory(activeNote), 2000);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeNote?.content, activeNote?.id]);
 
   const createNote = useCallback(() => {
     const note: Note = {

@@ -1,8 +1,31 @@
 from __future__ import annotations
 
+import asyncio
+import logging
+
 from fastapi import APIRouter, Request
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+async def _capture_search_query(user_memory, query: str, user_id: str = "user") -> None:
+    """Fire-and-forget search capture. Never raises."""
+    if not user_memory or not query:
+        return
+    try:
+        settings = await user_memory.get_settings(user_id)
+        if not settings.get("capture_searches"):
+            return
+        await user_memory.save_chunk(
+            user_id,
+            content=query,
+            title=f"Search: {query[:50]}",
+            collection="searches",
+            metadata={"query": query, "source": "global_search"},
+        )
+    except Exception as e:  # pragma: no cover
+        logger.debug(f"search capture failed: {e}")
 
 
 @router.get("/api/search")
@@ -10,6 +33,11 @@ async def global_search(request: Request, q: str = "", limit: int = 5):
     """Search across all platform data."""
     if not q or len(q) < 2:
         return {"results": [], "query": q}
+
+    # Capture search into user memory (async, non-blocking)
+    user_memory = getattr(request.app.state, "user_memory", None)
+    if user_memory:
+        asyncio.create_task(_capture_search_query(user_memory, q))
 
     query = q.lower()
     results = []
