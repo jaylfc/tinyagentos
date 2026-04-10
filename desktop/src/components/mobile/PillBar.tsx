@@ -90,10 +90,14 @@ export function PillBar({ onHome, onCardSwitcher, onBack }: Props) {
       />
 
       <button
-        className="flex items-center justify-center w-10 h-10 rounded-lg bg-white/5 active:bg-white/10 transition-colors"
-        aria-label="Notifications"
+        onClick={toggleCentre}
+        className="relative flex items-center justify-center w-10 h-10 rounded-lg bg-white/5 active:bg-white/10 transition-colors"
+        aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ""}`}
       >
         <Bell size={20} className="text-white/70" />
+        {unreadCount > 0 && (
+          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />
+        )}
       </button>
     </div>
     </div>

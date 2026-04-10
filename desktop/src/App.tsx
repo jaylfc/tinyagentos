@@ -15,6 +15,9 @@ import { PillBar } from "@/components/mobile/PillBar";
 import { CardSwitcher } from "@/components/mobile/CardSwitcher";
 import { MobileTopBar } from "@/components/mobile/MobileTopBar";
 import { MobileApp } from "@/components/mobile/MobileApp";
+import { NotificationToasts } from "@/components/NotificationToast";
+import { NotificationCentre } from "@/components/NotificationCentre";
+import { useNotificationStore } from "@/stores/notification-store";
 
 const CATEGORY_GRADIENTS: Record<string, string> = {
   platform: "linear-gradient(135deg, rgba(102,126,234,0.25), rgba(118,75,162,0.15))",
@@ -69,6 +72,16 @@ export function App() {
 
   useSessionPersistence();
 
+  // Welcome notification on first mount
+  useEffect(() => {
+    useNotificationStore.getState().addNotification({
+      source: "system",
+      title: "Welcome to TinyAgentOS",
+      body: "Click the bell to see notifications from your agents",
+      level: "info",
+    });
+  }, []);
+
   // Mobile handlers
   const handleMobileBack = useCallback(() => {
     if (activeWindowId) {
@@ -94,6 +107,8 @@ export function App() {
         <Dock onLaunchpadOpen={toggleLaunchpad} />
         <Launchpad open={launchpadOpen} onClose={() => setLaunchpadOpen(false)} onOpenApp={(wid) => setActiveWindowId(wid)} />
         <SearchPalette open={searchOpen} onClose={() => setSearchOpen(false)} onOpenApp={(wid) => setActiveWindowId(wid)} />
+        <NotificationToasts />
+        <NotificationCentre />
       </div>
     );
   }
@@ -167,6 +182,8 @@ export function App() {
       />
       <Launchpad open={launchpadOpen} onClose={() => setLaunchpadOpen(false)} onOpenApp={(wid) => setActiveWindowId(wid)} />
       <SearchPalette open={searchOpen} onClose={() => setSearchOpen(false)} onOpenApp={(wid) => setActiveWindowId(wid)} />
+      <NotificationToasts />
+      <NotificationCentre />
     </div>
   );
 }
