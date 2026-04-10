@@ -118,22 +118,93 @@ export function ModelsApp({ windowId: _windowId }: { windowId: string }) {
   const [source, setSource] = useState<SourceFilter>("all");
   const [downloading, setDownloading] = useState<Set<string>>(new Set());
 
+  const [isFallback, setIsFallback] = useState(false);
+
   const fetchModels = useCallback(async () => {
     try {
-      const res = await fetch("/api/models", { headers: { Accept: "application/json" } });
+      const res = await fetch("/api/models", {
+        headers: { Accept: "application/json" },
+      });
       if (res.ok) {
         const ct = res.headers.get("content-type") ?? "";
         if (ct.includes("application/json")) {
           const data = await res.json();
-          if (data.downloaded) setDownloaded(data.downloaded);
-          if (data.available) setAvailable(data.available);
+          // Real backend shape:
+          //   { models: [...], downloaded_files: [...], hardware_profile_id }
+          const rawModels: Array<Record<string, unknown>> = Array.isArray(
+            data.models,
+          )
+            ? data.models
+            : [];
+          const rawDownloaded: Array<Record<string, unknown>> = Array.isArray(
+            data.downloaded_files,
+          )
+            ? data.downloaded_files
+            : [];
+
+          const fmtSize = (mb: number) =>
+            mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`;
+
+          const quantRegex = /[Qq]\d[_A-Za-z0-9]*/;
+
+          const downloadedList: DownloadedModel[] = rawDownloaded.map((d) => {
+            const filename = (d.filename as string) ?? "unknown";
+            const sizeMb = (d.size_mb as number) ?? 0;
+            const format = ((d.format as string) ?? "bin").toUpperCase();
+            const quantMatch = filename.match(quantRegex);
+            return {
+              id: filename,
+              filename,
+              size: fmtSize(sizeMb),
+              format,
+              quantization: quantMatch ? quantMatch[0].toUpperCase() : undefined,
+            };
+          });
+
+          const availableList: AvailableModel[] = rawModels.map((m) => {
+            const variants = Array.isArray(m.variants)
+              ? (m.variants as Array<Record<string, unknown>>)
+              : [];
+            // Pick smallest variant for display size estimate.
+            let sizeLabel = "\u2014";
+            if (variants.length > 0) {
+              const sizes = variants
+                .map((v) => (v.size_mb as number) ?? 0)
+                .filter((n) => n > 0);
+              if (sizes.length > 0) {
+                sizeLabel = fmtSize(Math.min(...sizes));
+              }
+            }
+            const compat =
+              ((m.compatibility as string) ?? "green") as
+                | "green"
+                | "yellow"
+                | "red";
+            return {
+              id: (m.id as string) ?? "unknown",
+              name: (m.name as string) ?? (m.id as string) ?? "Unknown",
+              description: (m.description as string) ?? "",
+              compatibility: compat,
+              capabilities: Array.isArray(m.capabilities)
+                ? (m.capabilities as string[])
+                : [],
+              size: sizeLabel,
+            };
+          });
+
+          setDownloaded(downloadedList);
+          setAvailable(availableList);
+          setIsFallback(false);
           setLoading(false);
           return;
         }
       }
-    } catch { /* fall through */ }
+    } catch {
+      /* fall through */
+    }
     setDownloaded(MOCK_DOWNLOADED);
     setAvailable(MOCK_AVAILABLE);
+    setIsFallback(true);
     setLoading(false);
   }, []);
 
@@ -187,6 +258,14 @@ export function ModelsApp({ windowId: _windowId }: { windowId: string }) {
           <span className="text-xs text-shell-text-tertiary">
             {downloaded.length} downloaded
           </span>
+          {isFallback && (
+            <span
+              className="ml-2 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/25"
+              title="Backend unreachable \u2014 showing sample data"
+            >
+              Sample data
+            </span>
+          )}
         </div>
       </div>
 

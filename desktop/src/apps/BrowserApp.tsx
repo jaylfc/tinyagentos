@@ -10,11 +10,14 @@ import {
   Bot,
   Star,
   AlertTriangle,
+  Loader2,
 } from "lucide-react";
 import {
   Button,
   Card,
   CardContent,
+  Label,
+  Textarea,
   Toolbar,
   ToolbarGroup,
 } from "@/components/ui";
@@ -57,7 +60,10 @@ export function BrowserApp({ windowId: _windowId }: { windowId: string }) {
   const [loadError, setLoadError] = useState(false);
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [agentTooltip, setAgentTooltip] = useState(false);
+  const [agentDialogOpen, setAgentDialogOpen] = useState(false);
+  const [agentCommand, setAgentCommand] = useState("");
+  const [agentResult, setAgentResult] = useState<string | null>(null);
+  const [agentLoading, setAgentLoading] = useState(false);
   const [mode, setMode] = useState<BrowserMode>(
     isIOS() ? "external" : "embedded",
   );

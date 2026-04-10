@@ -15,28 +15,30 @@ import {
 /* ------------------------------------------------------------------ */
 
 interface Task {
-  id: string;
+  id: number;
   name: string;
-  agent: string;
+  agent_name: string | null;
   schedule: string;
   command: string;
   description: string;
   enabled: boolean;
-  lastRun: string | null;
+  last_run: string | number | null;
 }
 
 interface Preset {
+  id?: number;
   name: string;
-  schedule: string;
-  command: string;
+  schedule?: string;
+  command?: string;
   description: string;
+  tasks?: { name: string; schedule: string; command: string; description?: string }[];
 }
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
 /* ------------------------------------------------------------------ */
 
-const PRESETS: Preset[] = [
+const FALLBACK_PRESETS: Preset[] = [
   { name: "Daily Summary", schedule: "0 9 * * *", command: "summarize --last 24h", description: "Generate a daily summary every morning at 9 AM" },
   { name: "Hourly Sync", schedule: "0 * * * *", command: "sync --sources all", description: "Sync all data sources every hour" },
   { name: "Weekly Report", schedule: "0 10 * * 1", command: "report --type weekly", description: "Generate a weekly report every Monday at 10 AM" },
@@ -51,10 +53,13 @@ const PRESETS: Preset[] = [
 
 export function TasksApp({ windowId: _windowId }: { windowId: string }) {
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [presets, setPresets] = useState<Preset[]>(FALLBACK_PRESETS);
   const [agents, setAgents] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [showDialog, setShowDialog] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   // Form state
   const [formName, setFormName] = useState("");
@@ -73,7 +78,18 @@ export function TasksApp({ windowId: _windowId }: { windowId: string }) {
         if (ct.includes("application/json")) {
           const data = await res.json();
           if (Array.isArray(data)) {
-            setTasks(data);
+            setTasks(
+              data.map((t: Record<string, unknown>) => ({
+                id: Number(t.id),
+                name: String(t.name ?? ""),
+                agent_name: (t.agent_name as string | null) ?? null,
+                schedule: String(t.schedule ?? ""),
+                command: String(t.command ?? ""),
+                description: String(t.description ?? ""),
+                enabled: Boolean(t.enabled),
+                last_run: (t.last_run as string | number | null) ?? null,
+              }))
+            );
             setLoading(false);
             return;
           }
@@ -84,9 +100,27 @@ export function TasksApp({ windowId: _windowId }: { windowId: string }) {
     setLoading(false);
   }, []);
 
+  const fetchPresets = useCallback(async () => {
+    try {
+      const res = await fetch("/api/tasks/presets", {
+        headers: { Accept: "application/json" },
+      });
+      if (res.ok) {
+        const ct = res.headers.get("content-type") ?? "";
+        if (ct.includes("application/json")) {
+          const data = await res.json();
+          if (Array.isArray(data) && data.length > 0) {
+            setPresets(data);
+          }
+        }
+      }
+    } catch { /* keep fallback */ }
+  }, []);
+
   useEffect(() => {
     fetchTasks();
-  }, [fetchTasks]);
+    fetchPresets();
+  }, [fetchTasks, fetchPresets]);
 
   useEffect(() => {
     (async () => {
@@ -114,71 +148,143 @@ export function TasksApp({ windowId: _windowId }: { windowId: string }) {
     setFormCommand("");
     setFormDesc("");
     setEditingId(null);
+    setFormError(null);
+    setSubmitting(false);
     setShowDialog(false);
   }
 
   function openEdit(task: Task) {
     setFormName(task.name);
-    setFormAgent(task.agent);
+    setFormAgent(task.agent_name ?? "");
     setFormSchedule(task.schedule);
     setFormCommand(task.command);
     setFormDesc(task.description);
     setEditingId(task.id);
+    setFormError(null);
     setShowDialog(true);
   }
 
-  function applyPreset(preset: Preset) {
+  async function applyPreset(preset: Preset) {
+    // Server-side preset apply (needs agent + preset id)
+    if (preset.id != null) {
+      const agentName = window.prompt(
+        `Apply "${preset.name}" preset to which agent?`,
+        agents[0] ?? ""
+      );
+      if (!agentName) return;
+      try {
+        const res = await fetch(`/api/tasks/presets/${preset.id}/apply`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ agent_name: agentName }),
+        });
+        if (!res.ok) {
+          let msg = `Apply failed (${res.status})`;
+          try {
+            const err = await res.json();
+            if (err?.error) msg = String(err.error);
+          } catch { /* ignore */ }
+          window.alert(msg);
+          return;
+        }
+        fetchTasks();
+      } catch (e) {
+        window.alert(e instanceof Error ? e.message : "Network error");
+      }
+      return;
+    }
+    // Fallback: prefill the dialog
     setFormName(preset.name);
-    setFormSchedule(preset.schedule);
-    setFormCommand(preset.command);
+    setFormSchedule(preset.schedule ?? "");
+    setFormCommand(preset.command ?? "");
     setFormDesc(preset.description);
     setEditingId(null);
+    setFormError(null);
     setShowDialog(true);
   }
 
   async function handleSave() {
     if (!formName.trim() || !formSchedule.trim() || !formCommand.trim()) return;
-
-    if (editingId) {
-      setTasks((prev) =>
-        prev.map((t) =>
-          t.id === editingId
-            ? { ...t, name: formName, agent: formAgent, schedule: formSchedule, command: formCommand, description: formDesc }
-            : t
-        )
-      );
-    } else {
-      const newTask: Task = {
-        id: `task-${Date.now()}`,
-        name: formName.trim(),
-        agent: formAgent,
-        schedule: formSchedule.trim(),
-        command: formCommand.trim(),
-        description: formDesc.trim(),
-        enabled: true,
-        lastRun: null,
-      };
-      try {
-        await fetch("/api/tasks", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(newTask),
-        });
-      } catch { /* ignore */ }
-      setTasks((prev) => [...prev, newTask]);
+    setSubmitting(true);
+    setFormError(null);
+    const body = {
+      name: formName.trim(),
+      schedule: formSchedule.trim(),
+      command: formCommand.trim(),
+      description: formDesc.trim(),
+      agent_name: formAgent || null,
+    };
+    try {
+      const res = editingId != null
+        ? await fetch(`/api/tasks/${editingId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
+            body: JSON.stringify(body),
+          })
+        : await fetch("/api/tasks", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
+            body: JSON.stringify(body),
+          });
+      if (!res.ok) {
+        let msg = `Save failed (${res.status})`;
+        try {
+          const err = await res.json();
+          if (err?.error) msg = String(err.error);
+        } catch { /* ignore */ }
+        setFormError(msg);
+        setSubmitting(false);
+        return;
+      }
+      resetForm();
+      fetchTasks();
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : "Network error");
+      setSubmitting(false);
     }
-    resetForm();
   }
 
-  function toggleEnabled(id: string) {
-    setTasks((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, enabled: !t.enabled } : t))
-    );
+  async function toggleEnabled(id: number) {
+    try {
+      const res = await fetch(`/api/tasks/${id}/toggle`, {
+        method: "POST",
+        headers: { Accept: "application/json" },
+      });
+      if (!res.ok) {
+        let msg = `Toggle failed (${res.status})`;
+        try {
+          const err = await res.json();
+          if (err?.error) msg = String(err.error);
+        } catch { /* ignore */ }
+        window.alert(msg);
+        return;
+      }
+      fetchTasks();
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "Network error");
+    }
   }
 
-  function handleDelete(id: string) {
-    setTasks((prev) => prev.filter((t) => t.id !== id));
-    fetch(`/api/tasks/${id}`, { method: "DELETE" }).catch(() => {});
+  async function handleDelete(id: number) {
+    if (!window.confirm("Delete this task?")) return;
+    try {
+      const res = await fetch(`/api/tasks/${id}`, {
+        method: "DELETE",
+        headers: { Accept: "application/json" },
+      });
+      if (!res.ok) {
+        let msg = `Delete failed (${res.status})`;
+        try {
+          const err = await res.json();
+          if (err?.error) msg = String(err.error);
+        } catch { /* ignore */ }
+        window.alert(msg);
+        return;
+      }
+      fetchTasks();
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "Network error");
+    }
   }
 
   return (
@@ -220,7 +326,7 @@ export function TasksApp({ windowId: _windowId }: { windowId: string }) {
             <div>
               <h2 className="text-sm font-medium text-shell-text-secondary mb-3">Quick Start Presets</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                {PRESETS.map((preset) => (
+                {presets.map((preset) => (
                   <Card key={preset.name}>
                     <CardContent className="p-3.5 space-y-2">
                       <p className="text-sm font-medium">{preset.name}</p>
@@ -252,14 +358,16 @@ export function TasksApp({ windowId: _windowId }: { windowId: string }) {
                         <div className="flex items-center gap-2">
                           <p className="text-sm font-medium truncate">{task.name}</p>
                           <span className="text-xs text-shell-text-secondary">
-                            {task.agent || "\u2014"}
+                            {task.agent_name || "\u2014"}
                           </span>
                         </div>
                         <div className="flex items-center gap-3 mt-1 text-xs text-shell-text-tertiary">
                           <span className="font-mono">{task.schedule}</span>
                           <span className="font-mono truncate max-w-[200px]">{task.command}</span>
                           <span className="tabular-nums">
-                            Last: {task.lastRun ?? "Never"}
+                            Last: {task.last_run
+                              ? new Date(Number(task.last_run) * 1000).toLocaleString()
+                              : "Never"}
                           </span>
                         </div>
                       </div>
@@ -306,7 +414,7 @@ export function TasksApp({ windowId: _windowId }: { windowId: string }) {
             <div>
               <h2 className="text-sm font-medium text-shell-text-secondary mb-3">Presets</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                {PRESETS.map((preset) => (
+                {presets.map((preset) => (
                   <Card key={preset.name}>
                     <CardContent className="p-3 space-y-1.5">
                       <p className="text-sm font-medium">{preset.name}</p>

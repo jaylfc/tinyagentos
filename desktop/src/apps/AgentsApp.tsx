@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Bot, Plus, Trash2, ScrollText, Play, Server, X, ChevronRight, ChevronLeft, Check, Wrench } from "lucide-react";
+import { Bot, Plus, Trash2, ScrollText, Play, Server, X, ChevronRight, ChevronLeft, Check, Wrench, MessageSquare } from "lucide-react";
 import { AgentSkillsPanel } from "./AgentSkillsPanel";
+import { AgentMessagesPanel } from "./AgentMessagesPanel";
 import {
   Button,
   Card,
@@ -74,11 +75,13 @@ function AgentRow({
   agent,
   onViewLogs,
   onViewSkills,
+  onViewMessages,
   onDelete,
 }: {
   agent: Agent;
   onViewLogs: (name: string) => void;
   onViewSkills: (name: string) => void;
+  onViewMessages: (name: string) => void;
   onDelete: (name: string) => void;
 }) {
   return (
@@ -127,6 +130,16 @@ function AgentRow({
         <Button
           variant="ghost"
           size="icon"
+          className="h-8 w-8"
+          onClick={() => onViewMessages(agent.name)}
+          aria-label={`View messages for ${agent.name}`}
+          title="Messages"
+        >
+          <MessageSquare size={15} />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
           className="h-8 w-8 hover:bg-red-500/15 hover:text-red-400"
           onClick={() => onDelete(agent.name)}
           aria-label={`Delete ${agent.name}`}
@@ -143,7 +156,7 @@ function AgentRow({
 /*  AgentDetailPanel (Logs + Skills tabs)                              */
 /* ------------------------------------------------------------------ */
 
-type DetailTab = "logs" | "skills";
+type DetailTab = "logs" | "skills" | "messages";
 
 function AgentDetailPanel({
   agent,
@@ -161,14 +174,21 @@ function AgentDetailPanel({
 
   const fetchLogs = useCallback(async () => {
     try {
-      const res = await fetch(`/api/partials/agent-logs/${agentName}?lines=100`);
-      const text = await res.text();
-      // If it looks like HTML, show a placeholder
-      if (text.trim().startsWith("<")) {
-        setLogs(`[${new Date().toLocaleTimeString()}] Log stream connected for ${agentName}\n[${new Date().toLocaleTimeString()}] No structured log data available — endpoint returned HTML.`);
-      } else {
-        setLogs(text);
+      const res = await fetch(
+        `/api/agents/${encodeURIComponent(agentName)}/logs?lines=100`,
+        { headers: { Accept: "application/json" } }
+      );
+      if (!res.ok) {
+        setLogs(`[${new Date().toLocaleTimeString()}] Log fetch failed (${res.status}) for ${agentName}.`);
+        return;
       }
+      const data = await res.json();
+      const logText = typeof data?.logs === "string"
+        ? data.logs
+        : Array.isArray(data?.logs)
+          ? data.logs.join("\n")
+          : JSON.stringify(data);
+      setLogs(logText || `[${new Date().toLocaleTimeString()}] No logs available for ${agentName}.`);
     } catch {
       setLogs(`[${new Date().toLocaleTimeString()}] Unable to reach log endpoint for ${agentName}.\n[${new Date().toLocaleTimeString()}] Agent may not be running or the API is unavailable.`);
     }
@@ -213,6 +233,10 @@ function AgentDetailPanel({
               <Wrench size={13} className="mr-1.5" />
               Skills
             </TabsTrigger>
+            <TabsTrigger value="messages">
+              <MessageSquare size={13} className="mr-1.5" />
+              Messages
+            </TabsTrigger>
           </TabsList>
         </div>
         <Button
@@ -239,6 +263,9 @@ function AgentDetailPanel({
             agentId={agent.name}
             framework={agent.framework || "smolagents"}
           />
+        </TabsContent>
+        <TabsContent value="messages" className="h-full mt-0">
+          <AgentMessagesPanel agentName={agent.name} />
         </TabsContent>
       </div>
     </Tabs>
@@ -279,24 +306,56 @@ function DeployWizard({
 
   const [deploying, setDeploying] = useState(false);
 
+  const [deployError, setDeployError] = useState<string | null>(null);
+
   // Try to fetch real data
   useEffect(() => {
     if (!open) return;
     (async () => {
       try {
-        const res = await fetch("/api/store/catalog?type=agent-framework");
-        if (res.ok) {
+        const res = await fetch("/api/store/catalog?type=agent-framework", {
+          headers: { Accept: "application/json" },
+        });
+        const ct = res.headers.get("content-type") ?? "";
+        if (res.ok && ct.includes("application/json")) {
           const data = await res.json();
-          if (Array.isArray(data) && data.length > 0) setFrameworks(data);
+          if (Array.isArray(data) && data.length > 0) {
+            // Only show installed frameworks (catalog returns all with `installed` flag)
+            const installed = data.filter((a: Record<string, unknown>) => a.installed);
+            const pool = installed.length > 0 ? installed : data;
+            setFrameworks(
+              pool.map((a: Record<string, unknown>) => ({
+                id: String(a.id),
+                name: String(a.name ?? a.id),
+                description: String(a.description ?? ""),
+              }))
+            );
+          }
         }
       } catch { /* use fallback */ }
     })();
     (async () => {
       try {
-        const res = await fetch("/api/models");
-        if (res.ok) {
+        const res = await fetch("/api/models", {
+          headers: { Accept: "application/json" },
+        });
+        const ct = res.headers.get("content-type") ?? "";
+        if (res.ok && ct.includes("application/json")) {
           const data = await res.json();
-          if (Array.isArray(data) && data.length > 0) setModels(data);
+          // /api/models returns { models: [...], downloaded_files: [...] }
+          const list: Record<string, unknown>[] = Array.isArray(data)
+            ? data
+            : Array.isArray(data?.models)
+              ? data.models
+              : [];
+          if (list.length > 0) {
+            setModels(
+              list.map((m) => ({
+                id: String(m.id),
+                name: String(m.name ?? m.id),
+              }))
+            );
+          }
         }
       } catch { /* use fallback */ }
     })();
@@ -314,6 +373,7 @@ function DeployWizard({
       setCpus("1");
       setCanReadUserMemory(false);
       setDeploying(false);
+      setDeployError(null);
     }
   }, [open]);
 
@@ -330,22 +390,38 @@ function DeployWizard({
 
   async function handleDeploy() {
     setDeploying(true);
+    setDeployError(null);
     try {
-      await fetch("/api/agents/deploy", {
+      const memMb = parseInt(memory);
+      const memoryLimit = memMb >= 1024 ? `${Math.round(memMb / 1024)}GB` : `${memMb}MB`;
+      const res = await fetch("/api/agents/deploy", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({
           name: name.trim(),
-          color,
           framework: selectedFramework,
           model: selectedModel,
-          memory: parseInt(memory),
-          cpus: parseInt(cpus),
+          color,
+          memory_limit: memoryLimit,
+          cpu_limit: parseInt(cpus),
           can_read_user_memory: canReadUserMemory,
         }),
       });
-    } catch { /* ignore — deploy may not be wired */ }
-    setTimeout(() => onClose(true), 600);
+      if (!res.ok) {
+        let msg = `Deploy failed (${res.status})`;
+        try {
+          const err = await res.json();
+          if (err?.error) msg = String(err.error);
+        } catch { /* ignore */ }
+        setDeployError(msg);
+        setDeploying(false);
+        return;
+      }
+      onClose(true);
+    } catch (e) {
+      setDeployError(e instanceof Error ? e.message : "Network error");
+      setDeploying(false);
+    }
   }
 
   return (
@@ -587,6 +663,16 @@ function DeployWizard({
           )}
         </div>
 
+        {/* Error */}
+        {deployError && (
+          <div
+            role="alert"
+            className="mx-5 mb-3 px-3 py-2 rounded-lg bg-red-500/15 border border-red-500/30 text-xs text-red-300"
+          >
+            {deployError}
+          </div>
+        )}
+
         {/* Footer */}
         <div className="flex items-center justify-between px-5 py-3 border-t border-white/5">
           <Button
@@ -666,9 +752,27 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
     fetchAgents();
   }, [fetchAgents]);
 
-  function handleDelete(name: string) {
-    setAgents((prev) => prev.filter((a) => a.name !== name));
-    if (detail?.name === name) setDetail(null);
+  async function handleDelete(name: string) {
+    if (!window.confirm(`Delete agent "${name}"? This cannot be undone.`)) return;
+    try {
+      const res = await fetch(`/api/agents/${encodeURIComponent(name)}`, {
+        method: "DELETE",
+        headers: { Accept: "application/json" },
+      });
+      if (!res.ok) {
+        let msg = `Delete failed (${res.status})`;
+        try {
+          const err = await res.json();
+          if (err?.error) msg = String(err.error);
+        } catch { /* ignore */ }
+        window.alert(msg);
+        return;
+      }
+      if (detail?.name === name) setDetail(null);
+      fetchAgents();
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "Network error");
+    }
   }
 
   function handleWizardClose(deployed?: boolean) {
@@ -733,6 +837,7 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
                 agent={agent}
                 onViewLogs={(name) => setDetail({ name, tab: "logs" })}
                 onViewSkills={(name) => setDetail({ name, tab: "skills" })}
+                onViewMessages={(name) => setDetail({ name, tab: "messages" })}
                 onDelete={handleDelete}
               />
             ))}

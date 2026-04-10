@@ -13,10 +13,10 @@ import {
 /* ------------------------------------------------------------------ */
 
 interface Channel {
-  id: string;
-  agentName: string;
+  id: number | string;
+  agent_name: string;
   type: ChannelType;
-  status: "connected" | "disconnected" | "error";
+  enabled: boolean;
   config: Record<string, string>;
 }
 
@@ -98,8 +98,8 @@ const CHANNEL_TYPES: ChannelTypeDef[] = [
 ];
 
 const STATUS_STYLES: Record<string, string> = {
-  connected: "bg-emerald-500/20 text-emerald-400",
-  disconnected: "bg-zinc-500/20 text-zinc-400",
+  enabled: "bg-emerald-500/20 text-emerald-400",
+  disabled: "bg-zinc-500/20 text-zinc-400",
   error: "bg-red-500/20 text-red-400",
 };
 
@@ -112,6 +112,8 @@ export function ChannelsApp({ windowId: _windowId }: { windowId: string }) {
   const [agents, setAgents] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   // Form state
   const [formAgent, setFormAgent] = useState("");
@@ -128,7 +130,15 @@ export function ChannelsApp({ windowId: _windowId }: { windowId: string }) {
         if (ct.includes("application/json")) {
           const data = await res.json();
           if (Array.isArray(data)) {
-            setChannels(data);
+            setChannels(
+              data.map((c: Record<string, unknown>) => ({
+                id: (c.id as number | string) ?? `${c.agent_name}-${c.type}`,
+                agent_name: String(c.agent_name ?? ""),
+                type: String(c.type ?? "") as ChannelType,
+                enabled: Boolean(c.enabled ?? true),
+                config: (c.config as Record<string, string>) ?? {},
+              }))
+            );
             setLoading(false);
             return;
           }
@@ -168,34 +178,63 @@ export function ChannelsApp({ windowId: _windowId }: { windowId: string }) {
     setFormAgent("");
     setFormType("telegram");
     setFormConfig({});
+    setFormError(null);
+    setSubmitting(false);
     setShowForm(false);
   }
 
   async function handleAdd() {
     if (!formAgent) return;
-    const newChannel: Channel = {
-      id: `${formType}-${Date.now()}`,
-      agentName: formAgent,
-      type: formType,
-      status: "disconnected",
-      config: { ...formConfig },
-    };
-
+    setSubmitting(true);
+    setFormError(null);
     try {
-      await fetch("/api/channels", {
+      const res = await fetch("/api/channels", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newChannel),
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          agent_name: formAgent,
+          type: formType,
+          config: { ...formConfig },
+        }),
       });
-    } catch { /* ignore */ }
-
-    setChannels((prev) => [...prev, newChannel]);
-    resetForm();
+      if (!res.ok) {
+        let msg = `Add failed (${res.status})`;
+        try {
+          const err = await res.json();
+          if (err?.error) msg = String(err.error);
+        } catch { /* ignore */ }
+        setFormError(msg);
+        setSubmitting(false);
+        return;
+      }
+      resetForm();
+      fetchChannels();
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : "Network error");
+      setSubmitting(false);
+    }
   }
 
-  function handleDelete(id: string) {
-    setChannels((prev) => prev.filter((c) => c.id !== id));
-    fetch(`/api/channels/${id}`, { method: "DELETE" }).catch(() => {});
+  async function handleDelete(ch: Channel) {
+    if (!window.confirm(`Remove ${ch.type} channel for ${ch.agent_name}?`)) return;
+    try {
+      const res = await fetch(
+        `/api/channels/${encodeURIComponent(ch.agent_name)}/${encodeURIComponent(ch.type)}`,
+        { method: "DELETE", headers: { Accept: "application/json" } }
+      );
+      if (!res.ok) {
+        let msg = `Delete failed (${res.status})`;
+        try {
+          const err = await res.json();
+          if (err?.error) msg = String(err.error);
+        } catch { /* ignore */ }
+        window.alert(msg);
+        return;
+      }
+      fetchChannels();
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "Network error");
+    }
   }
 
   const easyTypes = CHANNEL_TYPES.filter((t) => t.group === "easy");
@@ -291,14 +330,20 @@ export function ChannelsApp({ windowId: _windowId }: { windowId: string }) {
                 </div>
               ))}
 
+              {formError && (
+                <div role="alert" className="text-xs text-red-300 bg-red-500/10 border border-red-500/20 rounded px-2 py-1.5">
+                  {formError}
+                </div>
+              )}
+
               {/* Actions */}
               <div className="flex gap-2 pt-2">
                 <Button
                   onClick={handleAdd}
-                  disabled={!formAgent}
+                  disabled={!formAgent || submitting}
                 >
                   <Plus size={14} />
-                  Add Channel
+                  {submitting ? "Adding..." : "Add Channel"}
                 </Button>
                 <Button
                   variant="secondary"
@@ -325,39 +370,42 @@ export function ChannelsApp({ windowId: _windowId }: { windowId: string }) {
         ) : (
           /* Channel list */
           <div className="space-y-2">
-            {channels.map((ch) => (
-              <Card key={ch.id}>
-                <CardContent className="flex items-center gap-3 p-3.5">
-                  <MessageSquare size={16} className="text-shell-text-tertiary shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium truncate">{ch.agentName}</span>
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wide bg-white/5 text-shell-text-secondary">
-                        {ch.type}
-                      </span>
+            {channels.map((ch) => {
+              const statusKey = ch.enabled ? "enabled" : "disabled";
+              return (
+                <Card key={String(ch.id)}>
+                  <CardContent className="flex items-center gap-3 p-3.5">
+                    <MessageSquare size={16} className="text-shell-text-tertiary shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium truncate">{ch.agent_name}</span>
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wide bg-white/5 text-shell-text-secondary">
+                          {ch.type}
+                        </span>
+                      </div>
+                      <p className="text-xs text-shell-text-tertiary mt-0.5">
+                        {Object.values(ch.config).filter(Boolean).join(" / ") || "No config"}
+                      </p>
                     </div>
-                    <p className="text-xs text-shell-text-tertiary mt-0.5">
-                      {Object.values(ch.config).filter(Boolean).join(" / ") || "No config"}
-                    </p>
-                  </div>
-                  <span
-                    className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium capitalize ${STATUS_STYLES[ch.status] ?? STATUS_STYLES.disconnected}`}
-                  >
-                    {ch.status}
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => handleDelete(ch.id)}
-                    className="h-7 w-7 hover:text-red-400 hover:bg-red-500/15"
-                    aria-label={`Delete ${ch.type} channel for ${ch.agentName}`}
-                    title="Delete"
-                  >
-                    <Trash2 size={15} />
-                  </Button>
-                </CardContent>
-              </Card>
-            ))}
+                    <span
+                      className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium capitalize ${STATUS_STYLES[statusKey]}`}
+                    >
+                      {statusKey}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleDelete(ch)}
+                      className="h-7 w-7 hover:text-red-400 hover:bg-red-500/15"
+                      aria-label={`Delete ${ch.type} channel for ${ch.agent_name}`}
+                      title="Delete"
+                    >
+                      <Trash2 size={15} />
+                    </Button>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         )}
       </div>

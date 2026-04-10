@@ -14,17 +14,30 @@ export function AgentStatusWidget() {
 
     async function fetchAgents() {
       try {
-        const res = await fetch("/api/agents");
+        const res = await fetch("/api/agents", {
+          headers: { Accept: "application/json" },
+        });
         if (!res.ok) throw new Error("Failed");
+        const ct = res.headers.get("content-type") ?? "";
+        if (!ct.includes("application/json")) {
+          if (!cancelled) {
+            setAgents([]);
+            setError(false);
+          }
+          return;
+        }
         const data = await res.json();
         if (!cancelled) {
-          const list = Array.isArray(data) ? data : data.agents ?? [];
+          const list = Array.isArray(data)
+            ? data
+            : (data.agents ?? data.items ?? []);
           setAgents(
             list.map((a: Record<string, unknown>) => ({
               name: (a.name as string) ?? (a.id as string) ?? "Unknown",
               status: (a.status as string) ?? "unknown",
             })),
           );
+          setError(false);
         }
       } catch {
         if (!cancelled) setError(true);
@@ -52,7 +65,7 @@ export function AgentStatusWidget() {
       </div>
       {error || !agents ? (
         <div style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.4)" }}>
-          {error ? "No agents configured" : "Loading..."}
+          {error ? "Agents unavailable" : "Loading..."}
         </div>
       ) : agents.length === 0 ? (
         <div style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.4)" }}>

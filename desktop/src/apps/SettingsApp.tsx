@@ -143,17 +143,64 @@ function SystemInfoSection() {
 
   const detect = useCallback(async () => {
     setLoading(true);
-    const data = await safeFetch<SystemInfo | null>("/api/settings/system-info", null);
-    if (data) setInfo(data);
-    else
+    interface SysResp {
+      hardware?: {
+        cpu?: { arch?: string; model?: string; cores?: number; soc?: string };
+        ram_mb?: number;
+        gpu?: { type?: string; model?: string; vram_mb?: number };
+        npu?: { type?: string; tops?: number; cores?: number };
+        disk?: { total_gb?: number; type?: string };
+        os?: { distro?: string; version?: string; kernel?: string };
+      };
+      resources?: {
+        ram_total_mb?: number;
+        disk_total_gb?: number;
+      };
+    }
+    const data = await safeFetch<SysResp | null>("/api/system", null);
+    if (data?.hardware || data?.resources) {
+      const hw = data.hardware ?? {};
+      const rs = data.resources ?? {};
+      const ramMb = rs.ram_total_mb ?? hw.ram_mb ?? 0;
+      const diskGb = rs.disk_total_gb ?? hw.disk?.total_gb ?? 0;
+      const cpuModel = hw.cpu?.model ?? hw.cpu?.soc ?? "Unknown";
+      const cpuCores = hw.cpu?.cores ? ` \u00d7 ${hw.cpu.cores}` : "";
+      const cpuArch = hw.cpu?.arch ? ` (${hw.cpu.arch})` : "";
+      const gpuModel = hw.gpu?.model || hw.gpu?.type || "None";
+      const gpuVram =
+        hw.gpu?.vram_mb && hw.gpu.vram_mb > 0
+          ? ` (${(hw.gpu.vram_mb / 1024).toFixed(1)} GB)`
+          : "";
+      const npuType =
+        hw.npu?.type && hw.npu.type !== "none" ? hw.npu.type : "None";
+      const npuTops =
+        hw.npu?.tops && hw.npu.tops > 0 ? ` \u00b7 ${hw.npu.tops} TOPS` : "";
+      const diskType = hw.disk?.type ? ` ${hw.disk.type}` : "";
+      const osParts = [hw.os?.distro, hw.os?.version].filter(Boolean);
+      const osStr = osParts.length > 0 ? osParts.join(" ") : "\u2014";
       setInfo({
-        cpu: "ARM Cortex-A76 x4 + A55 x4",
-        ram: "16 GB LPDDR5",
-        npu: "RK3588 NPU 6 TOPS",
-        gpu: "Mali-G610 MP4",
-        disk: "256 GB eMMC",
-        os: "Ubuntu 22.04 (aarch64)",
+        cpu: `${cpuModel}${cpuCores}${cpuArch}`,
+        ram:
+          ramMb >= 1024
+            ? `${(ramMb / 1024).toFixed(1)} GB`
+            : ramMb > 0
+              ? `${ramMb} MB`
+              : "\u2014",
+        npu: `${npuType}${npuTops}`,
+        gpu: `${gpuModel}${gpuVram}`,
+        disk: diskGb > 0 ? `${diskGb} GB${diskType}` : "\u2014",
+        os: osStr,
       });
+    } else {
+      setInfo({
+        cpu: "Unavailable",
+        ram: "Unavailable",
+        npu: "Unavailable",
+        gpu: "Unavailable",
+        disk: "Unavailable",
+        os: "Unavailable",
+      });
+    }
     setLoading(false);
   }, []);
 

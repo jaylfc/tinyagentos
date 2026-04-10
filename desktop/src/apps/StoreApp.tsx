@@ -148,17 +148,33 @@ const TYPE_ICON_GRADIENTS: Record<string, string> = {
 function AppCard({ app, onInstall, onUninstall }: { app: CatalogApp; onInstall: (id: string) => void; onUninstall: (id: string) => void }) {
   const [busy, setBusy] = useState(false);
 
+  const [error, setError] = useState<string | null>(null);
+
   const handleAction = async () => {
     setBusy(true);
+    setError(null);
     try {
-      if (app.installed) {
-        await fetch("/api/store/uninstall", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ app_id: app.id }) });
-        onUninstall(app.id);
-      } else {
-        await fetch("/api/store/install", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ app_id: app.id }) });
-        onInstall(app.id);
+      const url = app.installed ? "/api/store/uninstall" : "/api/store/install";
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ app_id: app.id }),
+      });
+      if (!res.ok) {
+        let msg = `${app.installed ? "Uninstall" : "Install"} failed (${res.status})`;
+        try {
+          const err = await res.json();
+          if (err?.error) msg = String(err.error);
+        } catch { /* ignore */ }
+        setError(msg);
+        setBusy(false);
+        return;
       }
-    } catch { /* ignore */ }
+      if (app.installed) onUninstall(app.id);
+      else onInstall(app.id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Network error");
+    }
     setBusy(false);
   };
 
@@ -193,7 +209,12 @@ function AppCard({ app, onInstall, onUninstall }: { app: CatalogApp; onInstall: 
         <p className="text-xs text-white/45 leading-relaxed flex-1">{app.description}</p>
       </CardContent>
 
-      <CardFooter className="p-5 pt-2">
+      <CardFooter className="p-5 pt-2 flex flex-col gap-2 items-stretch">
+        {error && (
+          <div role="alert" className="text-[11px] text-red-300 bg-red-500/10 border border-red-500/20 rounded px-2 py-1">
+            {error}
+          </div>
+        )}
         <Button
           variant={app.installed ? "destructive" : "default"}
           size="sm"
@@ -218,21 +239,41 @@ export function StoreApp({ windowId: _windowId }: { windowId: string }) {
   const [activeCategory, setActiveCategory] = useState("all");
   const [loading, setLoading] = useState(true);
 
+  const fetchCatalog = useCallback(async () => {
+    try {
+      const res = await fetch("/api/store/catalog", {
+        headers: { Accept: "application/json" },
+      });
+      const ct = res.headers.get("content-type") ?? "";
+      if (res.ok && ct.includes("application/json")) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          const normalized: CatalogApp[] = data.map((a: Record<string, unknown>) => ({
+            id: String(a.id),
+            name: String(a.name ?? a.id),
+            type: String(a.type ?? "plugin"),
+            version: String(a.version ?? ""),
+            description: String(a.description ?? ""),
+            installed: Boolean(a.installed),
+            compat: (a.compat as CatalogApp["compat"]) ?? "green",
+          }));
+          setApps(normalized);
+          setLoading(false);
+          return true;
+        }
+      }
+    } catch { /* fall through */ }
+    return false;
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      try {
-        const res = await fetch("/api/store/catalog");
-        const ct = res.headers.get("content-type") ?? "";
-        if (res.ok && ct.includes("application/json")) {
-          const data = await res.json();
-          if (Array.isArray(data) && !cancelled) { setApps(data); setLoading(false); return; }
-        }
-      } catch { /* fall through */ }
-      if (!cancelled) { setApps(MOCK_APPS); setLoading(false); }
+      const ok = await fetchCatalog();
+      if (!ok && !cancelled) { setApps(MOCK_APPS); setLoading(false); }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [fetchCatalog]);
 
   const activeCat = CATEGORIES.find((c) => c.id === activeCategory);
 
