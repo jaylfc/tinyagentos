@@ -1,5 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
 import { Database, Search, Trash2, User, FolderOpen, ChevronLeft } from "lucide-react";
+import {
+  Button,
+  Card,
+  CardHeader,
+  CardContent,
+  Input,
+} from "@/components/ui";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -237,13 +244,14 @@ export function MemoryApp({ windowId: _windowId }: { windowId: string }) {
         {(() => {
           const active = selectedAgent === USER_MEMORY_ID;
           return (
-            <button
+            <Button
               key="__user_memory__"
+              variant="ghost"
               onClick={() => handleSelectAgentMobile(USER_MEMORY_ID)}
-              className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm transition-colors border ${
+              className={`w-full justify-start h-auto px-3 py-2.5 border ${
                 active
-                  ? "bg-purple-500/15 text-shell-text border-purple-500/40"
-                  : "text-shell-text-secondary hover:bg-white/5 hover:text-shell-text border-transparent"
+                  ? "bg-purple-500/15 text-shell-text border-purple-500/40 hover:bg-purple-500/20"
+                  : "border-transparent"
               }`}
               aria-current={active ? "page" : undefined}
             >
@@ -254,7 +262,7 @@ export function MemoryApp({ windowId: _windowId }: { windowId: string }) {
                 aria-hidden="true"
               />
               <span className="truncate font-medium">My Memory</span>
-            </button>
+            </Button>
           );
         })()}
 
@@ -269,14 +277,11 @@ export function MemoryApp({ windowId: _windowId }: { windowId: string }) {
           agents.map((agent) => {
             const active = selectedAgent === agent.name;
             return (
-              <button
+              <Button
                 key={agent.name}
+                variant={active ? "secondary" : "ghost"}
                 onClick={() => handleSelectAgentMobile(agent.name)}
-                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                  active
-                    ? "bg-white/10 text-shell-text"
-                    : "text-shell-text-secondary hover:bg-white/5 hover:text-shell-text"
-                }`}
+                className="w-full justify-start h-auto px-3 py-2.5"
                 aria-current={active ? "page" : undefined}
               >
                 <span
@@ -285,7 +290,7 @@ export function MemoryApp({ windowId: _windowId }: { windowId: string }) {
                   aria-hidden="true"
                 />
                 <span className="truncate">{agent.name}</span>
-              </button>
+              </Button>
             );
           })
         )}
@@ -296,28 +301,24 @@ export function MemoryApp({ windowId: _windowId }: { windowId: string }) {
         <div className="border-t border-white/5 p-2">
           <p className="text-[10px] uppercase tracking-wider text-shell-text-tertiary px-2 mb-1.5">Collections</p>
           <div className="flex flex-wrap gap-1">
-            <button
+            <Button
+              variant={!selectedCollection ? "secondary" : "outline"}
+              size="sm"
               onClick={() => setSelectedCollection(null)}
-              className={`px-2 py-0.5 rounded-full text-[11px] transition-colors ${
-                !selectedCollection
-                  ? "bg-accent/20 text-accent"
-                  : "bg-white/5 text-shell-text-tertiary hover:bg-white/10"
-              }`}
+              className="h-6 px-2 rounded-full text-[11px]"
             >
               All
-            </button>
+            </Button>
             {currentCollections.map((col) => (
-              <button
+              <Button
                 key={col}
+                variant={selectedCollection === col ? "secondary" : "outline"}
+                size="sm"
                 onClick={() => setSelectedCollection(selectedCollection === col ? null : col)}
-                className={`px-2 py-0.5 rounded-full text-[11px] transition-colors ${
-                  selectedCollection === col
-                    ? "bg-accent/20 text-accent"
-                    : "bg-white/5 text-shell-text-tertiary hover:bg-white/10"
-                }`}
+                className="h-6 px-2 rounded-full text-[11px]"
               >
                 {col}
-              </button>
+              </Button>
             ))}
           </div>
         </div>
@@ -337,9 +338,14 @@ export function MemoryApp({ windowId: _windowId }: { windowId: string }) {
           {/* Header / search bar */}
           <div className="flex items-center gap-2 px-4 py-2.5 border-b border-white/5">
             {isMobile && (
-              <button onClick={() => setSelectedAgent(null)} className="flex items-center gap-1 text-xs text-shell-text-secondary shrink-0">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSelectedAgent(null)}
+                className="text-xs shrink-0"
+              >
                 <ChevronLeft size={14} /> Back
-              </button>
+              </Button>
             )}
             {isUserMemory && (
               <div className="flex items-center gap-1.5 shrink-0 px-2 py-1 rounded-md bg-purple-500/10 border border-purple-500/30">
@@ -348,31 +354,28 @@ export function MemoryApp({ windowId: _windowId }: { windowId: string }) {
               </div>
             )}
             <div className="relative flex-1">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-shell-text-tertiary" />
-              <input
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-shell-text-tertiary pointer-events-none z-10" />
+              <Input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={isUserMemory ? "Search my memory..." : "Search memory..."}
-                className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-shell-bg-deep text-sm text-shell-text placeholder:text-shell-text-tertiary border border-white/5 focus:outline-none focus:ring-1 focus:ring-accent"
+                className="pl-8 h-8"
                 aria-label="Search memory chunks"
               />
             </div>
-            <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-shell-bg-deep border border-white/5" role="radiogroup" aria-label="Search mode">
+            <div className="flex items-center gap-1" role="radiogroup" aria-label="Search mode">
               {MODES.map((mode) => (
-                <button
+                <Button
                   key={mode.id}
+                  variant={searchMode === mode.id ? "secondary" : "outline"}
+                  size="sm"
                   onClick={() => setSearchMode(mode.id)}
-                  className={`px-2.5 py-1 rounded-md text-xs transition-colors ${
-                    searchMode === mode.id
-                      ? "bg-accent/20 text-accent font-medium"
-                      : "text-shell-text-tertiary hover:text-shell-text"
-                  }`}
                   role="radio"
                   aria-checked={searchMode === mode.id}
                 >
                   {mode.label}
-                </button>
+                </Button>
               ))}
             </div>
           </div>
@@ -397,15 +400,15 @@ export function MemoryApp({ windowId: _windowId }: { windowId: string }) {
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                 {filteredChunks.map((chunk) => (
-                  <div
+                  <Card
                     key={chunk.id}
-                    className={`p-3.5 rounded-xl border flex flex-col gap-2 ${
+                    className={
                       isUserMemory
                         ? "bg-purple-500/5 border-purple-500/20"
-                        : "bg-shell-surface/60 border-white/5"
-                    }`}
+                        : ""
+                    }
                   >
-                    <div className="flex items-start justify-between gap-2">
+                    <CardHeader className="flex flex-row items-start justify-between gap-2 p-3.5 pb-2">
                       <div className="flex-1 min-w-0">
                         <h3 className="text-sm font-medium truncate" title={chunk.title}>
                           {chunk.title || "Untitled"}
@@ -419,19 +422,23 @@ export function MemoryApp({ windowId: _windowId }: { windowId: string }) {
                           </span>
                         </div>
                       </div>
-                      <button
+                      <Button
+                        variant="ghost"
+                        size="icon"
                         onClick={() => handleDeleteChunk(chunk)}
-                        className="shrink-0 p-1 rounded-md hover:bg-red-500/15 transition-colors text-shell-text-secondary hover:text-red-400"
+                        className="shrink-0 h-7 w-7 hover:bg-red-500/15 hover:text-red-400"
                         aria-label={`Delete memory chunk: ${chunk.title}`}
                         title="Delete"
                       >
                         <Trash2 size={14} />
-                      </button>
-                    </div>
-                    <p className="text-xs text-shell-text-secondary line-clamp-3 leading-relaxed">
-                      {chunk.preview}
-                    </p>
-                  </div>
+                      </Button>
+                    </CardHeader>
+                    <CardContent className="p-3.5 pt-0">
+                      <p className="text-xs text-shell-text-secondary line-clamp-3 leading-relaxed">
+                        {chunk.preview}
+                      </p>
+                    </CardContent>
+                  </Card>
                 ))}
               </div>
             )}
