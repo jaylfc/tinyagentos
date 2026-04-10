@@ -1,0 +1,33 @@
+id: neko-browser
+name: Neko Browser
+type: streaming-app
+version: 2.0.0
+description: "Full Firefox or Chrome browser streamed via WebRTC — real browser experience inside TinyAgentOS with multi-user support and <300ms latency"
+homepage: https://github.com/m1k1o/neko
+license: Apache-2.0
+
+requires:
+  ram_mb: 512
+  ports: [8080, 52000-52100]
+
+install:
+  method: docker
+  image: ghcr.io/m1k1o/neko/firefox:latest
+  volumes:
+    - data:/home/neko
+  ports:
+    - "8080:8080"
+    - "52000-52100:52000-52100/udp"
+  environment:
+    NEKO_SCREEN: 1280x720@30
+    NEKO_PASSWORD: neko
+    NEKO_PASSWORD_ADMIN: admin
+
+hardware_tiers:
+  arm-npu-16gb: full
+  arm-npu-32gb: full
+  x86-cuda-8gb: full
+  x86-cuda-12gb: full
+  x86-vulkan-8gb: full
+  cpu-only: full
+  apple-silicon: full
