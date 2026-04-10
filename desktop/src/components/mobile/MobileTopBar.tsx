@@ -1,4 +1,5 @@
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, Bell } from "lucide-react";
+import { useNotificationStore } from "@/stores/notification-store";
 
 interface Props {
   currentAppName: string | null;
@@ -6,6 +7,9 @@ interface Props {
 }
 
 export function MobileTopBar({ currentAppName, onBack }: Props) {
+  const unreadCount = useNotificationStore((s) => s.notifications.filter((n) => !n.read).length);
+  const toggleCentre = useNotificationStore((s) => s.toggleCentre);
+
   // No bar when on home screen — let iOS status bar stand alone
   if (!currentAppName) return null;
 
@@ -41,8 +45,19 @@ export function MobileTopBar({ currentAppName, onBack }: Props) {
           </span>
         </div>
 
-        {/* Right spacer to balance the back button */}
-        <div style={{ minWidth: 60 }} />
+        {/* Right — notifications bell */}
+        <div className="flex items-center justify-end" style={{ minWidth: 60 }}>
+          <button
+            onClick={toggleCentre}
+            className="relative flex items-center justify-center w-10 h-10 rounded-lg active:bg-white/10 transition-colors"
+            aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ""}`}
+          >
+            <Bell size={20} className="text-white/70" />
+            {unreadCount > 0 && (
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />
+            )}
+          </button>
+        </div>
       </div>
     </div>
   );

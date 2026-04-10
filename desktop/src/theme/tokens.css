@@ -46,3 +46,20 @@
   --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.2), 0 0 1px rgba(255, 255, 255, 0.05);
   --shadow-card-hover: 0 8px 24px rgba(0, 0, 0, 0.3), 0 0 1px rgba(255, 255, 255, 0.08);
 }
+
+/* React-grid-layout dark theme overrides for widget system */
+.react-grid-item.react-grid-placeholder {
+  background: rgba(102, 126, 234, 0.2) !important;
+  border: 1px dashed rgba(102, 126, 234, 0.4) !important;
+  border-radius: 12px !important;
+}
+.react-resizable-handle {
+  opacity: 0.3;
+}
+.react-resizable-handle:hover {
+  opacity: 0.8;
+}
+.react-grid-item > .react-resizable-handle::after {
+  border-right-color: rgba(255, 255, 255, 0.4);
+  border-bottom-color: rgba(255, 255, 255, 0.4);
+}

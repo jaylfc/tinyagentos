@@ -1,5 +1,6 @@
 import { useRef, useCallback } from "react";
 import { ChevronLeft, Bell } from "lucide-react";
+import { useNotificationStore } from "@/stores/notification-store";
 
 interface Props {
   onHome: () => void;
@@ -10,6 +11,8 @@ interface Props {
 export function PillBar({ onHome, onCardSwitcher, onBack }: Props) {
   const startY = useRef<number | null>(null);
   const pillRef = useRef<HTMLDivElement>(null);
+  const unreadCount = useNotificationStore((s) => s.notifications.filter((n) => !n.read).length);
+  const toggleCentre = useNotificationStore((s) => s.toggleCentre);
 
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     e.preventDefault();
