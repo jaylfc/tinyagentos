@@ -1,0 +1,38 @@
+id: pixart-sigma-512
+name: PixArt-Σ 512
+type: model
+version: 1.0
+capabilities: [image-generation]
+description: "Efficient DiT model — Apache 2.0 licensed, strong prompt adherence, 0.6B params. Best commercial-safe option for 8GB systems."
+license: Apache-2.0
+
+variants:
+  - id: fp16
+    name: "FP16 (1.2GB core + 4GB T5)"
+    format: safetensors
+    size_mb: 5200
+    backend: [diffusers, comfyui]
+    min_ram_mb: 6144
+    download_url: https://huggingface.co/PixArt-alpha/PixArt-Sigma-XL-2-512-MS
+    sha256: ""
+
+  - id: int8
+    name: "INT8 Quantized (2GB, CPU)"
+    format: safetensors
+    size_mb: 2000
+    backend: [diffusers]
+    min_ram_mb: 4096
+    download_url: https://huggingface.co/PixArt-alpha/PixArt-Sigma-XL-2-512-MS
+    sha256: ""
+
+hardware_tiers:
+  arm-cpu-8gb: {recommended: int8, fallback: int8}
+  arm-cpu-16gb: {recommended: fp16, fallback: int8}
+  arm-npu-16gb: {recommended: fp16, fallback: int8}
+  x86-cpu-8gb: {recommended: int8, fallback: int8}
+  x86-cpu-16gb: {recommended: fp16, fallback: int8}
+  x86-vulkan-8gb: {recommended: fp16, fallback: int8}
+  x86-cuda-8gb: {recommended: fp16, fallback: int8}
+  x86-cuda-12gb: {recommended: fp16, fallback: int8}
+  apple-silicon: {recommended: fp16, fallback: int8}
+  cpu-only: {recommended: int8, fallback: int8}

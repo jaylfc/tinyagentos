@@ -7,6 +7,15 @@ homepage: https://huggingface.co/SimianLuo/LCM_Dreamshaper_v7
 capabilities: [image-generation]
 
 variants:
+  - id: q4-gguf
+    name: "Q4 GGUF (720MB, 8GB CPU)"
+    format: gguf
+    size_mb: 720
+    backend: [stable-diffusion-cpp]
+    min_ram_mb: 2048
+    download_url: https://huggingface.co/second-state/stable-diffusion-v1-5-GGUF/resolve/main/stable-diffusion-v1-5-Q4_0.gguf
+    sha256: ""
+    quality: acceptable
   - id: gguf-q8
     name: "GGUF Q8 (1.7GB, CPU/GPU)"
     format: gguf
@@ -24,9 +33,13 @@ variants:
     requires_npu: [rk3588, rk3576]
 
 hardware_tiers:
+  arm-cpu-8gb: {recommended: q4-gguf, fallback: q4-gguf}
+  arm-cpu-16gb: {recommended: gguf-q8, fallback: q4-gguf}
   arm-npu-16gb: {recommended: rknn, fallback: gguf-q8}
   arm-npu-32gb: {recommended: rknn}
+  x86-cpu-8gb: {recommended: q4-gguf, fallback: q4-gguf}
+  x86-cpu-16gb: {recommended: gguf-q8, fallback: q4-gguf}
   x86-cuda-8gb: {recommended: gguf-q8}
   x86-cuda-12gb: {recommended: gguf-q8}
   x86-vulkan-8gb: {recommended: gguf-q8}
-  cpu-only: {recommended: gguf-q8, notes: "Slow — 2-5 minutes per image"}
+  cpu-only: {recommended: q4-gguf, fallback: q4-gguf, notes: "Slow — 2-5 minutes per image"}

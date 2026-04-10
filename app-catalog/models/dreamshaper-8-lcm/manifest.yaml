@@ -1,0 +1,49 @@
+id: dreamshaper-8-lcm
+name: Dreamshaper 8 LCM
+type: model
+version: 8.0
+capabilities: [image-generation]
+description: "Photorealistic and stylized images — LCM-distilled, 4-step generation. Community favourite on low-end hardware."
+
+variants:
+  - id: q4-gguf
+    name: "Q4 GGUF (830MB, CPU)"
+    format: gguf
+    size_mb: 830
+    backend: [stable-diffusion-cpp]
+    min_ram_mb: 2048
+    download_url: https://huggingface.co/gsdf/Dreamshaper-8/resolve/main/dreamshaper_8Q4_0.gguf
+    sha256: ""
+    quality: good
+
+  - id: q8-gguf
+    name: "Q8 GGUF (1.6GB, CPU)"
+    format: gguf
+    size_mb: 1600
+    backend: [stable-diffusion-cpp]
+    min_ram_mb: 3072
+    download_url: https://huggingface.co/gsdf/Dreamshaper-8/resolve/main/dreamshaper_8Q8_0.gguf
+    sha256: ""
+    quality: better
+
+  - id: fp16
+    name: "FP16 Safetensors (2.1GB, GPU)"
+    format: safetensors
+    size_mb: 2100
+    backend: [comfyui, sd-webui]
+    min_ram_mb: 4096
+    download_url: https://huggingface.co/Lykon/dreamshaper-8/resolve/main/dreamshaper_8.safetensors
+    sha256: ""
+    quality: best
+
+hardware_tiers:
+  arm-cpu-8gb: {recommended: q4-gguf, fallback: q4-gguf}
+  arm-cpu-16gb: {recommended: q8-gguf, fallback: q4-gguf}
+  arm-npu-16gb: {recommended: q8-gguf, fallback: q4-gguf}
+  x86-cpu-8gb: {recommended: q4-gguf, fallback: q4-gguf}
+  x86-cpu-16gb: {recommended: q8-gguf, fallback: q4-gguf}
+  x86-vulkan-8gb: {recommended: fp16, fallback: q8-gguf}
+  x86-cuda-8gb: {recommended: fp16, fallback: q8-gguf}
+  x86-cuda-12gb: {recommended: fp16, fallback: q8-gguf}
+  apple-silicon: {recommended: fp16, fallback: q8-gguf}
+  cpu-only: {recommended: q4-gguf, fallback: q4-gguf}

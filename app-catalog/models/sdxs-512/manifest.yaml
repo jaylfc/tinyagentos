@@ -1,0 +1,36 @@
+id: sdxs-512
+name: SDXS 512 (1-step)
+type: model
+version: 0.9
+capabilities: [image-generation]
+description: "Single-step generation — sub-second on Intel x86 CPUs via OpenVINO. Trade-off: slight quality loss for extreme speed."
+
+variants:
+  - id: openvino-int8
+    name: "OpenVINO INT8 (1GB, x86 CPU)"
+    format: openvino
+    size_mb: 1000
+    backend: [fastsdcpu]
+    min_ram_mb: 3072
+    download_url: https://huggingface.co/rupeshs/sdxs-512-0.9-openvino
+    sha256: ""
+
+  - id: onnx
+    name: "ONNX (1.2GB, any CPU)"
+    format: onnx
+    size_mb: 1200
+    backend: [onnxstream]
+    min_ram_mb: 2048
+    download_url: https://huggingface.co/IDKiro/sdxs-512-0.9
+    sha256: ""
+
+hardware_tiers:
+  arm-cpu-8gb: {recommended: onnx, fallback: onnx}
+  arm-cpu-16gb: {recommended: onnx, fallback: onnx}
+  arm-npu-16gb: {recommended: onnx, fallback: onnx}
+  x86-cpu-8gb: {recommended: openvino-int8, fallback: onnx}
+  x86-cpu-16gb: {recommended: openvino-int8, fallback: onnx}
+  x86-vulkan-8gb: {recommended: openvino-int8, fallback: onnx}
+  x86-cuda-8gb: {recommended: openvino-int8, fallback: onnx}
+  apple-silicon: {recommended: onnx, fallback: onnx}
+  cpu-only: {recommended: openvino-int8, fallback: onnx}
