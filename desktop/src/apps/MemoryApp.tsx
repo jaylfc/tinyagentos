@@ -22,32 +22,6 @@ interface MemoryChunk {
 type SearchMode = "keyword" | "semantic" | "hybrid";
 
 /* ------------------------------------------------------------------ */
-/*  Fallback data                                                      */
-/* ------------------------------------------------------------------ */
-
-const MOCK_AGENTS: Agent[] = [
-  { name: "research-agent", color: "#3b82f6", collections: ["notes", "web-scrapes", "summaries"] },
-  { name: "code-reviewer", color: "#8b5cf6", collections: ["reviews", "patterns", "standards"] },
-  { name: "data-pipeline", color: "#f59e0b", collections: ["schemas", "transforms"] },
-];
-
-const MOCK_CHUNKS: Record<string, MemoryChunk[]> = {
-  "research-agent": [
-    { id: "c1", title: "GPU vs NPU inference comparison", collection: "notes", preview: "Benchmarks show NPU inference on RK3588 achieves 15 tokens/sec for 7B models compared to 8 tokens/sec on Mali GPU...", hash: "a3f8c2" },
-    { id: "c2", title: "LangChain agent patterns", collection: "web-scrapes", preview: "ReAct pattern combines reasoning and acting. The agent generates a thought, takes an action, observes the result...", hash: "b7d1e4" },
-    { id: "c3", title: "Weekly research summary", collection: "summaries", preview: "Key findings: local models now competitive for agent tasks. GGUF format standardising. Mixture-of-experts showing promise...", hash: "c9a2f6" },
-    { id: "c4", title: "Embedding model evaluation", collection: "notes", preview: "Tested BGE-small, MiniLM-L6, and Nomic-embed. BGE-small gives best quality/speed tradeoff for ARM deployment...", hash: "d4e8b1" },
-  ],
-  "code-reviewer": [
-    { id: "c5", title: "TypeScript strict mode patterns", collection: "patterns", preview: "Always enable strict mode. Use discriminated unions over type assertions. Prefer unknown over any...", hash: "e2f5a8" },
-    { id: "c6", title: "React performance review", collection: "reviews", preview: "Component re-renders excessively due to inline object creation in props. Recommend useMemo for computed values...", hash: "f1c3d7" },
-  ],
-  "data-pipeline": [
-    { id: "c7", title: "CSV ingestion schema", collection: "schemas", preview: "Expected columns: timestamp, agent_name, event_type, payload_json. Timestamp must be ISO 8601...", hash: "g8h2j4" },
-  ],
-};
-
-/* ------------------------------------------------------------------ */
 /*  MemoryApp (main)                                                   */
 /* ------------------------------------------------------------------ */
 
@@ -83,7 +57,7 @@ export function MemoryApp({ windowId: _windowId }: { windowId: string }) {
           }
         }
       } catch { /* fall through */ }
-      setAgents(MOCK_AGENTS);
+      setAgents([]);
       setLoading(false);
     })();
   }, []);
@@ -116,8 +90,7 @@ export function MemoryApp({ windowId: _windowId }: { windowId: string }) {
         }
       }
     } catch { /* fall through */ }
-    // Fallback to mock
-    setChunks(MOCK_CHUNKS[agentName] ?? []);
+    setChunks([]);
     setChunksLoading(false);
   }, []);
 

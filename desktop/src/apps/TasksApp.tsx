@@ -27,8 +27,6 @@ interface Preset {
 /*  Constants                                                          */
 /* ------------------------------------------------------------------ */
 
-const MOCK_AGENTS = ["research-agent", "code-reviewer", "data-pipeline"];
-
 const PRESETS: Preset[] = [
   { name: "Daily Summary", schedule: "0 9 * * *", command: "summarize --last 24h", description: "Generate a daily summary every morning at 9 AM" },
   { name: "Hourly Sync", schedule: "0 * * * *", command: "sync --sources all", description: "Sync all data sources every hour" },
@@ -44,7 +42,7 @@ const PRESETS: Preset[] = [
 
 export function TasksApp({ windowId: _windowId }: { windowId: string }) {
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [agents, setAgents] = useState<string[]>(MOCK_AGENTS);
+  const [agents, setAgents] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [showDialog, setShowDialog] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);

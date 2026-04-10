@@ -96,15 +96,13 @@ const STATUS_STYLES: Record<string, string> = {
   error: "bg-red-500/20 text-red-400",
 };
 
-const MOCK_AGENTS = ["research-agent", "code-reviewer", "data-pipeline"];
-
 /* ------------------------------------------------------------------ */
 /*  ChannelsApp                                                        */
 /* ------------------------------------------------------------------ */
 
 export function ChannelsApp({ windowId: _windowId }: { windowId: string }) {
   const [channels, setChannels] = useState<Channel[]>([]);
-  const [agents, setAgents] = useState<string[]>(MOCK_AGENTS);
+  const [agents, setAgents] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
 

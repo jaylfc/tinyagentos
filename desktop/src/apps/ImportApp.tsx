@@ -25,8 +25,6 @@ const ACCEPTED_MIME = [
   "application/json",
   "text/csv",
 ];
-const MOCK_AGENTS = ["research-agent", "code-reviewer", "data-pipeline"];
-
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -38,7 +36,7 @@ function formatSize(bytes: number): string {
 /* ------------------------------------------------------------------ */
 
 export function ImportApp({ windowId: _windowId }: { windowId: string }) {
-  const [agents, setAgents] = useState<string[]>(MOCK_AGENTS);
+  const [agents, setAgents] = useState<string[]>([]);
   const [selectedAgent, setSelectedAgent] = useState("");
   const [files, setFiles] = useState<QueuedFile[]>([]);
   const [dragOver, setDragOver] = useState(false);

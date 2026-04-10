@@ -28,12 +28,6 @@ interface Model {
 /*  Fallback data                                                      */
 /* ------------------------------------------------------------------ */
 
-const MOCK_AGENTS: Agent[] = [
-  { name: "research-agent", host: "localhost", color: "#3b82f6", status: "running", vectors: 1284 },
-  { name: "code-reviewer", host: "localhost", color: "#8b5cf6", status: "running", vectors: 562 },
-  { name: "data-pipeline", host: "10.0.0.12", color: "#f59e0b", status: "stopped", vectors: 0 },
-];
-
 const MOCK_FRAMEWORKS: Framework[] = [
   { id: "langchain", name: "LangChain", description: "Build context-aware reasoning applications" },
   { id: "autogen", name: "AutoGen", description: "Multi-agent conversation framework" },
@@ -563,8 +557,7 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
         }
       }
     } catch { /* fall through */ }
-    // Fallback to mock data
-    setAgents(MOCK_AGENTS);
+    setAgents([]);
     setLoading(false);
   }, []);
 
