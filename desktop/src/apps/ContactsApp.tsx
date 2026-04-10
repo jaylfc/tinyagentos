@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Plus, Search, Trash2, User } from "lucide-react";
+import { Button, Input, Textarea, Label } from "@/components/ui";
 
 interface Contact {
   id: string;
@@ -72,9 +73,6 @@ export function ContactsApp({ windowId: _windowId }: { windowId: string }) {
     setEditing(null);
   }
 
-  const inputClass =
-    "w-full rounded-lg bg-shell-surface px-3 py-2 text-sm text-shell-text placeholder:text-shell-text-tertiary border border-white/5 focus:outline-none focus:ring-1 focus:ring-accent";
-
   return (
     <div className="flex h-full bg-shell-bg-deep text-shell-text select-none">
       {/* Sidebar */}
@@ -84,24 +82,26 @@ export function ContactsApp({ windowId: _windowId }: { windowId: string }) {
           <div className="relative flex-1">
             <Search
               size={14}
-              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-shell-text-tertiary"
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-shell-text-tertiary pointer-events-none z-10"
             />
-            <input
+            <Input
               type="text"
               placeholder="Search…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full rounded-lg bg-shell-surface pl-8 pr-3 py-1.5 text-sm text-shell-text placeholder:text-shell-text-tertiary border border-white/5 focus:outline-none focus:ring-1 focus:ring-accent"
+              className="pl-8 h-8"
               aria-label="Search contacts"
             />
           </div>
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={handleAdd}
-            className="shrink-0 rounded-lg bg-accent/20 text-accent p-1.5 hover:bg-accent/30 transition-colors"
+            className="shrink-0 h-8 w-8"
             aria-label="Add contact"
           >
             <Plus size={16} />
-          </button>
+          </Button>
         </div>
 
         {/* Contact list */}
@@ -112,23 +112,20 @@ export function ContactsApp({ windowId: _windowId }: { windowId: string }) {
             </p>
           )}
           {filtered.map((c) => (
-            <button
+            <Button
               key={c.id}
+              variant={selectedId === c.id ? "secondary" : "ghost"}
               onClick={() => {
                 setSelectedId(c.id);
                 setEditing(null);
               }}
-              className={`w-full text-left px-3 py-2.5 flex items-center gap-2.5 transition-colors ${
-                selectedId === c.id
-                  ? "bg-accent/15 text-accent"
-                  : "hover:bg-shell-surface"
-              }`}
+              className="w-full justify-start h-auto py-2.5 px-3 rounded-none font-normal"
               aria-label={`Select ${c.name}`}
             >
               <div className="w-8 h-8 rounded-full bg-shell-surface flex items-center justify-center shrink-0">
                 <User size={14} className="text-shell-text-secondary" />
               </div>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1 text-left">
                 <div className="text-sm font-medium truncate">{c.name}</div>
                 {c.email && (
                   <div className="text-xs text-shell-text-secondary truncate">
@@ -136,7 +133,7 @@ export function ContactsApp({ windowId: _windowId }: { windowId: string }) {
                   </div>
                 )}
               </div>
-            </button>
+            </Button>
           ))}
         </div>
       </div>
@@ -150,10 +147,10 @@ export function ContactsApp({ windowId: _windowId }: { windowId: string }) {
                 ? "Edit Contact"
                 : "New Contact"}
             </h2>
-            <label className="flex flex-col gap-1">
-              <span className="text-xs text-shell-text-secondary">Name</span>
-              <input
-                className={inputClass}
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="contact-name">Name</Label>
+              <Input
+                id="contact-name"
                 value={editing.name}
                 onChange={(e) =>
                   setEditing({ ...editing, name: e.target.value })
@@ -162,11 +159,11 @@ export function ContactsApp({ windowId: _windowId }: { windowId: string }) {
                 aria-label="Name"
                 autoFocus
               />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-xs text-shell-text-secondary">Email</span>
-              <input
-                className={inputClass}
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="contact-email">Email</Label>
+              <Input
+                id="contact-email"
                 value={editing.email}
                 onChange={(e) =>
                   setEditing({ ...editing, email: e.target.value })
@@ -174,11 +171,11 @@ export function ContactsApp({ windowId: _windowId }: { windowId: string }) {
                 placeholder="email@example.com"
                 aria-label="Email"
               />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-xs text-shell-text-secondary">Phone</span>
-              <input
-                className={inputClass}
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="contact-phone">Phone</Label>
+              <Input
+                id="contact-phone"
                 value={editing.phone}
                 onChange={(e) =>
                   setEditing({ ...editing, phone: e.target.value })
@@ -186,11 +183,12 @@ export function ContactsApp({ windowId: _windowId }: { windowId: string }) {
                 placeholder="+1 234 567 890"
                 aria-label="Phone"
               />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-xs text-shell-text-secondary">Notes</span>
-              <textarea
-                className={inputClass + " resize-none h-24"}
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="contact-notes">Notes</Label>
+              <Textarea
+                id="contact-notes"
+                className="h-24"
                 value={editing.notes}
                 onChange={(e) =>
                   setEditing({ ...editing, notes: e.target.value })
@@ -198,21 +196,20 @@ export function ContactsApp({ windowId: _windowId }: { windowId: string }) {
                 placeholder="Notes…"
                 aria-label="Notes"
               />
-            </label>
+            </div>
             <div className="flex gap-2 mt-2">
-              <button
+              <Button
                 onClick={handleSave}
                 disabled={!editing.name.trim()}
-                className="px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent/90 transition-colors disabled:opacity-40"
               >
                 Save
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="secondary"
                 onClick={handleCancel}
-                className="px-4 py-2 rounded-lg bg-shell-surface text-shell-text-secondary text-sm hover:bg-shell-surface-hover transition-colors"
               >
                 Cancel
-              </button>
+              </Button>
             </div>
           </div>
         ) : selected ? (
@@ -227,20 +224,23 @@ export function ContactsApp({ windowId: _windowId }: { windowId: string }) {
                 </div>
               </div>
               <div className="flex gap-2">
-                <button
+                <Button
+                  variant="secondary"
+                  size="sm"
                   onClick={handleEdit}
-                  className="px-3 py-1.5 rounded-lg bg-shell-surface text-sm text-shell-text-secondary hover:bg-shell-surface-hover transition-colors"
                   aria-label="Edit contact"
                 >
                   Edit
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
                   onClick={() => handleDelete(selected.id)}
-                  className="p-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors"
+                  className="h-8 w-8 hover:bg-red-500/15 hover:text-red-400"
                   aria-label="Delete contact"
                 >
                   <Trash2 size={16} />
-                </button>
+                </Button>
               </div>
             </div>
 
