@@ -13,10 +13,17 @@ class TestHealthEndpoint:
 @pytest.mark.asyncio
 class TestDashboardPage:
     async def test_dashboard_returns_html(self, client):
-        resp = await client.get("/")
+        # Root redirects to /desktop (the new desktop shell)
+        resp = await client.get("/", follow_redirects=True)
         assert resp.status_code == 200
         assert "text/html" in resp.headers["content-type"]
         assert "TinyAgentOS" in resp.text
+
+    async def test_legacy_dashboard_still_available(self, client):
+        # Old htmx dashboard is still accessible at /legacy
+        resp = await client.get("/legacy")
+        assert resp.status_code == 200
+        assert "text/html" in resp.headers["content-type"]
 
     async def test_backends_api(self, client):
         resp = await client.get("/api/backends")

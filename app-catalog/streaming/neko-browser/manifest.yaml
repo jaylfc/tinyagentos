@@ -6,22 +6,38 @@ description: "Full Firefox or Chrome browser streamed via WebRTC — real browse
 homepage: https://github.com/m1k1o/neko
 license: Apache-2.0
 
+streaming:
+  backend: webrtc
+  port: 8080
+  resolution: 1280x720
+  audio: true
+
+mcp:
+  server: browser-use-mcp
+  install: "pip install browser-use[cli]"
+  capabilities:
+    - navigate
+    - click
+    - type
+    - scroll
+    - extract_text
+    - screenshot
+
+agent_bridge:
+  port: 9110
+  computer_use: optional
+  exec_enabled: false
+  keyboard_enabled: true
+
+expert_agent:
+  name: "Browser Expert"
+  system_prompt: "You are a Browser Expert assistant. Help users navigate the web, research topics, fill out forms, and extract information from websites. Use MCP browser tools to click, type, scroll, and capture screenshots. Respect privacy and security — never submit sensitive information without explicit user confirmation."
+  model: qwen3-4b
+  color: "#FF6B00"
+
 requires:
   ram_mb: 512
-  ports: [8080, 52000-52100]
-
-install:
-  method: docker
-  image: ghcr.io/m1k1o/neko/firefox:latest
-  volumes:
-    - data:/home/neko
-  ports:
-    - "8080:8080"
-    - "52000-52100:52000-52100/udp"
-  environment:
-    NEKO_SCREEN: 1280x720@30
-    NEKO_PASSWORD: neko
-    NEKO_PASSWORD_ADMIN: admin
+  gpu_recommended: false
 
 hardware_tiers:
   arm-npu-16gb: full
