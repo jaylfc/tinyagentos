@@ -24,9 +24,14 @@
         margin: 0;
         padding: 0;
         overflow: hidden;
-        height: 100%;
-        width: 100%;
-        background: #1a1b2e;
+        /* Use dynamic viewport height — tracks visual viewport on iOS 15.4+ */
+        height: 100dvh;
+        width: 100vw;
+        /* MUST match the pill bar colour, not the wallpaper —
+           prevents "lighter area below bar" on iOS PWA by ensuring any fractional
+           pixel gap bleeds through a matching colour */
+        background: #14142a;
+        overscroll-behavior: none;
         -webkit-user-select: none;
         user-select: none;
         -webkit-touch-callout: none;
@@ -39,8 +44,8 @@
       }
       /* Ensure the app fills the entire screen including notch/safe areas */
       #root {
-        height: 100%;
-        width: 100%;
+        height: 100dvh;
+        width: 100vw;
       }
     </style>
   </head>
