@@ -13,14 +13,18 @@ export function MobileTopBar({ currentAppName, onBack }: Props) {
 
   return (
     <div
-      className="flex items-center justify-between px-3 shrink-0"
+      className="shrink-0"
       style={{
-        height: 28,
         backgroundColor: "var(--color-shell-surface)",
         borderBottom: "1px solid var(--color-shell-border, rgba(255,255,255,0.08))",
         backdropFilter: "blur(12px)",
         WebkitBackdropFilter: "blur(12px)",
+        paddingTop: "env(safe-area-inset-top, 0px)",
       }}
+    >
+    <div
+      className="flex items-center justify-between px-3"
+      style={{ height: 28 }}
     >
       {/* Left */}
       <div className="flex items-center gap-1.5 min-w-0 flex-1">
@@ -66,6 +70,7 @@ export function MobileTopBar({ currentAppName, onBack }: Props) {
         </span>
         <Bell size={12} className="text-shell-text-secondary" />
       </div>
+    </div>
     </div>
   );
 }

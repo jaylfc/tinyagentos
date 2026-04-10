@@ -45,15 +45,18 @@ export function PillBar({ onHome, onCardSwitcher, onBack }: Props) {
 
   return (
     <div
-      className="fixed bottom-0 left-0 right-0 z-[9999] flex items-center justify-between px-4"
+      className="fixed bottom-0 left-0 right-0 z-[9999]"
       style={{
-        height: 48,
         backgroundColor: "var(--color-dock-bg)",
         borderTop: "1px solid var(--color-dock-border)",
         paddingBottom: "env(safe-area-inset-bottom, 0px)",
         backdropFilter: "blur(20px)",
         WebkitBackdropFilter: "blur(20px)",
       }}
+    >
+    <div
+      className="flex items-center justify-between px-4"
+      style={{ height: 48 }}
     >
       <button
         onClick={onBack}
@@ -89,6 +92,7 @@ export function PillBar({ onHome, onCardSwitcher, onBack }: Props) {
       >
         <Bell size={20} className="text-white/70" />
       </button>
+    </div>
     </div>
   );
 }
