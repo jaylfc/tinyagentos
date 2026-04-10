@@ -48,20 +48,18 @@ export function PillBar({ onHome, onCardSwitcher, onBack }: Props) {
 
   return (
     <div
-      className="fixed bottom-0 left-0 right-0 z-[9999] grid grid-cols-3 items-center px-4"
+      className="fixed bottom-0 left-0 right-0 z-[9999] flex items-center px-4"
       style={{
-        // Bar extends into the iOS safe area (background fills it) but items-center
-        // balances icons across the ENTIRE visible bar — no padding means no dead zone.
-        // Touch targets (36px) sit comfortably above the 5px home indicator line.
+        // Flex + items-center = icons vertically centred in the full bar height.
+        // Solid background (no alpha) so no wallpaper bleed-through.
+        // Bar extends all the way down to the physical screen edge.
         height: "calc(48px + env(safe-area-inset-bottom, 0px))",
-        backgroundColor: "rgba(20, 21, 38, 0.85)",
+        backgroundColor: "#14142a",
         borderTop: "1px solid rgba(255,255,255,0.06)",
-        backdropFilter: "blur(20px)",
-        WebkitBackdropFilter: "blur(20px)",
       }}
     >
       {/* Left — back button */}
-      <div className="flex justify-start">
+      <div className="flex-1 flex justify-start">
         <button
           onClick={onBack}
           className="flex items-center justify-center w-9 h-9 rounded-lg active:bg-white/10 transition-colors"
@@ -72,7 +70,7 @@ export function PillBar({ onHome, onCardSwitcher, onBack }: Props) {
       </div>
 
       {/* Centre — pill handle */}
-      <div className="flex justify-center">
+      <div className="flex-1 flex justify-center">
         <div
           ref={pillRef}
           className="cursor-pointer select-none"
@@ -95,7 +93,7 @@ export function PillBar({ onHome, onCardSwitcher, onBack }: Props) {
       </div>
 
       {/* Right — notifications */}
-      <div className="flex justify-end">
+      <div className="flex-1 flex justify-end">
         <button
           onClick={toggleCentre}
           className="relative flex items-center justify-center w-9 h-9 rounded-lg active:bg-white/10 transition-colors"
