@@ -1,6 +1,16 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Bot, Plus, Trash2, ScrollText, Play, Server, X, ChevronRight, ChevronLeft, Check, Wrench } from "lucide-react";
 import { AgentSkillsPanel } from "./AgentSkillsPanel";
+import {
+  Button,
+  Card,
+  Input,
+  Label,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -72,62 +82,60 @@ function AgentRow({
   onDelete: (name: string) => void;
 }) {
   return (
-    <tr className="border-b border-white/5 hover:bg-shell-surface/50 transition-colors">
-      <td className="px-4 py-3">
-        <div className="flex items-center gap-2.5">
-          <span
-            className="w-2.5 h-2.5 rounded-full shrink-0"
-            style={{ backgroundColor: agent.color }}
-            aria-label={`Color: ${agent.color}`}
-          />
-          <span className="font-medium text-sm">{agent.name}</span>
-        </div>
-      </td>
-      <td className="px-4 py-3 text-sm text-shell-text-secondary">
-        <div className="flex items-center gap-1.5">
-          <Server size={13} className="text-shell-text-tertiary" />
-          {agent.host}
-        </div>
-      </td>
-      <td className="px-4 py-3">
+    <Card className="flex items-center gap-4 px-4 py-3 hover:bg-shell-surface/50 transition-colors">
+      <div className="flex items-center gap-2.5 flex-1 min-w-0">
         <span
-          className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium capitalize ${STATUS_STYLES[agent.status] ?? STATUS_STYLES.stopped}`}
-        >
-          {agent.status}
-        </span>
-      </td>
-      <td className="px-4 py-3 text-sm text-shell-text-secondary tabular-nums">
+          className="w-2.5 h-2.5 rounded-full shrink-0"
+          style={{ backgroundColor: agent.color }}
+          aria-label={`Color: ${agent.color}`}
+        />
+        <span className="font-medium text-sm truncate">{agent.name}</span>
+      </div>
+      <div className="flex items-center gap-1.5 text-sm text-shell-text-secondary min-w-0">
+        <Server size={13} className="text-shell-text-tertiary" />
+        <span className="truncate">{agent.host}</span>
+      </div>
+      <span
+        className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium capitalize ${STATUS_STYLES[agent.status] ?? STATUS_STYLES.stopped}`}
+      >
+        {agent.status}
+      </span>
+      <span className="text-sm text-shell-text-secondary tabular-nums w-20 text-right">
         {agent.vectors.toLocaleString()}
-      </td>
-      <td className="px-4 py-3">
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => onViewLogs(agent.name)}
-            className="p-1.5 rounded-md hover:bg-shell-surface transition-colors text-shell-text-secondary hover:text-shell-text"
-            aria-label={`View logs for ${agent.name}`}
-            title="View Logs"
-          >
-            <ScrollText size={15} />
-          </button>
-          <button
-            onClick={() => onViewSkills(agent.name)}
-            className="p-1.5 rounded-md hover:bg-shell-surface transition-colors text-shell-text-secondary hover:text-shell-text"
-            aria-label={`Manage skills for ${agent.name}`}
-            title="Skills"
-          >
-            <Wrench size={15} />
-          </button>
-          <button
-            onClick={() => onDelete(agent.name)}
-            className="p-1.5 rounded-md hover:bg-red-500/15 transition-colors text-shell-text-secondary hover:text-red-400"
-            aria-label={`Delete ${agent.name}`}
-            title="Delete"
-          >
-            <Trash2 size={15} />
-          </button>
-        </div>
-      </td>
-    </tr>
+      </span>
+      <div className="flex items-center gap-1">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          onClick={() => onViewLogs(agent.name)}
+          aria-label={`View logs for ${agent.name}`}
+          title="View Logs"
+        >
+          <ScrollText size={15} />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          onClick={() => onViewSkills(agent.name)}
+          aria-label={`Manage skills for ${agent.name}`}
+          title="Skills"
+        >
+          <Wrench size={15} />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 hover:bg-red-500/15 hover:text-red-400"
+          onClick={() => onDelete(agent.name)}
+          aria-label={`Delete ${agent.name}`}
+          title="Delete"
+        >
+          <Trash2 size={15} />
+        </Button>
+      </div>
+    </Card>
   );
 }
 
@@ -179,24 +187,13 @@ function AgentDetailPanel({
     }
   }, [logs]);
 
-  const tabBtn = (id: DetailTab, label: string, Icon: typeof ScrollText) => (
-    <button
-      onClick={() => setTab(id)}
-      className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-        tab === id
-          ? "bg-white/10 text-shell-text"
-          : "text-shell-text-secondary hover:bg-white/5 hover:text-shell-text"
-      }`}
-      role="tab"
-      aria-selected={tab === id}
-    >
-      <Icon size={13} />
-      {label}
-    </button>
-  );
-
   return (
-    <div className="border-t border-white/5 bg-shell-bg-deep flex flex-col" style={{ height: "22rem" }}>
+    <Tabs
+      value={tab}
+      onValueChange={(v) => setTab(v as DetailTab)}
+      className="border-t border-white/5 bg-shell-bg-deep flex flex-col"
+      style={{ height: "22rem" }}
+    >
       <div className="flex items-center justify-between px-4 py-2 border-b border-white/5 shrink-0">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5 text-sm">
@@ -207,35 +204,44 @@ function AgentDetailPanel({
             />
             <span className="font-medium">{agentName}</span>
           </div>
-          <div className="flex items-center gap-1" role="tablist" aria-label="Agent detail tabs">
-            {tabBtn("logs", "Logs", ScrollText)}
-            {tabBtn("skills", "Skills", Wrench)}
-          </div>
+          <TabsList aria-label="Agent detail tabs">
+            <TabsTrigger value="logs">
+              <ScrollText size={13} className="mr-1.5" />
+              Logs
+            </TabsTrigger>
+            <TabsTrigger value="skills">
+              <Wrench size={13} className="mr-1.5" />
+              Skills
+            </TabsTrigger>
+          </TabsList>
         </div>
-        <button
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
           onClick={onClose}
-          className="p-1 rounded-md hover:bg-shell-surface transition-colors text-shell-text-secondary hover:text-shell-text"
           aria-label="Close detail panel"
         >
           <X size={14} />
-        </button>
+        </Button>
       </div>
       <div className="flex-1 min-h-0 overflow-hidden">
-        {tab === "logs" ? (
+        <TabsContent value="logs" className="h-full mt-0">
           <pre
             ref={scrollRef}
             className="h-full overflow-auto p-4 text-xs font-mono text-shell-text-secondary leading-relaxed whitespace-pre-wrap"
           >
             {logs}
           </pre>
-        ) : (
+        </TabsContent>
+        <TabsContent value="skills" className="h-full mt-0">
           <AgentSkillsPanel
             agentId={agent.name}
             framework={agent.framework || "smolagents"}
           />
-        )}
+        </TabsContent>
       </div>
-    </div>
+    </Tabs>
   );
 }
 
@@ -360,13 +366,15 @@ function DeployWizard({
             <Play size={16} className="text-accent" />
             <h2 className="text-sm font-semibold">Deploy Agent</h2>
           </div>
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
             onClick={() => onClose()}
-            className="p-1 rounded-md hover:bg-white/5 text-shell-text-secondary hover:text-shell-text transition-colors"
             aria-label="Close wizard"
           >
             <X size={16} />
-          </button>
+          </Button>
         </div>
 
         {/* Step indicators */}
@@ -402,23 +410,22 @@ function DeployWizard({
         <div className="px-5 py-5 min-h-[220px]">
           {/* Step 0: Name + Color */}
           {step === 0 && (
-            <div className="space-y-4">
+            <Card className="p-0 border-0 bg-transparent shadow-none space-y-4">
               <div>
-                <label htmlFor="agent-name" className="block text-xs text-shell-text-secondary mb-1.5">
+                <Label htmlFor="agent-name" className="mb-1.5 block">
                   Agent Name
-                </label>
-                <input
+                </Label>
+                <Input
                   id="agent-name"
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="my-agent"
-                  className="w-full rounded-lg bg-shell-bg-deep px-3 py-2 text-sm text-shell-text placeholder:text-shell-text-tertiary border border-white/5 focus:outline-none focus:ring-1 focus:ring-accent"
                   autoFocus
                 />
               </div>
               <div>
-                <span className="block text-xs text-shell-text-secondary mb-1.5">Color</span>
+                <Label className="mb-1.5 block">Color</Label>
                 <div className="flex gap-2" role="radiogroup" aria-label="Agent color">
                   {COLORS.map((c) => (
                     <button
@@ -435,7 +442,7 @@ function DeployWizard({
                   ))}
                 </div>
               </div>
-            </div>
+            </Card>
           )}
 
           {/* Step 1: Framework */}
@@ -484,14 +491,14 @@ function DeployWizard({
           {step === 3 && (
             <div className="space-y-4">
               <div>
-                <label htmlFor="agent-memory" className="block text-xs text-shell-text-secondary mb-1.5">
+                <Label htmlFor="agent-memory" className="mb-1.5 block">
                   Memory
-                </label>
+                </Label>
                 <select
                   id="agent-memory"
                   value={memory}
                   onChange={(e) => setMemory(e.target.value)}
-                  className="w-full rounded-lg bg-shell-bg-deep px-3 py-2 text-sm text-shell-text border border-white/5 focus:outline-none focus:ring-1 focus:ring-accent"
+                  className="flex h-9 w-full rounded-lg border border-white/10 bg-shell-bg-deep px-3 py-1 text-sm text-shell-text focus-visible:outline-none focus-visible:border-accent/40 focus-visible:ring-2 focus-visible:ring-accent/20 transition-colors"
                 >
                   <option value="256">256 MB</option>
                   <option value="512">512 MB</option>
@@ -501,14 +508,14 @@ function DeployWizard({
                 </select>
               </div>
               <div>
-                <label htmlFor="agent-cpus" className="block text-xs text-shell-text-secondary mb-1.5">
+                <Label htmlFor="agent-cpus" className="mb-1.5 block">
                   CPU Cores
-                </label>
+                </Label>
                 <select
                   id="agent-cpus"
                   value={cpus}
                   onChange={(e) => setCpus(e.target.value)}
-                  className="w-full rounded-lg bg-shell-bg-deep px-3 py-2 text-sm text-shell-text border border-white/5 focus:outline-none focus:ring-1 focus:ring-accent"
+                  className="flex h-9 w-full rounded-lg border border-white/10 bg-shell-bg-deep px-3 py-1 text-sm text-shell-text focus-visible:outline-none focus-visible:border-accent/40 focus-visible:ring-2 focus-visible:ring-accent/20 transition-colors"
                 >
                   <option value="1">1 Core</option>
                   <option value="2">2 Cores</option>
@@ -582,32 +589,34 @@ function DeployWizard({
 
         {/* Footer */}
         <div className="flex items-center justify-between px-5 py-3 border-t border-white/5">
-          <button
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => (step === 0 ? onClose() : setStep(step - 1))}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm text-shell-text-secondary hover:bg-white/5 transition-colors"
           >
             <ChevronLeft size={14} />
             {step === 0 ? "Cancel" : "Back"}
-          </button>
+          </Button>
 
           {step < 5 ? (
-            <button
+            <Button
+              size="sm"
               onClick={() => setStep(step + 1)}
               disabled={!canNext()}
-              className="flex items-center gap-1 px-4 py-1.5 rounded-lg text-sm font-medium bg-accent text-white hover:bg-accent/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               Next
               <ChevronRight size={14} />
-            </button>
+            </Button>
           ) : (
-            <button
+            <Button
+              size="sm"
               onClick={handleDeploy}
               disabled={deploying}
-              className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-60 transition-colors"
+              className="bg-emerald-600 hover:bg-emerald-500 text-white"
             >
               <Play size={13} />
               {deploying ? "Deploying..." : "Deploy Agent"}
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -678,15 +687,16 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
             {agents.length} deployed
           </span>
         </div>
-        <button
+        <Button
           onClick={() => setWizardOpen(true)}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200"
+          size="sm"
+          className="text-white shadow-lg hover:shadow-xl hover:-translate-y-0.5 hover:brightness-110 border-0"
           style={{ background: "linear-gradient(135deg, #667eea, #764ba2)" }}
           aria-label="Deploy new agent"
         >
           <Plus size={14} />
           Deploy Agent
-        </button>
+        </Button>
       </div>
 
       {/* Content */}
@@ -706,38 +716,27 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
               <p className="text-base font-medium text-shell-text-secondary mb-1">No agents deployed yet</p>
               <p className="text-xs text-shell-text-tertiary max-w-xs">Deploy your first AI agent to start automating tasks on your device.</p>
             </div>
-            <button
+            <Button
               onClick={() => setWizardOpen(true)}
-              className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold text-white shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 mt-1"
+              className="text-white shadow-lg hover:shadow-xl hover:-translate-y-0.5 hover:brightness-110 border-0 mt-1"
               style={{ background: "linear-gradient(135deg, #667eea, #764ba2)" }}
             >
               <Plus size={15} />
               Deploy your first agent
-            </button>
+            </Button>
           </div>
         ) : (
-          <table className="w-full text-left" aria-label="Agent list">
-            <thead>
-              <tr className="border-b border-white/5 text-[11px] uppercase tracking-wider text-shell-text-tertiary">
-                <th className="px-4 py-2.5 font-medium">Name</th>
-                <th className="px-4 py-2.5 font-medium">Host</th>
-                <th className="px-4 py-2.5 font-medium">Status</th>
-                <th className="px-4 py-2.5 font-medium">Vectors</th>
-                <th className="px-4 py-2.5 font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {agents.map((agent) => (
-                <AgentRow
-                  key={agent.name}
-                  agent={agent}
-                  onViewLogs={(name) => setDetail({ name, tab: "logs" })}
-                  onViewSkills={(name) => setDetail({ name, tab: "skills" })}
-                  onDelete={handleDelete}
-                />
-              ))}
-            </tbody>
-          </table>
+          <div className="p-4 space-y-2" role="list" aria-label="Agent list">
+            {agents.map((agent) => (
+              <AgentRow
+                key={agent.name}
+                agent={agent}
+                onViewLogs={(name) => setDetail({ name, tab: "logs" })}
+                onViewSkills={(name) => setDetail({ name, tab: "skills" })}
+                onDelete={handleDelete}
+              />
+            ))}
+          </div>
         )}
       </div>
 
