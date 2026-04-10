@@ -13,11 +13,80 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 router = APIRouter()
 
 
+def build_command(config: dict) -> list[str]:
+    """Build the PTY command from a connection config dict.
+
+    Supported modes:
+      - "local" (default): spawn the user's login shell.
+      - "ssh": spawn ssh to a remote host. If a password is supplied we
+        shell out via `sshpass` (note: sshpass must be installed on the
+        host manually; we deliberately do not auto-install it). Key-based
+        auth works with stock ssh and needs no extra packages.
+    """
+    mode = config.get("mode", "local")
+    if mode == "ssh":
+        host = str(config.get("host", "")).strip()
+        port = int(config.get("port", 22) or 22)
+        username = str(config.get("username", "")).strip()
+        password = config.get("password", "") or ""
+
+        if not host or not username:
+            raise ValueError("SSH requires host and username")
+
+        ssh_args = [
+            "ssh",
+            "-o", "StrictHostKeyChecking=no",
+            "-o", "UserKnownHostsFile=/dev/null",
+            "-p", str(port),
+            f"{username}@{host}",
+        ]
+
+        if password:
+            # Requires `sshpass` installed on the host (not auto-installed).
+            return ["sshpass", "-p", password, *ssh_args]
+        return ssh_args
+
+    # Default: local login shell
+    shell = os.environ.get("SHELL", "/bin/bash")
+    return [shell, "-l"]
+
+
 @router.websocket("/ws/terminal")
 async def terminal_ws(ws: WebSocket):
     await ws.accept()
 
-    shell = os.environ.get("SHELL", "/bin/bash")
+    # Wait briefly for the client's first message. It may be either a
+    # "connect" config object (local/ssh) or raw terminal input (legacy).
+    first: str | None = None
+    try:
+        first = await asyncio.wait_for(ws.receive_text(), timeout=5.0)
+    except asyncio.TimeoutError:
+        first = None
+    except WebSocketDisconnect:
+        return
+
+    config: dict = {}
+    initial_input: str | None = None
+    if first is not None:
+        try:
+            parsed = json.loads(first)
+            if isinstance(parsed, dict) and parsed.get("type") == "connect":
+                config = parsed
+            elif isinstance(parsed, dict) and parsed.get("type") == "resize":
+                # Legacy clients send resize first — treat as local shell
+                # and apply resize after PTY is ready.
+                initial_input = first
+            else:
+                initial_input = first
+        except (json.JSONDecodeError, ValueError):
+            initial_input = first
+
+    try:
+        cmd = build_command(config)
+    except ValueError as e:
+        await ws.send_text(f"\r\n\x1b[31mError: {e}\x1b[0m\r\n")
+        await ws.close()
+        return
 
     # Create PTY pair
     master_fd, slave_fd = pty.openpty()
@@ -36,7 +105,11 @@ async def terminal_ws(ws: WebSocket):
         env = os.environ.copy()
         env["TERM"] = "xterm-256color"
         env["COLORTERM"] = "truecolor"
-        os.execvpe(shell, [shell, "-l"], env)
+        try:
+            os.execvpe(cmd[0], cmd, env)
+        except FileNotFoundError:
+            print(f"Command not found: {cmd[0]}", flush=True)
+            os._exit(127)
         # Never reaches here
 
     # Parent: close slave, work with master
@@ -45,6 +118,30 @@ async def terminal_ws(ws: WebSocket):
     # Non-blocking reads from master
     flags = fcntl.fcntl(master_fd, fcntl.F_GETFL)
     fcntl.fcntl(master_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+
+    # If the first message was a resize or raw input (legacy path),
+    # process it now that the PTY exists.
+    if initial_input is not None:
+        handled = False
+        try:
+            legacy = json.loads(initial_input)
+            if isinstance(legacy, dict) and legacy.get("type") == "resize":
+                winsize = struct.pack(
+                    "HHHH",
+                    legacy.get("rows", 24),
+                    legacy.get("cols", 80),
+                    0,
+                    0,
+                )
+                fcntl.ioctl(master_fd, termios.TIOCSWINSZ, winsize)
+                handled = True
+        except (json.JSONDecodeError, ValueError):
+            pass
+        if not handled:
+            try:
+                os.write(master_fd, initial_input.encode("utf-8"))
+            except OSError:
+                pass
 
     async def pty_reader():
         try:
@@ -68,10 +165,14 @@ async def terminal_ws(ws: WebSocket):
             msg = await ws.receive_text()
             # Check for resize command
             try:
-                cmd = json.loads(msg)
-                if isinstance(cmd, dict) and cmd.get("type") == "resize":
+                cmd_msg = json.loads(msg)
+                if isinstance(cmd_msg, dict) and cmd_msg.get("type") == "resize":
                     winsize = struct.pack(
-                        "HHHH", cmd.get("rows", 24), cmd.get("cols", 80), 0, 0
+                        "HHHH",
+                        cmd_msg.get("rows", 24),
+                        cmd_msg.get("cols", 80),
+                        0,
+                        0,
                     )
                     fcntl.ioctl(master_fd, termios.TIOCSWINSZ, winsize)
                     continue
