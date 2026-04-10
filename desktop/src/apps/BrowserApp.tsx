@@ -164,120 +164,115 @@ export function BrowserApp({ windowId: _windowId }: { windowId: string }) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Navigation bar */}
+      {/* Navigation — URL row */}
       <form
         onSubmit={handleSubmit}
-        className="flex items-center gap-1.5 px-2 py-1.5 bg-shell-surface border-b border-shell-border"
+        className="flex flex-col gap-1.5 px-2 py-1.5 bg-shell-surface border-b border-shell-border"
       >
-        <button
-          type="button"
-          onClick={goBack}
-          disabled={!canGoBack}
-          className="p-1.5 rounded-md hover:bg-shell-surface-hover disabled:opacity-30 transition-colors"
-          aria-label="Back"
-        >
-          <ArrowLeft size={16} className="text-shell-text-secondary" />
-        </button>
-        <button
-          type="button"
-          onClick={goForward}
-          disabled={!canGoForward}
-          className="p-1.5 rounded-md hover:bg-shell-surface-hover disabled:opacity-30 transition-colors"
-          aria-label="Forward"
-        >
-          <ArrowRight size={16} className="text-shell-text-secondary" />
-        </button>
-        <button
-          type="button"
-          onClick={refresh}
-          className="p-1.5 rounded-md hover:bg-shell-surface-hover transition-colors"
-          aria-label="Refresh"
-        >
-          <RotateCw
-            size={16}
-            className={`text-shell-text-secondary ${loading ? "animate-spin" : ""}`}
-          />
-        </button>
+        {/* Row 1: nav buttons + URL input */}
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={goBack}
+            disabled={!canGoBack}
+            className="p-1.5 rounded-md hover:bg-shell-surface-hover disabled:opacity-30 transition-colors shrink-0"
+            aria-label="Back"
+          >
+            <ArrowLeft size={16} className="text-shell-text-secondary" />
+          </button>
+          <button
+            type="button"
+            onClick={goForward}
+            disabled={!canGoForward}
+            className="p-1.5 rounded-md hover:bg-shell-surface-hover disabled:opacity-30 transition-colors shrink-0"
+            aria-label="Forward"
+          >
+            <ArrowRight size={16} className="text-shell-text-secondary" />
+          </button>
+          <button
+            type="button"
+            onClick={refresh}
+            className="p-1.5 rounded-md hover:bg-shell-surface-hover transition-colors shrink-0"
+            aria-label="Refresh"
+          >
+            <RotateCw
+              size={16}
+              className={`text-shell-text-secondary ${loading ? "animate-spin" : ""}`}
+            />
+          </button>
 
-        <div className="flex-1 flex items-center gap-2 px-2.5 py-1 rounded-md bg-shell-bg-deep border border-shell-border">
-          <Globe size={14} className="text-shell-text-tertiary shrink-0" />
-          <input
-            type="text"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            className="flex-1 bg-transparent text-sm text-shell-text outline-none placeholder:text-shell-text-tertiary"
-            placeholder="Enter URL"
-            aria-label="URL"
-          />
+          <div className="flex-1 flex items-center gap-2 px-2.5 py-1 rounded-md bg-shell-bg-deep border border-shell-border min-w-0">
+            <Globe size={14} className="text-shell-text-tertiary shrink-0" />
+            <input
+              type="text"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              className="flex-1 bg-transparent text-sm text-shell-text outline-none placeholder:text-shell-text-tertiary min-w-0"
+              placeholder="Enter URL"
+              aria-label="URL"
+            />
+          </div>
         </div>
 
-        {/* Open in Tab — prominent on all platforms */}
-        <button
-          type="button"
-          onClick={openInTab}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium transition-colors"
-          aria-label="Open in new tab"
-          title="Open in new tab"
-        >
-          <ExternalLink size={14} />
-          <span className="hidden sm:inline">Open in Tab</span>
-        </button>
+        {/* Row 2: action buttons */}
+        <div className="flex items-center gap-1.5 justify-end">
+          <button
+            type="button"
+            onClick={openInTab}
+            className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium transition-colors"
+            aria-label="Open in new tab"
+            title="Open in new tab"
+          >
+            <ExternalLink size={12} />
+            <span>Open in Tab</span>
+          </button>
 
-        {/* Mode toggle */}
-        <button
-          type="button"
-          onClick={toggleMode}
-          className={`p-1.5 rounded-md transition-colors text-xs font-medium ${
-            mode === "embedded"
-              ? "bg-green-600/20 text-green-700 dark:text-green-400 border border-green-600/30 hover:bg-green-600/30"
-              : "bg-shell-surface-hover text-shell-text-secondary hover:bg-shell-surface-hover/80"
-          }`}
-          aria-label={
-            mode === "embedded"
-              ? "Switch to external mode"
-              : "Switch to embedded mode"
-          }
-          title={
-            mode === "embedded"
-              ? "Embedded mode (click for external)"
-              : "External mode (click for embedded)"
-          }
-        >
-          <Globe size={14} />
-        </button>
+          <button
+            type="button"
+            onClick={toggleMode}
+            className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors ${
+              mode === "embedded"
+                ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/25"
+                : "bg-shell-surface-hover text-shell-text-secondary border border-shell-border"
+            }`}
+            aria-label={mode === "embedded" ? "Switch to external mode" : "Switch to embedded mode"}
+            title={mode === "embedded" ? "Embedded mode" : "External mode"}
+          >
+            <Globe size={12} />
+            <span>{mode === "embedded" ? "Embed" : "Ext"}</span>
+          </button>
 
-        <button
-          type="button"
-          onClick={copyUrl}
-          className="p-1.5 rounded-md hover:bg-shell-surface-hover transition-colors relative"
-          aria-label="Copy URL"
-          title="Copy URL"
-        >
-          <Copy size={16} className="text-shell-text-secondary" />
-          {copied && (
-            <span className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-[10px] bg-shell-surface border border-shell-border rounded px-1 py-0.5 text-shell-text-secondary whitespace-nowrap z-10">
-              Copied!
-            </span>
-          )}
-        </button>
+          <button
+            type="button"
+            onClick={copyUrl}
+            className="p-1.5 rounded-md hover:bg-shell-surface-hover transition-colors relative"
+            aria-label="Copy URL"
+            title="Copy URL"
+          >
+            <Copy size={14} className="text-shell-text-secondary" />
+            {copied && (
+              <span className="absolute -bottom-6 right-0 text-[10px] bg-shell-surface border border-shell-border rounded px-1 py-0.5 text-shell-text-secondary whitespace-nowrap z-10">
+                Copied!
+              </span>
+            )}
+          </button>
 
-        <div className="relative">
           <button
             type="button"
             onMouseEnter={() => setAgentTooltip(true)}
             onMouseLeave={() => setAgentTooltip(false)}
-            className="flex items-center gap-1 px-2 py-1.5 rounded-md bg-purple-600/20 hover:bg-purple-600/30 text-purple-600 dark:text-purple-400 text-xs font-medium transition-colors border border-purple-600/30"
+            className="flex items-center gap-1 px-2 py-1 rounded-md bg-purple-500/15 hover:bg-purple-500/25 text-purple-400 text-xs transition-colors border border-purple-500/25 relative"
             aria-label="Agent Browse"
             title="Agent Browse"
           >
-            <Bot size={14} />
-            <span className="hidden sm:inline">Agent</span>
+            <Bot size={12} />
+            <span>Agent</span>
+            {agentTooltip && (
+              <span className="absolute top-full right-0 mt-1 text-[10px] bg-shell-surface border border-shell-border rounded px-2 py-1 text-shell-text-secondary whitespace-nowrap z-10 shadow-md">
+                Requires browser-use plugin
+              </span>
+            )}
           </button>
-          {agentTooltip && (
-            <span className="absolute top-full right-0 mt-1 text-[10px] bg-shell-surface border border-shell-border rounded px-2 py-1 text-shell-text-secondary whitespace-nowrap z-10 shadow-md">
-              Requires browser-use plugin
-            </span>
-          )}
         </div>
       </form>
 
