@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Bot, Plus, Trash2, ScrollText, Play, Server, X, ChevronRight, ChevronLeft, Check } from "lucide-react";
+import { Bot, Plus, Trash2, ScrollText, Play, Server, X, ChevronRight, ChevronLeft, Check, Wrench } from "lucide-react";
+import { AgentSkillsPanel } from "./AgentSkillsPanel";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -11,6 +12,7 @@ interface Agent {
   color: string;
   status: "running" | "stopped" | "error" | "deploying";
   vectors: number;
+  framework?: string;
 }
 
 interface Framework {
@@ -61,10 +63,12 @@ const STATUS_STYLES: Record<string, string> = {
 function AgentRow({
   agent,
   onViewLogs,
+  onViewSkills,
   onDelete,
 }: {
   agent: Agent;
   onViewLogs: (name: string) => void;
+  onViewSkills: (name: string) => void;
   onDelete: (name: string) => void;
 }) {
   return (
@@ -106,6 +110,14 @@ function AgentRow({
             <ScrollText size={15} />
           </button>
           <button
+            onClick={() => onViewSkills(agent.name)}
+            className="p-1.5 rounded-md hover:bg-shell-surface transition-colors text-shell-text-secondary hover:text-shell-text"
+            aria-label={`Manage skills for ${agent.name}`}
+            title="Skills"
+          >
+            <Wrench size={15} />
+          </button>
+          <button
             onClick={() => onDelete(agent.name)}
             className="p-1.5 rounded-md hover:bg-red-500/15 transition-colors text-shell-text-secondary hover:text-red-400"
             aria-label={`Delete ${agent.name}`}
@@ -120,18 +132,24 @@ function AgentRow({
 }
 
 /* ------------------------------------------------------------------ */
-/*  LogsPanel                                                          */
+/*  AgentDetailPanel (Logs + Skills tabs)                              */
 /* ------------------------------------------------------------------ */
 
-function LogsPanel({
-  agentName,
+type DetailTab = "logs" | "skills";
+
+function AgentDetailPanel({
+  agent,
+  initialTab,
   onClose,
 }: {
-  agentName: string;
+  agent: Agent;
+  initialTab: DetailTab;
   onClose: () => void;
 }) {
+  const [tab, setTab] = useState<DetailTab>(initialTab);
   const [logs, setLogs] = useState<string>("Fetching logs...");
   const scrollRef = useRef<HTMLPreElement>(null);
+  const agentName = agent.name;
 
   const fetchLogs = useCallback(async () => {
     try {
@@ -149,10 +167,11 @@ function LogsPanel({
   }, [agentName]);
 
   useEffect(() => {
+    if (tab !== "logs") return;
     fetchLogs();
     const interval = setInterval(fetchLogs, 10_000);
     return () => clearInterval(interval);
-  }, [fetchLogs]);
+  }, [fetchLogs, tab]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -160,29 +179,62 @@ function LogsPanel({
     }
   }, [logs]);
 
+  const tabBtn = (id: DetailTab, label: string, Icon: typeof ScrollText) => (
+    <button
+      onClick={() => setTab(id)}
+      className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+        tab === id
+          ? "bg-white/10 text-shell-text"
+          : "text-shell-text-secondary hover:bg-white/5 hover:text-shell-text"
+      }`}
+      role="tab"
+      aria-selected={tab === id}
+    >
+      <Icon size={13} />
+      {label}
+    </button>
+  );
+
   return (
-    <div className="border-t border-white/5 bg-shell-bg-deep">
-      <div className="flex items-center justify-between px-4 py-2 border-b border-white/5">
-        <div className="flex items-center gap-2 text-sm">
-          <ScrollText size={14} className="text-shell-text-tertiary" />
-          <span className="text-shell-text-secondary">Logs</span>
-          <span className="text-shell-text-tertiary">&mdash;</span>
-          <span className="font-medium">{agentName}</span>
+    <div className="border-t border-white/5 bg-shell-bg-deep flex flex-col" style={{ height: "22rem" }}>
+      <div className="flex items-center justify-between px-4 py-2 border-b border-white/5 shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 text-sm">
+            <span
+              className="w-2 h-2 rounded-full"
+              style={{ backgroundColor: agent.color }}
+              aria-hidden
+            />
+            <span className="font-medium">{agentName}</span>
+          </div>
+          <div className="flex items-center gap-1" role="tablist" aria-label="Agent detail tabs">
+            {tabBtn("logs", "Logs", ScrollText)}
+            {tabBtn("skills", "Skills", Wrench)}
+          </div>
         </div>
         <button
           onClick={onClose}
           className="p-1 rounded-md hover:bg-shell-surface transition-colors text-shell-text-secondary hover:text-shell-text"
-          aria-label="Close logs panel"
+          aria-label="Close detail panel"
         >
           <X size={14} />
         </button>
       </div>
-      <pre
-        ref={scrollRef}
-        className="h-48 overflow-auto p-4 text-xs font-mono text-shell-text-secondary leading-relaxed whitespace-pre-wrap"
-      >
-        {logs}
-      </pre>
+      <div className="flex-1 min-h-0 overflow-hidden">
+        {tab === "logs" ? (
+          <pre
+            ref={scrollRef}
+            className="h-full overflow-auto p-4 text-xs font-mono text-shell-text-secondary leading-relaxed whitespace-pre-wrap"
+          >
+            {logs}
+          </pre>
+        ) : (
+          <AgentSkillsPanel
+            agentId={agent.name}
+            framework={agent.framework || "smolagents"}
+          />
+        )}
+      </div>
     </div>
   );
 }
@@ -215,6 +267,9 @@ function DeployWizard({
   // Step 4
   const [memory, setMemory] = useState("512");
   const [cpus, setCpus] = useState("1");
+
+  // Step 5 — Permissions
+  const [canReadUserMemory, setCanReadUserMemory] = useState(false);
 
   const [deploying, setDeploying] = useState(false);
 
@@ -251,13 +306,14 @@ function DeployWizard({
       setSelectedModel("");
       setMemory("512");
       setCpus("1");
+      setCanReadUserMemory(false);
       setDeploying(false);
     }
   }, [open]);
 
   if (!open) return null;
 
-  const STEPS = ["Name & Color", "Framework", "Model", "Resources", "Review"];
+  const STEPS = ["Name & Color", "Framework", "Model", "Resources", "Permissions", "Review"];
 
   const canNext = () => {
     if (step === 0) return name.trim().length > 0;
@@ -279,6 +335,7 @@ function DeployWizard({
           model: selectedModel,
           memory: parseInt(memory),
           cpus: parseInt(cpus),
+          can_read_user_memory: canReadUserMemory,
         }),
       });
     } catch { /* ignore — deploy may not be wired */ }
@@ -461,8 +518,41 @@ function DeployWizard({
             </div>
           )}
 
-          {/* Step 4: Review */}
+          {/* Step 4: Permissions */}
           {step === 4 && (
+            <div className="space-y-4">
+              <span className="block text-xs text-shell-text-secondary mb-2">Permissions</span>
+              <label
+                htmlFor="agent-user-memory"
+                className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                  canReadUserMemory
+                    ? "border-accent bg-accent/10"
+                    : "border-white/5 bg-shell-bg-deep hover:bg-white/5"
+                }`}
+              >
+                <input
+                  id="agent-user-memory"
+                  type="checkbox"
+                  checked={canReadUserMemory}
+                  onChange={(e) => setCanReadUserMemory(e.target.checked)}
+                  className="mt-0.5 accent-accent"
+                  aria-describedby="agent-user-memory-desc"
+                />
+                <div className="flex-1">
+                  <div className="text-sm font-medium">Allow this agent to read your memory</div>
+                  <div
+                    id="agent-user-memory-desc"
+                    className="text-xs text-shell-text-secondary mt-0.5"
+                  >
+                    Agents with this permission can search your notes, conversations, and files. Read-only access.
+                  </div>
+                </div>
+              </label>
+            </div>
+          )}
+
+          {/* Step 5: Review */}
+          {step === 5 && (
             <div className="space-y-3">
               <span className="block text-xs text-shell-text-secondary mb-2">Review Configuration</span>
               <div className="rounded-lg bg-shell-bg-deep border border-white/5 divide-y divide-white/5">
@@ -473,6 +563,7 @@ function DeployWizard({
                   ["Model", models.find((m) => m.id === selectedModel)?.name ?? selectedModel],
                   ["Memory", `${memory} MB`],
                   ["CPUs", `${cpus} Core${cpus !== "1" ? "s" : ""}`],
+                  ["User Memory", canReadUserMemory ? "Allowed (read-only)" : "Denied"],
                 ].map(([label, value]) => (
                   <div key={label} className="flex items-center justify-between px-4 py-2.5">
                     <span className="text-xs text-shell-text-secondary">{label}</span>
@@ -499,7 +590,7 @@ function DeployWizard({
             {step === 0 ? "Cancel" : "Back"}
           </button>
 
-          {step < 4 ? (
+          {step < 5 ? (
             <button
               onClick={() => setStep(step + 1)}
               disabled={!canNext()}
@@ -532,7 +623,7 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
   const [wizardOpen, setWizardOpen] = useState(false);
-  const [logsAgent, setLogsAgent] = useState<string | null>(null);
+  const [detail, setDetail] = useState<{ name: string; tab: DetailTab } | null>(null);
 
   const fetchAgents = useCallback(async () => {
     try {
@@ -549,6 +640,7 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
                 color: String(a.color ?? "#3b82f6"),
                 status: String(a.status ?? "stopped") as Agent["status"],
                 vectors: Number(a.vectors ?? 0),
+                framework: a.framework ? String(a.framework) : undefined,
               }))
             );
             setLoading(false);
@@ -567,7 +659,7 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
 
   function handleDelete(name: string) {
     setAgents((prev) => prev.filter((a) => a.name !== name));
-    if (logsAgent === name) setLogsAgent(null);
+    if (detail?.name === name) setDetail(null);
   }
 
   function handleWizardClose(deployed?: boolean) {
@@ -639,7 +731,8 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
                 <AgentRow
                   key={agent.name}
                   agent={agent}
-                  onViewLogs={setLogsAgent}
+                  onViewLogs={(name) => setDetail({ name, tab: "logs" })}
+                  onViewSkills={(name) => setDetail({ name, tab: "skills" })}
                   onDelete={handleDelete}
                 />
               ))}
@@ -648,10 +741,18 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
         )}
       </div>
 
-      {/* Logs panel */}
-      {logsAgent && (
-        <LogsPanel agentName={logsAgent} onClose={() => setLogsAgent(null)} />
-      )}
+      {/* Detail panel (Logs + Skills tabs) */}
+      {detail && (() => {
+        const agent = agents.find((a) => a.name === detail.name);
+        if (!agent) return null;
+        return (
+          <AgentDetailPanel
+            agent={agent}
+            initialTab={detail.tab}
+            onClose={() => setDetail(null)}
+          />
+        );
+      })()}
 
       {/* Deploy wizard overlay */}
       <DeployWizard open={wizardOpen} onClose={handleWizardClose} />
