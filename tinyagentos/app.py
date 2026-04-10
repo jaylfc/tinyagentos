@@ -40,6 +40,7 @@ from tinyagentos.chat.channel_store import ChatChannelStore
 from tinyagentos.chat.hub import ChatHub
 from tinyagentos.chat.canvas import CanvasStore
 from tinyagentos.desktop_settings import DesktopSettingsStore
+from tinyagentos.user_memory import UserMemoryStore
 
 PROJECT_DIR = Path(__file__).parent.parent
 
@@ -97,6 +98,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     chat_hub = ChatHub()
     canvas_store = CanvasStore(data_dir / "canvas.db")
     desktop_settings = DesktopSettingsStore(data_dir / "desktop.db")
+    user_memory = UserMemoryStore(data_dir / "user_memory.db")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -362,6 +364,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     from tinyagentos.routes.desktop import router as desktop_router
     app.include_router(desktop_router)
+
+    from tinyagentos.routes.games import router as games_router
+    app.include_router(games_router)
 
     from tinyagentos.routes.terminal import router as terminal_router
     app.include_router(terminal_router)
