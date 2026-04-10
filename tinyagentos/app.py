@@ -288,6 +288,11 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     if static_dir.exists():
         app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
+    # Mount workspace for serving generated images and other workspace files
+    workspace_dir = data_dir / "workspace"
+    workspace_dir.mkdir(parents=True, exist_ok=True)
+    app.mount("/data/workspace", StaticFiles(directory=str(workspace_dir)), name="workspace")
+
     # Desktop SPA assets are served by the desktop route handler (routes/desktop.py)
 
     # Templates
