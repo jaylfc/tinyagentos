@@ -131,10 +131,10 @@ export function App() {
         {activeWindowId && activeWindow ? (
           <MobileApp appId={activeWindow.appId} windowId={activeWindowId} />
         ) : (
-          <div className="h-full overflow-y-auto" style={{ paddingTop: "env(safe-area-inset-top, 20px)" }}>
+          <div className="h-full overflow-y-auto" style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 32px)" }}>
             {/* iOS-style home grid */}
-            <div className="px-6 pt-8 pb-4">
-              <div className="grid grid-cols-4 gap-x-5 gap-y-6 max-w-sm mx-auto">
+            <div className="px-6 pb-8">
+              <div className="grid grid-cols-4 gap-x-4 gap-y-7 max-w-sm mx-auto">
                 {getAllApps()
                   .slice(0, 20)
                   .map((app) => {
