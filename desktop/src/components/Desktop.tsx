@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { FolderPlus, Image, Monitor, Settings, LayoutGrid, Layers } from "lucide-react";
+import { FolderPlus, Image, Monitor, Settings, LayoutGrid, Layers, BookmarkPlus } from "lucide-react";
 import { useProcessStore } from "@/stores/process-store";
 import { useThemeStore } from "@/stores/theme-store";
 import { useWidgetStore } from "@/stores/widget-store";
@@ -57,6 +57,25 @@ export function Desktop() {
       label: "Change Wallpaper",
       icon: <Image size={14} />,
       action: () => setWallpaperPickerOpen(true),
+    },
+    {
+      label: "Save to Memory",
+      icon: <BookmarkPlus size={14} />,
+      action: () => {
+        const text = window.prompt("Save to memory:");
+        if (text) {
+          fetch("/api/user-memory/save", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ content: text, collection: "snippets" }),
+          }).catch(() => {
+            // Fallback to localStorage if endpoint doesn't exist yet
+            const snippets = JSON.parse(localStorage.getItem("tinyagentos-snippets") || "[]");
+            snippets.push({ content: text, savedAt: Date.now() });
+            localStorage.setItem("tinyagentos-snippets", JSON.stringify(snippets));
+          });
+        }
+      },
     },
     {
       label: "Display Settings",
