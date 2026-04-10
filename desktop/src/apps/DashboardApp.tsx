@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { Activity, Server, Bot, Database, RefreshCw } from "lucide-react";
 import type { ComponentType } from "react";
+import { Button, Card, CardContent } from "@/components/ui";
 
 interface Agent {
   name: string;
@@ -104,13 +105,14 @@ export function DashboardApp({ windowId: _windowId }: { windowId: string }) {
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-white/5">
         <h1 className="text-xl font-bold tracking-tight">Dashboard</h1>
-        <button
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={fetchData}
           aria-label="Refresh dashboard"
-          className="p-1.5 rounded-lg hover:bg-shell-surface transition-colors text-shell-text-secondary hover:text-shell-text"
         >
           <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
-        </button>
+        </Button>
       </div>
 
       <div className="flex-1 overflow-auto p-5 space-y-5">
@@ -128,25 +130,27 @@ export function DashboardApp({ windowId: _windowId }: { windowId: string }) {
         <section aria-label="Key metrics">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {kpis.map((kpi) => (
-              <div
+              <Card
                 key={kpi.label}
-                className="flex items-center gap-4 p-5 rounded-2xl border border-white/[0.06] hover:-translate-y-0.5 hover:shadow-xl transition-all duration-200"
+                className="hover:-translate-y-0.5 hover:shadow-xl transition-all duration-200"
                 style={{ background: kpi.gradient }}
               >
-                <div
-                  className={`p-2.5 rounded-xl bg-white/[0.08] ${kpi.color}`}
-                >
-                  <kpi.icon size={22} />
-                </div>
-                <div>
-                  <p className="text-xs text-shell-text-tertiary mb-0.5">
-                    {kpi.label}
-                  </p>
-                  <p className="text-2xl font-bold tabular-nums">
-                    {loading ? "\u2026" : kpi.value}
-                  </p>
-                </div>
-              </div>
+                <CardContent className="flex items-center gap-4 p-5">
+                  <div
+                    className={`p-2.5 rounded-xl bg-white/[0.08] ${kpi.color}`}
+                  >
+                    <kpi.icon size={22} />
+                  </div>
+                  <div>
+                    <p className="text-xs text-shell-text-tertiary mb-0.5">
+                      {kpi.label}
+                    </p>
+                    <p className="text-2xl font-bold tabular-nums">
+                      {loading ? "\u2026" : kpi.value}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
             ))}
           </div>
         </section>
@@ -166,26 +170,25 @@ export function DashboardApp({ windowId: _windowId }: { windowId: string }) {
                 const isOnline =
                   agent.status === "online" || agent.status === "running";
                 return (
-                  <div
-                    key={agent.name}
-                    className="flex items-start gap-3 p-3.5 rounded-xl bg-shell-surface/60 border border-white/5"
-                  >
-                    <span
-                      className={`mt-1 h-2.5 w-2.5 rounded-full shrink-0 ${
-                        isOnline ? "bg-emerald-400" : "bg-shell-text-tertiary"
-                      }`}
-                      aria-label={isOnline ? "online" : "offline"}
-                    />
-                    <div className="min-w-0">
-                      <p className="font-medium text-sm truncate">
-                        {agent.name}
-                      </p>
-                      <p className="text-xs text-shell-text-tertiary truncate">
-                        {agent.status}
-                        {agent.host ? ` \u00b7 ${agent.host}` : ""}
-                      </p>
-                    </div>
-                  </div>
+                  <Card key={agent.name}>
+                    <CardContent className="flex items-start gap-3 p-3.5">
+                      <span
+                        className={`mt-1 h-2.5 w-2.5 rounded-full shrink-0 ${
+                          isOnline ? "bg-emerald-400" : "bg-shell-text-tertiary"
+                        }`}
+                        aria-label={isOnline ? "online" : "offline"}
+                      />
+                      <div className="min-w-0">
+                        <p className="font-medium text-sm truncate">
+                          {agent.name}
+                        </p>
+                        <p className="text-xs text-shell-text-tertiary truncate">
+                          {agent.status}
+                          {agent.host ? ` \u00b7 ${agent.host}` : ""}
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
                 );
               })}
             </div>
