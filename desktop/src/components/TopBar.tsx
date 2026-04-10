@@ -2,6 +2,7 @@ import { Bell, Search, LayoutGrid } from "lucide-react";
 import { useClock } from "@/hooks/use-clock";
 import { useWidgetStore } from "@/stores/widget-store";
 import { useNotificationStore } from "@/stores/notification-store";
+import { StatusIndicators } from "./StatusIndicators";
 
 interface Props {
   onSearchOpen: () => void;
@@ -38,6 +39,7 @@ export function TopBar({ onSearchOpen }: Props) {
       </button>
 
       <div className="flex items-center gap-3">
+        <StatusIndicators />
         <span className="text-xs text-shell-text-tertiary">{clock}</span>
         <button
           onClick={toggleWidgets}

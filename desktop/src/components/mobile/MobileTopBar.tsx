@@ -1,5 +1,6 @@
 import { ChevronLeft, Bell } from "lucide-react";
 import { useNotificationStore } from "@/stores/notification-store";
+import { StatusIndicators } from "../StatusIndicators";
 
 interface Props {
   currentAppName: string | null;
@@ -45,8 +46,9 @@ export function MobileTopBar({ currentAppName, onBack }: Props) {
           </span>
         </div>
 
-        {/* Right — notifications bell */}
-        <div className="flex items-center justify-end" style={{ minWidth: 60 }}>
+        {/* Right — indicators + notifications bell */}
+        <div className="flex items-center justify-end gap-1" style={{ minWidth: 60 }}>
+          <StatusIndicators compact />
           <button
             onClick={toggleCentre}
             className="relative flex items-center justify-center w-10 h-10 rounded-lg active:bg-white/10 transition-colors"
