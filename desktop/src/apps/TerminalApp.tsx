@@ -3,6 +3,16 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
+import {
+  Button,
+  Card,
+  CardContent,
+  Input,
+  Label,
+  Toolbar,
+  ToolbarGroup,
+  ToolbarSpacer,
+} from "@/components/ui";
 
 type Mode = "local" | "ssh";
 
@@ -262,27 +272,47 @@ export function TerminalApp({ windowId: _windowId }: { windowId: string }) {
             Choose a connection to start a new session.
           </p>
 
-          <div className="mb-6 grid grid-cols-2 gap-3">
-            <button
-              type="button"
+          <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Card
+              role="button"
+              tabIndex={0}
               onClick={startLocal}
-              className="rounded-lg border border-white/10 bg-white/5 p-4 text-left transition hover:border-[#667eea]/60 hover:bg-[#667eea]/10"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  startLocal();
+                }
+              }}
+              className="cursor-pointer transition hover:border-[#667eea]/60"
+              aria-label="Local Shell"
             >
-              <div className="text-base font-medium">Local Shell</div>
-              <div className="mt-1 text-xs opacity-60">
-                Spawn a shell on this machine
-              </div>
-            </button>
-            <button
-              type="button"
+              <CardContent className="p-4">
+                <div className="text-base font-medium">Local Shell</div>
+                <div className="mt-1 text-xs opacity-60">
+                  Spawn a shell on this machine
+                </div>
+              </CardContent>
+            </Card>
+            <Card
+              role="button"
+              tabIndex={0}
               onClick={() => openSshForm()}
-              className="rounded-lg border border-white/10 bg-white/5 p-4 text-left transition hover:border-[#667eea]/60 hover:bg-[#667eea]/10"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  openSshForm();
+                }
+              }}
+              className="cursor-pointer transition hover:border-[#667eea]/60"
+              aria-label="SSH Connection"
             >
-              <div className="text-base font-medium">SSH Connection</div>
-              <div className="mt-1 text-xs opacity-60">
-                Connect to a remote host
-              </div>
-            </button>
+              <CardContent className="p-4">
+                <div className="text-base font-medium">SSH Connection</div>
+                <div className="mt-1 text-xs opacity-60">
+                  Connect to a remote host
+                </div>
+              </CardContent>
+            </Card>
           </div>
 
           {recent.length > 0 && (
@@ -290,19 +320,29 @@ export function TerminalApp({ windowId: _windowId }: { windowId: string }) {
               <div className="mb-2 text-xs uppercase tracking-wider opacity-60">
                 Recent SSH hosts
               </div>
-              <ul className="space-y-1">
+              <ul className="space-y-2">
                 {recent.map((h) => (
                   <li key={`${h.username}@${h.host}:${h.port}`}>
-                    <button
-                      type="button"
+                    <Card
+                      role="button"
+                      tabIndex={0}
                       onClick={() => openSshForm(h)}
-                      className="w-full rounded-md border border-white/5 bg-white/[0.03] px-3 py-2 text-left text-sm transition hover:border-[#667eea]/60 hover:bg-[#667eea]/10"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          openSshForm(h);
+                        }
+                      }}
+                      className="cursor-pointer transition hover:border-[#667eea]/60"
+                      aria-label={`Connect to ${h.username}@${h.host}:${h.port}`}
                     >
-                      <span className="font-mono">
-                        {h.username}@{h.host}
-                      </span>
-                      <span className="ml-2 opacity-50">:{h.port}</span>
-                    </button>
+                      <CardContent className="px-3 py-2 text-sm">
+                        <span className="font-mono">
+                          {h.username}@{h.host}
+                        </span>
+                        <span className="ml-2 opacity-50">:{h.port}</span>
+                      </CardContent>
+                    </Card>
                   </li>
                 ))}
               </ul>
@@ -320,81 +360,76 @@ export function TerminalApp({ windowId: _windowId }: { windowId: string }) {
         className="h-full w-full overflow-auto p-6"
         style={{ backgroundColor: "#151625", color: "rgba(255,255,255,0.85)" }}
       >
-        <form onSubmit={submitSsh} className="mx-auto max-w-md">
+        <form onSubmit={submitSsh} className="mx-auto max-w-md space-y-3">
           <h2 className="mb-4 text-xl font-semibold">SSH Connection</h2>
 
-          <label className="mb-3 block">
-            <span className="mb-1 block text-xs uppercase tracking-wider opacity-60">
-              Host
-            </span>
-            <input
+          <div>
+            <Label htmlFor="ssh-host">Host</Label>
+            <Input
+              id="ssh-host"
               type="text"
               value={host}
               onChange={(e) => setHost(e.target.value)}
               placeholder="192.168.1.100"
               autoFocus
               required
-              className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm font-mono outline-none focus:border-[#667eea]"
+              className="font-mono"
             />
-          </label>
+          </div>
 
-          <label className="mb-3 block">
-            <span className="mb-1 block text-xs uppercase tracking-wider opacity-60">
-              Port
-            </span>
-            <input
+          <div>
+            <Label htmlFor="ssh-port">Port</Label>
+            <Input
+              id="ssh-port"
               type="number"
               value={port}
               onChange={(e) => setPort(e.target.value)}
               min={1}
               max={65535}
-              className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm font-mono outline-none focus:border-[#667eea]"
+              className="font-mono"
             />
-          </label>
+          </div>
 
-          <label className="mb-3 block">
-            <span className="mb-1 block text-xs uppercase tracking-wider opacity-60">
-              Username
-            </span>
-            <input
+          <div>
+            <Label htmlFor="ssh-username">Username</Label>
+            <Input
+              id="ssh-username"
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               placeholder="root"
               required
-              className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm font-mono outline-none focus:border-[#667eea]"
+              className="font-mono"
             />
-          </label>
+          </div>
 
-          <label className="mb-4 block">
-            <span className="mb-1 block text-xs uppercase tracking-wider opacity-60">
+          <div>
+            <Label htmlFor="ssh-password">
               Password{" "}
-              <span className="opacity-60">
+              <span className="opacity-60 font-normal normal-case">
                 (optional — leave blank for key-based auth)
               </span>
-            </span>
-            <input
+            </Label>
+            <Input
+              id="ssh-password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm font-mono outline-none focus:border-[#667eea]"
+              className="font-mono"
             />
-          </label>
+          </div>
 
-          <div className="flex gap-2">
-            <button
-              type="submit"
-              className="rounded-md bg-[#667eea] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#7689ee]"
-            >
+          <div className="flex gap-2 pt-1">
+            <Button type="submit" disabled={!host || !username}>
               Connect
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="outline"
               onClick={() => setView("picker")}
-              className="rounded-md border border-white/10 bg-white/5 px-4 py-2 text-sm transition hover:bg-white/10"
             >
               Cancel
-            </button>
+            </Button>
           </div>
 
           <p className="mt-4 text-xs opacity-50">
@@ -412,29 +447,32 @@ export function TerminalApp({ windowId: _windowId }: { windowId: string }) {
       className="flex h-full w-full flex-col"
       style={{ backgroundColor: "#151625" }}
     >
-      <div
-        className="flex items-center justify-between border-b border-white/10 px-3 py-1.5 text-xs"
-        style={{ color: "rgba(255,255,255,0.7)" }}
-      >
-        <div className="font-mono">
-          {session?.mode === "ssh" ? (
-            <>
-              <span className="opacity-60">ssh://</span>
-              {session.username}@{session.host}
-              <span className="opacity-60">:{session.port}</span>
-            </>
-          ) : (
-            <span>Local shell</span>
-          )}
-        </div>
-        <button
-          type="button"
-          onClick={disconnect}
-          className="rounded border border-white/10 bg-white/5 px-2 py-0.5 text-xs transition hover:border-red-400/60 hover:bg-red-400/10 hover:text-red-300"
-        >
-          Disconnect
-        </button>
-      </div>
+      <Toolbar className="text-xs" style={{ color: "rgba(255,255,255,0.7)" }}>
+        <ToolbarGroup>
+          <div className="font-mono px-1">
+            {session?.mode === "ssh" ? (
+              <>
+                <span className="opacity-60">ssh://</span>
+                {session.username}@{session.host}
+                <span className="opacity-60">:{session.port}</span>
+              </>
+            ) : (
+              <span>Local shell</span>
+            )}
+          </div>
+        </ToolbarGroup>
+        <ToolbarSpacer />
+        <ToolbarGroup>
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            onClick={disconnect}
+          >
+            Disconnect
+          </Button>
+        </ToolbarGroup>
+      </Toolbar>
       <div ref={containerRef} className="min-h-0 flex-1" />
     </div>
   );
