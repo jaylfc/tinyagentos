@@ -92,6 +92,8 @@ async def api_system(request: Request):
     import psutil
     from dataclasses import asdict
 
+    from tinyagentos.system_stats import get_npu_usage, get_vram_usage
+
     config = request.app.state.config
     hw = request.app.state.hardware_profile
     registry = request.app.state.registry
@@ -101,6 +103,9 @@ async def api_system(request: Request):
 
     mem = psutil.virtual_memory()
     disk = psutil.disk_usage("/")
+
+    vram_pct, vram_used_mb, vram_total_mb = get_vram_usage(hw.gpu.type)
+    npu_pct = get_npu_usage(hw.npu.type)
 
     return {
         "hardware": hw_data,
@@ -112,6 +117,10 @@ async def api_system(request: Request):
             "disk_total_gb": disk.total // (1024 ** 3),
             "disk_used_gb": disk.used // (1024 ** 3),
             "disk_percent": disk.percent,
+            "vram_percent": vram_pct,
+            "vram_used_mb": vram_used_mb,
+            "vram_total_mb": vram_total_mb,
+            "npu_percent": npu_pct,
         },
         "platform": {
             "version": "0.1.0",
