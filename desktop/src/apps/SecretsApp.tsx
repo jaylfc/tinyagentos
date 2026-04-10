@@ -1,5 +1,14 @@
 import { useState, useEffect, useCallback } from "react";
 import { KeyRound, Plus, Eye, EyeOff, Trash2, Edit, X, Filter } from "lucide-react";
+import {
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Input,
+  Label,
+} from "@/components/ui";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -73,104 +82,107 @@ function AddEditDialog({
       aria-modal="true"
       aria-label={isEdit ? "Edit secret" : "Add secret"}
     >
-      <div
-        className="w-full max-w-md bg-shell-surface rounded-xl border border-white/10 shadow-2xl overflow-hidden"
+      <Card
+        className="w-full max-w-md shadow-2xl overflow-hidden bg-shell-surface"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
+        <CardHeader className="flex flex-row items-center justify-between border-b border-white/5 px-5 py-4">
           <div className="flex items-center gap-2">
             <KeyRound size={16} className="text-accent" />
-            <h2 className="text-sm font-semibold">{isEdit ? "Edit Secret" : "Add Secret"}</h2>
+            <CardTitle className="text-sm font-semibold">{isEdit ? "Edit Secret" : "Add Secret"}</CardTitle>
           </div>
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={onClose}
-            className="p-1 rounded-md hover:bg-white/5 text-shell-text-secondary hover:text-shell-text transition-colors"
             aria-label="Close dialog"
+            className="h-7 w-7"
           >
             <X size={16} />
-          </button>
-        </div>
+          </Button>
+        </CardHeader>
 
-        <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3.5">
-          <label className="block">
-            <span className="text-xs text-shell-text-secondary">Name</span>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="OPENAI_API_KEY"
-              disabled={isEdit}
-              className="mt-1 w-full px-3 py-1.5 rounded-lg bg-shell-bg-deep border border-white/10 text-sm outline-none focus:border-accent disabled:opacity-50"
-              autoFocus={!isEdit}
-            />
-          </label>
+        <form onSubmit={handleSubmit}>
+          <CardContent className="px-5 py-4 space-y-3.5">
+            <div className="space-y-1.5">
+              <Label htmlFor="secret-name">Name</Label>
+              <Input
+                id="secret-name"
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="OPENAI_API_KEY"
+                disabled={isEdit}
+                autoFocus={!isEdit}
+              />
+            </div>
 
-          <label className="block">
-            <span className="text-xs text-shell-text-secondary">Value</span>
-            <input
-              type="password"
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              placeholder={isEdit ? "Leave blank to keep existing" : "sk-..."}
-              className="mt-1 w-full px-3 py-1.5 rounded-lg bg-shell-bg-deep border border-white/10 text-sm outline-none focus:border-accent font-mono"
-              autoFocus={isEdit}
-            />
-          </label>
+            <div className="space-y-1.5">
+              <Label htmlFor="secret-value">Value</Label>
+              <Input
+                id="secret-value"
+                type="password"
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                placeholder={isEdit ? "Leave blank to keep existing" : "sk-..."}
+                className="font-mono"
+                autoFocus={isEdit}
+              />
+            </div>
 
-          <label className="block">
-            <span className="text-xs text-shell-text-secondary">Category</span>
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="mt-1 w-full px-3 py-1.5 rounded-lg bg-shell-bg-deep border border-white/10 text-sm outline-none focus:border-accent"
-            >
-              <option value="api-key">API Key</option>
-              <option value="credential">Credential</option>
-              <option value="token">Token</option>
-              <option value="config">Config</option>
-            </select>
-          </label>
+            <div className="space-y-1.5">
+              <Label htmlFor="secret-category">Category</Label>
+              <select
+                id="secret-category"
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="flex h-9 w-full rounded-lg border border-white/10 bg-shell-bg-deep px-3 py-1 text-sm text-shell-text focus-visible:outline-none focus-visible:border-accent/40 focus-visible:ring-2 focus-visible:ring-accent/20"
+              >
+                <option value="api-key">API Key</option>
+                <option value="credential">Credential</option>
+                <option value="token">Token</option>
+                <option value="config">Config</option>
+              </select>
+            </div>
 
-          <label className="block">
-            <span className="text-xs text-shell-text-secondary">Description</span>
-            <input
-              type="text"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="What is this secret used for?"
-              className="mt-1 w-full px-3 py-1.5 rounded-lg bg-shell-bg-deep border border-white/10 text-sm outline-none focus:border-accent"
-            />
-          </label>
+            <div className="space-y-1.5">
+              <Label htmlFor="secret-description">Description</Label>
+              <Input
+                id="secret-description"
+                type="text"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="What is this secret used for?"
+              />
+            </div>
 
-          <label className="block">
-            <span className="text-xs text-shell-text-secondary">Agent Access (comma-separated)</span>
-            <input
-              type="text"
-              value={agentsStr}
-              onChange={(e) => setAgentsStr(e.target.value)}
-              placeholder="research-agent, code-reviewer"
-              className="mt-1 w-full px-3 py-1.5 rounded-lg bg-shell-bg-deep border border-white/10 text-sm outline-none focus:border-accent"
-            />
-          </label>
+            <div className="space-y-1.5">
+              <Label htmlFor="secret-agents">Agent Access (comma-separated)</Label>
+              <Input
+                id="secret-agents"
+                type="text"
+                value={agentsStr}
+                onChange={(e) => setAgentsStr(e.target.value)}
+                placeholder="research-agent, code-reviewer"
+              />
+            </div>
 
-          <div className="flex justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-3 py-1.5 rounded-lg bg-white/5 text-sm hover:bg-white/10 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent/90 transition-colors"
-            >
-              {isEdit ? "Update" : "Add"}
-            </button>
-          </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={onClose}
+              >
+                Cancel
+              </Button>
+              <Button type="submit">
+                {isEdit ? "Update" : "Add"}
+              </Button>
+            </div>
+          </CardContent>
         </form>
-      </div>
+      </Card>
     </div>
   );
 }
@@ -309,14 +321,14 @@ export function SecretsApp({ windowId: _windowId }: { windowId: string }) {
               <option value="config">Config</option>
             </select>
           </div>
-          <button
+          <Button
+            size="sm"
             onClick={() => setDialog({ open: true, editing: null })}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-accent text-white hover:bg-accent/90 transition-colors"
             aria-label="Add new secret"
           >
             <Plus size={14} />
             Add Secret
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -333,13 +345,14 @@ export function SecretsApp({ windowId: _windowId }: { windowId: string }) {
               {secrets.length === 0 ? "No secrets stored" : "No secrets match this filter"}
             </p>
             {secrets.length === 0 && (
-              <button
+              <Button
+                size="sm"
                 onClick={() => setDialog({ open: true, editing: null })}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-accent text-white hover:bg-accent/90 transition-colors mt-1"
+                className="mt-1"
               >
                 <Plus size={13} />
                 Add your first secret
-              </button>
+              </Button>
             )}
           </div>
         ) : (
@@ -377,14 +390,16 @@ export function SecretsApp({ windowId: _windowId }: { windowId: string }) {
                       <span className="text-sm font-mono text-shell-text-secondary max-w-[180px] truncate">
                         {secret.value}
                       </span>
-                      <button
+                      <Button
+                        variant="ghost"
+                        size="icon"
                         onClick={() => handleReveal(secret.name)}
-                        className="p-1 rounded-md hover:bg-white/10 transition-colors text-shell-text-tertiary hover:text-shell-text"
+                        className="h-7 w-7"
                         aria-label={secret.revealed ? `Hide ${secret.name}` : `Reveal ${secret.name}`}
                         title={secret.revealed ? "Hide" : "Reveal"}
                       >
                         {secret.revealed ? <EyeOff size={13} /> : <Eye size={13} />}
-                      </button>
+                      </Button>
                     </div>
                   </td>
                   <td className="px-4 py-3 text-sm text-shell-text-secondary max-w-[200px] truncate">
@@ -408,22 +423,26 @@ export function SecretsApp({ windowId: _windowId }: { windowId: string }) {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1">
-                      <button
+                      <Button
+                        variant="ghost"
+                        size="icon"
                         onClick={() => setDialog({ open: true, editing: secret })}
-                        className="p-1.5 rounded-md hover:bg-white/10 transition-colors text-shell-text-secondary hover:text-shell-text"
+                        className="h-7 w-7"
                         aria-label={`Edit ${secret.name}`}
                         title="Edit"
                       >
                         <Edit size={14} />
-                      </button>
-                      <button
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
                         onClick={() => handleDelete(secret.name)}
-                        className="p-1.5 rounded-md hover:bg-red-500/15 transition-colors text-shell-text-secondary hover:text-red-400"
+                        className="h-7 w-7 hover:text-red-400 hover:bg-red-500/15"
                         aria-label={`Delete ${secret.name}`}
                         title="Delete"
                       >
                         <Trash2 size={14} />
-                      </button>
+                      </Button>
                     </div>
                   </td>
                 </tr>
