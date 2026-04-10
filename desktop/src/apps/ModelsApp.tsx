@@ -1,5 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Brain, Search, Download, Trash2, HardDrive, X, Filter } from "lucide-react";
+import { Brain, Search, Download, Trash2, HardDrive, X } from "lucide-react";
+import {
+  Button,
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  Input,
+} from "@/components/ui";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -183,40 +191,56 @@ export function ModelsApp({ windowId: _windowId }: { windowId: string }) {
       </div>
 
       {/* Search + Filter */}
-      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-white/5">
+      <div className="flex flex-col gap-2 px-4 py-2.5 border-b border-white/5">
         <div className="relative flex-1">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-shell-text-tertiary" />
-          <input
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-shell-text-tertiary pointer-events-none z-10" />
+          <Input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search models..."
-            className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-shell-bg-deep text-sm text-shell-text placeholder:text-shell-text-tertiary border border-white/5 focus:outline-none focus:ring-1 focus:ring-accent"
+            className="pl-8 pr-8 h-8"
             aria-label="Search models"
           />
           {search && (
-            <button
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={() => setSearch("")}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-white/10 text-shell-text-tertiary"
+              className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6"
               aria-label="Clear search"
             >
               <X size={12} />
-            </button>
+            </Button>
           )}
         </div>
-        <div className="relative">
-          <Filter size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-shell-text-tertiary pointer-events-none" />
-          <select
-            value={source}
-            onChange={(e) => setSource(e.target.value as SourceFilter)}
-            className="pl-8 pr-3 py-1.5 rounded-lg bg-shell-bg-deep text-sm text-shell-text border border-white/5 focus:outline-none focus:ring-1 focus:ring-accent appearance-none cursor-pointer"
-            aria-label="Filter by source"
-          >
-            <option value="all">All Sources</option>
-            <option value="huggingface">HuggingFace</option>
-            <option value="ollama">Ollama</option>
-            <option value="catalog">Catalog</option>
-          </select>
+        <div
+          className="flex items-center gap-1.5 flex-wrap"
+          role="group"
+          aria-label="Filter by source"
+        >
+          {(["all", "huggingface", "ollama", "catalog"] as SourceFilter[]).map(
+            (src) => {
+              const labels: Record<SourceFilter, string> = {
+                all: "All Sources",
+                huggingface: "HuggingFace",
+                ollama: "Ollama",
+                catalog: "Catalog",
+              };
+              const active = source === src;
+              return (
+                <Button
+                  key={src}
+                  variant={active ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setSource(src)}
+                  aria-pressed={active}
+                >
+                  {labels[src]}
+                </Button>
+              );
+            },
+          )}
         </div>
       </div>
 
@@ -244,31 +268,32 @@ export function ModelsApp({ windowId: _windowId }: { windowId: string }) {
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {filteredDownloaded.map((model) => (
-                    <div
-                      key={model.id}
-                      className="p-3.5 rounded-xl bg-shell-surface/60 border border-white/5 flex flex-col gap-2"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="text-sm font-medium truncate" title={model.filename}>
-                          {model.filename}
-                        </p>
-                        <button
-                          onClick={() => handleDelete(model.id)}
-                          className="shrink-0 p-1 rounded-md hover:bg-red-500/15 transition-colors text-shell-text-secondary hover:text-red-400"
-                          aria-label={`Delete ${model.filename}`}
-                          title="Delete model"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                      <div className="flex items-center gap-2 text-xs text-shell-text-tertiary">
-                        <span className="px-1.5 py-0.5 rounded bg-white/5 font-medium">{model.format}</span>
-                        {model.quantization && (
-                          <span className="px-1.5 py-0.5 rounded bg-white/5">{model.quantization}</span>
-                        )}
-                        <span className="ml-auto tabular-nums">{model.size}</span>
-                      </div>
-                    </div>
+                    <Card key={model.id}>
+                      <CardContent className="p-3.5 flex flex-col gap-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-sm font-medium truncate" title={model.filename}>
+                            {model.filename}
+                          </p>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDelete(model.id)}
+                            className="h-7 w-7 hover:text-red-400 hover:bg-red-500/15"
+                            aria-label={`Delete ${model.filename}`}
+                            title="Delete model"
+                          >
+                            <Trash2 size={14} />
+                          </Button>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-shell-text-tertiary">
+                          <span className="px-1.5 py-0.5 rounded bg-white/5 font-medium">{model.format}</span>
+                          {model.quantization && (
+                            <span className="px-1.5 py-0.5 rounded bg-white/5">{model.quantization}</span>
+                          )}
+                          <span className="ml-auto tabular-nums">{model.size}</span>
+                        </div>
+                      </CardContent>
+                    </Card>
                   ))}
                 </div>
               )}
@@ -283,9 +308,11 @@ export function ModelsApp({ windowId: _windowId }: { windowId: string }) {
                     const model = available.find((m) => m.id === id);
                     if (!model) return null;
                     return (
-                      <div key={id} className="p-3.5 rounded-xl bg-shell-surface/60 border border-white/5">
-                        <DownloadProgress name={model.name} onDone={() => handleDownloadDone(model)} />
-                      </div>
+                      <Card key={id}>
+                        <CardContent className="p-3.5">
+                          <DownloadProgress name={model.name} onDone={() => handleDownloadDone(model)} />
+                        </CardContent>
+                      </Card>
                     );
                   })}
                 </div>
@@ -313,11 +340,8 @@ export function ModelsApp({ windowId: _windowId }: { windowId: string }) {
                     const isDownloading = downloading.has(model.id);
 
                     return (
-                      <div
-                        key={model.id}
-                        className="p-4 rounded-xl bg-shell-surface/60 border border-white/5 flex flex-col gap-2.5"
-                      >
-                        <div className="flex items-start justify-between gap-2">
+                      <Card key={model.id}>
+                        <CardHeader className="flex flex-row items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
                               <h3 className="text-sm font-medium">{model.name}</h3>
@@ -327,16 +351,17 @@ export function ModelsApp({ windowId: _windowId }: { windowId: string }) {
                                 aria-label={`Compatibility: ${compat.label}`}
                               />
                             </div>
-                            <p className="text-xs text-shell-text-secondary mt-1 line-clamp-2">
-                              {model.description}
-                            </p>
                           </div>
                           <span className="text-xs text-shell-text-tertiary tabular-nums shrink-0">
                             {model.size}
                           </span>
-                        </div>
-
-                        <div className="flex items-center justify-between gap-2">
+                        </CardHeader>
+                        <CardContent>
+                          <p className="text-xs text-shell-text-secondary line-clamp-2">
+                            {model.description}
+                          </p>
+                        </CardContent>
+                        <CardFooter className="justify-between gap-2">
                           <div className="flex flex-wrap gap-1">
                             {model.capabilities.map((cap) => (
                               <span
@@ -351,18 +376,19 @@ export function ModelsApp({ windowId: _windowId }: { windowId: string }) {
                           {isDownloaded ? (
                             <span className="text-xs text-emerald-400 font-medium shrink-0">Downloaded</span>
                           ) : (
-                            <button
+                            <Button
+                              variant="default"
+                              size="sm"
                               onClick={() => handleDownload(model)}
                               disabled={isDownloading}
-                              className="shrink-0 flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium bg-accent text-white hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                               aria-label={`Download ${model.name}`}
                             >
                               <Download size={12} />
                               {isDownloading ? "Downloading..." : "Download"}
-                            </button>
+                            </Button>
                           )}
-                        </div>
-                      </div>
+                        </CardFooter>
+                      </Card>
                     );
                   })}
                 </div>
