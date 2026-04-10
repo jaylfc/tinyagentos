@@ -2,8 +2,48 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
     <title>TinyAgentOS</title>
+
+    <!-- PWA -->
+    <link rel="manifest" href="/static/manifest-desktop.json" />
+    <meta name="theme-color" content="#1a1b2e" />
+
+    <!-- iOS PWA — full screen, hide native status bar -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="TinyAgentOS" />
+    <link rel="apple-touch-icon" href="/static/icon-192.png" />
+
+    <!-- Android -->
+    <meta name="mobile-web-app-capable" content="yes" />
+
+    <!-- Prevent text selection on long-press (OS feel) -->
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        height: 100%;
+        width: 100%;
+        background: #1a1b2e;
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+      /* Allow text selection inside text inputs and textareas */
+      input, textarea, [contenteditable="true"] {
+        -webkit-user-select: text;
+        user-select: text;
+      }
+      /* Ensure the app fills the entire screen including notch/safe areas */
+      #root {
+        height: 100%;
+        width: 100%;
+        padding-top: env(safe-area-inset-top, 0px);
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
