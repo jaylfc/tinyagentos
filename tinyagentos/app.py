@@ -42,6 +42,7 @@ from tinyagentos.chat.canvas import CanvasStore
 from tinyagentos.desktop_settings import DesktopSettingsStore
 from tinyagentos.user_memory import UserMemoryStore
 from tinyagentos.installed_apps import InstalledAppsStore
+from tinyagentos.skills import SkillStore
 
 PROJECT_DIR = Path(__file__).parent.parent
 
@@ -101,6 +102,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     desktop_settings = DesktopSettingsStore(data_dir / "desktop.db")
     user_memory = UserMemoryStore(data_dir / "user_memory.db")
     installed_apps = InstalledAppsStore(data_dir / "installed_apps.db")
+    skills = SkillStore(data_dir / "skills.db")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -123,6 +125,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         await desktop_settings.init()
         await user_memory.init()
         await installed_apps.init()
+        await skills.init()
         app.state.config = config
         app.state.config_path = config_path
         app.state.metrics = metrics_store
@@ -160,6 +163,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.desktop_settings = desktop_settings
         app.state.user_memory = user_memory
         app.state.installed_apps = installed_apps
+        app.state.skills = skills
         # Optionally start LiteLLM proxy (non-fatal if not installed)
         try:
             await llm_proxy.start(config.backends)
@@ -191,6 +195,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         await cluster_manager.stop()
         llm_proxy.stop()
         await monitor.stop()
+        await skills.close()
         await installed_apps.close()
         await user_memory.close()
         await desktop_settings.close()
@@ -261,6 +266,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     app.state.desktop_settings = desktop_settings
     app.state.user_memory = user_memory
     app.state.installed_apps = installed_apps
+    app.state.skills = skills
 
     # Detect and set container runtime (eager, so tests work without lifespan)
     try:
@@ -386,6 +392,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     from tinyagentos.routes.terminal import router as terminal_router
     app.include_router(terminal_router)
+
+    from tinyagentos.routes.skills import router as skills_router
+    app.include_router(skills_router)
 
     # Lobby demo (internal only — not included in public builds)
     try:
