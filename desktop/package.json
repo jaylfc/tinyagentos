@@ -11,6 +11,9 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@milkdown/kit": "^7.20.0",
+    "@milkdown/react": "^7.20.0",
+    "@milkdown/theme-nord": "^7.20.0",
     "@xterm/xterm": "^6.0.0",
     "chess.js": "^1.4.0",
     "lucide-react": "^0.500.0",

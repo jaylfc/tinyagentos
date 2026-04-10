@@ -1,146 +1,112 @@
 import { useEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
+import { FitAddon } from "@xterm/addon-fit";
+import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
-
-const WELCOME = [
-  "\x1b[1;36mTinyAgentOS Terminal v0.1\x1b[0m",
-  "Type \x1b[33mhelp\x1b[0m for available commands.\r\n",
-];
-
-const PROMPT = "\x1b[1;35mtinyos\x1b[0m \x1b[34m~\x1b[0m $ ";
-
-const HELP_TEXT = [
-  "Available commands:",
-  "  help     - Show this message",
-  "  clear    - Clear the terminal",
-  "  whoami   - Print current user",
-  "  date     - Print current date/time",
-  "  echo     - Echo arguments back",
-  "  uname    - System information",
-];
-
-function handleCommand(cmd: string, term: Terminal) {
-  const parts = cmd.trim().split(/\s+/);
-  const command = parts[0]?.toLowerCase() ?? "";
-  const args = parts.slice(1).join(" ");
-
-  switch (command) {
-    case "":
-      break;
-    case "help":
-      HELP_TEXT.forEach((l) => term.writeln(l));
-      break;
-    case "clear":
-      term.clear();
-      break;
-    case "whoami":
-      term.writeln("agent");
-      break;
-    case "date":
-      term.writeln(new Date().toString());
-      break;
-    case "echo":
-      term.writeln(args);
-      break;
-    case "uname":
-      term.writeln("TinyAgentOS 0.1.0 aarch64");
-      break;
-    default:
-      term.writeln(`\x1b[31mcommand not found:\x1b[0m ${command}`);
-  }
-}
 
 export function TerminalApp({ windowId: _windowId }: { windowId: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const fitRef = useRef<FitAddon | null>(null);
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!containerRef.current || termRef.current) return;
 
     const term = new Terminal({
       theme: {
         background: "#151625",
         foreground: "rgba(255, 255, 255, 0.85)",
         cursor: "#667eea",
+        cursorAccent: "#151625",
         selectionBackground: "rgba(102, 126, 234, 0.3)",
         black: "#1a1b2e",
-        red: "#f87171",
-        green: "#4ade80",
-        yellow: "#fbbf24",
+        red: "#ff5f57",
+        green: "#28c840",
+        yellow: "#febc2e",
         blue: "#667eea",
-        magenta: "#a78bfa",
-        cyan: "#22d3ee",
-        white: "rgba(255, 255, 255, 0.85)",
+        magenta: "#f093fb",
+        cyan: "#4facfe",
+        white: "rgba(255,255,255,0.85)",
+        brightBlack: "#555",
+        brightRed: "#ff6b6b",
+        brightGreen: "#51cf66",
+        brightYellow: "#ffd43b",
+        brightBlue: "#748ffc",
+        brightMagenta: "#e599f7",
+        brightCyan: "#66d9e8",
+        brightWhite: "#ffffff",
       },
-      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
+      fontFamily:
+        "'JetBrains Mono', 'Fira Code', 'MesloLGS NF', 'Hack Nerd Font', 'Cascadia Code', 'SF Mono', monospace",
       fontSize: 14,
-      lineHeight: 1.4,
+      lineHeight: 1.2,
       cursorBlink: true,
       cursorStyle: "bar",
       allowProposedApi: true,
     });
 
-    termRef.current = term;
+    const fit = new FitAddon();
+    const webLinks = new WebLinksAddon();
+    term.loadAddon(fit);
+    term.loadAddon(webLinks);
+
     term.open(containerRef.current);
+    fit.fit();
+    fitRef.current = fit;
+    termRef.current = term;
 
-    // Welcome message
-    WELCOME.forEach((l) => term.writeln(l));
-    term.write(PROMPT);
+    // Connect WebSocket to /ws/terminal
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const ws = new WebSocket(
+      `${proto}//${window.location.host}/ws/terminal`,
+    );
+    wsRef.current = ws;
 
-    let currentLine = "";
+    ws.onopen = () => {
+      // Send initial size
+      ws.send(
+        JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }),
+      );
+    };
 
-    term.onKey(({ key, domEvent }) => {
-      const code = domEvent.keyCode;
+    ws.onmessage = (event) => {
+      term.write(event.data);
+    };
 
-      if (code === 13) {
-        // Enter
-        term.writeln("");
-        handleCommand(currentLine, term);
-        currentLine = "";
-        term.write(PROMPT);
-      } else if (code === 8) {
-        // Backspace
-        if (currentLine.length > 0) {
-          currentLine = currentLine.slice(0, -1);
-          term.write("\b \b");
-        }
-      } else if (code === 12) {
-        // Ctrl+L
-        term.clear();
-        term.write(PROMPT + currentLine);
-      } else if (domEvent.ctrlKey && code === 67) {
-        // Ctrl+C
-        term.writeln("^C");
-        currentLine = "";
-        term.write(PROMPT);
-      } else if (key.length === 1 && !domEvent.ctrlKey && !domEvent.altKey) {
-        currentLine += key;
-        term.write(key);
+    ws.onerror = () => {
+      term.writeln("\r\n\x1b[31mWebSocket connection error\x1b[0m");
+    };
+
+    ws.onclose = () => {
+      term.writeln("\r\n\x1b[33mConnection closed\x1b[0m");
+    };
+
+    // Forward terminal input to WebSocket
+    term.onData((data) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(data);
       }
     });
 
-    // Fit terminal to container
-    const observer = new ResizeObserver(() => {
-      try {
-        const dims = containerRef.current?.getBoundingClientRect();
-        if (dims) {
-          const cols = Math.floor((dims.width - 20) / 8.4);
-          const rows = Math.floor((dims.height - 10) / (14 * 1.4));
-          if (cols > 0 && rows > 0) {
-            term.resize(cols, rows);
-          }
-        }
-      } catch {
-        // ignore resize errors
+    // Handle resize
+    const resizeObserver = new ResizeObserver(() => {
+      fit.fit();
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(
+          JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }),
+        );
       }
     });
-
-    observer.observe(containerRef.current);
+    resizeObserver.observe(containerRef.current);
 
     return () => {
-      observer.disconnect();
+      resizeObserver.disconnect();
+      ws.close();
       term.dispose();
       termRef.current = null;
+      wsRef.current = null;
+      fitRef.current = null;
     };
   }, []);
 
@@ -148,7 +114,7 @@ export function TerminalApp({ windowId: _windowId }: { windowId: string }) {
     <div
       ref={containerRef}
       className="h-full w-full"
-      style={{ background: "#151625", padding: "4px" }}
+      style={{ backgroundColor: "#151625" }}
     />
   );
 }
