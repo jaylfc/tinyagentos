@@ -164,10 +164,38 @@ def _detect_ram() -> int:
 
 
 def _detect_npu() -> NpuInfo:
-    # Rockchip RKNPU
-    if Path("/dev/rknpu").exists():
-        cores = 3  # RK3588 default
-        return NpuInfo(type="rknpu", device="/dev/rknpu", tops=6, cores=cores)
+    # Rockchip RKNPU — detect via multiple paths (driver exposes different interfaces per board)
+    rknpu_paths = [
+        Path("/dev/rknpu"),
+        Path("/sys/kernel/debug/rknpu/load"),  # debugfs — most reliable detection
+        Path("/sys/class/devfreq/fdab0000.npu"),  # RK3588 NPU devfreq node
+    ]
+    if any(p.exists() for p in rknpu_paths):
+        # Detect SoC variant — RK3588 has 3 cores at 6 TOPS, RK3576 has 1 core at 6 TOPS,
+        # RK3568 has 1 core at 1 TOPS
+        soc = ""
+        try:
+            model = Path("/proc/device-tree/model").read_text(errors="replace").lower()
+            if "rk3588" in model:
+                return NpuInfo(type="rknpu", device="rk3588", tops=6, cores=3)
+            if "rk3576" in model:
+                return NpuInfo(type="rknpu", device="rk3576", tops=6, cores=1)
+            if "rk3568" in model:
+                return NpuInfo(type="rknpu", device="rk3568", tops=1, cores=1)
+        except (OSError, ValueError):
+            pass
+        # Parse NPU load file to infer core count if available
+        cores = 1
+        try:
+            load_text = Path("/sys/kernel/debug/rknpu/load").read_text()
+            import re as _re
+            core_matches = _re.findall(r"Core(\d+):", load_text)
+            if core_matches:
+                cores = len(core_matches)
+        except (OSError, PermissionError):
+            pass
+        tops = 6 if cores == 3 else (6 if cores == 1 else 1)
+        return NpuInfo(type="rknpu", device=soc or "rknpu", tops=tops, cores=cores)
     # Hailo — distinguish 8L (13 TOPS, vision only) from 10H (40 TOPS, LLM capable)
     for p in Path("/dev").glob("hailo*"):
         hailo_info = _run(["lspci", "-d", "1e60:"])
