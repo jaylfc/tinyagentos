@@ -13,6 +13,7 @@ import {
   WifiOff,
   Check,
   AlertCircle,
+  ChevronLeft,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
@@ -590,6 +591,9 @@ function AdvancedSection() {
 
 export function SettingsApp({ windowId: _windowId }: { windowId: string }) {
   const [section, setSection] = useState<Section>("system");
+  const [mobileShowSection, setMobileShowSection] = useState(false);
+
+  const isMobile = typeof window !== "undefined" && window.innerWidth < 640;
 
   const content: Record<Section, ReactNode> = {
     system: <SystemInfoSection />,
@@ -600,40 +604,61 @@ export function SettingsApp({ windowId: _windowId }: { windowId: string }) {
     advanced: <AdvancedSection />,
   };
 
+  const handleSelectSection = (id: Section) => {
+    setSection(id);
+    setMobileShowSection(true);
+  };
+
+  const sidebarUI = (
+    <nav
+      className={isMobile ? "w-full overflow-y-auto" : "w-48 shrink-0 border-r border-white/5 bg-shell-surface/30 overflow-y-auto"}
+      aria-label="Settings sections"
+    >
+      <div className="p-3 space-y-0.5">
+        {SECTIONS.map((s) => {
+          const active = section === s.id;
+          const Icon = s.icon;
+          return (
+            <button
+              key={s.id}
+              onClick={() => handleSelectSection(s.id)}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors ${
+                active
+                  ? "bg-sky-600/20 text-sky-400"
+                  : "text-shell-text-secondary hover:bg-white/5 hover:text-shell-text"
+              }`}
+              aria-current={active ? "page" : undefined}
+            >
+              <Icon size={16} />
+              {s.label}
+            </button>
+          );
+        })}
+      </div>
+    </nav>
+  );
+
+  const contentUI = (
+    <main className="flex-1 overflow-y-auto p-5">
+      {isMobile && (
+        <button onClick={() => setMobileShowSection(false)} className="flex items-center gap-1 px-3 py-2 text-xs text-shell-text-secondary mb-3">
+          <ChevronLeft size={14} /> Back
+        </button>
+      )}
+      {content[section]}
+    </main>
+  );
+
   return (
     <div className="flex h-full bg-shell-bg-deep text-shell-text select-none">
-      {/* Sidebar */}
-      <nav
-        className="w-48 shrink-0 border-r border-white/5 bg-shell-surface/30 overflow-y-auto"
-        aria-label="Settings sections"
-      >
-        <div className="p-3 space-y-0.5">
-          {SECTIONS.map((s) => {
-            const active = section === s.id;
-            const Icon = s.icon;
-            return (
-              <button
-                key={s.id}
-                onClick={() => setSection(s.id)}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors ${
-                  active
-                    ? "bg-sky-600/20 text-sky-400"
-                    : "text-shell-text-secondary hover:bg-white/5 hover:text-shell-text"
-                }`}
-                aria-current={active ? "page" : undefined}
-              >
-                <Icon size={16} />
-                {s.label}
-              </button>
-            );
-          })}
-        </div>
-      </nav>
-
-      {/* Content */}
-      <main className="flex-1 overflow-y-auto p-5">
-        {content[section]}
-      </main>
+      {isMobile ? (
+        mobileShowSection ? contentUI : sidebarUI
+      ) : (
+        <>
+          {sidebarUI}
+          {contentUI}
+        </>
+      )}
     </div>
   );
 }

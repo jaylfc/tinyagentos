@@ -9,6 +9,7 @@ import {
   FileCode,
   FileArchive,
   ChevronRight,
+  ChevronLeft,
   FolderPlus,
   Upload,
   LayoutGrid,
@@ -280,18 +281,19 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
     return a.name.localeCompare(b.name);
   });
 
+  const isMobile = typeof window !== "undefined" && window.innerWidth < 640;
+  const [mobileShowFiles, setMobileShowFiles] = useState(false);
+
   /* ---- Render ---- */
-  return (
-    <div className="flex h-full bg-shell-bg text-shell-text text-sm">
-      {/* ---- Sidebar ---- */}
-      <aside className="w-52 shrink-0 border-r border-white/5 bg-shell-bg-deep flex flex-col">
+  const sidebarUI = (
+    <aside className={isMobile ? "w-full flex flex-col h-full bg-shell-bg-deep" : "w-52 shrink-0 border-r border-white/5 bg-shell-bg-deep flex flex-col"}>
         <div className="px-3 pt-3 pb-2 text-xs font-semibold text-shell-text-tertiary uppercase tracking-wider">
           Locations
         </div>
 
         {/* Workspace */}
         <button
-          onClick={() => { setLocation("workspace"); setCurrentPath(""); }}
+          onClick={() => { setLocation("workspace"); setCurrentPath(""); if (isMobile) setMobileShowFiles(true); }}
           className={`flex items-center gap-2 px-3 py-2 mx-1.5 rounded-lg transition-colors text-left ${
             location === "workspace" ? "bg-accent/15 text-accent" : "hover:bg-shell-surface text-shell-text"
           }`}
@@ -320,7 +322,7 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
             {sharedFolders.map((sf) => (
               <button
                 key={sf.id}
-                onClick={() => { setLocation(sf.name); setCurrentPath(""); }}
+                onClick={() => { setLocation(sf.name); setCurrentPath(""); if (isMobile) setMobileShowFiles(true); }}
                 className={`flex items-center gap-2 w-full px-3 py-1.5 rounded-lg transition-colors text-left text-xs ${
                   location === sf.name ? "bg-accent/15 text-accent" : "hover:bg-shell-surface text-shell-text-secondary"
                 }`}
@@ -343,14 +345,24 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
             <div>{formatSize(stats.total_size)} used</div>
           </div>
         )}
-      </aside>
+    </aside>
+  );
 
-      {/* ---- Main content ---- */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* ---- Toolbar ---- */}
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-white/5 bg-shell-bg-deep shrink-0 flex-wrap">
-          {/* Back button */}
-          {currentPath && (
+  const mainContentUI = (
+    <div className="flex-1 flex flex-col min-w-0">
+      {/* ---- Toolbar ---- */}
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-white/5 bg-shell-bg-deep shrink-0 flex-wrap">
+        {/* Mobile back button */}
+        {isMobile && (
+          <button
+            onClick={() => setMobileShowFiles(false)}
+            className="flex items-center gap-1 text-xs text-shell-text-secondary"
+          >
+            <ChevronLeft size={14} /> Back
+          </button>
+        )}
+        {/* Back button */}
+        {currentPath && (
             <button
               onClick={goUp}
               className="p-1.5 rounded-md hover:bg-shell-surface transition-colors text-shell-text-secondary hover:text-shell-text"
@@ -649,6 +661,18 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
           )}
         </div>
       </div>
+  );
+
+  return (
+    <div className="flex h-full bg-shell-bg text-shell-text text-sm">
+      {isMobile ? (
+        mobileShowFiles ? mainContentUI : sidebarUI
+      ) : (
+        <>
+          {sidebarUI}
+          {mainContentUI}
+        </>
+      )}
     </div>
   );
 }

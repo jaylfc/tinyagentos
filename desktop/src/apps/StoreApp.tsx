@@ -243,36 +243,56 @@ export function StoreApp({ windowId: _windowId }: { windowId: string }) {
     counts[cat.id] = apps.filter((a) => cat.types.includes(a.type)).length;
   }
 
+  const isMobile = typeof window !== "undefined" && window.innerWidth < 640;
+
   return (
-    <div className="flex h-full overflow-hidden">
-      {/* Sidebar */}
-      <div className="w-52 shrink-0 border-r border-shell-border bg-shell-surface/30 flex flex-col overflow-y-auto">
-        <div className="px-3 py-3 border-b border-shell-border">
-          <div className="flex items-center gap-2">
-            <ShoppingBag size={16} className="text-accent" />
-            <span className="text-sm font-medium text-shell-text">Store</span>
-          </div>
-        </div>
-        <nav className="flex-1 py-2">
+    <div className={`flex ${isMobile ? "flex-col" : ""} h-full overflow-hidden`}>
+      {/* Sidebar / Mobile pill row */}
+      {isMobile ? (
+        <div className="flex overflow-x-auto gap-2 px-3 py-2 border-b border-shell-border shrink-0">
           {CATEGORIES.map((cat) => (
             <button
               key={cat.id}
               onClick={() => setActiveCategory(cat.id)}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-xs transition-colors ${
+              className={`whitespace-nowrap px-3 py-1 rounded-full text-xs ${
                 activeCategory === cat.id
                   ? "bg-accent/15 text-accent"
-                  : "text-shell-text-secondary hover:bg-white/5 hover:text-shell-text"
+                  : "bg-shell-surface text-shell-text-secondary"
               }`}
             >
-              <span className="shrink-0">{cat.icon}</span>
-              <span className="flex-1 truncate">{cat.label}</span>
-              {counts[cat.id] ? (
-                <span className="text-[10px] text-shell-text-tertiary">{counts[cat.id]}</span>
-              ) : null}
+              {cat.label}
             </button>
           ))}
-        </nav>
-      </div>
+        </div>
+      ) : (
+        <div className="w-52 shrink-0 border-r border-shell-border bg-shell-surface/30 flex flex-col overflow-y-auto">
+          <div className="px-3 py-3 border-b border-shell-border">
+            <div className="flex items-center gap-2">
+              <ShoppingBag size={16} className="text-accent" />
+              <span className="text-sm font-medium text-shell-text">Store</span>
+            </div>
+          </div>
+          <nav className="flex-1 py-2">
+            {CATEGORIES.map((cat) => (
+              <button
+                key={cat.id}
+                onClick={() => setActiveCategory(cat.id)}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-xs transition-colors ${
+                  activeCategory === cat.id
+                    ? "bg-accent/15 text-accent"
+                    : "text-shell-text-secondary hover:bg-white/5 hover:text-shell-text"
+                }`}
+              >
+                <span className="shrink-0">{cat.icon}</span>
+                <span className="flex-1 truncate">{cat.label}</span>
+                {counts[cat.id] ? (
+                  <span className="text-[10px] text-shell-text-tertiary">{counts[cat.id]}</span>
+                ) : null}
+              </button>
+            ))}
+          </nav>
+        </div>
+      )}
 
       {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden">
