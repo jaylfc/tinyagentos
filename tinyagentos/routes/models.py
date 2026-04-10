@@ -5,6 +5,7 @@ import asyncio
 import logging
 from pathlib import Path
 
+import httpx
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
@@ -412,6 +413,100 @@ async def recommended_models(request: Request):
         "recommended": recommended,
         "compatible": compatible,
     }
+
+
+def _infer_purpose(model_name: str) -> str:
+    """Guess the model's purpose from its name."""
+    name = (model_name or "").lower()
+    if any(k in name for k in ["embed", "e5", "bge", "nomic"]):
+        return "embeddings"
+    if any(k in name for k in ["sd", "stable-diffusion", "sdxl", "flux", "dreamshaper", "lcm", "pixart"]):
+        return "image-generation"
+    if any(k in name for k in ["whisper", "stt"]):
+        return "speech-to-text"
+    if any(k in name for k in ["tts", "kokoro", "piper", "bark"]):
+        return "text-to-speech"
+    if any(k in name for k in ["vision", "llava", "moondream", "blip"]):
+        return "vision"
+    if any(k in name for k in ["code", "deepseek", "qwen-coder", "codellama"]):
+        return "code"
+    return "chat"
+
+
+@router.get("/api/models/loaded")
+async def loaded_models(request: Request):
+    """Return models currently loaded in memory across all backends.
+
+    Queries each configured backend for its running/loaded models and
+    aggregates them with purpose inference and resource usage info.
+    Offline backends are skipped silently.
+    """
+    config = request.app.state.config
+    backends = getattr(config, "backends", []) or []
+    http_client = getattr(request.app.state, "http_client", None)
+
+    loaded: list[dict] = []
+
+    async def _query(client: httpx.AsyncClient) -> None:
+        for backend in backends:
+            backend_type = backend.get("type", "") if isinstance(backend, dict) else getattr(backend, "type", "")
+            backend_url = backend.get("url", "") if isinstance(backend, dict) else getattr(backend, "url", "")
+            backend_name = backend.get("name", "") if isinstance(backend, dict) else getattr(backend, "name", "")
+            if not backend_url:
+                continue
+            base = backend_url.rstrip("/")
+
+            try:
+                if backend_type in ("ollama", "rkllama"):
+                    resp = await client.get(f"{base}/api/ps", timeout=5)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        for m in data.get("models", []) or []:
+                            size = m.get("size", 0) or 0
+                            size_vram = m.get("size_vram", 0) or 0
+                            loaded.append({
+                                "name": m.get("name", m.get("model", "unknown")),
+                                "backend": backend_name,
+                                "backend_type": backend_type,
+                                "backend_url": backend_url,
+                                "purpose": _infer_purpose(m.get("name", "") or m.get("model", "")),
+                                "size_mb": size // (1024 * 1024),
+                                "vram_mb": size_vram // (1024 * 1024),
+                                "ram_mb": max(0, size - size_vram) // (1024 * 1024),
+                                "expires_at": m.get("expires_at"),
+                                "details": m.get("details", {}) or {},
+                            })
+                elif backend_type in ("llama-cpp", "vllm", "openai", "exo", "mlx", "anthropic"):
+                    resp = await client.get(f"{base}/v1/models", timeout=5)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        for m in data.get("data", []) or []:
+                            model_id = m.get("id", "unknown")
+                            loaded.append({
+                                "name": model_id,
+                                "backend": backend_name,
+                                "backend_type": backend_type,
+                                "backend_url": backend_url,
+                                "purpose": _infer_purpose(model_id),
+                                "size_mb": None,
+                                "vram_mb": None,
+                                "ram_mb": None,
+                                "expires_at": None,
+                                "details": {},
+                            })
+            except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError):
+                continue
+            except Exception as e:
+                logger.debug(f"loaded_models: backend {backend_name} failed: {e}")
+                continue
+
+    if http_client is not None:
+        await _query(http_client)
+    else:
+        async with httpx.AsyncClient(timeout=5) as client:
+            await _query(client)
+
+    return JSONResponse({"loaded": loaded})
 
 
 @router.get("/api/models/{model_id}")
