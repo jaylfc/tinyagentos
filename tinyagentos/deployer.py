@@ -157,6 +157,24 @@ async def deploy_agent(req: DeployRequest) -> dict:
             Path(um_tmp).unlink()
             steps.append("user_memory_env_injected")
 
+        # Step 7c: Inject Skill runtime env vars so the agent can discover and
+        # call its assigned skills via the in-process Skill MCP server.
+        skill_server_url = (
+            f"http://{req.taos_host}:{req.taos_port}/api/skill-exec"
+        )
+        skill_env_lines = [
+            f'export TAOS_SKILLS_URL="{skill_server_url}"',
+            f'export TAOS_SKILLS_MCP_URL="{skill_server_url}"',
+            f'export TAOS_SKILLS_TOOLS_URL="{skill_server_url}/tools?agent_name={req.name}"',
+        ]
+        skill_env_script = "\n".join(skill_env_lines) + "\n"
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False) as sf:
+            sf.write(skill_env_script)
+            skill_tmp = sf.name
+        await push_file(container_name, skill_tmp, "/etc/profile.d/taos-skills.sh")
+        Path(skill_tmp).unlink()
+        steps.append("skills_env_injected")
+
         # Step 8: Get container IP
         code, output = await exec_in_container(container_name, ["hostname", "-I"])
         container_ip = output.strip().split()[0] if code == 0 and output.strip() else None

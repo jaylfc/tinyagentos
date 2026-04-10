@@ -396,6 +396,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     from tinyagentos.routes.skills import router as skills_router
     app.include_router(skills_router)
 
+    from tinyagentos.routes.skill_exec import router as skill_exec_router
+    app.include_router(skill_exec_router)
+
     # Lobby demo (internal only — not included in public builds)
     try:
         from tinyagentos.lobby.routes import router as lobby_router
