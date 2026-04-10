@@ -15,8 +15,9 @@ interface SearchResult {
   name: string;
   category: string;
   icon: string;
-  type: "app" | "action";
+  type: "app" | "memory" | "action";
   action: () => void;
+  subtitle?: string;
 }
 
 export function SearchPalette({ open, onClose, onOpenApp }: Props) {
@@ -33,11 +34,11 @@ export function SearchPalette({ open, onClose, onOpenApp }: Props) {
     }
   }, [open]);
 
-  const results = useMemo<SearchResult[]>(() => {
+  const appResults = useMemo<SearchResult[]>(() => {
     const all = getAllApps();
     const q = query.toLowerCase().trim();
 
-    const appResults: SearchResult[] = all
+    return all
       .filter((app) => !q || app.name.toLowerCase().includes(q) || app.category.includes(q))
       .slice(0, 8)
       .map((app) => ({
@@ -55,9 +56,58 @@ export function SearchPalette({ open, onClose, onOpenApp }: Props) {
           onClose();
         },
       }));
+  }, [query, openWindow, onClose, onOpenApp]);
 
-    return appResults;
-  }, [query, openWindow, onClose]);
+  const [memoryResults, setMemoryResults] = useState<SearchResult[]>([]);
+
+  useEffect(() => {
+    const q = query.trim();
+    if (!q || q.length < 2) {
+      setMemoryResults([]);
+      return;
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      fetch(
+        `/api/user-memory/search?q=${encodeURIComponent(q)}&limit=5`,
+        { signal: controller.signal },
+      )
+        .then((r) => (r.ok ? r.json() : { results: [] }))
+        .then((data) => {
+          const items = Array.isArray(data?.results) ? data.results : [];
+          setMemoryResults(
+            items.map((r: { hash: string; title?: string; content: string; collection: string }) => ({
+              id: `mem-${r.hash}`,
+              name: (r.title && r.title.trim()) || r.content.slice(0, 60),
+              category: r.collection,
+              icon: "database",
+              type: "memory" as const,
+              subtitle: r.content.slice(0, 100),
+              action: () => {
+                const memApp = getApp("memory");
+                if (memApp) {
+                  const wid = openWindow("memory", memApp.defaultSize);
+                  onOpenApp?.(wid);
+                }
+                onClose();
+              },
+            })),
+          );
+        })
+        .catch(() => {
+          /* ignore (abort or network) */
+        });
+    }, 300);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [query, openWindow, onClose, onOpenApp]);
+
+  const results = useMemo<SearchResult[]>(
+    () => [...appResults, ...memoryResults],
+    [appResults, memoryResults],
+  );
 
   useEffect(() => {
     setSelectedIndex(0);
@@ -135,33 +185,89 @@ export function SearchPalette({ open, onClose, onOpenApp }: Props) {
               No results for "{query}"
             </div>
           )}
-          {results.map((result, i) => (
-            <button
-              key={result.id}
-              onClick={result.action}
-              onMouseEnter={() => setSelectedIndex(i)}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${
-                i === selectedIndex ? "bg-accent/15" : "hover:bg-white/5"
-              }`}
+
+          {appResults.length > 0 && (
+            <div
+              className="px-4 pt-2 pb-1 text-[10px] uppercase tracking-wider text-shell-text-tertiary"
+              role="presentation"
             >
-              <div
-                className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                  i === selectedIndex ? "bg-accent/20 text-accent" : "bg-shell-surface text-shell-text-secondary"
+              Apps
+            </div>
+          )}
+          {appResults.map((result) => {
+            const i = results.indexOf(result);
+            return (
+              <button
+                key={result.id}
+                onClick={result.action}
+                onMouseEnter={() => setSelectedIndex(i)}
+                className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${
+                  i === selectedIndex ? "bg-accent/15" : "hover:bg-white/5"
                 }`}
               >
-                {getIcon(result.icon)}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-sm text-shell-text truncate">{result.name}</div>
-              </div>
-              <span className="text-[10px] text-shell-text-tertiary uppercase tracking-wider">
-                {categoryLabels[result.category] ?? result.category}
-              </span>
-            </button>
-          ))}
+                <div
+                  className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                    i === selectedIndex ? "bg-accent/20 text-accent" : "bg-shell-surface text-shell-text-secondary"
+                  }`}
+                >
+                  {getIcon(result.icon)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm text-shell-text truncate">{result.name}</div>
+                </div>
+                <span className="text-[10px] text-shell-text-tertiary uppercase tracking-wider">
+                  {categoryLabels[result.category] ?? result.category}
+                </span>
+              </button>
+            );
+          })}
+
+          {memoryResults.length > 0 && (
+            <div
+              className="px-4 pt-3 pb-1 text-[10px] uppercase tracking-wider text-shell-text-tertiary"
+              role="presentation"
+            >
+              Memory
+            </div>
+          )}
+          {memoryResults.map((result) => {
+            const i = results.indexOf(result);
+            return (
+              <button
+                key={result.id}
+                onClick={result.action}
+                onMouseEnter={() => setSelectedIndex(i)}
+                className={`w-full flex items-start gap-3 px-4 py-2.5 text-left transition-colors ${
+                  i === selectedIndex ? "bg-accent/15" : "hover:bg-white/5"
+                }`}
+              >
+                <div
+                  className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                    i === selectedIndex
+                      ? "bg-purple-500/20 text-purple-300"
+                      : "bg-shell-surface text-shell-text-secondary"
+                  }`}
+                >
+                  {getIcon(result.icon)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm text-shell-text truncate">{result.name}</div>
+                  {result.subtitle && (
+                    <div className="text-[11px] text-shell-text-tertiary truncate mt-0.5">
+                      {result.subtitle}
+                    </div>
+                  )}
+                </div>
+                <span className="text-[10px] text-shell-text-tertiary uppercase tracking-wider shrink-0">
+                  {result.category}
+                </span>
+              </button>
+            );
+          })}
+
           {!query && (
             <div className="px-4 py-6 text-center text-xs text-shell-text-tertiary">
-              Type to search apps, or press Escape to close
+              Type to search apps and memory, or press Escape to close
             </div>
           )}
         </div>

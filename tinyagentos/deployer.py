@@ -40,6 +40,9 @@ class DeployRequest:
     cpu_limit: int = 2
     rkllama_url: str = "http://localhost:8080"
     extra_config: dict | None = None
+    can_read_user_memory: bool = False
+    taos_host: str = "host.docker.internal"
+    taos_port: int = 6969
 
 
 async def deploy_agent(req: DeployRequest) -> dict:
@@ -139,6 +142,20 @@ async def deploy_agent(req: DeployRequest) -> dict:
                     await push_file(container_name, env_tmp, "/etc/profile.d/llm-proxy.sh")
                     Path(env_tmp).unlink()
                     steps.append("llm_proxy_key_injected")
+
+        # Step 7b: Inject user memory env var if permission granted
+        if req.can_read_user_memory:
+            user_memory_url = (
+                f"http://{req.taos_host}:{req.taos_port}"
+                f"/api/user-memory/agent-search?agent_name={req.name}"
+            )
+            env_script = f'export TAOS_USER_MEMORY_URL="{user_memory_url}"\n'
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False) as umf:
+                umf.write(env_script)
+                um_tmp = umf.name
+            await push_file(container_name, um_tmp, "/etc/profile.d/taos-user-memory.sh")
+            Path(um_tmp).unlink()
+            steps.append("user_memory_env_injected")
 
         # Step 8: Get container IP
         code, output = await exec_in_container(container_name, ["hostname", "-I"])

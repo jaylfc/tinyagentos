@@ -19,12 +19,14 @@ class AgentCreate(BaseModel):
     host: str
     qmd_index: str
     color: str = "#888888"
+    can_read_user_memory: bool = False
 
 
 class AgentUpdate(BaseModel):
     host: str | None = None
     qmd_index: str | None = None
     color: str | None = None
+    can_read_user_memory: bool | None = None
 
 
 @router.get("/agents", response_class=HTMLResponse)
@@ -107,8 +109,33 @@ async def update_agent(request: Request, name: str, body: AgentUpdate):
         agent["qmd_index"] = body.qmd_index
     if body.color is not None:
         agent["color"] = body.color
+    if body.can_read_user_memory is not None:
+        agent["can_read_user_memory"] = body.can_read_user_memory
     await save_config_locked(config, config.config_path)
     return {"status": "updated", "name": name}
+
+
+class AgentPermissions(BaseModel):
+    can_read_user_memory: bool | None = None
+
+
+@router.put("/api/agents/{name}/permissions")
+async def update_agent_permissions(request: Request, name: str, body: AgentPermissions):
+    """Update an agent's permissions (e.g. user memory access)."""
+    config = request.app.state.config
+    agent = find_agent(config, name)
+    if not agent:
+        return JSONResponse({"error": f"Agent '{name}' not found"}, status_code=404)
+    if body.can_read_user_memory is not None:
+        agent["can_read_user_memory"] = body.can_read_user_memory
+    await save_config_locked(config, config.config_path)
+    return {
+        "status": "updated",
+        "name": name,
+        "permissions": {
+            "can_read_user_memory": agent.get("can_read_user_memory", False),
+        },
+    }
 
 
 @router.delete("/api/agents/{name}")
@@ -127,6 +154,7 @@ class DeployAgentRequest(BaseModel):
     color: str = "#888888"
     memory_limit: str = "2GB"
     cpu_limit: int = 2
+    can_read_user_memory: bool = False
 
 
 @router.post("/api/agents/deploy")
@@ -152,6 +180,7 @@ async def deploy_agent_endpoint(request: Request, body: DeployAgentRequest):
         "qmd_url": "",
         "color": body.color,
         "status": "deploying",
+        "can_read_user_memory": body.can_read_user_memory,
     })
     await save_config_locked(config, config.config_path)
 
@@ -176,6 +205,7 @@ async def deploy_agent_endpoint(request: Request, body: DeployAgentRequest):
                 memory_limit=body.memory_limit,
                 cpu_limit=body.cpu_limit,
                 rkllama_url=rkllama_url,
+                can_read_user_memory=body.can_read_user_memory,
             ))
             agent = find_agent(config, body.name)
             if result.get("success"):

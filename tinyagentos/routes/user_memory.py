@@ -36,6 +36,24 @@ async def search(request: Request, q: str, collection: str | None = None, limit:
     return JSONResponse({"results": results, "query": q})
 
 
+@router.get("/api/user-memory/agent-search")
+async def agent_search(request: Request, q: str, agent_name: str, limit: int = 10):
+    """Read-only search endpoint for agents with user memory permission."""
+    config = request.app.state.config
+    agents = getattr(config, "agents", None)
+    if agents is None and isinstance(config, dict):
+        agents = config.get("agents", [])
+    agents = agents or []
+    agent = next((a for a in agents if a.get("name") == agent_name), None)
+    if not agent or not agent.get("can_read_user_memory"):
+        return JSONResponse(
+            {"error": "Agent does not have user memory access"},
+            status_code=403,
+        )
+    results = await _store(request).search(USER_ID, q, limit=limit)
+    return JSONResponse({"results": results, "query": q, "agent": agent_name})
+
+
 @router.get("/api/user-memory/browse")
 async def browse(request: Request, collection: str | None = None, limit: int = 50):
     chunks = await _store(request).browse(USER_ID, collection, limit)
