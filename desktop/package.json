@@ -11,9 +11,16 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@codemirror/lang-markdown": "^6.5.0",
+    "@codemirror/language-data": "^6.5.2",
+    "@codemirror/state": "^6.6.0",
+    "@codemirror/theme-one-dark": "^6.1.3",
+    "@codemirror/view": "^6.41.0",
     "@milkdown/kit": "^7.20.0",
     "@milkdown/react": "^7.20.0",
     "@milkdown/theme-nord": "^7.20.0",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-web-links": "^0.12.0",
     "@xterm/xterm": "^6.0.0",
     "chess.js": "^1.4.0",
     "lucide-react": "^0.500.0",
