@@ -14,8 +14,6 @@ from pydantic import BaseModel, Field
 
 router = APIRouter()
 
-IMAGES_DIR_NAME = "images"
-
 
 class GenerateRequest(BaseModel):
     prompt: str
@@ -27,15 +25,25 @@ class GenerateRequest(BaseModel):
 
 
 def _images_dir(request: Request) -> Path:
-    """Return the images directory, creating it if needed."""
-    data_dir = getattr(request.app.state, "data_dir", None)
-    if data_dir:
-        d = Path(data_dir) / IMAGES_DIR_NAME
+    """Return the workspace/images/generated directory, creating it if needed.
+
+    Generated images live under the user's workspace so they can also be
+    browsed via the Files app.
+    """
+    config_path = getattr(request.app.state, "config_path", None)
+    if config_path is not None:
+        data_dir = Path(config_path).parent
     else:
-        # Fall back to project-level data/images
-        d = Path(__file__).parent.parent.parent / "data" / IMAGES_DIR_NAME
+        # Fall back to project-level data/
+        data_dir = Path(__file__).parent.parent.parent / "data"
+    d = data_dir / "workspace" / "images" / "generated"
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def _image_url_path(filename: str) -> str:
+    """Web path for serving a generated image."""
+    return f"/data/workspace/images/generated/{filename}"
 
 
 def _get_image_backend(request: Request) -> tuple[str | None, str]:
@@ -74,7 +82,7 @@ def _list_images(images_dir: Path) -> list[dict]:
                 pass
         results.append({
             "filename": png.name,
-            "path": f"/data/images/{png.name}",
+            "path": _image_url_path(png.name),
             "size_bytes": png.stat().st_size,
             "prompt": metadata.get("prompt", ""),
             "model": metadata.get("model", ""),
@@ -175,7 +183,7 @@ async def generate_image(request: Request, body: GenerateRequest):
     return {
         "status": "generated",
         "filename": filename,
-        "path": f"/data/images/{filename}",
+        "path": _image_url_path(filename),
         **metadata,
     }
 
