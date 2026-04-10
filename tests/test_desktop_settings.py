@@ -47,3 +47,20 @@ async def test_window_positions_roundtrip(store):
     await store.save_windows("user", positions)
     result = await store.get_windows("user")
     assert result == positions
+
+
+@pytest.mark.asyncio
+async def test_widgets_roundtrip(store):
+    widgets = [
+        {"id": "w1", "type": "clock", "x": 0, "y": 0, "w": 4, "h": 3},
+        {"id": "w2", "type": "agent-status", "x": 4, "y": 0, "w": 4, "h": 4},
+    ]
+    await store.save_widgets("user", widgets)
+    result = await store.get_widgets("user")
+    assert result == widgets
+
+
+@pytest.mark.asyncio
+async def test_widgets_default_empty(store):
+    result = await store.get_widgets("user")
+    assert result == []

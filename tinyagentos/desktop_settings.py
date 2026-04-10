@@ -73,3 +73,10 @@ class DesktopSettingsStore(BaseStore):
 
     async def save_windows(self, user_id: str, positions: list) -> None:
         await self._set(user_id, "windows", {"positions": positions})
+
+    async def get_widgets(self, user_id: str) -> list:
+        data = await self._get(user_id, "widgets", {"widgets": []})
+        return data.get("widgets", [])
+
+    async def save_widgets(self, user_id: str, widgets: list) -> None:
+        await self._set(user_id, "widgets", {"widgets": widgets})

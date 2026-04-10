@@ -58,6 +58,22 @@ async def save_windows(request: Request):
     return JSONResponse({"ok": True})
 
 
+@router.get("/api/desktop/widgets")
+async def get_widgets(request: Request):
+    store = request.app.state.desktop_settings
+    widgets = await store.get_widgets("user")
+    return JSONResponse(widgets)
+
+
+@router.put("/api/desktop/widgets")
+async def save_widgets(request: Request):
+    store = request.app.state.desktop_settings
+    body = await request.json()
+    widgets = body.get("widgets", [])
+    await store.save_widgets("user", widgets)
+    return JSONResponse({"ok": True})
+
+
 @router.get("/api/desktop/proxy")
 async def browser_proxy(url: str):
     """Proxy web pages for the browser app — strips frame headers, rewrites URLs."""
