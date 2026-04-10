@@ -50,10 +50,10 @@ export function PillBar({ onHome, onCardSwitcher, onBack }: Props) {
     <div
       className="fixed bottom-0 left-0 right-0 z-[9999] grid grid-cols-3 items-center px-4"
       style={{
-        // Total bar height = 40px of content + safe area inset (home indicator clearance)
-        // Icons vertically centre in the entire visible bar, not just the top 40px
-        height: "calc(44px + env(safe-area-inset-bottom, 0px))",
-        paddingBottom: "env(safe-area-inset-bottom, 0px)",
+        // Bar extends into the iOS safe area (background fills it) but items-center
+        // balances icons across the ENTIRE visible bar — no padding means no dead zone.
+        // Touch targets (36px) sit comfortably above the 5px home indicator line.
+        height: "calc(48px + env(safe-area-inset-bottom, 0px))",
         backgroundColor: "rgba(20, 21, 38, 0.85)",
         borderTop: "1px solid rgba(255,255,255,0.06)",
         backdropFilter: "blur(20px)",

@@ -18,10 +18,7 @@ router = APIRouter()
 
 @router.get("/", response_class=HTMLResponse)
 async def root_redirect(request: Request):
-    """Root URL serves the desktop shell."""
-    data_dir = request.app.state.config_path.parent
-    if is_first_boot(data_dir):
-        return RedirectResponse(url="/setup", status_code=303)
+    """Root URL serves the desktop shell directly (skip first-boot setup)."""
     return RedirectResponse(url="/desktop", status_code=303)
 
 
