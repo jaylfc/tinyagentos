@@ -48,67 +48,64 @@ export function PillBar({ onHome, onCardSwitcher, onBack }: Props) {
 
   return (
     <div
-      className="fixed bottom-0 left-0 right-0 z-[9999]"
+      className="fixed bottom-0 left-0 right-0 z-[9999] grid grid-cols-3 items-center px-4"
       style={{
+        // Total bar height = 40px of content + safe area inset (home indicator clearance)
+        // Icons vertically centre in the entire visible bar, not just the top 40px
+        height: "calc(44px + env(safe-area-inset-bottom, 0px))",
+        paddingBottom: "env(safe-area-inset-bottom, 0px)",
         backgroundColor: "rgba(20, 21, 38, 0.85)",
         borderTop: "1px solid rgba(255,255,255,0.06)",
-        // Minimal bottom padding — just enough for the home indicator to not clip
-        paddingBottom: "max(env(safe-area-inset-bottom, 0px) - 16px, 0px)",
         backdropFilter: "blur(20px)",
         WebkitBackdropFilter: "blur(20px)",
       }}
     >
-      <div
-        className="grid grid-cols-3 items-center px-4"
-        style={{ height: 40 }}
-      >
-        {/* Left — back button */}
-        <div className="flex justify-start">
-          <button
-            onClick={onBack}
-            className="flex items-center justify-center w-9 h-9 rounded-lg active:bg-white/10 transition-colors"
-            aria-label="Go back"
-          >
-            <ChevronLeft size={20} className="text-white/60" />
-          </button>
-        </div>
+      {/* Left — back button */}
+      <div className="flex justify-start">
+        <button
+          onClick={onBack}
+          className="flex items-center justify-center w-9 h-9 rounded-lg active:bg-white/10 transition-colors"
+          aria-label="Go back"
+        >
+          <ChevronLeft size={20} className="text-white/60" />
+        </button>
+      </div>
 
-        {/* Centre — pill handle */}
-        <div className="flex justify-center">
-          <div
-            ref={pillRef}
-            className="cursor-pointer select-none"
-            style={{
-              width: 120,
-              height: 5,
-              borderRadius: 9999,
-              backgroundColor: "rgba(255, 255, 255, 0.35)",
-              transition: "transform 150ms ease, background-color 150ms ease",
-              touchAction: "none",
-            }}
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
-            onTouchEnd={handleTouchEnd}
-            onClick={onHome}
-            role="button"
-            aria-label="Home. Swipe up for app switcher."
-            tabIndex={0}
-          />
-        </div>
+      {/* Centre — pill handle */}
+      <div className="flex justify-center">
+        <div
+          ref={pillRef}
+          className="cursor-pointer select-none"
+          style={{
+            width: 120,
+            height: 5,
+            borderRadius: 9999,
+            backgroundColor: "rgba(255, 255, 255, 0.35)",
+            transition: "transform 150ms ease, background-color 150ms ease",
+            touchAction: "none",
+          }}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          onClick={onHome}
+          role="button"
+          aria-label="Home. Swipe up for app switcher."
+          tabIndex={0}
+        />
+      </div>
 
-        {/* Right — notifications */}
-        <div className="flex justify-end">
-          <button
-            onClick={toggleCentre}
-            className="relative flex items-center justify-center w-9 h-9 rounded-lg active:bg-white/10 transition-colors"
-            aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ""}`}
-          >
-            <Bell size={20} className="text-white/60" />
-            {unreadCount > 0 && (
-              <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
-            )}
-          </button>
-        </div>
+      {/* Right — notifications */}
+      <div className="flex justify-end">
+        <button
+          onClick={toggleCentre}
+          className="relative flex items-center justify-center w-9 h-9 rounded-lg active:bg-white/10 transition-colors"
+          aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ""}`}
+        >
+          <Bell size={20} className="text-white/60" />
+          {unreadCount > 0 && (
+            <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
+          )}
+        </button>
       </div>
     </div>
   );
