@@ -15,31 +15,34 @@ import {
 interface Channel {
   id: number | string;
   agent_name: string;
-  type: ChannelType;
+  type: string;
   enabled: boolean;
   config: Record<string, string>;
 }
 
-type ChannelType =
-  | "telegram"
-  | "discord"
-  | "slack"
-  | "webchat"
-  | "email"
-  | "webhook";
+type ChannelType = string;
+
+interface ChannelField {
+  key: string;
+  label: string;
+  placeholder: string;
+  type?: string;
+  required?: boolean;
+}
 
 interface ChannelTypeDef {
   id: ChannelType;
   label: string;
   group: "easy" | "advanced";
-  fields: { key: string; label: string; placeholder: string; type?: string }[];
+  description?: string;
+  fields: ChannelField[];
 }
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
 /* ------------------------------------------------------------------ */
 
-const CHANNEL_TYPES: ChannelTypeDef[] = [
+const FALLBACK_CHANNEL_TYPES: ChannelTypeDef[] = [
   {
     id: "telegram",
     label: "Telegram",
@@ -110,6 +113,7 @@ const STATUS_STYLES: Record<string, string> = {
 export function ChannelsApp({ windowId: _windowId }: { windowId: string }) {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [agents, setAgents] = useState<string[]>([]);
+  const [channelTypes, setChannelTypes] = useState<ChannelTypeDef[]>(FALLBACK_CHANNEL_TYPES);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -119,6 +123,54 @@ export function ChannelsApp({ windowId: _windowId }: { windowId: string }) {
   const [formAgent, setFormAgent] = useState("");
   const [formType, setFormType] = useState<ChannelType>("telegram");
   const [formConfig, setFormConfig] = useState<Record<string, string>>({});
+
+  // Fetch channel type schema from backend
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/channels/types", {
+          headers: { Accept: "application/json" },
+        });
+        const ct = res.headers.get("content-type") ?? "";
+        if (res.ok && ct.includes("application/json")) {
+          const data = await res.json();
+          if (data && typeof data === "object" && !Array.isArray(data)) {
+            const defs: ChannelTypeDef[] = Object.entries(
+              data as Record<string, Record<string, unknown>>
+            ).map(([id, def]) => {
+              const rawFields = Array.isArray(def.config_fields) ? def.config_fields : [];
+              const fields: ChannelField[] = (rawFields as Record<string, unknown>[]).map((f) => ({
+                key: String(f.name ?? ""),
+                label: String(f.label ?? f.name ?? ""),
+                placeholder: String(f.default ?? ""),
+                type: typeof f.type === "string" && ["text", "number", "url", "password"].includes(f.type)
+                  ? (f.type as string)
+                  : "text",
+                required: Boolean(f.required),
+              }));
+              const difficulty = String(def.difficulty ?? "easy");
+              return {
+                id,
+                label: String(def.name ?? id),
+                group: (difficulty === "advanced" ? "advanced" : "easy") as "easy" | "advanced",
+                description: def.description ? String(def.description) : undefined,
+                fields,
+              };
+            });
+            if (defs.length > 0) {
+              setChannelTypes(defs);
+              // Ensure selected type exists in new list
+              if (!defs.find((d) => d.id === formType)) {
+                setFormType(defs[0].id);
+                setFormConfig({});
+              }
+            }
+          }
+        }
+      } catch { /* keep fallback */ }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const fetchChannels = useCallback(async () => {
     try {
@@ -172,11 +224,12 @@ export function ChannelsApp({ windowId: _windowId }: { windowId: string }) {
     })();
   }, []);
 
-  const selectedTypeDef = CHANNEL_TYPES.find((t) => t.id === formType)!;
+  const selectedTypeDef =
+    channelTypes.find((t) => t.id === formType) ?? channelTypes[0];
 
   function resetForm() {
     setFormAgent("");
-    setFormType("telegram");
+    setFormType(channelTypes[0]?.id ?? "telegram");
     setFormConfig({});
     setFormError(null);
     setSubmitting(false);
@@ -237,8 +290,8 @@ export function ChannelsApp({ windowId: _windowId }: { windowId: string }) {
     }
   }
 
-  const easyTypes = CHANNEL_TYPES.filter((t) => t.group === "easy");
-  const advancedTypes = CHANNEL_TYPES.filter((t) => t.group === "advanced");
+  const easyTypes = channelTypes.filter((t) => t.group === "easy");
+  const advancedTypes = channelTypes.filter((t) => t.group === "advanced");
 
   return (
     <div className="flex flex-col h-full bg-shell-bg text-shell-text select-none">
@@ -315,7 +368,7 @@ export function ChannelsApp({ windowId: _windowId }: { windowId: string }) {
               </div>
 
               {/* Dynamic config fields */}
-              {selectedTypeDef.fields.map((field) => (
+              {(selectedTypeDef?.fields ?? []).map((field) => (
                 <div key={field.key} className="space-y-1.5">
                   <Label htmlFor={`channel-${field.key}`}>{field.label}</Label>
                   <Input
