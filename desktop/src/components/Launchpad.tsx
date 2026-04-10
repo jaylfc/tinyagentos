@@ -20,6 +20,8 @@ const CATEGORY_LABELS: Record<string, string> = {
 export function Launchpad({ open, onClose, onOpenApp }: Props) {
   const [query, setQuery] = useState("");
   const { openWindow } = useProcessStore();
+  // Detect mobile to skip autoFocus (prevents iOS keyboard popping automatically)
+  const isMobile = typeof window !== "undefined" && window.innerWidth < 640;
 
   const apps = useMemo(() => {
     const all = getAllApps();
@@ -50,11 +52,18 @@ export function Launchpad({ open, onClose, onOpenApp }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-[10000] flex flex-col items-center backdrop-blur-md bg-black/40"
+      className="fixed inset-0 z-[10000] flex flex-col backdrop-blur-md bg-black/40"
       onClick={onClose}
+      style={{
+        paddingTop: "calc(env(safe-area-inset-top, 0px) + 16px)",
+        paddingBottom: "calc(28px + env(safe-area-inset-bottom, 0px) + 16px)",
+      }}
     >
-      <div className="w-full max-w-3xl mt-16 px-4" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center gap-2 px-4 py-2 mb-8 rounded-xl bg-white/10 border border-white/10">
+      <div
+        className="w-full max-w-3xl mx-auto px-4 flex-1 flex flex-col min-h-0"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-2 px-4 py-2 mb-4 rounded-xl bg-white/10 border border-white/10 shrink-0">
           <Search size={16} className="text-shell-text-tertiary" />
           <input
             type="text"
@@ -62,7 +71,7 @@ export function Launchpad({ open, onClose, onOpenApp }: Props) {
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search apps..."
             className="flex-1 bg-transparent text-sm text-shell-text outline-none placeholder:text-shell-text-tertiary"
-            autoFocus
+            autoFocus={!isMobile}
           />
           {query && (
             <button onClick={() => setQuery("")} aria-label="Clear search">
@@ -71,13 +80,13 @@ export function Launchpad({ open, onClose, onOpenApp }: Props) {
           )}
         </div>
 
-        <div className="max-h-[60vh] overflow-y-auto space-y-8">
+        <div className="flex-1 overflow-y-auto space-y-6 pr-1">
           {Object.entries(grouped).map(([category, categoryApps]) => (
             <div key={category}>
               <h3 className="text-xs font-medium text-shell-text-tertiary uppercase tracking-wide mb-3 px-1">
                 {CATEGORY_LABELS[category] ?? category}
               </h3>
-              <div className="grid grid-cols-6 gap-2">
+              <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-3">
                 {categoryApps.map((app) => (
                   <LaunchpadIcon key={app.id} app={app} onClick={() => handleLaunch(app.id)} />
                 ))}

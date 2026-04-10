@@ -51,13 +51,11 @@ export function PillBar({ onHome, onCardSwitcher, onBack }: Props) {
       className="fixed left-0 right-0 z-[9999] flex flex-col"
       style={{
         bottom: 0,
-        // Bar = 28px content + safe area clearance (home indicator region)
-        height: "calc(28px + env(safe-area-inset-bottom, 0px))",
-        paddingBottom: "env(safe-area-inset-bottom, 0px)",
+        // 28px interactive content + HALF the iOS safe area (home indicator clearance)
+        height: "calc(28px + env(safe-area-inset-bottom, 0px) / 2)",
+        paddingBottom: "calc(env(safe-area-inset-bottom, 0px) / 2)",
         backgroundColor: "#14142a",
         borderTop: "1px solid rgba(255,255,255,0.06)",
-        // Belt-and-braces skirt: extend the bar colour 40px past its bottom
-        // so there's never a seam on iOS PWA (see: Apple Developer Forums #744327)
         boxShadow: "0 40px 0 0 #14142a",
       }}
     >
