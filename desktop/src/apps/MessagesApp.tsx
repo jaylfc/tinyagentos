@@ -13,6 +13,7 @@ import {
   Wifi,
   WifiOff,
   ChevronLeft,
+  PanelRight,
 } from "lucide-react";
 import {
   Button,
@@ -46,6 +47,13 @@ interface Message {
   author_id: string;
   author_type: "user" | "agent";
   content: string;
+  content_type?: "text" | "canvas" | string;
+  metadata?: {
+    canvas_id?: string;
+    canvas_url?: string;
+    canvas_title?: string;
+    [key: string]: unknown;
+  };
   state?: "pending" | "streaming" | "complete" | "error";
   created_at: string;
   reactions?: Record<string, string[]>;
@@ -104,6 +112,7 @@ export function MessagesApp({ windowId: _windowId }: { windowId: string }) {
   const [wsStatus, setWsStatus] = useState<WsStatus>("disconnected");
   const [showCreate, setShowCreate] = useState(false);
   const [showEmoji, setShowEmoji] = useState<string | null>(null); // message id
+  const [viewingCanvas, setViewingCanvas] = useState<{ url: string; title?: string } | null>(null);
   const [newChannel, setNewChannel] = useState({ name: "", type: "topic" as "topic" | "group", description: "" });
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -569,6 +578,25 @@ export function MessagesApp({ windowId: _windowId }: { windowId: string }) {
                     )}
                   </div>
 
+                  {/* canvas attachment */}
+                  {msg.content_type === "canvas" && (msg.metadata?.canvas_url || msg.metadata?.canvas_id) && (
+                    <div className="mt-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          const url = msg.metadata?.canvas_url ?? `/canvas/${msg.metadata?.canvas_id}`;
+                          setViewingCanvas({ url, title: msg.metadata?.canvas_title as string | undefined });
+                        }}
+                        className="h-7 px-2.5 text-[12px] gap-1.5 bg-white/[0.04] border-white/10 hover:bg-white/[0.08]"
+                        aria-label="View canvas"
+                      >
+                        <PanelRight size={13} />
+                        View Canvas{msg.metadata?.canvas_title ? `: ${msg.metadata.canvas_title}` : ""}
+                      </Button>
+                    </div>
+                  )}
+
                   {/* reactions */}
                   {msg.reactions && Object.keys(msg.reactions).length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-1">
@@ -675,6 +703,43 @@ export function MessagesApp({ windowId: _windowId }: { windowId: string }) {
           {channelListUI}
           {messageAreaUI}
         </>
+      )}
+
+      {/* ---- Canvas Viewer ---- */}
+      {viewingCanvas && (
+        <div
+          className="fixed inset-0 z-[10002] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          onClick={() => setViewingCanvas(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Canvas viewer"
+        >
+          <div
+            className="w-[90vw] h-[85vh] max-w-5xl rounded-xl border border-white/10 overflow-hidden bg-zinc-900 flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-2 border-b border-white/10 shrink-0">
+              <div className="flex items-center gap-2 text-sm text-white/80">
+                <PanelRight size={14} />
+                <span>{viewingCanvas.title ?? "Canvas"}</span>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setViewingCanvas(null)}
+                className="h-7 w-7"
+                aria-label="Close canvas viewer"
+              >
+                <X size={14} />
+              </Button>
+            </div>
+            <iframe
+              src={viewingCanvas.url}
+              className="flex-1 w-full border-none bg-white"
+              title="Canvas"
+            />
+          </div>
+        </div>
       )}
 
       {/* ---- Create Channel Dialog ---- */}
