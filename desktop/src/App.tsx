@@ -6,6 +6,7 @@ import { Dock } from "@/components/Dock";
 import { Launchpad } from "@/components/Launchpad";
 import { SearchPalette } from "@/components/SearchPalette";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
+import { useSessionPersistence } from "@/hooks/use-session-persistence";
 import { useDeviceMode } from "@/hooks/use-device-mode";
 import { useThemeStore } from "@/stores/theme-store";
 import { useProcessStore } from "@/stores/process-store";
@@ -58,6 +59,8 @@ export function App() {
     onSearch: toggleSearch,
     onLaunchpad: toggleLaunchpad,
   });
+
+  useSessionPersistence();
 
   // Mobile handlers
   const handleMobileBack = useCallback(() => {
