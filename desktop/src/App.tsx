@@ -15,6 +15,7 @@ import { PillBar } from "@/components/mobile/PillBar";
 import { CardSwitcher } from "@/components/mobile/CardSwitcher";
 import { MobileTopBar } from "@/components/mobile/MobileTopBar";
 import { MobileApp } from "@/components/mobile/MobileApp";
+import { LoginGate } from "@/components/LoginGate";
 import { NotificationToasts } from "@/components/NotificationToast";
 import { NotificationCentre } from "@/components/NotificationCentre";
 import { useNotificationStore } from "@/stores/notification-store";
@@ -101,20 +102,23 @@ export function App() {
 
   if (mode === "desktop") {
     return (
-      <div className="h-screen w-screen flex flex-col overflow-hidden bg-shell-bg text-shell-text">
-        <TopBar onSearchOpen={toggleSearch} />
-        <Desktop />
-        <Dock onLaunchpadOpen={toggleLaunchpad} />
-        <Launchpad open={launchpadOpen} onClose={() => setLaunchpadOpen(false)} onOpenApp={(wid) => setActiveWindowId(wid)} />
-        <SearchPalette open={searchOpen} onClose={() => setSearchOpen(false)} onOpenApp={(wid) => setActiveWindowId(wid)} />
-        <NotificationToasts />
-        <NotificationCentre />
-      </div>
+      <LoginGate>
+        <div className="h-screen w-screen flex flex-col overflow-hidden bg-shell-bg text-shell-text">
+          <TopBar onSearchOpen={toggleSearch} />
+          <Desktop />
+          <Dock onLaunchpadOpen={toggleLaunchpad} />
+          <Launchpad open={launchpadOpen} onClose={() => setLaunchpadOpen(false)} onOpenApp={(wid) => setActiveWindowId(wid)} />
+          <SearchPalette open={searchOpen} onClose={() => setSearchOpen(false)} onOpenApp={(wid) => setActiveWindowId(wid)} />
+          <NotificationToasts />
+          <NotificationCentre />
+        </div>
+      </LoginGate>
     );
   }
 
   // Mobile/Tablet layout
   return (
+    <LoginGate>
     <div
       className="h-screen w-screen flex flex-col overflow-hidden text-shell-text"
       style={{ background: wallpaperStyle }}
@@ -185,5 +189,6 @@ export function App() {
       <NotificationToasts />
       <NotificationCentre />
     </div>
+    </LoginGate>
   );
 }
