@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useProcessStore, type SnapPosition } from "@/stores/process-store";
 import { useDockStore } from "@/stores/dock-store";
 import { useThemeStore } from "@/stores/theme-store";
+import { useWidgetStore, type Widget } from "@/stores/widget-store";
 import { getApp } from "@/registry/app-registry";
 
 interface SavedWindow {
@@ -23,11 +24,13 @@ export function useSessionPersistence() {
   const snapWindow = useProcessStore((s) => s.snapWindow);
   const pinned = useDockStore((s) => s.pinned);
   const wallpaperId = useThemeStore((s) => s.wallpaperId);
+  const widgets = useWidgetStore((s) => s.widgets);
 
   const restored = useRef(false);
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dockTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wallpaperTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const widgetSaveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Restore everything on mount (once)
   useEffect(() => {
@@ -71,6 +74,17 @@ export function useSessionPersistence() {
       .then((data: { wallpaper?: string }) => {
         if (data.wallpaper && data.wallpaper !== "default") {
           useThemeStore.getState().setWallpaper(data.wallpaper);
+        }
+      })
+      .catch(() => {});
+
+    // Restore widgets
+    fetch("/api/desktop/widgets")
+      .then((r) => r.json())
+      .then((data: Widget[] | { widgets: Widget[] }) => {
+        const list = Array.isArray(data) ? data : (data.widgets ?? []);
+        if (list.length > 0) {
+          useWidgetStore.setState({ widgets: list });
         }
       })
       .catch(() => {});
@@ -139,4 +153,22 @@ export function useSessionPersistence() {
       if (wallpaperTimeout.current) clearTimeout(wallpaperTimeout.current);
     };
   }, [wallpaperId]);
+
+  // Auto-save widgets (debounced 1s)
+  useEffect(() => {
+    if (!restored.current) return;
+
+    if (widgetSaveTimeout.current) clearTimeout(widgetSaveTimeout.current);
+    widgetSaveTimeout.current = setTimeout(() => {
+      fetch("/api/desktop/widgets", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ widgets }),
+      }).catch(() => {});
+    }, 1000);
+
+    return () => {
+      if (widgetSaveTimeout.current) clearTimeout(widgetSaveTimeout.current);
+    };
+  }, [widgets]);
 }
