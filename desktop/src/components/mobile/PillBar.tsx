@@ -52,14 +52,15 @@ export function PillBar({ onHome, onCardSwitcher, onBack }: Props) {
       style={{
         backgroundColor: "rgba(20, 21, 38, 0.85)",
         borderTop: "1px solid rgba(255,255,255,0.06)",
-        paddingBottom: "env(safe-area-inset-bottom, 0px)",
+        // Minimal bottom padding — just enough for the home indicator to not clip
+        paddingBottom: "max(env(safe-area-inset-bottom, 0px) - 16px, 0px)",
         backdropFilter: "blur(20px)",
         WebkitBackdropFilter: "blur(20px)",
       }}
     >
       <div
         className="grid grid-cols-3 items-center px-4"
-        style={{ height: 44 }}
+        style={{ height: 40 }}
       >
         {/* Left — back button */}
         <div className="flex justify-start">
