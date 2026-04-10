@@ -7,6 +7,7 @@ import { LaunchpadIcon } from "./LaunchpadIcon";
 interface Props {
   open: boolean;
   onClose: () => void;
+  onOpenApp?: (windowId: string) => void;
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -16,7 +17,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   game: "Games",
 };
 
-export function Launchpad({ open, onClose }: Props) {
+export function Launchpad({ open, onClose, onOpenApp }: Props) {
   const [query, setQuery] = useState("");
   const { openWindow } = useProcessStore();
 
@@ -38,7 +39,8 @@ export function Launchpad({ open, onClose }: Props) {
   const handleLaunch = (appId: string) => {
     const app = getApp(appId);
     if (app) {
-      openWindow(appId, app.defaultSize);
+      const wid = openWindow(appId, app.defaultSize);
+      onOpenApp?.(wid);
     }
     onClose();
     setQuery("");

@@ -7,6 +7,7 @@ import * as icons from "lucide-react";
 interface Props {
   open: boolean;
   onClose: () => void;
+  onOpenApp?: (windowId: string) => void;
 }
 
 interface SearchResult {
@@ -18,7 +19,7 @@ interface SearchResult {
   action: () => void;
 }
 
-export function SearchPalette({ open, onClose }: Props) {
+export function SearchPalette({ open, onClose, onOpenApp }: Props) {
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const { openWindow } = useProcessStore();
@@ -47,7 +48,10 @@ export function SearchPalette({ open, onClose }: Props) {
         type: "app" as const,
         action: () => {
           const a = getApp(app.id);
-          if (a) openWindow(app.id, a.defaultSize);
+          if (a) {
+            const wid = openWindow(app.id, a.defaultSize);
+            onOpenApp?.(wid);
+          }
           onClose();
         },
       }));

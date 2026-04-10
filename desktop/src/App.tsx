@@ -82,8 +82,8 @@ export function App() {
         <TopBar onSearchOpen={toggleSearch} />
         <Desktop />
         <Dock onLaunchpadOpen={toggleLaunchpad} />
-        <Launchpad open={launchpadOpen} onClose={() => setLaunchpadOpen(false)} />
-        <SearchPalette open={searchOpen} onClose={() => setSearchOpen(false)} />
+        <Launchpad open={launchpadOpen} onClose={() => setLaunchpadOpen(false)} onOpenApp={(wid) => setActiveWindowId(wid)} />
+        <SearchPalette open={searchOpen} onClose={() => setSearchOpen(false)} onOpenApp={(wid) => setActiveWindowId(wid)} />
       </div>
     );
   }
@@ -155,8 +155,8 @@ export function App() {
           setLaunchpadOpen(true);
         }}
       />
-      <Launchpad open={launchpadOpen} onClose={() => setLaunchpadOpen(false)} />
-      <SearchPalette open={searchOpen} onClose={() => setSearchOpen(false)} />
+      <Launchpad open={launchpadOpen} onClose={() => setLaunchpadOpen(false)} onOpenApp={(wid) => setActiveWindowId(wid)} />
+      <SearchPalette open={searchOpen} onClose={() => setSearchOpen(false)} onOpenApp={(wid) => setActiveWindowId(wid)} />
     </div>
   );
 }
