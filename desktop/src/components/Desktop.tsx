@@ -1,11 +1,13 @@
 import { useState, useCallback } from "react";
-import { FolderPlus, Image, Monitor, Settings, LayoutGrid } from "lucide-react";
+import { FolderPlus, Image, Monitor, Settings, LayoutGrid, Layers } from "lucide-react";
 import { useProcessStore } from "@/stores/process-store";
 import { useThemeStore } from "@/stores/theme-store";
+import { useWidgetStore } from "@/stores/widget-store";
 import { useSnapZones } from "@/hooks/use-snap-zones";
 import { getApp } from "@/registry/app-registry";
 import { Window } from "./Window";
 import { SnapOverlay } from "./SnapOverlay";
+import { WidgetLayer } from "./WidgetLayer";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { WallpaperPicker } from "./WallpaperPicker";
 
@@ -18,6 +20,7 @@ export function Desktop() {
   const windows = useProcessStore((s) => s.windows);
   const { openWindow } = useProcessStore();
   const wallpaperStyle = useThemeStore((s) => s.wallpaperStyle);
+  const { showWidgets, toggleWidgets } = useWidgetStore();
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
   const [wallpaperPickerOpen, setWallpaperPickerOpen] = useState(false);
 
@@ -62,6 +65,12 @@ export function Desktop() {
     },
     { label: "", separator: true },
     {
+      label: showWidgets ? "Hide Widgets" : "Show Widgets",
+      icon: <Layers size={14} />,
+      action: () => toggleWidgets(),
+    },
+    { label: "", separator: true },
+    {
       label: "Open Launchpad",
       icon: <LayoutGrid size={14} />,
       action: () => {
@@ -84,6 +93,7 @@ export function Desktop() {
       data-desktop-surface
     >
       <SnapOverlay bounds={previewBounds} />
+      <WidgetLayer />
       {windows.map((win) => (
         <Window key={win.id} win={win} onDrag={onDrag} onDragStop={onDragStop} />
       ))}
