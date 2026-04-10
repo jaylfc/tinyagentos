@@ -1,6 +1,9 @@
 from __future__ import annotations
+import re
+from urllib.parse import urljoin, quote
+
 from fastapi import APIRouter, Request
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from pathlib import Path
 import httpx
 
@@ -57,28 +60,86 @@ async def save_windows(request: Request):
 
 @router.get("/api/desktop/proxy")
 async def browser_proxy(url: str):
-    """Proxy web pages for the desktop browser app, stripping X-Frame-Options."""
+    """Proxy web pages for the browser app — strips frame headers, rewrites URLs."""
     if not url.startswith(("http://", "https://")):
         return JSONResponse({"error": "Invalid URL"}, status_code=400)
+
     try:
         async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
-            resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0 (compatible; TinyAgentOS)"})
-            # Strip headers that block iframe embedding
-            headers = dict(resp.headers)
-            for h in ("x-frame-options", "content-security-policy", "content-security-policy-report-only"):
-                headers.pop(h, None)
-            return StreamingResponse(
-                content=iter([resp.content]),
-                status_code=resp.status_code,
-                headers=headers,
-                media_type=resp.headers.get("content-type", "text/html"),
-            )
+            resp = await client.get(url, headers={
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+            })
+
+            content_type = resp.headers.get("content-type", "")
+
+            # Build response headers — strip frame-blocking ones
+            headers = {}
+            for key, val in resp.headers.items():
+                lower = key.lower()
+                if lower in ("x-frame-options", "content-security-policy",
+                             "content-security-policy-report-only", "content-length",
+                             "transfer-encoding", "content-encoding"):
+                    continue
+                headers[key] = val
+
+            # For non-HTML content (CSS, JS, images, fonts), pass through directly
+            if "text/html" not in content_type:
+                return StreamingResponse(
+                    content=iter([resp.content]),
+                    status_code=resp.status_code,
+                    headers=headers,
+                    media_type=content_type.split(";")[0] if content_type else "application/octet-stream",
+                )
+
+            # For HTML: rewrite URLs to go through proxy
+            html = resp.text
+            base_url = str(resp.url)  # final URL after redirects
+
+            html = _rewrite_html_urls(html, base_url)
+
+            # Add a <base> tag as fallback for URLs we miss
+            if "<head" in html.lower():
+                base_tag = f'<base href="/api/desktop/proxy?url={quote(base_url, safe="")}">'
+                html = re.sub(r'(<head[^>]*>)', rf'\1{base_tag}', html, count=1, flags=re.IGNORECASE)
+
+            return HTMLResponse(content=html, status_code=resp.status_code, headers=headers)
+
     except httpx.ConnectError:
         return JSONResponse({"error": f"Cannot connect to {url}"}, status_code=502)
     except httpx.TimeoutException:
         return JSONResponse({"error": "Request timed out"}, status_code=504)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
+
+
+def _rewrite_html_urls(html: str, base_url: str) -> str:
+    """Rewrite src, href, action attributes to go through the proxy."""
+    def rewrite_attr(match: re.Match[str]) -> str:
+        prefix = match.group(1)  # e.g., 'src="' or "href='"
+        url_val = match.group(2)
+        suffix = match.group(3)  # closing quote
+
+        # Skip data:, javascript:, mailto:, #anchors, and already-proxied URLs
+        if url_val.startswith(("data:", "javascript:", "mailto:", "#", "/api/desktop/proxy")):
+            return match.group(0)
+
+        # Resolve relative URL against base
+        absolute = urljoin(base_url, url_val)
+
+        # Only proxy http/https URLs
+        if not absolute.startswith(("http://", "https://")):
+            return match.group(0)
+
+        proxied = f"/api/desktop/proxy?url={quote(absolute, safe='')}"
+        return f"{prefix}{proxied}{suffix}"
+
+    # Match src="...", href="...", action="..." (both quote styles)
+    pattern = r'''((?:src|href|action)\s*=\s*["'])([^"']*)(["'])'''
+    html = re.sub(pattern, rewrite_attr, html, flags=re.IGNORECASE)
+
+    return html
 
 
 @router.get("/desktop")
