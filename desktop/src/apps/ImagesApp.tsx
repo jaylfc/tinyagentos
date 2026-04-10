@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Image, Wand2, Trash2, Download, X } from "lucide-react";
+import { Image, Wand2, Trash2, Download, Package } from "lucide-react";
 import {
   Button,
   Card,
@@ -10,6 +10,7 @@ import {
   Label,
   Textarea,
 } from "@/components/ui";
+import { ModelBrowser } from "@/components/ModelBrowser";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -48,36 +49,9 @@ interface ImageModel {
   has_downloaded_variant?: boolean;
 }
 
-interface DownloadTask {
-  id: string;
-  percent: number;
-  status: "pending" | "downloading" | "complete" | "error" | "cancelled";
-  downloaded_bytes: number;
-  total_bytes: number;
-  error?: string | null;
-}
-
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
-
-function fmtSize(mb: number): string {
-  if (!mb || mb <= 0) return "—";
-  if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
-  return `${mb} MB`;
-}
-
-function fmtBytes(b: number): string {
-  if (!b || b <= 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB"];
-  let i = 0;
-  let n = b;
-  while (n >= 1024 && i < units.length - 1) {
-    n /= 1024;
-    i += 1;
-  }
-  return `${n.toFixed(1)} ${units[i]}`;
-}
 
 /* ------------------------------------------------------------------ */
 /*  ImagesApp                                                          */
@@ -93,7 +67,7 @@ export function ImagesApp({ windowId: _windowId }: { windowId: string }) {
   const [models, setModels] = useState<ImageModel[]>([]);
   const [selectedModelId, setSelectedModelId] = useState<string>("");
   const [selectedVariantId, setSelectedVariantId] = useState<string>("");
-  const [downloadTask, setDownloadTask] = useState<DownloadTask | null>(null);
+  const [browserOpen, setBrowserOpen] = useState(false);
 
   // Form state (non-model)
   const [prompt, setPrompt] = useState("");
@@ -173,23 +147,12 @@ export function ImagesApp({ windowId: _windowId }: { windowId: string }) {
   useEffect(() => {
     (async () => {
       const imageModels = await refreshModels();
-      // Auto-select first downloaded compatible variant
+      // Auto-select first downloaded variant
       for (const m of imageModels) {
-        const dl = m.variants?.find(
-          (v) => v.downloaded && v.compatibility !== "red",
-        );
+        const dl = m.variants?.find((v) => v.downloaded);
         if (dl) {
           setSelectedModelId(m.id);
           setSelectedVariantId(dl.id);
-          return;
-        }
-      }
-      // Otherwise first compatible variant at all
-      for (const m of imageModels) {
-        const compat = m.variants?.find((v) => v.compatibility !== "red");
-        if (compat) {
-          setSelectedModelId(m.id);
-          setSelectedVariantId(compat.id);
           return;
         }
       }
@@ -205,109 +168,35 @@ export function ImagesApp({ windowId: _windowId }: { windowId: string }) {
     [selectedModel, selectedVariantId],
   );
 
-  const hasAnyCompatibleVariant = useMemo(
-    () =>
-      models.some((m) =>
-        m.variants?.some((v) => v.compatibility !== "red"),
-      ),
-    [models],
-  );
-
-  /* -------------------------- Download handling ------------------ */
-
-  const pollProgress = useCallback(
-    (downloadId: string, modelId: string, variantId: string) => {
-      const interval = window.setInterval(async () => {
-        try {
-          const res = await fetch(
-            `/api/models/downloads/${encodeURIComponent(downloadId)}`,
-          );
-          if (!res.ok) {
-            window.clearInterval(interval);
-            setDownloadTask(null);
-            return;
-          }
-          const task: DownloadTask = await res.json();
-          setDownloadTask(task);
-          if (task.status === "complete") {
-            window.clearInterval(interval);
-            setDownloadTask(null);
-            await refreshModels();
-            setSelectedModelId(modelId);
-            setSelectedVariantId(variantId);
-          } else if (task.status === "error" || task.status === "cancelled") {
-            window.clearInterval(interval);
-            setDownloadTask(null);
-            if (task.error) setError(`Download failed: ${task.error}`);
-          }
-        } catch {
-          window.clearInterval(interval);
-          setDownloadTask(null);
+  // Flat list of usable (downloaded) variants for the dropdown
+  const availableOptions = useMemo(() => {
+    const options: Array<{
+      modelId: string;
+      variantId: string;
+      label: string;
+    }> = [];
+    for (const m of models) {
+      for (const v of m.variants ?? []) {
+        if (v.downloaded) {
+          options.push({
+            modelId: m.id,
+            variantId: v.id,
+            label: `${m.name} — ${v.name}`,
+          });
         }
-      }, 2000);
-    },
-    [refreshModels],
-  );
-
-  const startDownload = useCallback(
-    async (modelId: string, variantId: string, sizeMb: number) => {
-      setError(null);
-      setDownloadTask({
-        id: `${modelId}-${variantId}`,
-        percent: 0,
-        status: "pending",
-        downloaded_bytes: 0,
-        total_bytes: sizeMb * 1024 * 1024,
-      });
-      try {
-        const res = await fetch("/api/models/download", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ app_id: modelId, variant_id: variantId }),
-        });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          setError(
-            (data as { error?: string }).error ?? "Failed to start download",
-          );
-          setDownloadTask(null);
-          return;
-        }
-        const data = await res.json();
-        if (data.download_id) {
-          pollProgress(data.download_id, modelId, variantId);
-        } else {
-          setDownloadTask(null);
-        }
-      } catch (e) {
-        setError(`Download error: ${(e as Error).message}`);
-        setDownloadTask(null);
       }
-    },
-    [pollProgress],
-  );
+    }
+    return options;
+  }, [models]);
 
-  const handleModelChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+  const handleSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const value = e.target.value;
-    if (!value) return;
-    const [modelId, variantId] = value.split("::");
-    const model = models.find((m) => m.id === modelId);
-    const variant = model?.variants.find((v) => v.id === variantId);
-    if (!variant) return;
-
-    if (!variant.downloaded) {
-      const ok = window.confirm(
-        `This model isn't downloaded yet. Download now? (${fmtSize(variant.size_mb)})`,
-      );
-      if (!ok) {
-        // Revert selection — force re-render by reassigning state to same values
-        setSelectedModelId((id) => id);
-        setSelectedVariantId((id) => id);
-        return;
-      }
-      startDownload(modelId, variantId, variant.size_mb);
+    if (value === "__browse__") {
+      setBrowserOpen(true);
       return;
     }
+    if (!value) return;
+    const [modelId, variantId] = value.split("::");
     setSelectedModelId(modelId);
     setSelectedVariantId(variantId);
   };
@@ -378,27 +267,7 @@ export function ImagesApp({ windowId: _windowId }: { windowId: string }) {
     a.click();
   }
 
-  async function cancelDownload() {
-    if (!downloadTask) return;
-    try {
-      await fetch(
-        `/api/models/downloads/${encodeURIComponent(downloadTask.id)}/cancel`,
-        { method: "POST" },
-      );
-    } catch {
-      /* ignore */
-    }
-    setDownloadTask(null);
-  }
-
   /* -------------------------- Render ----------------------------- */
-
-  const compatDot = (c: "green" | "yellow" | "red") =>
-    c === "green"
-      ? "bg-emerald-400"
-      : c === "yellow"
-        ? "bg-amber-400"
-        : "bg-red-400";
 
   return (
     <div className="flex flex-col h-full bg-shell-bg text-shell-text select-none">
@@ -437,116 +306,50 @@ export function ImagesApp({ windowId: _windowId }: { windowId: string }) {
             {/* Model dropdown */}
             <div className="space-y-1.5">
               <Label htmlFor="img-model">Model</Label>
-              {models.length === 0 ? (
-                <div className="rounded-lg border border-white/10 bg-shell-bg-deep px-3 py-3 text-xs text-shell-text-tertiary">
-                  No image generation models in catalog. Open the{" "}
-                  <span className="text-accent">Store</span> app to browse and
-                  install image models.
-                </div>
-              ) : !hasAnyCompatibleVariant ? (
-                <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-3 text-xs text-amber-300">
-                  No compatible image models for this hardware.
-                </div>
-              ) : (
-                <>
-                  <select
-                    id="img-model"
-                    value={
-                      selectedModelId && selectedVariantId
-                        ? `${selectedModelId}::${selectedVariantId}`
-                        : ""
-                    }
-                    onChange={handleModelChange}
-                    className="flex h-9 w-full rounded-lg border border-white/10 bg-shell-bg-deep px-3 py-1 text-sm text-shell-text focus-visible:outline-none focus-visible:border-accent/40 focus-visible:ring-2 focus-visible:ring-accent/20"
-                  >
-                    {!selectedVariantId && (
-                      <option value="">Select a model…</option>
-                    )}
-                    {models.flatMap((m) =>
-                      (m.variants ?? [])
-                        .filter((v) => v.compatibility !== "red")
-                        .slice()
-                        .sort((a, b) => {
-                          if (!!a.downloaded !== !!b.downloaded)
-                            return a.downloaded ? -1 : 1;
-                          return (a.size_mb ?? 0) - (b.size_mb ?? 0);
-                        })
-                        .map((v) => {
-                          const prefix = v.downloaded ? "\u2713 " : "   ";
-                          const dot =
-                            v.compatibility === "green" ? "\u25CF" : "\u25D0";
-                          return (
-                            <option
-                              key={`${m.id}::${v.id}`}
-                              value={`${m.id}::${v.id}`}
-                            >
-                              {prefix}
-                              {m.name} — {v.name} ({fmtSize(v.size_mb)}) {dot}
-                            </option>
-                          );
-                        }),
-                    )}
-                  </select>
-                  {selectedVariant && (
-                    <div className="flex items-center gap-2 text-xs mt-1">
-                      <span
-                        className={`inline-block w-2 h-2 rounded-full ${compatDot(selectedVariant.compatibility)}`}
-                        aria-hidden="true"
-                      />
-                      <span className="text-shell-text-tertiary">
-                        {selectedVariant.compatibility === "green"
-                          ? "Runs well on this hardware"
-                          : "May run slowly on this hardware"}
-                      </span>
-                      {!selectedVariant.downloaded && (
-                        <span className="text-amber-400">
-                          · Not downloaded ({fmtSize(selectedVariant.size_mb)})
-                        </span>
-                      )}
-                    </div>
+              <div className="flex items-center gap-2">
+                <select
+                  id="img-model"
+                  value={
+                    selectedModelId && selectedVariantId
+                      ? `${selectedModelId}::${selectedVariantId}`
+                      : ""
+                  }
+                  onChange={handleSelectChange}
+                  className="flex-1 h-9 rounded-lg border border-white/10 bg-shell-bg-deep px-3 py-1 text-sm text-shell-text focus-visible:outline-none focus-visible:border-accent/40 focus-visible:ring-2 focus-visible:ring-accent/20"
+                >
+                  {availableOptions.length === 0 && (
+                    <option value="">
+                      No models available — click Browse…
+                    </option>
                   )}
-                </>
+                  {availableOptions.map((opt) => (
+                    <option
+                      key={`${opt.modelId}::${opt.variantId}`}
+                      value={`${opt.modelId}::${opt.variantId}`}
+                    >
+                      {"\u2713 "}
+                      {opt.label}
+                    </option>
+                  ))}
+                  <option disabled>────────</option>
+                  <option value="__browse__">Get more models…</option>
+                </select>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setBrowserOpen(true)}
+                  type="button"
+                >
+                  <Package size={12} />
+                  Browse
+                </Button>
+              </div>
+              {!selectedVariant && availableOptions.length === 0 && (
+                <div className="text-xs text-shell-text-tertiary mt-1">
+                  Open the browser to download an image generation model.
+                </div>
               )}
             </div>
-
-            {/* Download progress */}
-            {downloadTask && (
-              <div className="rounded-lg border border-accent/30 bg-accent/5 p-3 space-y-2">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-medium">
-                    Downloading {downloadTask.id}
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={cancelDownload}
-                    className="h-6 w-6"
-                    aria-label="Cancel download"
-                    title="Cancel"
-                  >
-                    <X size={12} />
-                  </Button>
-                </div>
-                <div className="h-2 w-full rounded-full bg-shell-bg-deep overflow-hidden">
-                  <div
-                    className="h-full bg-accent transition-all"
-                    style={{
-                      width: `${Math.max(0, Math.min(100, downloadTask.percent || 0))}%`,
-                    }}
-                  />
-                </div>
-                <div className="flex items-center justify-between text-[10px] text-shell-text-tertiary tabular-nums">
-                  <span>
-                    {fmtBytes(downloadTask.downloaded_bytes)} /{" "}
-                    {fmtBytes(downloadTask.total_bytes)}
-                  </span>
-                  <span>
-                    {(downloadTask.percent ?? 0).toFixed(1)}% ·{" "}
-                    {downloadTask.status}
-                  </span>
-                </div>
-              </div>
-            )}
 
             {/* Row of controls */}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -626,8 +429,7 @@ export function ImagesApp({ windowId: _windowId }: { windowId: string }) {
                 !prompt.trim() ||
                 generating ||
                 !selectedVariant ||
-                !selectedVariant.downloaded ||
-                downloadTask !== null
+                !selectedVariant.downloaded
               }
             >
               <Wand2 size={14} />
@@ -729,6 +531,17 @@ export function ImagesApp({ windowId: _windowId }: { windowId: string }) {
           </div>
         )}
       </div>
+
+      <ModelBrowser
+        open={browserOpen}
+        onClose={() => setBrowserOpen(false)}
+        capability="image-generation"
+        onModelDownloaded={async (modelId, variantId) => {
+          await refreshModels();
+          setSelectedModelId(modelId);
+          setSelectedVariantId(variantId);
+        }}
+      />
     </div>
   );
 }
