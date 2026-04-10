@@ -102,31 +102,41 @@ export function App() {
         {activeWindowId && activeWindow ? (
           <MobileApp appId={activeWindow.appId} windowId={activeWindowId} />
         ) : (
-          <div className="h-full overflow-y-auto px-4 py-6">
-            <div className="grid grid-cols-4 gap-4 max-w-md mx-auto">
-              {getAllApps()
-                .slice(0, 16)
-                .map((app) => {
-                  const Icon = resolveIcon(app.icon);
-                  return (
-                    <button
-                      key={app.id}
-                      onClick={() => {
-                        const wid = openWindow(app.id, app.defaultSize);
-                        setActiveWindowId(wid);
-                      }}
-                      className="flex flex-col items-center gap-1.5 p-2"
-                      aria-label={`Open ${app.name}`}
-                    >
-                      <div className="w-14 h-14 rounded-2xl bg-shell-surface-hover flex items-center justify-center">
-                        <Icon size={24} className="text-shell-text-secondary" />
-                      </div>
-                      <span className="text-[10px] text-shell-text-secondary truncate w-full text-center">
-                        {app.name}
-                      </span>
-                    </button>
-                  );
-                })}
+          <div className="h-full overflow-y-auto" style={{ paddingTop: "env(safe-area-inset-top, 20px)" }}>
+            {/* iOS-style home grid */}
+            <div className="px-6 pt-8 pb-4">
+              <div className="grid grid-cols-4 gap-x-5 gap-y-6 max-w-sm mx-auto">
+                {getAllApps()
+                  .slice(0, 20)
+                  .map((app) => {
+                    const Icon = resolveIcon(app.icon);
+                    return (
+                      <button
+                        key={app.id}
+                        onClick={() => {
+                          const wid = openWindow(app.id, app.defaultSize);
+                          setActiveWindowId(wid);
+                        }}
+                        className="flex flex-col items-center gap-1.5 active:scale-90 transition-transform"
+                        aria-label={`Open ${app.name}`}
+                      >
+                        <div className="w-[60px] h-[60px] rounded-[14px] flex items-center justify-center"
+                          style={{
+                            background: "rgba(255,255,255,0.08)",
+                            backdropFilter: "blur(10px)",
+                            WebkitBackdropFilter: "blur(10px)",
+                            border: "1px solid rgba(255,255,255,0.06)",
+                          }}
+                        >
+                          <Icon size={26} className="text-white/70" />
+                        </div>
+                        <span className="text-[11px] text-white/70 truncate w-full text-center leading-tight">
+                          {app.name}
+                        </span>
+                      </button>
+                    );
+                  })}
+              </div>
             </div>
           </div>
         )}
