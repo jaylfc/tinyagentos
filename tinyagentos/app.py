@@ -119,6 +119,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         await chat_channels.init()
         await canvas_store.init()
         await desktop_settings.init()
+        await user_memory.init()
         app.state.config = config
         app.state.config_path = config_path
         app.state.metrics = metrics_store
@@ -154,6 +155,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.chat_hub = chat_hub
         app.state.canvas_store = canvas_store
         app.state.desktop_settings = desktop_settings
+        app.state.user_memory = user_memory
         # Optionally start LiteLLM proxy (non-fatal if not installed)
         try:
             await llm_proxy.start(config.backends)
@@ -185,6 +187,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         await cluster_manager.stop()
         llm_proxy.stop()
         await monitor.stop()
+        await user_memory.close()
         await desktop_settings.close()
         await canvas_store.close()
         await chat_channels.close()
@@ -251,6 +254,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     app.state.chat_hub = chat_hub
     app.state.canvas_store = canvas_store
     app.state.desktop_settings = desktop_settings
+    app.state.user_memory = user_memory
 
     # Detect and set container runtime (eager, so tests work without lifespan)
     try:
@@ -292,6 +296,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     from tinyagentos.routes.memory import router as memory_router
     app.include_router(memory_router)
+
+    from tinyagentos.routes.user_memory import router as user_memory_router
+    app.include_router(user_memory_router)
 
     from tinyagentos.routes.settings import router as settings_router
     app.include_router(settings_router)
