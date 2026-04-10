@@ -327,11 +327,16 @@ export function TasksApp({ windowId: _windowId }: { windowId: string }) {
               <h2 className="text-sm font-medium text-shell-text-secondary mb-3">Quick Start Presets</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                 {presets.map((preset) => (
-                  <Card key={preset.name}>
+                  <Card key={preset.id ?? preset.name}>
                     <CardContent className="p-3.5 space-y-2">
                       <p className="text-sm font-medium">{preset.name}</p>
                       <p className="text-xs text-shell-text-tertiary">{preset.description}</p>
-                      <p className="text-[11px] text-shell-text-tertiary font-mono">{preset.schedule}</p>
+                      {preset.schedule && (
+                        <p className="text-[11px] text-shell-text-tertiary font-mono">{preset.schedule}</p>
+                      )}
+                      {preset.tasks && preset.tasks.length > 0 && (
+                        <p className="text-[11px] text-shell-text-tertiary">{preset.tasks.length} tasks</p>
+                      )}
                       <Button
                         variant="secondary"
                         size="sm"
@@ -415,7 +420,7 @@ export function TasksApp({ windowId: _windowId }: { windowId: string }) {
               <h2 className="text-sm font-medium text-shell-text-secondary mb-3">Presets</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                 {presets.map((preset) => (
-                  <Card key={preset.name}>
+                  <Card key={preset.id ?? preset.name}>
                     <CardContent className="p-3 space-y-1.5">
                       <p className="text-sm font-medium">{preset.name}</p>
                       <p className="text-xs text-shell-text-tertiary">{preset.description}</p>
@@ -522,6 +527,12 @@ export function TasksApp({ windowId: _windowId }: { windowId: string }) {
               </div>
             </CardContent>
 
+            {formError && (
+              <div role="alert" className="mx-5 mb-2 px-3 py-2 rounded-lg bg-red-500/15 border border-red-500/30 text-xs text-red-300">
+                {formError}
+              </div>
+            )}
+
             <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-white/5">
               <Button
                 variant="ghost"
@@ -531,10 +542,10 @@ export function TasksApp({ windowId: _windowId }: { windowId: string }) {
               </Button>
               <Button
                 onClick={handleSave}
-                disabled={!formName.trim() || !formSchedule.trim() || !formCommand.trim()}
+                disabled={submitting || !formName.trim() || !formSchedule.trim() || !formCommand.trim()}
               >
                 <Plus size={14} />
-                {editingId ? "Save Changes" : "Add Task"}
+                {submitting ? "Saving..." : editingId ? "Save Changes" : "Add Task"}
               </Button>
             </div>
           </Card>
