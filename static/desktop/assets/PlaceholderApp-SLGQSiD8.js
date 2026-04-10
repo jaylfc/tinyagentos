@@ -1,1 +1,0 @@
-import{j as e}from"./index-Dw6b0CPC.js";function n({windowId:t}){return e.jsx("div",{className:"flex items-center justify-center h-full text-shell-text-secondary",children:e.jsx("p",{children:"App not yet migrated"})})}export{n as PlaceholderApp};
