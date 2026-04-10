@@ -215,7 +215,7 @@ export function BrowserApp({ windowId: _windowId }: { windowId: string }) {
         </div>
 
         {/* Row 2: action buttons */}
-        <div className="flex items-center gap-1.5 justify-end">
+        <div className="flex items-center gap-1.5 justify-center flex-wrap">
           <button
             type="button"
             onClick={openInTab}
