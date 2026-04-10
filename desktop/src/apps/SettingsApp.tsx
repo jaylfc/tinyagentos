@@ -16,6 +16,14 @@ import {
   ChevronLeft,
   Brain,
 } from "lucide-react";
+import {
+  Button,
+  Card,
+  Input,
+  Label,
+  Switch,
+  Textarea,
+} from "@/components/ui";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -175,14 +183,16 @@ function SystemInfoSection() {
           </tbody>
         </table>
       </div>
-      <button
+      <Button
+        variant="outline"
+        size="sm"
         onClick={detect}
         disabled={loading}
-        className="mt-3 flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-shell-surface/60 border border-white/5 text-sm hover:bg-shell-surface transition-colors disabled:opacity-50"
+        className="mt-3"
       >
         <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
         Re-detect Hardware
-      </button>
+      </Button>
     </section>
   );
 }
@@ -211,13 +221,13 @@ function StorageSection() {
       <h2 className="text-lg font-semibold mb-5">Storage Usage</h2>
       <div className="space-y-3">
         {items.map((item) => (
-          <div key={item.label} className="p-4 rounded-xl bg-shell-surface/60 border border-white/5">
+          <Card key={item.label} className="p-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-medium">{item.label}</span>
               <span className="text-sm text-shell-text-secondary tabular-nums">{item.size}</span>
             </div>
             <ProgressBar value={item.bytes} max={item.maxBytes} />
-          </div>
+          </Card>
         ))}
       </div>
     </section>
@@ -280,7 +290,7 @@ function ProvidersSection() {
       <h2 className="text-lg font-semibold mb-5">Inference Providers</h2>
       <div className="space-y-2">
         {providers.map((p) => (
-          <div key={p.id} className="flex items-center gap-3 p-3.5 rounded-xl bg-shell-surface/60 border border-white/5">
+          <Card key={p.id} className="flex items-center gap-3 p-3.5">
             <StatusDot status={p.status} />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium truncate">{p.name}</p>
@@ -288,10 +298,11 @@ function ProvidersSection() {
                 {p.type} &middot; {p.url}
               </p>
             </div>
-            <button
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={() => testProvider(p.id)}
               disabled={testing === p.id}
-              className="shrink-0 flex items-center gap-1.5 px-3 py-1 rounded-lg bg-white/5 text-xs hover:bg-white/10 transition-colors disabled:opacity-50"
               aria-label={`Test connection to ${p.name}`}
             >
               {testing === p.id ? (
@@ -302,68 +313,67 @@ function ProvidersSection() {
                 <WifiOff size={12} />
               )}
               Test
-            </button>
-          </div>
+            </Button>
+          </Card>
         ))}
       </div>
 
       {showAdd ? (
-        <div className="mt-3 p-4 rounded-xl bg-shell-surface/60 border border-white/5 space-y-3">
-          <label className="block">
-            <span className="text-xs text-shell-text-secondary">Name</span>
-            <input
+        <Card className="mt-3 p-4 space-y-3">
+          <div>
+            <Label htmlFor="provider-name">Name</Label>
+            <Input
+              id="provider-name"
               type="text"
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              className="mt-1 w-full px-3 py-1.5 rounded-lg bg-shell-bg-deep border border-white/10 text-sm outline-none focus:border-sky-500"
+              className="mt-1"
               placeholder="My Provider"
             />
-          </label>
-          <label className="block">
-            <span className="text-xs text-shell-text-secondary">Type</span>
+          </div>
+          <div>
+            <Label htmlFor="provider-type">Type</Label>
             <select
+              id="provider-type"
               value={form.type}
               onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}
-              className="mt-1 w-full px-3 py-1.5 rounded-lg bg-shell-bg-deep border border-white/10 text-sm outline-none focus:border-sky-500"
+              className="mt-1 flex h-9 w-full rounded-lg border border-white/10 bg-shell-bg-deep px-3 py-1 text-sm text-shell-text focus-visible:outline-none focus-visible:border-accent/40 focus-visible:ring-2 focus-visible:ring-accent/20 transition-colors"
             >
               <option value="openai">OpenAI Compatible</option>
               <option value="rkllama">RKLlama</option>
               <option value="ollama">Ollama</option>
               <option value="vllm">vLLM</option>
             </select>
-          </label>
-          <label className="block">
-            <span className="text-xs text-shell-text-secondary">URL</span>
-            <input
+          </div>
+          <div>
+            <Label htmlFor="provider-url">URL</Label>
+            <Input
+              id="provider-url"
               type="url"
               value={form.url}
               onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
-              className="mt-1 w-full px-3 py-1.5 rounded-lg bg-shell-bg-deep border border-white/10 text-sm outline-none focus:border-sky-500"
+              className="mt-1"
               placeholder="http://localhost:8080"
             />
-          </label>
-          <div className="flex gap-2">
-            <button
-              onClick={addProvider}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-600 text-sm hover:bg-sky-500 transition-colors"
-            >
-              <Check size={14} /> Add
-            </button>
-            <button
-              onClick={() => setShowAdd(false)}
-              className="px-3 py-1.5 rounded-lg bg-white/5 text-sm hover:bg-white/10 transition-colors"
-            >
-              Cancel
-            </button>
           </div>
-        </div>
+          <div className="flex gap-2">
+            <Button size="sm" onClick={addProvider}>
+              <Check size={14} /> Add
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setShowAdd(false)}>
+              Cancel
+            </Button>
+          </div>
+        </Card>
       ) : (
-        <button
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => setShowAdd(true)}
-          className="mt-3 flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-shell-surface/60 border border-white/5 text-sm hover:bg-shell-surface transition-colors"
+          className="mt-3"
         >
           <Plus size={14} /> Add Provider
-        </button>
+        </Button>
       )}
     </section>
   );
@@ -453,29 +463,28 @@ function MemorySection() {
       <div className="space-y-2">
         {MEMORY_TOGGLES.map((item) => {
           const checked = !!settings[item.key];
+          const id = `capture-${String(item.key)}`;
           return (
-            <label
-              key={String(item.key)}
-              className="flex items-start gap-3 p-4 rounded-xl bg-shell-surface/60 border border-white/5 cursor-pointer hover:bg-shell-surface transition-colors"
-            >
-              <input
-                type="checkbox"
+            <Card key={String(item.key)} className="p-4 flex items-center justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <Label htmlFor={id} className="text-sm font-medium text-shell-text">
+                  {item.label}
+                </Label>
+                <p className="text-xs text-shell-text-tertiary mt-0.5">{item.desc}</p>
+              </div>
+              <Switch
+                id={id}
                 checked={checked}
-                onChange={(e) => update(item.key, e.target.checked)}
-                className="mt-1 h-4 w-4 accent-sky-500"
+                onCheckedChange={(v) => update(item.key, v)}
                 aria-label={`Capture ${item.label}`}
               />
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium">{item.label}</div>
-                <div className="text-xs text-shell-text-tertiary mt-0.5">{item.desc}</div>
-              </div>
-            </label>
+            </Card>
           );
         })}
       </div>
 
       {stats && (
-        <div className="mt-6 p-4 rounded-xl bg-shell-surface/60 border border-white/5">
+        <Card className="mt-6 p-4">
           <h3 className="text-sm font-medium mb-3">Stored chunks</h3>
           <div className="text-xs text-shell-text-secondary mb-2 tabular-nums">
             Total: {stats.total}
@@ -492,7 +501,7 @@ function MemorySection() {
           ) : (
             <p className="text-xs text-shell-text-tertiary">No memories captured yet.</p>
           )}
-        </div>
+        </Card>
       )}
     </section>
   );
@@ -526,20 +535,16 @@ function BackupSection() {
     <section aria-label="Backup and restore">
       <h2 className="text-lg font-semibold mb-5">Backup & Restore</h2>
 
-      <div className="p-4 rounded-xl bg-shell-surface/60 border border-white/5 space-y-4">
+      <Card className="p-4 space-y-4">
         <div>
           <h3 className="text-sm font-medium mb-2">Create Backup</h3>
           <p className="text-xs text-shell-text-tertiary mb-3">
             Export all agents, memory, and configuration as a backup archive.
           </p>
-          <button
-            onClick={createBackup}
-            disabled={creating}
-            className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-sky-600 text-sm hover:bg-sky-500 transition-colors disabled:opacity-50"
-          >
+          <Button size="sm" onClick={createBackup} disabled={creating}>
             <Download size={14} className={creating ? "animate-bounce" : ""} />
             {creating ? "Creating..." : "Create Backup"}
-          </button>
+          </Button>
           {backupStatus && (
             <p className={`mt-2 text-xs ${backupStatus.includes("success") ? "text-emerald-400" : "text-amber-400"}`}>
               {backupStatus}
@@ -560,7 +565,7 @@ function BackupSection() {
             <input type="file" accept=".tar.gz,.zip,.bak" className="hidden" aria-label="Upload backup file" />
           </label>
         </div>
-      </div>
+      </Card>
     </section>
   );
 }
@@ -593,7 +598,7 @@ function UpdatesSection() {
   return (
     <section aria-label="System updates">
       <h2 className="text-lg font-semibold mb-5">Updates</h2>
-      <div className="p-4 rounded-xl bg-shell-surface/60 border border-white/5 space-y-4">
+      <Card className="p-4 space-y-4">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-lg bg-white/5 text-sky-400">
             <Settings size={20} />
@@ -604,14 +609,10 @@ function UpdatesSection() {
           </div>
         </div>
 
-        <button
-          onClick={checkUpdates}
-          disabled={checking}
-          className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-shell-surface/60 border border-white/5 text-sm hover:bg-shell-surface transition-colors disabled:opacity-50"
-        >
+        <Button variant="outline" size="sm" onClick={checkUpdates} disabled={checking}>
           <RefreshCw size={14} className={checking ? "animate-spin" : ""} />
           {checking ? "Checking..." : "Check for Updates"}
-        </button>
+        </Button>
 
         {status && (
           <div className="flex items-start gap-2 text-xs">
@@ -623,7 +624,7 @@ function UpdatesSection() {
             <span className="text-shell-text-secondary">{status}</span>
           </div>
         )}
-      </div>
+      </Card>
     </section>
   );
 }
@@ -673,18 +674,19 @@ function AdvancedSection() {
   return (
     <section aria-label="Advanced configuration">
       <h2 className="text-lg font-semibold mb-5">Advanced Configuration</h2>
-      <div className="p-4 rounded-xl bg-shell-surface/60 border border-white/5 space-y-3">
-        <label className="block">
-          <span className="text-xs text-shell-text-secondary">YAML Configuration</span>
-          <textarea
+      <Card className="p-4 space-y-3">
+        <div>
+          <Label htmlFor="yaml-config">YAML Configuration</Label>
+          <Textarea
+            id="yaml-config"
             value={config}
             onChange={(e) => { setConfig(e.target.value); setSaved(false); setError(null); }}
             rows={14}
             spellCheck={false}
-            className="mt-1 w-full px-3 py-2 rounded-lg bg-shell-bg-deep border border-white/10 text-sm font-mono outline-none focus:border-sky-500 resize-y"
+            className="mt-1 font-mono resize-y"
             aria-label="YAML configuration editor"
           />
-        </label>
+        </div>
 
         {error && (
           <p className="text-xs text-red-400 flex items-center gap-1.5">
@@ -698,20 +700,14 @@ function AdvancedSection() {
         )}
 
         <div className="flex gap-2">
-          <button
-            onClick={() => validate()}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 text-sm hover:bg-white/10 transition-colors"
-          >
+          <Button variant="secondary" size="sm" onClick={() => validate()}>
             <Code size={14} /> Validate
-          </button>
-          <button
-            onClick={save}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-600 text-sm hover:bg-sky-500 transition-colors"
-          >
+          </Button>
+          <Button size="sm" onClick={save}>
             <Check size={14} /> Save
-          </button>
+          </Button>
         </div>
-      </div>
+      </Card>
     </section>
   );
 }
@@ -751,21 +747,18 @@ export function SettingsApp({ windowId: _windowId }: { windowId: string }) {
           const active = section === s.id;
           const Icon = s.icon;
           return (
-            <button
+            <Button
               key={s.id}
+              variant={active ? "secondary" : "ghost"}
               onClick={() => handleSelectSection(s.id)}
-              className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-sm transition-all duration-150 ${
-                active
-                  ? "bg-sky-600/15 text-sky-400"
-                  : "text-shell-text-secondary hover:bg-white/5 hover:text-shell-text"
-              }`}
+              className="w-full justify-start gap-3 h-auto py-2.5"
               aria-current={active ? "page" : undefined}
             >
-              <div className={`p-1.5 rounded-lg transition-colors ${active ? "bg-sky-500/20" : "bg-white/5"}`}>
+              <div className={`p-1.5 rounded-lg transition-colors ${active ? "bg-sky-500/20 text-sky-400" : "bg-white/5"}`}>
                 <Icon size={16} />
               </div>
               {s.label}
-            </button>
+            </Button>
           );
         })}
       </div>
@@ -775,9 +768,9 @@ export function SettingsApp({ windowId: _windowId }: { windowId: string }) {
   const contentUI = (
     <main className="flex-1 overflow-y-auto p-6">
       {isMobile && (
-        <button onClick={() => setMobileShowSection(false)} className="flex items-center gap-1 px-3 py-2 text-xs text-shell-text-secondary mb-3">
+        <Button variant="ghost" size="sm" onClick={() => setMobileShowSection(false)} className="mb-3">
           <ChevronLeft size={14} /> Back
-        </button>
+        </Button>
       )}
       {content[section]}
     </main>
