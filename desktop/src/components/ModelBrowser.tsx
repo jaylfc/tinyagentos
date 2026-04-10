@@ -10,6 +10,8 @@ import {
   Loader2,
   Search,
   Package,
+  Activity,
+  CircuitBoard,
 } from "lucide-react";
 import { Button, Card, CardContent, Input } from "@/components/ui";
 
@@ -25,6 +27,19 @@ interface ModelVariant {
   download_url?: string;
   requires_npu?: string[];
   quality?: string;
+}
+
+interface LoadedModel {
+  name: string;
+  backend: string;
+  backend_type: string;
+  backend_url: string;
+  purpose: string;
+  size_mb: number | null;
+  vram_mb: number | null;
+  ram_mb: number | null;
+  expires_at?: string | null;
+  details?: Record<string, unknown>;
 }
 
 interface CatalogModel {
@@ -78,6 +93,30 @@ export function ModelBrowser({
   const [downloading, setDownloading] = useState<
     Record<string, { percent: number; status: string }>
   >({});
+  const [loadedModels, setLoadedModels] = useState<LoadedModel[]>([]);
+
+  const refreshLoaded = useCallback(async () => {
+    try {
+      const res = await fetch("/api/models/loaded", {
+        headers: { Accept: "application/json" },
+      });
+      const ct = res.headers.get("content-type") ?? "";
+      if (res.ok && ct.includes("application/json")) {
+        const data = await res.json();
+        setLoadedModels(data.loaded ?? []);
+      }
+    } catch {
+      setLoadedModels([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (open) {
+      refreshLoaded();
+      const interval = setInterval(refreshLoaded, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [open, refreshLoaded]);
 
   const refresh = useCallback(async () => {
     try {
@@ -257,6 +296,67 @@ export function ModelBrowser({
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {/* Loaded Models */}
+          {loadedModels.length > 0 && (
+            <div className="mb-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Activity size={14} className="text-emerald-400" />
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-shell-text-secondary">
+                  Loaded Models ({loadedModels.length})
+                </h3>
+                <span className="text-[10px] text-shell-text-tertiary">
+                  Currently running in memory
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {loadedModels.map((m, i) => (
+                  <Card key={`${m.backend}-${m.name}-${i}`} className="p-3">
+                    <CardContent className="p-0">
+                      <div className="flex items-start justify-between gap-2 mb-1.5">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                            <span className="text-xs font-medium text-shell-text truncate">
+                              {m.name}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 mt-1 text-[10px] text-shell-text-tertiary">
+                            <span className="px-1.5 py-0.5 rounded-full bg-white/5">
+                              {m.purpose}
+                            </span>
+                            <span>via {m.backend}</span>
+                          </div>
+                        </div>
+                      </div>
+                      {(m.size_mb !== null || m.vram_mb !== null) && (
+                        <div className="flex items-center gap-3 pt-1.5 border-t border-white/5 text-[10px] text-shell-text-secondary">
+                          {m.size_mb !== null && m.size_mb > 0 && (
+                            <span className="flex items-center gap-1">
+                              <HardDrive size={9} />
+                              {formatSize(m.size_mb)}
+                            </span>
+                          )}
+                          {m.vram_mb !== null && m.vram_mb > 0 && (
+                            <span className="flex items-center gap-1 text-blue-400">
+                              <CircuitBoard size={9} />
+                              VRAM {formatSize(m.vram_mb)}
+                            </span>
+                          )}
+                          {m.ram_mb !== null && m.ram_mb > 0 && (
+                            <span className="flex items-center gap-1">
+                              <Cpu size={9} />
+                              RAM {formatSize(m.ram_mb)}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+              <div className="border-t border-white/5 mt-4" />
+            </div>
+          )}
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2
