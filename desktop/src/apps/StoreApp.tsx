@@ -1,107 +1,157 @@
 import { useState, useEffect, useCallback } from "react";
-import { ShoppingBag, Search, Download, Trash2, Check, Package, Loader2 } from "lucide-react";
+import { ShoppingBag, Search, Download, Trash2, Check, Package, Loader2, Bot, Brain, Server, Plug, Wrench, Image, Music, Video, Globe, Home, Cpu, Gamepad2 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
-interface StoreApp {
+interface CatalogApp {
   id: string;
   name: string;
-  type: "agent-framework" | "model" | "service" | "plugin";
+  type: string;
   version: string;
   description: string;
   installed: boolean;
   compat: "green" | "yellow" | "red";
+  category?: string;
 }
 
-type TypeFilter = "all" | "agent-framework" | "model" | "service" | "plugin";
-
 /* ------------------------------------------------------------------ */
-/*  Mock data                                                          */
+/*  Categories                                                         */
 /* ------------------------------------------------------------------ */
 
-const MOCK_APPS: StoreApp[] = [
-  { id: "smolagents", name: "SmolAgents", type: "agent-framework", version: "1.0.0", description: "HuggingFace code-based agents", installed: false, compat: "green" },
-  { id: "pocketflow", name: "PocketFlow", type: "agent-framework", version: "1.0.0", description: "Minimal graph-based agent framework", installed: false, compat: "green" },
-  { id: "openclaw", name: "OpenClaw", type: "agent-framework", version: "1.0.0", description: "Full-featured multi-channel agent", installed: true, compat: "green" },
-  { id: "crewai", name: "CrewAI", type: "agent-framework", version: "0.41.0", description: "Role-based autonomous AI agents", installed: false, compat: "green" },
-  { id: "qwen2.5-7b", name: "Qwen 2.5 7B", type: "model", version: "2.5.0", description: "Versatile language model with strong reasoning", installed: true, compat: "green" },
-  { id: "llama3-8b", name: "Llama 3 8B", type: "model", version: "3.0.0", description: "Meta open-weight LLM for general tasks", installed: false, compat: "yellow" },
-  { id: "qdrant", name: "Qdrant", type: "service", version: "1.9.0", description: "High-performance vector search engine", installed: true, compat: "green" },
-  { id: "redis-memory", name: "Redis Memory", type: "service", version: "7.2.0", description: "Fast key-value store for agent memory", installed: false, compat: "green" },
-  { id: "web-search", name: "Web Search", type: "plugin", version: "0.3.0", description: "Search the web from agent pipelines", installed: false, compat: "green" },
-  { id: "code-exec", name: "Code Executor", type: "plugin", version: "0.5.0", description: "Sandboxed code execution for agents", installed: false, compat: "red" },
+interface Category {
+  id: string;
+  label: string;
+  icon: React.ReactNode;
+  types: string[];       // which app types belong here
+  description: string;
+}
+
+const CATEGORIES: Category[] = [
+  { id: "all", label: "All Apps", icon: <ShoppingBag size={16} />, types: [], description: "Browse everything" },
+  { id: "frameworks", label: "Agent Frameworks", icon: <Bot size={16} />, types: ["agent-framework"], description: "Execution engines for your AI agents" },
+  { id: "models", label: "Models", icon: <Brain size={16} />, types: ["model"], description: "Language models for inference" },
+  { id: "plugins", label: "Plugins & MCP", icon: <Plug size={16} />, types: ["plugin"], description: "Tools and capabilities for agents" },
+  { id: "services", label: "Services", icon: <Server size={16} />, types: ["service"], description: "Infrastructure and backends" },
+  { id: "streaming", label: "Streaming Apps", icon: <Globe size={16} />, types: ["streaming-app"], description: "Desktop apps streamed via KasmVNC" },
+  { id: "image", label: "Image Generation", icon: <Image size={16} />, types: ["image-gen", "image-model"], description: "Stable Diffusion and image models" },
+  { id: "audio", label: "Audio & Voice", icon: <Music size={16} />, types: ["voice", "audio"], description: "TTS, STT, and music generation" },
+  { id: "video", label: "Video", icon: <Video size={16} />, types: ["video-gen"], description: "Video generation tools" },
+  { id: "devtools", label: "Dev Tools", icon: <Wrench size={16} />, types: ["dev-tool"], description: "Development and coding tools" },
+  { id: "home", label: "Home & Monitor", icon: <Home size={16} />, types: ["home", "monitoring"], description: "Home automation and monitoring" },
+  { id: "infra", label: "Infrastructure", icon: <Cpu size={16} />, types: ["infrastructure"], description: "System services and networking" },
+];
+
+/* ------------------------------------------------------------------ */
+/*  Mock data with proper categories                                   */
+/* ------------------------------------------------------------------ */
+
+const MOCK_APPS: CatalogApp[] = [
+  // Agent Frameworks
+  { id: "smolagents", name: "SmolAgents", type: "agent-framework", version: "1.0.0", description: "HuggingFace code-based agents — well-documented, 26k stars", installed: false, compat: "green" },
+  { id: "pocketflow", name: "PocketFlow", type: "agent-framework", version: "1.0.0", description: "Minimal 100-line framework, zero deps, graph-based", installed: false, compat: "green" },
+  { id: "openclaw", name: "OpenClaw", type: "agent-framework", version: "1.0.0", description: "Full-featured multi-channel agent framework", installed: true, compat: "green" },
+  { id: "langroid", name: "Langroid", type: "agent-framework", version: "1.0.0", description: "Multi-agent message-passing framework", installed: false, compat: "green" },
+  { id: "openai-agents-sdk", name: "OpenAI Agents SDK", type: "agent-framework", version: "1.0.0", description: "Provider-agnostic agent SDK from OpenAI", installed: false, compat: "green" },
+
+  // Models
+  { id: "qwen3-4b", name: "Qwen3 4B", type: "model", version: "3.0.0", description: "Good balance of speed and capability for most tasks", installed: true, compat: "green" },
+  { id: "qwen3-1.7b", name: "Qwen3 1.7B", type: "model", version: "3.0.0", description: "Fast, fits comfortably in 8GB RAM", installed: false, compat: "green" },
+  { id: "qwen3-8b", name: "Qwen3 8B", type: "model", version: "3.0.0", description: "Most capable local model for 16GB devices", installed: false, compat: "yellow" },
+
+  // Plugins & MCP
+  { id: "mcp-pandoc", name: "MCP Pandoc", type: "plugin", version: "0.1.0", description: "Document format conversion — markdown, docx, pdf, 30+ formats", installed: false, compat: "green" },
+  { id: "mcp-server-office", name: "MCP Office Docs", type: "plugin", version: "0.1.0", description: "Read, write, and edit .docx files programmatically", installed: false, compat: "green" },
+  { id: "playwright-mcp", name: "Playwright MCP", type: "plugin", version: "1.0.0", description: "Browser automation for agents via Playwright", installed: false, compat: "green" },
+  { id: "github-mcp-server", name: "GitHub MCP", type: "plugin", version: "1.0.0", description: "Issues, PRs, repos, search — official GitHub MCP", installed: false, compat: "green" },
+  { id: "mcp-memory", name: "MCP Memory", type: "plugin", version: "1.0.0", description: "Knowledge graph memory for persistent context", installed: false, compat: "green" },
+  { id: "web-search", name: "Web Search", type: "plugin", version: "0.3.0", description: "Search the web via SearXNG or Perplexica", installed: false, compat: "green" },
+  { id: "image-generation-tool", name: "Image Generation", type: "plugin", version: "0.1.0", description: "Generate images via Stable Diffusion", installed: false, compat: "green" },
+
+  // Services
+  { id: "searxng", name: "SearXNG", type: "service", version: "latest", description: "Privacy-respecting metasearch engine", installed: false, compat: "green" },
+  { id: "gitea", name: "Gitea", type: "service", version: "latest", description: "Lightweight self-hosted Git service", installed: false, compat: "green" },
+  { id: "n8n", name: "n8n", type: "service", version: "latest", description: "Workflow automation platform", installed: false, compat: "green" },
+
+  // Streaming Apps
+  { id: "code-server", name: "Code Server", type: "streaming-app", version: "latest", description: "VS Code in the browser", installed: false, compat: "green" },
+  { id: "blender", name: "Blender", type: "streaming-app", version: "latest", description: "3D creation suite streamed via KasmVNC", installed: false, compat: "yellow" },
+  { id: "libreoffice", name: "LibreOffice", type: "streaming-app", version: "latest", description: "Full office suite streamed via KasmVNC", installed: false, compat: "green" },
+
+  // Image Gen
+  { id: "comfyui", name: "ComfyUI", type: "image-gen", version: "latest", description: "Node-based Stable Diffusion workflow editor", installed: false, compat: "yellow" },
+  { id: "fooocus", name: "Fooocus", type: "image-gen", version: "latest", description: "Simple Stable Diffusion with minimal setup", installed: false, compat: "yellow" },
+
+  // Audio
+  { id: "kokoro-tts", name: "Kokoro TTS", type: "voice", version: "latest", description: "High-quality text-to-speech", installed: false, compat: "green" },
+  { id: "whisper-stt", name: "Whisper STT", type: "voice", version: "latest", description: "OpenAI Whisper speech-to-text", installed: false, compat: "green" },
 ];
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
 
-const TYPE_LABELS: Record<string, string> = {
-  "agent-framework": "Framework",
-  model: "Model",
-  service: "Service",
-  plugin: "Plugin",
-};
-
 const TYPE_COLORS: Record<string, string> = {
   "agent-framework": "bg-blue-500/20 text-blue-400",
   model: "bg-purple-500/20 text-purple-400",
   service: "bg-amber-500/20 text-amber-400",
   plugin: "bg-teal-500/20 text-teal-400",
+  "streaming-app": "bg-indigo-500/20 text-indigo-400",
+  "image-gen": "bg-pink-500/20 text-pink-400",
+  "image-model": "bg-pink-500/20 text-pink-400",
+  voice: "bg-orange-500/20 text-orange-400",
+  audio: "bg-orange-500/20 text-orange-400",
+  "video-gen": "bg-red-500/20 text-red-400",
+  "dev-tool": "bg-cyan-500/20 text-cyan-400",
+  home: "bg-green-500/20 text-green-400",
+  monitoring: "bg-green-500/20 text-green-400",
+  infrastructure: "bg-slate-500/20 text-slate-400",
 };
 
-const COMPAT_COLORS: Record<string, string> = {
-  green: "bg-emerald-400",
-  yellow: "bg-amber-400",
-  red: "bg-red-400",
+const TYPE_LABELS: Record<string, string> = {
+  "agent-framework": "Framework",
+  model: "Model",
+  service: "Service",
+  plugin: "Plugin / MCP",
+  "streaming-app": "Streaming",
+  "image-gen": "Image Gen",
+  "image-model": "Image Model",
+  voice: "Voice",
+  audio: "Audio",
+  "video-gen": "Video",
+  "dev-tool": "Dev Tool",
+  home: "Home",
+  monitoring: "Monitor",
+  infrastructure: "Infra",
 };
 
-const COMPAT_LABELS: Record<string, string> = {
-  green: "Compatible",
-  yellow: "Partial",
-  red: "Unsupported",
-};
-
-const FILTER_OPTIONS: { value: TypeFilter; label: string }[] = [
-  { value: "all", label: "All" },
-  { value: "agent-framework", label: "Frameworks" },
-  { value: "model", label: "Models" },
-  { value: "service", label: "Services" },
-  { value: "plugin", label: "Plugins" },
-];
+const COMPAT_COLORS: Record<string, string> = { green: "bg-emerald-400", yellow: "bg-amber-400", red: "bg-red-400" };
+const COMPAT_LABELS: Record<string, string> = { green: "Compatible", yellow: "Partial", red: "Unsupported" };
 
 /* ------------------------------------------------------------------ */
 /*  AppCard                                                            */
 /* ------------------------------------------------------------------ */
 
-function AppCard({
-  app,
-  onInstall,
-  onUninstall,
-}: {
-  app: StoreApp;
-  onInstall: (id: string) => void;
-  onUninstall: (id: string) => void;
-}) {
+function AppCard({ app, onInstall, onUninstall }: { app: CatalogApp; onInstall: (id: string) => void; onUninstall: (id: string) => void }) {
   const [busy, setBusy] = useState(false);
 
   const handleAction = async () => {
     setBusy(true);
-    // Simulate a brief delay for install/uninstall
-    await new Promise((r) => setTimeout(r, 800));
-    if (app.installed) {
-      onUninstall(app.id);
-    } else {
-      onInstall(app.id);
-    }
+    try {
+      if (app.installed) {
+        await fetch("/api/store/uninstall", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ app_id: app.id }) });
+        onUninstall(app.id);
+      } else {
+        await fetch("/api/store/install", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ app_id: app.id }) });
+        onInstall(app.id);
+      }
+    } catch { /* ignore */ }
     setBusy(false);
   };
 
   return (
-    <div className="bg-shell-surface/60 border border-white/[0.06] rounded-xl p-5 flex flex-col gap-3 hover:border-white/10 transition-colors">
-      {/* Top row: icon + meta */}
+    <div className="bg-shell-surface/60 border border-white/[0.06] rounded-xl p-4 flex flex-col gap-2.5 hover:border-white/10 transition-colors">
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-white/[0.06] flex items-center justify-center shrink-0">
@@ -109,54 +159,31 @@ function AppCard({
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <span className="font-medium text-white/90 truncate">{app.name}</span>
-              {app.installed && (
-                <Check className="w-4 h-4 text-emerald-400 shrink-0" aria-label="Installed" />
-              )}
+              <span className="font-medium text-white/90 truncate text-sm">{app.name}</span>
+              {app.installed && <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
             </div>
-            <span className="text-xs text-white/40">v{app.version}</span>
+            <span className="text-[11px] text-white/30">v{app.version}</span>
           </div>
         </div>
-
-        {/* Compat indicator */}
-        <div className="flex items-center gap-1.5" title={COMPAT_LABELS[app.compat]}>
-          <span className={`w-2 h-2 rounded-full ${COMPAT_COLORS[app.compat]}`} />
-          <span className="text-[11px] text-white/40">{COMPAT_LABELS[app.compat]}</span>
+        <div className="flex items-center gap-1" title={COMPAT_LABELS[app.compat]}>
+          <span className={`w-1.5 h-1.5 rounded-full ${COMPAT_COLORS[app.compat]}`} />
         </div>
       </div>
 
-      {/* Type badge */}
-      <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full w-fit ${TYPE_COLORS[app.type]}`}>
-        {TYPE_LABELS[app.type]}
+      <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full w-fit ${TYPE_COLORS[app.type] ?? "bg-white/10 text-white/50"}`}>
+        {TYPE_LABELS[app.type] ?? app.type}
       </span>
 
-      {/* Description */}
-      <p className="text-sm text-white/50 leading-relaxed flex-1">{app.description}</p>
+      <p className="text-xs text-white/45 leading-relaxed flex-1">{app.description}</p>
 
-      {/* Action button */}
       <button
         onClick={handleAction}
         disabled={busy}
-        className={`mt-auto flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-          app.installed
-            ? "bg-red-500/10 text-red-400 hover:bg-red-500/20"
-            : "bg-blue-500/15 text-blue-400 hover:bg-blue-500/25"
+        className={`mt-auto flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+          app.installed ? "bg-red-500/10 text-red-400 hover:bg-red-500/20" : "bg-accent/15 text-accent hover:bg-accent/25"
         } disabled:opacity-50`}
-        aria-label={app.installed ? `Uninstall ${app.name}` : `Install ${app.name}`}
       >
-        {busy ? (
-          <Loader2 className="w-4 h-4 animate-spin" />
-        ) : app.installed ? (
-          <>
-            <Trash2 className="w-4 h-4" />
-            Uninstall
-          </>
-        ) : (
-          <>
-            <Download className="w-4 h-4" />
-            Install
-          </>
-        )}
+        {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : app.installed ? <><Trash2 className="w-3.5 h-3.5" /> Uninstall</> : <><Download className="w-3.5 h-3.5" /> Install</>}
       </button>
     </div>
   );
@@ -167,47 +194,36 @@ function AppCard({
 /* ------------------------------------------------------------------ */
 
 export function StoreApp({ windowId: _windowId }: { windowId: string }) {
-  const [apps, setApps] = useState<StoreApp[]>([]);
+  const [apps, setApps] = useState<CatalogApp[]>([]);
   const [search, setSearch] = useState("");
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+  const [activeCategory, setActiveCategory] = useState("all");
   const [loading, setLoading] = useState(true);
 
-  /* Fetch catalog on mount */
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const res = await fetch("/api/store/catalog");
-        const ct = res.headers.get("content-type") || "";
+        const ct = res.headers.get("content-type") ?? "";
         if (res.ok && ct.includes("application/json")) {
           const data = await res.json();
-          if (Array.isArray(data) && !cancelled) {
-            setApps(data);
-            setLoading(false);
-            return;
-          }
+          if (Array.isArray(data) && !cancelled) { setApps(data); setLoading(false); return; }
         }
-      } catch {
-        // fall through to mock
-      }
-      if (!cancelled) {
-        setApps(MOCK_APPS);
-        setLoading(false);
-      }
+      } catch { /* fall through */ }
+      if (!cancelled) { setApps(MOCK_APPS); setLoading(false); }
     })();
     return () => { cancelled = true; };
   }, []);
 
-  /* Client-side filtering */
+  const activeCat = CATEGORIES.find((c) => c.id === activeCategory);
+
   const filtered = apps.filter((app) => {
-    if (typeFilter !== "all" && app.type !== typeFilter) return false;
+    if (activeCategory !== "all" && activeCat) {
+      if (!activeCat.types.includes(app.type)) return false;
+    }
     if (search) {
       const q = search.toLowerCase();
-      return (
-        app.name.toLowerCase().includes(q) ||
-        app.description.toLowerCase().includes(q) ||
-        app.type.toLowerCase().includes(q)
-      );
+      return app.name.toLowerCase().includes(q) || app.description.toLowerCase().includes(q);
     }
     return true;
   });
@@ -220,72 +236,86 @@ export function StoreApp({ windowId: _windowId }: { windowId: string }) {
     setApps((prev) => prev.map((a) => (a.id === id ? { ...a, installed: false } : a)));
   }, []);
 
+  // Count per category
+  const counts: Record<string, number> = {};
+  for (const cat of CATEGORIES) {
+    if (cat.id === "all") { counts[cat.id] = apps.length; continue; }
+    counts[cat.id] = apps.filter((a) => cat.types.includes(a.type)).length;
+  }
+
   return (
-    <div className="flex flex-col h-full bg-shell-base text-white/80 overflow-hidden select-none">
-      {/* Header */}
-      <header className="shrink-0 px-6 pt-5 pb-4 border-b border-white/[0.06]">
-        <div className="flex items-center gap-3 mb-4">
-          <ShoppingBag className="w-6 h-6 text-blue-400" />
-          <h1 className="text-lg font-semibold text-white/90">App Store</h1>
-          <span className="ml-auto text-xs text-white/30">{apps.length} apps</span>
+    <div className="flex h-full overflow-hidden">
+      {/* Sidebar */}
+      <div className="w-52 shrink-0 border-r border-shell-border bg-shell-surface/30 flex flex-col overflow-y-auto">
+        <div className="px-3 py-3 border-b border-shell-border">
+          <div className="flex items-center gap-2">
+            <ShoppingBag size={16} className="text-accent" />
+            <span className="text-sm font-medium text-shell-text">Store</span>
+          </div>
         </div>
-
-        {/* Search */}
-        <div className="relative mb-3">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30 pointer-events-none" />
-          <input
-            type="text"
-            placeholder="Search apps..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-white/[0.05] border border-white/[0.08] rounded-lg pl-9 pr-4 py-2 text-sm text-white/80 placeholder:text-white/25 focus:outline-none focus:border-white/15 transition-colors"
-            aria-label="Search apps"
-          />
-        </div>
-
-        {/* Filter pills */}
-        <div className="flex gap-2 flex-wrap" role="tablist" aria-label="Filter by type">
-          {FILTER_OPTIONS.map((opt) => (
+        <nav className="flex-1 py-2">
+          {CATEGORIES.map((cat) => (
             <button
-              key={opt.value}
-              role="tab"
-              aria-selected={typeFilter === opt.value}
-              onClick={() => setTypeFilter(opt.value)}
-              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                typeFilter === opt.value
-                  ? "bg-blue-500/20 text-blue-400"
-                  : "bg-white/[0.04] text-white/40 hover:bg-white/[0.08] hover:text-white/60"
+              key={cat.id}
+              onClick={() => setActiveCategory(cat.id)}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-xs transition-colors ${
+                activeCategory === cat.id
+                  ? "bg-accent/15 text-accent"
+                  : "text-shell-text-secondary hover:bg-white/5 hover:text-shell-text"
               }`}
             >
-              {opt.label}
+              <span className="shrink-0">{cat.icon}</span>
+              <span className="flex-1 truncate">{cat.label}</span>
+              {counts[cat.id] ? (
+                <span className="text-[10px] text-shell-text-tertiary">{counts[cat.id]}</span>
+              ) : null}
             </button>
           ))}
-        </div>
-      </header>
+        </nav>
+      </div>
 
-      {/* App grid */}
-      <div className="flex-1 overflow-y-auto px-6 py-5">
-        {loading ? (
-          <div className="flex items-center justify-center h-40">
-            <Loader2 className="w-6 h-6 text-white/30 animate-spin" />
+      {/* Main content */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Header */}
+        <header className="shrink-0 px-5 py-4 border-b border-shell-border">
+          <div className="flex items-center justify-between mb-1">
+            <div>
+              <h2 className="text-base font-medium text-shell-text">{activeCat?.label ?? "All Apps"}</h2>
+              <p className="text-xs text-shell-text-tertiary">{activeCat?.description}</p>
+            </div>
+            <span className="text-xs text-shell-text-tertiary">{filtered.length} apps</span>
           </div>
-        ) : filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-40 text-white/30 text-sm gap-2">
-            <Package className="w-8 h-8" />
-            <span>No apps match your search</span>
+          <div className="relative mt-3">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-shell-text-tertiary pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Search..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full bg-shell-surface border border-shell-border rounded-lg pl-9 pr-4 py-1.5 text-sm text-shell-text placeholder:text-shell-text-tertiary focus:outline-none focus:border-accent/30 transition-colors"
+            />
           </div>
-        ) : (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
-            {filtered.map((app) => (
-              <AppCard
-                key={app.id}
-                app={app}
-                onInstall={handleInstall}
-                onUninstall={handleUninstall}
-              />
-            ))}
-          </div>
-        )}
+        </header>
+
+        {/* Grid */}
+        <div className="flex-1 overflow-y-auto px-5 py-4">
+          {loading ? (
+            <div className="flex items-center justify-center h-40">
+              <Loader2 className="w-6 h-6 text-shell-text-tertiary animate-spin" />
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-40 text-shell-text-tertiary text-sm gap-2">
+              <Package className="w-8 h-8" />
+              <span>No apps in this category</span>
+            </div>
+          ) : (
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3">
+              {filtered.map((app) => (
+                <AppCard key={app.id} app={app} onInstall={handleInstall} onUninstall={handleUninstall} />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

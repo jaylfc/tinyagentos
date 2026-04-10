@@ -17,10 +17,17 @@ router = APIRouter()
 
 
 @router.get("/", response_class=HTMLResponse)
-async def dashboard_page(request: Request):
+async def root_redirect(request: Request):
+    """Root URL serves the desktop shell."""
     data_dir = request.app.state.config_path.parent
     if is_first_boot(data_dir):
         return RedirectResponse(url="/setup", status_code=303)
+    return RedirectResponse(url="/desktop", status_code=303)
+
+
+@router.get("/legacy", response_class=HTMLResponse)
+async def dashboard_page(request: Request):
+    """Legacy htmx dashboard (accessible while migration is in progress)."""
     templates = request.app.state.templates
     return templates.TemplateResponse(request, "dashboard.html", {"active_page": "dashboard"})
 
