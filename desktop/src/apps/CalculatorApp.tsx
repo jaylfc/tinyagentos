@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { evaluate } from "mathjs";
+import { Button } from "@/components/ui";
 
 const buttons = [
   ["C", "±", "%", "÷"],
@@ -124,37 +125,31 @@ export function CalculatorApp({ windowId: _windowId }: { windowId: string }) {
       </div>
 
       {/* Button grid */}
-      <div className="grid grid-cols-4 gap-px flex-1 p-1">
+      <div className="grid grid-cols-4 gap-1 flex-1 p-1">
         {buttons.flat().map((label) => {
           const isOperator = ["÷", "×", "−", "+"].includes(label);
           const isEquals = label === "=";
-          const isTopRow = ["C", "±", "%"].includes(label);
+          const isTopRow = ["C", "±", "%", "⌫"].includes(label);
 
-          let className =
-            "flex items-center justify-center text-xl font-medium rounded-lg transition-colors active:scale-95 ";
-
-          if (isEquals) {
-            className += "bg-accent text-white hover:bg-accent/90";
-          } else if (isOperator) {
-            className +=
-              "bg-shell-surface text-accent hover:bg-shell-surface/80";
-          } else if (isTopRow) {
-            className +=
-              "bg-shell-surface/60 text-shell-text-secondary hover:bg-shell-surface/80";
-          } else {
-            className +=
-              "bg-shell-surface text-shell-text hover:bg-shell-surface/80";
-          }
+          const variant: "default" | "outline" | "secondary" | "ghost" =
+            isEquals
+              ? "default"
+              : isOperator
+                ? "outline"
+                : isTopRow
+                  ? "ghost"
+                  : "secondary";
 
           return (
-            <button
+            <Button
               key={label}
-              className={className}
+              variant={variant}
+              className="h-full text-xl font-medium rounded-lg active:scale-95"
               onClick={() => handleButton(label)}
               aria-label={label}
             >
               {label}
-            </button>
+            </Button>
           );
         })}
       </div>
