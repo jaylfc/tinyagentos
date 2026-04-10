@@ -1,358 +1,438 @@
-import { useEffect, useState, useCallback } from "react";
-import { Activity, Server, Bot, Cpu, MemoryStick, HeartPulse, RefreshCw } from "lucide-react";
-import type { ComponentType } from "react";
-import { Button, Card, CardContent } from "@/components/ui";
+import { useState, useEffect, useCallback } from "react";
+import {
+  Activity, Cpu, MemoryStick, Zap, HardDrive, Thermometer, Network, CircuitBoard,
+  Gauge, Layers, RefreshCw, Loader2,
+} from "lucide-react";
+import { Card, CardContent, Button } from "@/components/ui";
 
-interface Agent {
+interface ActivityData {
+  timestamp: number;
+  hardware: {
+    board?: string;
+    cpu?: { model?: string; arch?: string; cores?: number; soc?: string };
+    gpu?: { type?: string; model?: string; vram_mb?: number };
+    npu?: { type?: string; tops?: number; cores?: number };
+    ram_mb?: number;
+  };
+  cpu: {
+    cores: Array<{ core: number; load_percent: number; freq_khz?: number; governor?: string }>;
+    load_avg?: number[];
+    overall_percent: number;
+  };
+  memory: {
+    total_mb: number;
+    used_mb: number;
+    available_mb: number;
+    percent: number;
+    swap_total_mb: number;
+    swap_used_mb: number;
+    swap_percent: number;
+  };
+  npu: {
+    cores: Array<{ core: number; load_percent: number }> | null;
+    freq_hz: number | null;
+    type?: string;
+    tops?: number;
+  };
+  gpu: {
+    load: { load_percent: number; freq_hz: number | null } | null;
+    vram_percent: number | null;
+    vram_used_mb: number | null;
+    vram_total_mb: number | null;
+    type?: string;
+  };
+  thermal: Array<{ name: string; temp_c: number }>;
+  zram: Array<{ device: string; orig_mb: number; compr_mb: number; ratio: number }>;
+  disk: {
+    io_rate: { read_bps: number; write_bps: number };
+    usage_percent: number;
+    total_gb: number;
+    used_gb: number;
+  };
+  network: Array<{ name: string; rx_bps: number; tx_bps: number; rx_total: number; tx_total: number }>;
+  processes: Array<{ pid: number; name: string; user: string; rss_mb: number; cpu_percent: number }>;
+}
+
+interface LoadedModel {
   name: string;
-  status?: string;
-  host?: string;
-  model?: string;
+  backend: string;
+  purpose: string;
+  size_mb?: number | null;
+  vram_mb?: number | null;
+  ram_mb?: number | null;
 }
 
-interface Backend {
-  name?: string;
-  status?: string;
-  healthy?: boolean;
+function formatBytes(bps: number): string {
+  if (bps < 1024) return `${bps} B/s`;
+  if (bps < 1024 * 1024) return `${(bps / 1024).toFixed(1)} KB/s`;
+  if (bps < 1024 * 1024 * 1024) return `${(bps / (1024 * 1024)).toFixed(1)} MB/s`;
+  return `${(bps / (1024 * 1024 * 1024)).toFixed(2)} GB/s`;
 }
 
-interface KpiCard {
-  label: string;
-  value: string;
-  icon: ComponentType<{ size?: number; className?: string }>;
-  color: string;
-  gradient: string;
-  sub?: string;
+function formatMb(mb: number | null | undefined): string {
+  if (mb === null || mb === undefined) return "\u2014";
+  if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
+  return `${mb} MB`;
 }
 
-const REFRESH_INTERVAL = 15_000;
+function colourForLoad(pct: number): string {
+  if (pct < 50) return "#43e97b";
+  if (pct < 80) return "#febc2e";
+  return "#ff5f57";
+}
 
-type HealthTone = "green" | "yellow" | "red" | "unknown";
-
-async function fetchJson<T>(url: string): Promise<T | null> {
-  try {
-    const res = await fetch(url, { headers: { Accept: "application/json" } });
-    if (!res.ok) return null;
-    const ct = res.headers.get("content-type") ?? "";
-    if (!ct.includes("application/json")) return null;
-    return (await res.json()) as T;
-  } catch {
-    return null;
-  }
+function LoadBar({ value, label, unit = "%" }: { value: number; label?: string; unit?: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      {label && <span className="text-[10px] text-shell-text-tertiary w-12 shrink-0">{label}</span>}
+      <div className="flex-1 h-1.5 rounded-full bg-white/5 overflow-hidden">
+        <div
+          className="h-full transition-all rounded-full"
+          style={{ width: `${Math.min(100, Math.max(0, value))}%`, backgroundColor: colourForLoad(value) }}
+        />
+      </div>
+      <span className="text-[10px] text-shell-text-secondary w-10 text-right tabular-nums">
+        {value.toFixed(0)}{unit}
+      </span>
+    </div>
+  );
 }
 
 export function DashboardApp({ windowId: _windowId }: { windowId: string }) {
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [backends, setBackends] = useState<Backend[]>([]);
-  const [cpuPct, setCpuPct] = useState<number | null>(null);
-  const [ramPct, setRamPct] = useState<number | null>(null);
-  const [health, setHealth] = useState<HealthTone>("unknown");
+  const [data, setData] = useState<ActivityData | null>(null);
+  const [loadedModels, setLoadedModels] = useState<LoadedModel[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
 
   const fetchData = useCallback(async () => {
-    const [agentsData, backendsData, systemData, healthData] = await Promise.all([
-      fetchJson<Agent[] | { agents?: Agent[]; items?: Agent[] }>("/api/agents"),
-      fetchJson<{ backends?: Backend[] }>("/api/backends"),
-      fetchJson<{ resources?: { cpu_percent?: number; ram_percent?: number } }>("/api/system"),
-      fetchJson<{ status?: string; agents?: number; backends?: number }>("/api/health"),
-    ]);
-
-    if (agentsData) {
-      const list: Agent[] = Array.isArray(agentsData)
-        ? agentsData
-        : agentsData.agents ?? agentsData.items ?? [];
-      setAgents(list);
-    } else {
-      setAgents([]);
-    }
-
-    if (backendsData && Array.isArray(backendsData.backends)) {
-      setBackends(backendsData.backends);
-    } else {
-      setBackends([]);
-    }
-
-    if (systemData?.resources) {
-      if (typeof systemData.resources.cpu_percent === "number")
-        setCpuPct(systemData.resources.cpu_percent);
-      if (typeof systemData.resources.ram_percent === "number")
-        setRamPct(systemData.resources.ram_percent);
-    } else {
-      // Fallback: try metrics endpoints for latest values.
-      const [cpuSeries, ramSeries] = await Promise.all([
-        fetchJson<Array<{ value: number }>>("/api/metrics/system.cpu_pct?range=1h"),
-        fetchJson<Array<{ value: number }>>("/api/metrics/system.ram_pct?range=1h"),
+    try {
+      const [actRes, modRes] = await Promise.all([
+        fetch("/api/activity", { headers: { Accept: "application/json" } }),
+        fetch("/api/models/loaded", { headers: { Accept: "application/json" } }).catch(() => null),
       ]);
-      if (Array.isArray(cpuSeries) && cpuSeries.length > 0) {
-        setCpuPct(cpuSeries[cpuSeries.length - 1].value);
+      if (actRes.ok) {
+        const json = await actRes.json();
+        setData(json);
+        setError(null);
       }
-      if (Array.isArray(ramSeries) && ramSeries.length > 0) {
-        setRamPct(ramSeries[ramSeries.length - 1].value);
+      if (modRes && modRes.ok) {
+        const json = await modRes.json();
+        setLoadedModels(json.loaded ?? []);
       }
-    }
-
-    if (healthData?.status) {
-      const s = healthData.status.toLowerCase();
-      if (s === "ok" || s === "healthy") setHealth("green");
-      else if (s === "warning" || s === "degraded") setHealth("yellow");
-      else setHealth("red");
-    } else {
-      setHealth("unknown");
-    }
-
-    if (!agentsData && !backendsData && !systemData && !healthData) {
-      setError("Could not reach backend");
-    } else {
-      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load");
     }
     setLoading(false);
-    setLastRefresh(new Date());
   }, []);
 
   useEffect(() => {
     fetchData();
-    const id = setInterval(fetchData, REFRESH_INTERVAL);
-    return () => clearInterval(id);
+    const interval = setInterval(fetchData, 2000);
+    return () => clearInterval(interval);
   }, [fetchData]);
 
-  const agentIsRunning = (a: Agent) => {
-    const s = (a.status ?? "").toLowerCase();
-    return s === "online" || s === "running" || s === "ok";
-  };
-  const activeAgents = agents.filter(agentIsRunning).length;
+  if (loading && !data) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <Loader2 size={24} className="animate-spin text-shell-text-tertiary" />
+      </div>
+    );
+  }
 
-  const backendIsHealthy = (b: Backend) => {
-    if (b.healthy === true) return true;
-    const s = (b.status ?? "").toLowerCase();
-    return s === "ok" || s === "online" || s === "healthy";
-  };
-  const backendsOnline = backends.filter(backendIsHealthy).length;
+  if (!data) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-2 text-shell-text-tertiary">
+        <Activity size={32} />
+        <p className="text-sm">Activity data unavailable</p>
+        {error && <p className="text-xs">{error}</p>}
+      </div>
+    );
+  }
 
-  const healthLabel: Record<HealthTone, string> = {
-    green: "Healthy",
-    yellow: "Degraded",
-    red: "Unhealthy",
-    unknown: "Unknown",
-  };
-  const healthColor: Record<HealthTone, string> = {
-    green: "text-emerald-400",
-    yellow: "text-amber-400",
-    red: "text-red-400",
-    unknown: "text-shell-text-tertiary",
-  };
-  const healthGradient: Record<HealthTone, string> = {
-    green: "linear-gradient(135deg, rgba(16,185,129,0.12), rgba(16,185,129,0.04))",
-    yellow: "linear-gradient(135deg, rgba(245,158,11,0.12), rgba(245,158,11,0.04))",
-    red: "linear-gradient(135deg, rgba(239,68,68,0.12), rgba(239,68,68,0.04))",
-    unknown: "linear-gradient(135deg, rgba(148,163,184,0.10), rgba(148,163,184,0.02))",
-  };
-
-  const fmtPct = (v: number | null) =>
-    v === null || Number.isNaN(v) ? "\u2014" : `${Math.round(v)}%`;
-
-  const kpis: KpiCard[] = [
-    {
-      label: "System Status",
-      value: healthLabel[health],
-      icon: HeartPulse,
-      color: healthColor[health],
-      gradient: healthGradient[health],
-    },
-    {
-      label: "Active Agents",
-      value: agents.length === 0 ? "\u2014" : `${activeAgents}`,
-      sub: agents.length === 0 ? undefined : `of ${agents.length}`,
-      icon: Bot,
-      color: "text-emerald-400",
-      gradient:
-        "linear-gradient(135deg, rgba(16,185,129,0.12), rgba(16,185,129,0.04))",
-    },
-    {
-      label: "Backends Online",
-      value: backends.length === 0 ? "\u2014" : `${backendsOnline}`,
-      sub: backends.length === 0 ? undefined : `of ${backends.length}`,
-      icon: Server,
-      color: "text-sky-400",
-      gradient:
-        "linear-gradient(135deg, rgba(56,189,248,0.12), rgba(56,189,248,0.04))",
-    },
-    {
-      label: "CPU",
-      value: fmtPct(cpuPct),
-      icon: Cpu,
-      color: "text-violet-400",
-      gradient:
-        "linear-gradient(135deg, rgba(139,92,246,0.12), rgba(139,92,246,0.04))",
-    },
-    {
-      label: "RAM",
-      value: fmtPct(ramPct),
-      icon: MemoryStick,
-      color: "text-amber-400",
-      gradient:
-        "linear-gradient(135deg, rgba(245,158,11,0.12), rgba(245,158,11,0.04))",
-    },
-  ];
+  const { hardware, cpu, memory, npu, gpu, thermal, zram, disk, network, processes } = data;
 
   return (
-    <div className="flex flex-col h-full bg-shell-bg-deep text-shell-text select-none overflow-auto">
+    <div className="flex flex-col h-full bg-shell-bg-deep overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-white/5">
-        <h1 className="text-xl font-bold tracking-tight">Dashboard</h1>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={fetchData}
-          aria-label="Refresh dashboard"
-        >
-          <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
+        <div>
+          <div className="flex items-center gap-2">
+            <Activity size={16} className="text-accent" />
+            <h1 className="text-base font-semibold text-shell-text">Activity</h1>
+          </div>
+          <p className="text-xs text-shell-text-tertiary mt-0.5">
+            {hardware.board ?? hardware.cpu?.model ?? "System"}
+            {hardware.cpu?.arch && ` \u00b7 ${hardware.cpu.arch}`}
+            {hardware.ram_mb && ` \u00b7 ${(hardware.ram_mb / 1024).toFixed(0)} GB RAM`}
+          </p>
+        </div>
+        <Button variant="ghost" size="icon" onClick={fetchData} aria-label="Refresh">
+          <RefreshCw size={14} />
         </Button>
       </div>
 
-      <div className="flex-1 overflow-auto p-5 space-y-5">
-        {/* Error banner */}
-        {error && (
-          <div
-            role="alert"
-            className="px-4 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300 text-sm"
-          >
-            {error}
-          </div>
+      {/* Grid */}
+      <div className="flex-1 overflow-y-auto p-4 grid grid-cols-12 gap-3 auto-rows-min">
+        {/* CPU */}
+        <Card className="col-span-12 md:col-span-6 p-4">
+          <CardContent className="p-0">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Cpu size={14} className="text-blue-400" />
+                <h3 className="text-xs font-semibold text-shell-text">CPU</h3>
+              </div>
+              <span className="text-[10px] text-shell-text-tertiary">
+                {cpu.overall_percent.toFixed(0)}% overall
+                {cpu.load_avg && ` \u00b7 ${cpu.load_avg.map((v) => v.toFixed(2)).join(" ")}`}
+              </span>
+            </div>
+            <div className="space-y-1.5">
+              {cpu.cores.map((core) => (
+                <LoadBar
+                  key={core.core}
+                  label={`C${core.core}${core.freq_khz ? ` ${(core.freq_khz / 1000000).toFixed(1)}G` : ""}`}
+                  value={core.load_percent}
+                />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* NPU */}
+        {(npu.cores || npu.type) && (
+          <Card className="col-span-12 md:col-span-6 p-4">
+            <CardContent className="p-0">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Zap size={14} className="text-purple-400" />
+                  <h3 className="text-xs font-semibold text-shell-text">NPU</h3>
+                </div>
+                <span className="text-[10px] text-shell-text-tertiary">
+                  {npu.type ?? "Unknown"}
+                  {npu.tops && ` \u00b7 ${npu.tops} TOPS`}
+                  {npu.freq_hz && ` \u00b7 ${(npu.freq_hz / 1e9).toFixed(2)} GHz`}
+                </span>
+              </div>
+              {npu.cores && npu.cores.length > 0 ? (
+                <div className="space-y-1.5">
+                  {npu.cores.map((core) => (
+                    <LoadBar key={core.core} label={`Core ${core.core}`} value={core.load_percent} />
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-shell-text-tertiary">
+                  Per-core stats require debugfs access.{" "}
+                  <span className="text-shell-text-secondary">Run as root or grant cap_dac_read_search.</span>
+                </p>
+              )}
+            </CardContent>
+          </Card>
         )}
 
-        {/* KPI Cards */}
-        <section aria-label="Key metrics">
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-            {kpis.map((kpi) => (
-              <Card
-                key={kpi.label}
-                className="hover:-translate-y-0.5 hover:shadow-xl transition-all duration-200"
-                style={{ background: kpi.gradient }}
-              >
-                <CardContent className="flex items-center gap-4 p-5">
-                  <div
-                    className={`p-2.5 rounded-xl bg-white/[0.08] ${kpi.color}`}
-                  >
-                    <kpi.icon size={22} />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs text-shell-text-tertiary mb-0.5">
-                      {kpi.label}
-                    </p>
-                    <p className="text-2xl font-bold tabular-nums truncate">
-                      {loading ? "\u2026" : kpi.value}
-                    </p>
-                    {kpi.sub && (
-                      <p className="text-[10px] text-shell-text-tertiary tabular-nums">
-                        {kpi.sub}
-                      </p>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </section>
-
-        {/* Agent Status Grid */}
-        <section aria-label="Agent status">
-          <h2 className="text-sm font-medium text-shell-text-secondary mb-3">
-            Agents
-          </h2>
-          {agents.length === 0 && !loading ? (
-            <p className="text-sm text-shell-text-tertiary">
-              No agents configured yet.
-            </p>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {agents.map((agent) => {
-                const isOnline = agentIsRunning(agent);
-                return (
-                  <Card key={agent.name}>
-                    <CardContent className="flex items-start gap-3 p-3.5">
-                      <span
-                        className={`mt-1 h-2.5 w-2.5 rounded-full shrink-0 ${
-                          isOnline ? "bg-emerald-400" : "bg-shell-text-tertiary"
-                        }`}
-                        aria-label={isOnline ? "online" : "offline"}
-                      />
-                      <div className="min-w-0">
-                        <p className="font-medium text-sm truncate">
-                          {agent.name}
-                        </p>
-                        <p className="text-xs text-shell-text-tertiary truncate">
-                          {agent.status ?? "unknown"}
-                          {agent.host ? ` \u00b7 ${agent.host}` : ""}
-                        </p>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
+        {/* Memory */}
+        <Card className="col-span-12 md:col-span-6 lg:col-span-4 p-4">
+          <CardContent className="p-0">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <MemoryStick size={14} className="text-emerald-400" />
+                <h3 className="text-xs font-semibold text-shell-text">Memory</h3>
+              </div>
             </div>
-          )}
-        </section>
-
-        {/* Backends */}
-        <section aria-label="Backends">
-          <h2 className="text-sm font-medium text-shell-text-secondary mb-3">
-            Backends
-          </h2>
-          {backends.length === 0 && !loading ? (
-            <p className="text-sm text-shell-text-tertiary">
-              No backends configured.
+            <LoadBar label="RAM" value={memory.percent} />
+            <p className="text-[10px] text-shell-text-tertiary mt-1">
+              {formatMb(memory.used_mb)} / {formatMb(memory.total_mb)}
             </p>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {backends.map((b, idx) => {
-                const ok = backendIsHealthy(b);
-                return (
-                  <Card key={(b.name ?? "backend") + idx}>
-                    <CardContent className="flex items-start gap-3 p-3.5">
-                      <span
-                        className={`mt-1 h-2.5 w-2.5 rounded-full shrink-0 ${
-                          ok ? "bg-emerald-400" : "bg-red-400"
-                        }`}
-                        aria-label={ok ? "healthy" : "unhealthy"}
-                      />
-                      <div className="min-w-0">
-                        <p className="font-medium text-sm truncate">
-                          {b.name ?? "backend"}
-                        </p>
-                        <p className="text-xs text-shell-text-tertiary truncate">
-                          {b.status ?? (ok ? "healthy" : "unhealthy")}
-                        </p>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
+            {memory.swap_total_mb > 0 && (
+              <>
+                <div className="mt-3">
+                  <LoadBar label="Swap" value={memory.swap_percent} />
+                </div>
+                <p className="text-[10px] text-shell-text-tertiary mt-1">
+                  {formatMb(memory.swap_used_mb)} / {formatMb(memory.swap_total_mb)}
+                </p>
+              </>
+            )}
+            {zram.length > 0 && (
+              <div className="mt-3 pt-2 border-t border-white/5">
+                <p className="text-[10px] text-shell-text-tertiary mb-1">ZRAM compression</p>
+                {zram.map((z) => (
+                  <div key={z.device} className="flex items-center justify-between text-[10px]">
+                    <span className="text-shell-text-secondary">{z.device}</span>
+                    <span className="text-shell-text-tertiary">
+                      {formatMb(z.compr_mb)} ← {formatMb(z.orig_mb)} ({z.ratio.toFixed(1)}×)
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* GPU */}
+        {gpu.type && gpu.type !== "none" && (
+          <Card className="col-span-12 md:col-span-6 lg:col-span-4 p-4">
+            <CardContent className="p-0">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <CircuitBoard size={14} className="text-cyan-400" />
+                  <h3 className="text-xs font-semibold text-shell-text">GPU</h3>
+                </div>
+                <span className="text-[10px] text-shell-text-tertiary">{gpu.type}</span>
+              </div>
+              {gpu.load && (
+                <LoadBar label="Load" value={gpu.load.load_percent} />
+              )}
+              {gpu.vram_percent !== null && (
+                <div className="mt-2">
+                  <LoadBar label="VRAM" value={gpu.vram_percent} />
+                  <p className="text-[10px] text-shell-text-tertiary mt-1">
+                    {formatMb(gpu.vram_used_mb)} / {formatMb(gpu.vram_total_mb)}
+                  </p>
+                </div>
+              )}
+              {!gpu.load && gpu.vram_percent === null && (
+                <p className="text-xs text-shell-text-tertiary">Stats unavailable</p>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Disk */}
+        <Card className="col-span-12 md:col-span-6 lg:col-span-4 p-4">
+          <CardContent className="p-0">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <HardDrive size={14} className="text-amber-400" />
+                <h3 className="text-xs font-semibold text-shell-text">Disk</h3>
+              </div>
             </div>
-          )}
-        </section>
-
-        {/* Activity Feed Placeholder */}
-        <section aria-label="Activity feed">
-          <h2 className="text-sm font-medium text-shell-text-secondary mb-3">
-            Activity
-          </h2>
-          <div className="p-6 rounded-xl bg-shell-surface/40 border border-white/5 text-center">
-            <Activity
-              size={28}
-              className="mx-auto mb-2 text-shell-text-tertiary"
-            />
-            <p className="text-sm text-shell-text-tertiary">
-              Activity feed &mdash; coming soon
+            <LoadBar label="Used" value={disk.usage_percent} />
+            <p className="text-[10px] text-shell-text-tertiary mt-1">
+              {disk.used_gb} / {disk.total_gb} GB
             </p>
-          </div>
-        </section>
+            <div className="mt-3 pt-2 border-t border-white/5 space-y-0.5 text-[10px]">
+              <div className="flex justify-between">
+                <span className="text-shell-text-tertiary">Read</span>
+                <span className="text-shell-text-secondary tabular-nums">{formatBytes(disk.io_rate.read_bps)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-shell-text-tertiary">Write</span>
+                <span className="text-shell-text-secondary tabular-nums">{formatBytes(disk.io_rate.write_bps)}</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
-        {/* Footer */}
-        <p className="text-xs text-shell-text-tertiary text-right">
-          Last refreshed {lastRefresh.toLocaleTimeString()}
-        </p>
+        {/* Thermal */}
+        {thermal.length > 0 && (
+          <Card className="col-span-12 md:col-span-6 p-4">
+            <CardContent className="p-0">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Thermometer size={14} className="text-red-400" />
+                  <h3 className="text-xs font-semibold text-shell-text">Thermal</h3>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px]">
+                {thermal.map((z) => {
+                  const hot = z.temp_c > 70;
+                  const warm = z.temp_c > 55;
+                  const colour = hot ? "text-red-400" : warm ? "text-amber-400" : "text-emerald-400";
+                  return (
+                    <div key={z.name} className="flex items-center justify-between">
+                      <span className="text-shell-text-tertiary truncate">{z.name}</span>
+                      <span className={`${colour} tabular-nums`}>{z.temp_c.toFixed(1)}°C</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Network */}
+        {network.length > 0 && (
+          <Card className="col-span-12 md:col-span-6 p-4">
+            <CardContent className="p-0">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Network size={14} className="text-indigo-400" />
+                  <h3 className="text-xs font-semibold text-shell-text">Network</h3>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {network.map((iface) => (
+                  <div key={iface.name} className="text-[11px]">
+                    <div className="flex justify-between">
+                      <span className="text-shell-text-secondary">{iface.name}</span>
+                      <span className="text-shell-text-tertiary tabular-nums">
+                        ↓ {formatBytes(iface.rx_bps)} · ↑ {formatBytes(iface.tx_bps)}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Loaded models */}
+        {loadedModels.length > 0 && (
+          <Card className="col-span-12 p-4">
+            <CardContent className="p-0">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Layers size={14} className="text-pink-400" />
+                  <h3 className="text-xs font-semibold text-shell-text">Loaded Models ({loadedModels.length})</h3>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {loadedModels.map((m, i) => (
+                  <div key={i} className="flex items-center gap-2 p-2 rounded-lg bg-white/[0.02] border border-white/5">
+                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[11px] font-medium text-shell-text truncate">{m.name}</div>
+                      <div className="flex items-center gap-2 text-[10px] text-shell-text-tertiary">
+                        <span>{m.purpose}</span>
+                        <span>·</span>
+                        <span>{m.backend}</span>
+                        {m.ram_mb != null && m.ram_mb > 0 && <><span>·</span><span>{formatMb(m.ram_mb)}</span></>}
+                        {m.vram_mb != null && m.vram_mb > 0 && <><span>·</span><span className="text-blue-400">VRAM {formatMb(m.vram_mb)}</span></>}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Top processes */}
+        <Card className="col-span-12 p-4">
+          <CardContent className="p-0">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Gauge size={14} className="text-white/70" />
+                <h3 className="text-xs font-semibold text-shell-text">Top Processes</h3>
+              </div>
+            </div>
+            <div className="space-y-1">
+              {processes.map((p) => (
+                <div key={p.pid} className="flex items-center gap-2 text-[11px] py-0.5">
+                  <span className="text-shell-text-tertiary w-12 tabular-nums">{p.pid}</span>
+                  <span className="text-shell-text-secondary w-16 truncate">{p.user}</span>
+                  <span className="text-shell-text flex-1 truncate">{p.name}</span>
+                  <span className="text-shell-text-tertiary w-16 text-right tabular-nums">
+                    {p.cpu_percent.toFixed(0)}%
+                  </span>
+                  <span className="text-shell-text-secondary w-20 text-right tabular-nums">
+                    {formatMb(p.rss_mb)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
