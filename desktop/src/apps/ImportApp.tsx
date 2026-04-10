@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Upload, File, Trash2, Brain } from "lucide-react";
+import { Button, Card, CardContent, Label } from "@/components/ui";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -164,15 +165,13 @@ export function ImportApp({ windowId: _windowId }: { windowId: string }) {
       {/* Content */}
       <div className="flex-1 overflow-auto p-4 space-y-4">
         {/* Agent selector */}
-        <div>
-          <label htmlFor="import-agent" className="block text-xs text-shell-text-secondary mb-1.5">
-            Target Agent
-          </label>
+        <div className="space-y-1.5">
+          <Label htmlFor="import-agent">Target Agent</Label>
           <select
             id="import-agent"
             value={selectedAgent}
             onChange={(e) => setSelectedAgent(e.target.value)}
-            className="w-full max-w-sm rounded-lg bg-shell-bg-deep px-3 py-2 text-sm text-shell-text border border-white/5 focus:outline-none focus:ring-1 focus:ring-accent"
+            className="flex h-9 w-full max-w-sm rounded-lg border border-white/10 bg-shell-bg-deep px-3 py-1 text-sm text-shell-text focus-visible:outline-none focus-visible:border-accent/40 focus-visible:ring-2 focus-visible:ring-accent/20"
           >
             <option value="">Select an agent...</option>
             {agents.map((a) => (
@@ -182,11 +181,11 @@ export function ImportApp({ windowId: _windowId }: { windowId: string }) {
         </div>
 
         {/* Drop zone */}
-        <div
+        <Card
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
           onDragLeave={() => setDragOver(false)}
           onDrop={handleDrop}
-          className={`flex flex-col items-center justify-center gap-3 p-8 rounded-xl border-2 border-dashed transition-colors cursor-pointer ${
+          className={`border-2 border-dashed transition-colors cursor-pointer ${
             dragOver
               ? "border-accent bg-accent/5"
               : "border-white/10 hover:border-white/20"
@@ -202,31 +201,34 @@ export function ImportApp({ windowId: _windowId }: { windowId: string }) {
             }
           }}
         >
-          <Upload size={32} className="text-shell-text-tertiary" />
-          <div className="text-center">
-            <p className="text-sm text-shell-text-secondary">
-              Drag and drop files here
-            </p>
-            <p className="text-xs text-shell-text-tertiary mt-1">
-              {ACCEPTED_TYPES.join(", ")}
-            </p>
-          </div>
-          <button
-            onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 hover:bg-white/10 transition-colors"
-          >
-            Browse
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept={ACCEPTED_TYPES.join(",")}
-            onChange={handleFileInput}
-            className="hidden"
-            aria-label="Select files to import"
-          />
-        </div>
+          <CardContent className="flex flex-col items-center justify-center gap-3 p-8">
+            <Upload size={32} className="text-shell-text-tertiary" />
+            <div className="text-center">
+              <p className="text-sm text-shell-text-secondary">
+                Drag and drop files here
+              </p>
+              <p className="text-xs text-shell-text-tertiary mt-1">
+                {ACCEPTED_TYPES.join(", ")}
+              </p>
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
+            >
+              Browse
+            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept={ACCEPTED_TYPES.join(",")}
+              onChange={handleFileInput}
+              className="hidden"
+              aria-label="Select files to import"
+            />
+          </CardContent>
+        </Card>
 
         {/* File list */}
         {files.length > 0 && (
@@ -235,23 +237,24 @@ export function ImportApp({ windowId: _windowId }: { windowId: string }) {
               Queued Files ({files.length})
             </h2>
             {files.map((qf) => (
-              <div
-                key={qf.id}
-                className="flex items-center gap-3 px-3.5 py-2.5 rounded-lg bg-shell-surface/60 border border-white/5"
-              >
-                <File size={14} className="text-shell-text-tertiary shrink-0" />
-                <span className="text-sm flex-1 truncate">{qf.name}</span>
-                <span className="text-xs text-shell-text-tertiary tabular-nums shrink-0">
-                  {formatSize(qf.size)}
-                </span>
-                <button
-                  onClick={() => removeFile(qf.id)}
-                  className="p-1 rounded-md hover:bg-red-500/15 transition-colors text-shell-text-secondary hover:text-red-400"
-                  aria-label={`Remove ${qf.name}`}
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
+              <Card key={qf.id}>
+                <CardContent className="flex items-center gap-3 px-3.5 py-2.5">
+                  <File size={14} className="text-shell-text-tertiary shrink-0" />
+                  <span className="text-sm flex-1 truncate">{qf.name}</span>
+                  <span className="text-xs text-shell-text-tertiary tabular-nums shrink-0">
+                    {formatSize(qf.size)}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => removeFile(qf.id)}
+                    className="h-7 w-7 hover:text-red-400 hover:bg-red-500/15"
+                    aria-label={`Remove ${qf.name}`}
+                  >
+                    <Trash2 size={14} />
+                  </Button>
+                </CardContent>
+              </Card>
             ))}
           </div>
         )}
@@ -281,22 +284,22 @@ export function ImportApp({ windowId: _windowId }: { windowId: string }) {
 
         {/* Action buttons */}
         <div className="flex gap-2">
-          <button
+          <Button
             onClick={handleUpload}
             disabled={!selectedAgent || files.length === 0 || uploading}
-            className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium bg-accent text-white hover:bg-accent/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             <Upload size={14} />
             {uploading ? "Uploading..." : "Upload"}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="secondary"
             onClick={handleEmbed}
             disabled={!selectedAgent || embedding}
-            className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium bg-violet-600 text-white hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="bg-violet-600 text-white hover:bg-violet-500"
           >
             <Brain size={14} />
             {embedding ? "Embedding..." : "Embed"}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
