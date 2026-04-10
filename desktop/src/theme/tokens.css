@@ -43,4 +43,6 @@
   --shadow-window: 0 8px 32px rgba(0, 0, 0, 0.4);
   --shadow-window-unfocused: 0 4px 16px rgba(0, 0, 0, 0.2);
   --shadow-dock: 0 4px 24px rgba(0, 0, 0, 0.3);
+  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.2), 0 0 1px rgba(255, 255, 255, 0.05);
+  --shadow-card-hover: 0 8px 24px rgba(0, 0, 0, 0.3), 0 0 1px rgba(255, 255, 255, 0.08);
 }

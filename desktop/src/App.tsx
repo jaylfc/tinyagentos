@@ -16,6 +16,13 @@ import { CardSwitcher } from "@/components/mobile/CardSwitcher";
 import { MobileTopBar } from "@/components/mobile/MobileTopBar";
 import { MobileApp } from "@/components/mobile/MobileApp";
 
+const CATEGORY_GRADIENTS: Record<string, string> = {
+  platform: "linear-gradient(135deg, rgba(102,126,234,0.25), rgba(118,75,162,0.15))",
+  os: "linear-gradient(135deg, rgba(67,233,123,0.2), rgba(56,249,215,0.1))",
+  game: "linear-gradient(135deg, rgba(250,112,154,0.2), rgba(254,225,64,0.1))",
+  streaming: "linear-gradient(135deg, rgba(79,172,254,0.2), rgba(0,242,254,0.1))",
+};
+
 function resolveIcon(iconName: string): icons.LucideIcon {
   const key = iconName
     .split("-")
@@ -123,15 +130,15 @@ export function App() {
                         className="flex flex-col items-center gap-1.5 active:scale-90 transition-transform"
                         aria-label={`Open ${app.name}`}
                       >
-                        <div className="w-[60px] h-[60px] rounded-[14px] flex items-center justify-center"
+                        <div className="w-[60px] h-[60px] rounded-[16px] flex items-center justify-center shadow-lg"
                           style={{
-                            background: "rgba(255,255,255,0.08)",
+                            background: CATEGORY_GRADIENTS[app.category] ?? "rgba(255,255,255,0.08)",
                             backdropFilter: "blur(10px)",
                             WebkitBackdropFilter: "blur(10px)",
-                            border: "1px solid rgba(255,255,255,0.06)",
+                            border: "1px solid rgba(255,255,255,0.08)",
                           }}
                         >
-                          <Icon size={26} className="text-white/70" />
+                          <Icon size={26} className="text-white/80" />
                         </div>
                         <span className="text-[11px] text-white/70 truncate w-full text-center leading-tight">
                           {app.name}

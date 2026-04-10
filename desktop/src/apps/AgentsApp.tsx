@@ -595,7 +595,8 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
         </div>
         <button
           onClick={() => setWizardOpen(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-accent text-white hover:bg-accent/90 transition-colors"
+          className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200"
+          style={{ background: "linear-gradient(135deg, #667eea, #764ba2)" }}
           aria-label="Deploy new agent"
         >
           <Plus size={14} />
@@ -610,14 +611,22 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
             Loading agents...
           </div>
         ) : agents.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full gap-3 text-shell-text-tertiary">
-            <Bot size={40} className="opacity-30" />
-            <p className="text-sm">No agents configured</p>
+          <div className="flex flex-col items-center justify-center h-full gap-4 text-shell-text-tertiary">
+            <div className="w-20 h-20 rounded-2xl flex items-center justify-center"
+              style={{ background: "linear-gradient(135deg, rgba(102,126,234,0.15), rgba(118,75,162,0.08))" }}
+            >
+              <Bot size={36} className="text-accent/50" />
+            </div>
+            <div className="text-center">
+              <p className="text-base font-medium text-shell-text-secondary mb-1">No agents deployed yet</p>
+              <p className="text-xs text-shell-text-tertiary max-w-xs">Deploy your first AI agent to start automating tasks on your device.</p>
+            </div>
             <button
               onClick={() => setWizardOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-accent text-white hover:bg-accent/90 transition-colors mt-1"
+              className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold text-white shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 mt-1"
+              style={{ background: "linear-gradient(135deg, #667eea, #764ba2)" }}
             >
-              <Plus size={13} />
+              <Plus size={15} />
               Deploy your first agent
             </button>
           </div>

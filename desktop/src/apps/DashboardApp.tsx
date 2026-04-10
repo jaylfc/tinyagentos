@@ -14,6 +14,7 @@ interface KpiCard {
   value: string;
   icon: ComponentType<{ size?: number; className?: string }>;
   color: string;
+  gradient: string;
 }
 
 const REFRESH_INTERVAL = 30_000;
@@ -73,24 +74,28 @@ export function DashboardApp({ windowId: _windowId }: { windowId: string }) {
       value: agents.length > 0 ? `${onlineCount}` : "\u2014",
       icon: Bot,
       color: "text-emerald-400",
+      gradient: "linear-gradient(135deg, rgba(16,185,129,0.12), rgba(16,185,129,0.04))",
     },
     {
       label: "Total Agents",
       value: agents.length > 0 ? `${agents.length}` : "\u2014",
       icon: Server,
       color: "text-sky-400",
+      gradient: "linear-gradient(135deg, rgba(56,189,248,0.12), rgba(56,189,248,0.04))",
     },
     {
       label: "Models",
       value: "\u2014", // TODO: fetch /api/models
       icon: Database,
       color: "text-violet-400",
+      gradient: "linear-gradient(135deg, rgba(139,92,246,0.12), rgba(139,92,246,0.04))",
     },
     {
       label: "System Uptime",
       value: "\u2014", // TODO: fetch /api/settings/system-info
       icon: Activity,
       color: "text-amber-400",
+      gradient: "linear-gradient(135deg, rgba(245,158,11,0.12), rgba(245,158,11,0.04))",
     },
   ];
 
@@ -98,7 +103,7 @@ export function DashboardApp({ windowId: _windowId }: { windowId: string }) {
     <div className="flex flex-col h-full bg-shell-bg-deep text-shell-text select-none overflow-auto">
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-white/5">
-        <h1 className="text-lg font-semibold tracking-tight">Dashboard</h1>
+        <h1 className="text-xl font-bold tracking-tight">Dashboard</h1>
         <button
           onClick={fetchData}
           aria-label="Refresh dashboard"
@@ -125,18 +130,19 @@ export function DashboardApp({ windowId: _windowId }: { windowId: string }) {
             {kpis.map((kpi) => (
               <div
                 key={kpi.label}
-                className="flex items-center gap-3 p-4 rounded-xl bg-shell-surface/60 border border-white/5"
+                className="flex items-center gap-4 p-5 rounded-2xl border border-white/[0.06] hover:-translate-y-0.5 hover:shadow-xl transition-all duration-200"
+                style={{ background: kpi.gradient }}
               >
                 <div
-                  className={`p-2 rounded-lg bg-white/5 ${kpi.color}`}
+                  className={`p-2.5 rounded-xl bg-white/[0.08] ${kpi.color}`}
                 >
-                  <kpi.icon size={20} />
+                  <kpi.icon size={22} />
                 </div>
                 <div>
-                  <p className="text-xs text-shell-text-tertiary">
+                  <p className="text-xs text-shell-text-tertiary mb-0.5">
                     {kpi.label}
                   </p>
-                  <p className="text-xl font-semibold tabular-nums">
+                  <p className="text-2xl font-bold tabular-nums">
                     {loading ? "\u2026" : kpi.value}
                   </p>
                 </div>

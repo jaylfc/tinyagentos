@@ -160,14 +160,14 @@ function SystemInfoSection() {
 
   return (
     <section aria-label="System information">
-      <h2 className="text-base font-semibold mb-4">System Information</h2>
-      <div className="rounded-xl bg-shell-surface/60 border border-white/5 overflow-hidden">
+      <h2 className="text-lg font-semibold mb-5">System Information</h2>
+      <div className="rounded-2xl bg-white/[0.04] border border-white/[0.06] overflow-hidden backdrop-blur-sm">
         <table className="w-full text-sm">
           <tbody>
             {rows.map(([label, value]) => (
               <tr key={label} className="border-b border-white/5 last:border-0">
-                <td className="px-4 py-2.5 text-shell-text-secondary font-medium w-28">{label}</td>
-                <td className="px-4 py-2.5">{value}</td>
+                <td className="px-5 py-3 text-shell-text-secondary font-medium w-32">{label}</td>
+                <td className="px-5 py-3">{value}</td>
               </tr>
             ))}
           </tbody>
@@ -206,7 +206,7 @@ function StorageSection() {
 
   return (
     <section aria-label="Storage usage">
-      <h2 className="text-base font-semibold mb-4">Storage Usage</h2>
+      <h2 className="text-lg font-semibold mb-5">Storage Usage</h2>
       <div className="space-y-3">
         {items.map((item) => (
           <div key={item.label} className="p-4 rounded-xl bg-shell-surface/60 border border-white/5">
@@ -275,7 +275,7 @@ function ProvidersSection() {
 
   return (
     <section aria-label="Inference providers">
-      <h2 className="text-base font-semibold mb-4">Inference Providers</h2>
+      <h2 className="text-lg font-semibold mb-5">Inference Providers</h2>
       <div className="space-y-2">
         {providers.map((p) => (
           <div key={p.id} className="flex items-center gap-3 p-3.5 rounded-xl bg-shell-surface/60 border border-white/5">
@@ -393,7 +393,7 @@ function BackupSection() {
 
   return (
     <section aria-label="Backup and restore">
-      <h2 className="text-base font-semibold mb-4">Backup & Restore</h2>
+      <h2 className="text-lg font-semibold mb-5">Backup & Restore</h2>
 
       <div className="p-4 rounded-xl bg-shell-surface/60 border border-white/5 space-y-4">
         <div>
@@ -461,7 +461,7 @@ function UpdatesSection() {
 
   return (
     <section aria-label="System updates">
-      <h2 className="text-base font-semibold mb-4">Updates</h2>
+      <h2 className="text-lg font-semibold mb-5">Updates</h2>
       <div className="p-4 rounded-xl bg-shell-surface/60 border border-white/5 space-y-4">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-lg bg-white/5 text-sky-400">
@@ -541,7 +541,7 @@ function AdvancedSection() {
 
   return (
     <section aria-label="Advanced configuration">
-      <h2 className="text-base font-semibold mb-4">Advanced Configuration</h2>
+      <h2 className="text-lg font-semibold mb-5">Advanced Configuration</h2>
       <div className="p-4 rounded-xl bg-shell-surface/60 border border-white/5 space-y-3">
         <label className="block">
           <span className="text-xs text-shell-text-secondary">YAML Configuration</span>
@@ -611,10 +611,10 @@ export function SettingsApp({ windowId: _windowId }: { windowId: string }) {
 
   const sidebarUI = (
     <nav
-      className={isMobile ? "w-full overflow-y-auto" : "w-48 shrink-0 border-r border-white/5 bg-shell-surface/30 overflow-y-auto"}
+      className={isMobile ? "w-full overflow-y-auto" : "w-52 shrink-0 border-r border-white/5 bg-shell-surface/30 overflow-y-auto"}
       aria-label="Settings sections"
     >
-      <div className="p-3 space-y-0.5">
+      <div className="p-3 space-y-1">
         {SECTIONS.map((s) => {
           const active = section === s.id;
           const Icon = s.icon;
@@ -622,14 +622,16 @@ export function SettingsApp({ windowId: _windowId }: { windowId: string }) {
             <button
               key={s.id}
               onClick={() => handleSelectSection(s.id)}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors ${
+              className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-sm transition-all duration-150 ${
                 active
-                  ? "bg-sky-600/20 text-sky-400"
+                  ? "bg-sky-600/15 text-sky-400"
                   : "text-shell-text-secondary hover:bg-white/5 hover:text-shell-text"
               }`}
               aria-current={active ? "page" : undefined}
             >
-              <Icon size={16} />
+              <div className={`p-1.5 rounded-lg transition-colors ${active ? "bg-sky-500/20" : "bg-white/5"}`}>
+                <Icon size={16} />
+              </div>
               {s.label}
             </button>
           );
@@ -639,7 +641,7 @@ export function SettingsApp({ windowId: _windowId }: { windowId: string }) {
   );
 
   const contentUI = (
-    <main className="flex-1 overflow-y-auto p-5">
+    <main className="flex-1 overflow-y-auto p-6">
       {isMobile && (
         <button onClick={() => setMobileShowSection(false)} className="flex items-center gap-1 px-3 py-2 text-xs text-shell-text-secondary mb-3">
           <ChevronLeft size={14} /> Back

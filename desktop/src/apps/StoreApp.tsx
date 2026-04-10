@@ -129,6 +129,17 @@ const TYPE_LABELS: Record<string, string> = {
 const COMPAT_COLORS: Record<string, string> = { green: "bg-emerald-400", yellow: "bg-amber-400", red: "bg-red-400" };
 const COMPAT_LABELS: Record<string, string> = { green: "Compatible", yellow: "Partial", red: "Unsupported" };
 
+const TYPE_ICON_GRADIENTS: Record<string, string> = {
+  "agent-framework": "linear-gradient(135deg, rgba(59,130,246,0.3), rgba(59,130,246,0.1))",
+  model: "linear-gradient(135deg, rgba(139,92,246,0.3), rgba(139,92,246,0.1))",
+  service: "linear-gradient(135deg, rgba(245,158,11,0.3), rgba(245,158,11,0.1))",
+  plugin: "linear-gradient(135deg, rgba(20,184,166,0.3), rgba(20,184,166,0.1))",
+  "streaming-app": "linear-gradient(135deg, rgba(99,102,241,0.3), rgba(99,102,241,0.1))",
+  "image-gen": "linear-gradient(135deg, rgba(236,72,153,0.3), rgba(236,72,153,0.1))",
+  voice: "linear-gradient(135deg, rgba(249,115,22,0.3), rgba(249,115,22,0.1))",
+  "dev-tool": "linear-gradient(135deg, rgba(6,182,212,0.3), rgba(6,182,212,0.1))",
+};
+
 /* ------------------------------------------------------------------ */
 /*  AppCard                                                            */
 /* ------------------------------------------------------------------ */
@@ -151,11 +162,13 @@ function AppCard({ app, onInstall, onUninstall }: { app: CatalogApp; onInstall: 
   };
 
   return (
-    <div className="bg-shell-surface/60 border border-white/[0.06] rounded-xl p-4 flex flex-col gap-2.5 hover:border-white/10 transition-colors">
+    <div className="bg-white/[0.04] border border-white/[0.06] rounded-2xl p-5 flex flex-col gap-3 hover:-translate-y-0.5 hover:shadow-2xl hover:border-white/[0.12] transition-all duration-200 backdrop-blur-sm">
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-white/[0.06] flex items-center justify-center shrink-0">
-            <Package className="w-5 h-5 text-white/50" />
+          <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
+            style={{ background: TYPE_ICON_GRADIENTS[app.type] ?? "rgba(255,255,255,0.06)" }}
+          >
+            <Package className="w-5 h-5 text-white/60" />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -179,7 +192,7 @@ function AppCard({ app, onInstall, onUninstall }: { app: CatalogApp; onInstall: 
       <button
         onClick={handleAction}
         disabled={busy}
-        className={`mt-auto flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+        className={`mt-auto w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all duration-200 ${
           app.installed ? "bg-red-500/10 text-red-400 hover:bg-red-500/20" : "bg-accent/15 text-accent hover:bg-accent/25"
         } disabled:opacity-50`}
       >
@@ -329,7 +342,7 @@ export function StoreApp({ windowId: _windowId }: { windowId: string }) {
               <span>No apps in this category</span>
             </div>
           ) : (
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-4">
               {filtered.map((app) => (
                 <AppCard key={app.id} app={app} onInstall={handleInstall} onUninstall={handleUninstall} />
               ))}
