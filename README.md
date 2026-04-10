@@ -4,7 +4,7 @@
 
 Self-hosted AI agent platform that runs on whatever hardware you have. An old laptop, a Raspberry Pi, a gaming PC, an SBC gathering dust — or all of them at once. TinyAgentOS turns your spare hardware into a distributed AI compute cluster.
 
-84 apps, 15 agent frameworks, 167k+ searchable models, agent deployment, training, image/video/audio generation, and full system monitoring — all from a single web dashboard. Supports Apple Silicon (MLX), NVIDIA, AMD, Rockchip NPU, Raspberry Pi, Android phones, and more.
+A full web desktop environment with 26 bundled apps, 87 catalog apps, 43 MCP plugins, 15 agent frameworks, 167k+ searchable models, agent deployment, training, image/video/audio generation, and full system monitoring — all from a single web dashboard. Supports Apple Silicon (MLX), NVIDIA, AMD, Rockchip NPU, Raspberry Pi, Android phones, and more.
 
 **Framework-agnostic by design** — TinyAgentOS owns everything that matters: your agent's memory, files, communication channels, model access, and configuration. The agent framework is just a replaceable execution engine. Switch from SmolAgents to LangChain to OpenClaw and your agent keeps its entire history, all its Telegram/Discord/Slack connections, its trained LoRA adapters, its files, and its API keys. No migration, no data loss, no reconfiguration. This is possible because TinyAgentOS manages the full agent lifecycle outside the framework.
 
@@ -17,9 +17,48 @@ pip install -e .
 python -m uvicorn tinyagentos.app:create_app --factory --host 0.0.0.0 --port 6969
 ```
 
-Open `http://your-host:6969` (or `http://tinyagentos.local:6969` with mDNS).
+Open `http://your-host:6969` (or `http://tinyagentos.local:6969` with mDNS). The root URL loads the desktop shell directly.
+
+## Web Desktop Experience
+
+TinyAgentOS ships with a full browser-based desktop environment. Open it at `http://your-host:6969/` and you get a window manager, dock, launchpad, notifications, widgets, and 26 bundled apps — no native install required. On phones and tablets it automatically swaps to a Palm webOS-style card switcher with a pill-bar and iOS-style home grid, installable as a fullscreen PWA from the browser's "Add to Home Screen".
+
+- **Window manager** — float, snap zones, drag, resize, minimise, maximise, close
+- **Top bar** — global search (Ctrl+Space), clock, notifications, widget toggle
+- **Dock** — pinned apps with running indicators, customisable layout
+- **Launchpad** — fullscreen app grid with search
+- **Right-click desktop menu** — new folder, change wallpaper, widgets, save to memory, settings
+- **Wallpaper picker** — 8 built-in gradient wallpapers
+- **Widgets** — Clock, Agent Status, Quick Notes, System Stats, Weather (draggable/resizable)
+- **Notifications** — toast stack + notification centre dropdown
+- **Persistent sessions** — windows, dock layout, and wallpaper restore across devices
+- **Login gate** — optional password protection
+- **Mobile/tablet mode** — auto-detects touch + screen width (desktop >=1024px, tablet 768-1024px touch, mobile <768px), iOS PWA fullscreen with safe-area support
+- **Card switcher** — webOS-style horizontal carousel with flick-to-close
+- **Standalone Chat PWA** — Messages available as a dedicated installable app at `/chat-pwa`
+- **shadcn/ui primitives** — Button, Card, Input, Tabs, Switch, Toolbar
+
+### 26 Bundled Desktop Apps
+
+**Platform apps (13):** Messages (WebSocket chat), Agents (deploy wizard + logs + skills), Store (43+ apps), Settings (multi-section with Memory capture toggles), Models, Memory (User + Agent sections), Channels, Secrets, Tasks, Import, Images, Dashboard, Files (real VFS with workspace + shared folders).
+
+**OS apps (8):** Calculator (math.js), Calendar (month view), Contacts (CRUD), Browser (URL-rewriting proxy, agent-ready), Media Player (Plyr), Text Editor (CodeMirror 6 with Obsidian-style theme), Image Viewer (zoom/rotate), Terminal (real PTY + SSH client).
+
+**Games (3):** Chess (plays against real agents via LLM), Wordle, Crosswords.
 
 ## Key Features
+
+### Web Desktop Shell
+Full browser-based desktop OS with window manager (float + snap), dock, launchpad, right-click context menu, wallpaper picker, notifications, widgets, and persistent sessions that follow you across devices. 26 bundled apps — platform tools, OS utilities, and games — plus an optional password login gate. See [Web Desktop Experience](#web-desktop-experience) above.
+
+### Mobile & Tablet Mode
+Auto-detects touch devices and swaps the desktop for a Palm webOS-style card switcher with a bottom pill-bar (back, home, app switcher, notifications), iOS-style home grid with gradient-tinted icons, and a mobile top bar with "< Back" + centred app title. Installable as a fullscreen PWA on iOS and Android with safe-area support and native browser chrome hidden. A standalone Chat PWA is available at `/chat-pwa` and installs like a private Discord.
+
+### User Memory System
+Personal QMD-style memory for you, the user — think Pieces App but self-hosted. SQLite store with FTS5 full-text search auto-captures conversations from the Message Hub, notes from the Text Editor, file activity, and search queries. Per-category capture toggles live in Settings. Available in global search (Ctrl+Space) alongside apps, with a "Save to Memory" right-click option on the desktop. Agents can optionally read user memory with explicit permission via the `TAOS_USER_MEMORY_URL` environment variable. A "My Memory" section in the Memory app sits alongside agent memories.
+
+### Skills & Plugins Registry
+Framework-agnostic skill system with 7 default skills — memory_search, file_read, file_write, web_search, code_exec, image_generation, http_request — categorised by search, files, code, media, browser, data, comms, system. Each skill declares compatibility per framework (native/adapter/unsupported) and works across all 15 supported frameworks via adapter translation. Assign or remove skills per agent from the Skills tab with compatibility badges.
 
 ### Distributed Compute Cluster
 Combine ANY device into one AI compute mesh — desktops, laptops, SBCs, even phones and tablets. A gaming PC handles large models, a Mac runs MLX inference, a Pi handles embeddings, an old Android phone contributes from a drawer. Cross-platform worker apps connect from the system tray (Windows, macOS, Linux) or via Termux (Android).
@@ -38,7 +77,7 @@ Search 167k+ GGUF models from HuggingFace and the Ollama library directly from t
 ### Agent Templates (1,467 Templates)
 Pick from 1,467 agent templates — 12 built-in plus 196 from awesome-openclaw-agents and 1,259 from the System Prompt Library — and deploy in one click. Browse by category (24 categories), filter by source, or search. Each template includes a system prompt, recommended framework, model, and resource limits. All templates vendored locally so nothing depends on external services.
 
-### App Store (87 Apps, including 12 Streaming Apps)
+### App Store (87 Catalog Apps + 43 MCP Plugins, including 12 Streaming Apps)
 One-click install for agent frameworks, AI models, and services. Hardware-aware — only shows what works on your device.
 
 ### Agent Deployment
@@ -115,6 +154,15 @@ Discord-style messaging built into the platform. Chat with your agents, create t
 - **File sharing** -- drag-and-drop upload, inline preview for images/video/audio/PDF
 - **Dual PWA** -- install the chat as a separate app from the management dashboard
 
+### Terminal with SSH
+Real PTY backend exposed over WebSocket (`/ws/terminal`) in the Terminal app. Pick Local Shell or SSH Connection; the SSH form takes host/port/user/password (key-based auth supported) and recent hosts are saved to localStorage. Built on xterm.js with Nerd Font, 256 colours, FitAddon, and WebLinks.
+
+### Browser App
+Built-in browser with a server-side proxy that rewrites HTML URLs and strips `X-Frame-Options` so arbitrary sites render inline. Includes a bookmarks bar, Open in Tab, and Agent Browse button for future browser-use integration. Auto-detects iOS PWAs and defaults to external mode. The Neko streaming browser is also available in the app catalog.
+
+### MCP Plugin Catalog (43 Plugins)
+`app-catalog/plugins/` ships 43 MCP servers including the official set (filesystem, git, fetch, memory, sequential-thinking, time), GitHub, Playwright, Docker, Kubernetes, databases (Postgres/MySQL/SQLite dbhub, MongoDB, Redis, Chroma, Supabase), documents (pandoc, office docs, spreadsheet, markdownify, excel), comms (Slack, WhatsApp, email, Notion, Obsidian, Atlassian, Google Workspace), infra (AWS, Cloudflare, Grafana, arXiv, YouTube transcript, Firecrawl), agent-specific (browser-use, Camoufox, context7, supergateway, engram, Exa), Home Assistant, Todoist, and more.
+
 ### Global Search
 Search across agents, apps, messages, and files from a single endpoint. Finds anything on the platform instantly.
 
@@ -127,7 +175,7 @@ Search across agents, apps, messages, and files from a single endpoint. Finds an
 - **System Updates** — pull latest from GitHub via Settings page
 - **Provider Management** — add/test/remove inference providers with live connectivity checks
 
-## App Catalog (87 Apps)
+## App Catalog (87 Catalog Apps + 26 Desktop Apps + 43 MCP Plugins)
 
 | Category | Apps |
 |----------|------|
@@ -160,7 +208,11 @@ Search across agents, apps, messages, and files from a single endpoint. Finds an
 ## Architecture
 
 ```
-TinyAgentOS Controller (FastAPI + htmx)
+TinyAgentOS Controller (FastAPI + htmx + React Desktop Shell)
+├── Web Desktop Shell (window manager, dock, launchpad, widgets, 26 bundled apps)
+├── Mobile/Tablet Shell (card switcher, pill bar, iOS PWA)
+├── Skills & Plugins Registry (7 default skills, 15 framework adapters)
+├── User Memory (SQLite + FTS5, auto-capture, global search integration)
 ├── Web Dashboard (27 route modules, 48 templates)
 ├── Channel Hub (6 connectors, 15 framework adapters)
 │   ├── Telegram, Discord, Slack, Email, Web Chat, Webhooks
@@ -172,7 +224,7 @@ TinyAgentOS Controller (FastAPI + htmx)
 ├── User Workspace (NAS-like file browser, shared with apps + agents)
 ├── Computer Use (vision + keyboard/mouse, agent escalation)
 ├── Message Hub (chat, channels, threads, canvas, dual PWA)
-├── App Store + Registry (84 apps, manifest-based)
+├── App Store + Registry (87 apps + 43 MCP plugins, manifest-based)
 ├── Live Model Browser (HuggingFace + Ollama search)
 ├── Container Manager (LXC or Docker, auto-detected)
 ├── Agent Memory (QMD per agent — FTS5 + sqlite-vec + hybrid)
@@ -196,6 +248,26 @@ Worker Apps (Windows / macOS / Linux)
 ## Resource Overhead
 
 Platform overhead: **~345 MB RAM** (without models or agents)
+
+## Service Management
+
+TinyAgentOS ships with a systemd unit at `/etc/systemd/system/tinyagentos.service`. It auto-restarts on failure and auto-starts on boot.
+
+```bash
+sudo systemctl start tinyagentos
+sudo systemctl stop tinyagentos
+sudo systemctl restart tinyagentos
+sudo systemctl status tinyagentos
+```
+
+## Design Docs
+
+- [docs/design/desktop-shell.md](docs/design/desktop-shell.md) — full desktop shell spec
+- [docs/design/skills-plugins.md](docs/design/skills-plugins.md) — skills & plugins system
+- [docs/design/user-memory.md](docs/design/user-memory.md) — user memory design
+- [docs/design/plan-desktop-shell-core.md](docs/design/plan-desktop-shell-core.md) — shell implementation plan
+- [docs/design/plan-desktop-os-apps.md](docs/design/plan-desktop-os-apps.md) — OS apps implementation plan
+- [docs/design/plan-desktop-mobile-view.md](docs/design/plan-desktop-mobile-view.md) — mobile view implementation plan
 
 ## Development
 
@@ -243,6 +315,17 @@ CI runs automatically on every push (Python 3.10-3.13 + security audit).
 - [x] Playwright E2E test scaffolding
 - [x] Message Hub — built-in chat with channels, threads, canvas, dual PWA
 - [x] Dual container runtime (LXC + Docker, auto-detected)
+- [x] Web desktop shell (window manager, dock, launchpad, widgets, 26 bundled apps)
+- [x] Mobile/tablet responsive mode with iOS PWA support
+- [x] Persistent desktop sessions across devices (windows, dock, wallpaper)
+- [x] User memory system (personal QMD with FTS5 + auto-capture)
+- [x] Skills & plugins registry (7 default skills, per-framework compatibility)
+- [x] Terminal app with real PTY + SSH client
+- [x] Standalone Chat PWA at /chat-pwa
+- [x] Browser app with URL-rewriting proxy
+- [x] 43 MCP server plugins in app catalog
+- [x] Desktop notifications (toast stack + notification centre)
+- [x] Widget system (Clock, Agent Status, Notes, System Stats, Weather)
 
 ### In Progress
 - [ ] Fresh install test on clean hardware (#2)

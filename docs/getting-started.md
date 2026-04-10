@@ -105,7 +105,7 @@ sudo systemctl enable --now tinyagentos
 
 ## 3. First Boot
 
-When you open TinyAgentOS for the first time, a setup wizard runs automatically.
+When you open `http://your-host:6969` for the first time, TinyAgentOS loads the **web desktop shell** directly — a full browser-based desktop environment with a dock, launchpad, window manager, and 26 bundled apps. On phones and tablets it automatically swaps to a touch-first mobile view with a home grid and card switcher. A setup wizard runs on first launch to walk you through hardware detection and your first agent.
 
 ### Hardware Auto-Detection
 
@@ -126,6 +126,50 @@ The wizard shows:
 - A short onboarding tour (optional, takes 2 minutes)
 
 You don't have to follow the wizard step-by-step — you can dismiss it and navigate freely. But if this is your first time, the steps below mirror the recommended path.
+
+---
+
+## 3a. Using the Desktop Shell
+
+The desktop is the main way you'll interact with TinyAgentOS. It works like a regular operating system's desktop — but it runs entirely in your browser.
+
+### The window manager
+
+- **Open an app** — click its icon in the dock at the bottom, or open the Launchpad (the grid icon) and pick from the full app list.
+- **Move a window** — drag it by its title bar.
+- **Snap a window** — drag it to the left, right, top, or corners of the screen and it snaps to half/quarter tiles.
+- **Resize a window** — drag any edge or corner.
+- **Minimise, maximise, close** — the three buttons on every window's title bar.
+- **Switch between windows** — click any visible window, or click its icon in the dock (running apps show an indicator dot).
+
+### The dock
+
+The bar at the bottom of the screen holds pinned apps and currently running apps. Right-click an app icon to pin or unpin it. Your dock layout is saved automatically and follows you across devices.
+
+### Global search (Ctrl+Space)
+
+Press `Ctrl+Space` from anywhere on the desktop to open the global search bar. It searches apps, agents, messages, files, and your personal memory entries. Hit `Enter` on a result to jump straight to it.
+
+### Right-click for the desktop menu
+
+Right-click anywhere on the empty desktop to get a context menu with:
+- **New folder**
+- **Change wallpaper** (pick from 8 built-in gradients)
+- **Add widget** (Clock, Agent Status, Quick Notes, System Stats, Weather)
+- **Save to Memory** (captures the current selection into your personal memory)
+- **Settings**
+
+### Widgets
+
+Widgets are small, always-on info tiles you can drop anywhere on the desktop. Drag them to move, resize them from the corner, and close them with the X. They persist across sessions.
+
+### Notifications
+
+The bell in the top-right shows live toast notifications for backend events, agent status changes, and finished downloads. Click it to open the notification centre dropdown with your full history.
+
+### Login gate
+
+If you've enabled a password under Settings, the desktop prompts for it on first load on each device. Sessions persist in the browser until you sign out.
 
 ---
 
@@ -193,21 +237,94 @@ If the status stays yellow or turns red, check the **Logs** tab for error messag
 
 ## 5. Exploring the Platform
 
-Here's a quick map of every page and what it does:
+Here's a quick map of the apps available from the desktop dock and launchpad.
 
-| Page | What it's for |
-|------|--------------|
+### Platform apps
+
+| App | What it's for |
+|-----|--------------|
 | **Dashboard** | Real-time overview: CPU/RAM usage, agent status, query counts, backend health, and an activity feed. This is your home base. |
 | **Store** | Browse and install frameworks, models, tools, and services. Hardware-aware — incompatible apps are filtered out. |
 | **Models** | Download and manage language models. Tracks download progress, shows disk usage per model, lets you delete unused ones. |
 | **Images** | Generate images using Stable Diffusion (if you have a supported GPU or NPU). Gallery of past generations, prompt history, and an MCP tool agents can use to generate images on demand. |
-| **Memory** | Browse and search the memories your agents have accumulated. Keyword search, filter by agent or collection, view or delete individual memory chunks. |
+| **Memory** | Browse and search the memories your agents have accumulated, plus your own personal **My Memory** section. Keyword search, filter by agent or collection, view or delete individual chunks. |
+| **Messages** | Built-in chat (Discord-style) for talking to your agents over WebSocket, with channels, threads, rich embeds, and a canvas split-view. |
 | **Channels** | Configure how your agents communicate with the outside world: Telegram, Discord, Slack, web chat, webhooks, email. |
-| **Agents** | Deploy new agents, monitor running ones, view logs, adjust configuration. |
+| **Agents** | Deploy new agents, monitor running ones, view logs, assign skills, adjust configuration. |
 | **Secrets** | Encrypted storage for API keys and tokens. You store a secret here once; agents access it by name without seeing the raw value. |
 | **Tasks** | Schedule recurring jobs for your agents — daily summaries, memory cleanup, data imports. Built-in presets for common patterns. |
 | **Import** | Drag and drop files to embed into an agent's memory. Supported formats: `.txt`, `.md`, `.pdf`, `.html`, `.json`, `.csv`. |
-| **Settings** | System info, storage usage, backup/restore, update TinyAgentOS, test backend connections, toggle dark/light theme. |
+| **Files** | Real virtual filesystem with your personal workspace and shared folders that agents can read and write to. |
+| **Settings** | System info, storage usage, backup/restore, update TinyAgentOS, test backend connections, toggle dark/light theme, and per-category toggles for User Memory auto-capture. |
+
+### OS apps
+
+| App | What it's for |
+|-----|--------------|
+| **Calculator** | Full math.js expression engine. |
+| **Calendar** | Month view for events and reminders. |
+| **Contacts** | Simple CRUD address book. |
+| **Browser** | Built-in web browser that goes through a server-side URL-rewriting proxy so any site renders inline. Bookmarks, Open in Tab, Agent Browse button. |
+| **Media Player** | Plyr-based audio/video player for files in your workspace. |
+| **Text Editor** | CodeMirror 6 editor with an Obsidian-style theme. Content written here can be captured into User Memory. |
+| **Image Viewer** | Zoom and rotate for images. |
+| **Terminal** | Real PTY terminal with xterm.js. Pick **Local Shell** for a shell on the host, or **SSH Connection** to connect to any remote host with host/port/user/password or key auth. Recent hosts are remembered. |
+
+### Games
+
+| App | What it's for |
+|-----|--------------|
+| **Chess** | Plays against your real agents via the LLM backend. |
+| **Wordle** | Daily word game. |
+| **Crosswords** | Classic crossword puzzles. |
+
+---
+
+## 5a. Mobile Install (iOS / Android)
+
+TinyAgentOS works as a fullscreen Progressive Web App (PWA) on phones and tablets. Once installed, it hides the browser chrome, respects the device's safe area, and behaves like a native app.
+
+### iOS / iPadOS
+
+1. Open `http://your-host:6969` in **Safari** (PWA install must go through Safari on iOS).
+2. Tap the **Share** button, then **Add to Home Screen**.
+3. Launch TinyAgentOS from the home screen icon — it opens fullscreen with no browser bars.
+
+The Messages app has its own dedicated PWA at `http://your-host:6969/chat-pwa` — install it the same way to get a private, agent-only messenger on your home screen (works like an internal Discord).
+
+### Android
+
+1. Open the URL in **Chrome**.
+2. Tap the three-dot menu, then **Install app** (or **Add to Home Screen**).
+3. Launch from your app drawer.
+
+The mobile shell uses a bottom **pill bar** for navigation: tap the pill to go home, swipe up on the pill to open the card switcher (flick cards upward to close them), and use the back arrow to step out of an app. A mobile top bar shows "< Back" and the current app title.
+
+---
+
+## 5b. User Memory
+
+TinyAgentOS includes a personal memory system just for you — think of it as your own private notebook that the platform helps fill in automatically. It's separate from agent memories and lives in a local SQLite database with full-text search.
+
+### What gets captured
+
+By default, TinyAgentOS can auto-capture:
+- **Conversations** from the Messages app
+- **Notes** you write in the Text Editor
+- **File activity** in the Files app
+- **Search queries** from global search
+
+Each category has its own on/off toggle under **Settings > Memory**, so you control exactly what gets saved.
+
+### Where to see it
+
+- **Memory app** → **My Memory** section, alongside your agent memories
+- **Global search (Ctrl+Space)** — your memory entries appear inline with app and agent results
+- **Right-click the desktop → Save to Memory** to manually capture the current selection
+
+### Letting agents read your memory
+
+Agents cannot read your personal memory by default. To grant an agent access, set the `TAOS_USER_MEMORY_URL` environment variable for that agent — it's an explicit, per-agent permission.
 
 ---
 
