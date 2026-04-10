@@ -26,7 +26,24 @@ export function ChessApp({ windowId: _windowId }: { windowId: string }) {
   const [validMoves, setValidMoves] = useState<Square[]>([]);
   const [mode, setMode] = useState<GameMode>("two-player");
   const [agentThinking, setAgentThinking] = useState(false);
+  const [availableAgents, setAvailableAgents] = useState<string[]>([]);
+  const [selectedAgent, setSelectedAgent] = useState<string>("");
+  const [agentCommentary, setAgentCommentary] = useState<string>("");
   const agentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Fetch available agents on mount
+  useEffect(() => {
+    fetch("/api/agents")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => {
+        const names: string[] = Array.isArray(data)
+          ? data.map((a: { name?: string }) => a?.name).filter((n): n is string => !!n)
+          : [];
+        setAvailableAgents(names);
+        if (names.length > 0) setSelectedAgent((prev) => prev || names[0]!);
+      })
+      .catch(() => setAvailableAgents([]));
+  }, []);
 
   const board = game.board();
   const turn = game.turn();
@@ -38,18 +55,66 @@ export function ChessApp({ windowId: _windowId }: { windowId: string }) {
   const isGameOver = game.isGameOver();
 
   const makeAgentMove = useCallback(
-    (g: Chess) => {
+    async (g: Chess, agentName: string) => {
       if (g.isGameOver()) return;
+      const verboseMoves = g.moves({ verbose: true }) as Array<{
+        from: string;
+        to: string;
+        promotion?: string;
+      }>;
+      if (verboseMoves.length === 0) return;
+      // UCI-format legal moves (e.g. e2e4, e7e8q)
+      const uciMoves = verboseMoves.map(
+        (m) => `${m.from}${m.to}${m.promotion ?? ""}`,
+      );
       setAgentThinking(true);
-      const delay = 500 + Math.random() * 500;
-      agentTimerRef.current = setTimeout(() => {
-        const moves = g.moves();
-        if (moves.length === 0) return;
-        const pick = moves[Math.floor(Math.random() * moves.length)]!;
-        g.move(pick);
+      setAgentCommentary("");
+
+      try {
+        const res = await fetch("/api/games/chess/move", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            agent_name: agentName,
+            fen: g.fen(),
+            legal_moves: uciMoves,
+            history: g.history(),
+          }),
+        });
+        const data = (await res.json()) as {
+          move?: string;
+          commentary?: string;
+          error?: string;
+        };
+
+        if (data.move) {
+          // Parse UCI move (e.g. e2e4 or e7e8q)
+          const from = data.move.slice(0, 2);
+          const to = data.move.slice(2, 4);
+          const promotion = data.move.length > 4 ? data.move.slice(4, 5) : undefined;
+          try {
+            g.move({ from, to, promotion });
+            setGame(new Chess(g.fen()));
+          } catch {
+            // If the returned move isn't accepted, fall back to a random legal move
+            const pick = verboseMoves[Math.floor(Math.random() * verboseMoves.length)]!;
+            g.move({ from: pick.from, to: pick.to, promotion: pick.promotion });
+            setGame(new Chess(g.fen()));
+          }
+        }
+        if (data.commentary) setAgentCommentary(data.commentary);
+        if (data.error) setAgentCommentary(data.error);
+      } catch (e) {
+        // Network error — fall back to random so the game keeps going
+        const pick = verboseMoves[Math.floor(Math.random() * verboseMoves.length)]!;
+        g.move({ from: pick.from, to: pick.to, promotion: pick.promotion });
         setGame(new Chess(g.fen()));
+        setAgentCommentary(
+          `Network error: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      } finally {
         setAgentThinking(false);
-      }, delay);
+      }
     },
     [],
   );
@@ -62,10 +127,16 @@ export function ChessApp({ windowId: _windowId }: { windowId: string }) {
 
   // Trigger agent move when it's black's turn in agent mode
   useEffect(() => {
-    if (mode === "vs-agent" && turn === "b" && !isGameOver && !agentThinking) {
-      makeAgentMove(game);
+    if (
+      mode === "vs-agent" &&
+      turn === "b" &&
+      !isGameOver &&
+      !agentThinking &&
+      selectedAgent
+    ) {
+      makeAgentMove(game, selectedAgent);
     }
-  }, [mode, turn, isGameOver, agentThinking, game, makeAgentMove]);
+  }, [mode, turn, isGameOver, agentThinking, game, selectedAgent, makeAgentMove]);
 
   function handleSquareClick(row: number, col: number) {
     if (isGameOver || agentThinking) return;
@@ -123,6 +194,7 @@ export function ChessApp({ windowId: _windowId }: { windowId: string }) {
     setSelected(null);
     setValidMoves([]);
     setAgentThinking(false);
+    setAgentCommentary("");
   }
 
   function handleUndo() {
@@ -147,6 +219,7 @@ export function ChessApp({ windowId: _windowId }: { windowId: string }) {
     setSelected(null);
     setValidMoves([]);
     setAgentThinking(false);
+    setAgentCommentary("");
   }
 
   function getStatus(): string {
@@ -300,6 +373,49 @@ export function ChessApp({ windowId: _windowId }: { windowId: string }) {
             <option value="two-player">Two Player</option>
             <option value="vs-agent">Play vs Agent</option>
           </select>
+          {mode === "vs-agent" && (
+            availableAgents.length > 0 ? (
+              <select
+                value={selectedAgent}
+                onChange={(e) => {
+                  setSelectedAgent(e.target.value);
+                  handleNewGame();
+                }}
+                aria-label="Select agent opponent"
+                style={{
+                  padding: "6px 10px",
+                  borderRadius: 4,
+                  border: "1px solid #444",
+                  background: "#2a2a3e",
+                  color: "#e0e0e0",
+                  fontSize: 13,
+                  cursor: "pointer",
+                  maxWidth: 160,
+                }}
+              >
+                {availableAgents.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span
+                style={{
+                  padding: "6px 10px",
+                  borderRadius: 4,
+                  border: "1px dashed #444",
+                  background: "#201a1a",
+                  color: "#999",
+                  fontSize: 12,
+                  fontStyle: "italic",
+                }}
+                role="note"
+              >
+                No agents configured
+              </span>
+            )
+          )}
           <button
             onClick={handleNewGame}
             aria-label="New game"
@@ -377,6 +493,28 @@ export function ChessApp({ windowId: _windowId }: { windowId: string }) {
             </div>
           ))}
         </div>
+        {mode === "vs-agent" && agentCommentary && (
+          <div
+            style={{
+              borderTop: "1px solid #333",
+              padding: "10px 12px",
+              fontSize: 12,
+              color: "#bbb",
+              background: "#11111f",
+              maxHeight: 140,
+              overflowY: "auto",
+            }}
+            role="note"
+            aria-label="Agent commentary"
+          >
+            <div style={{ color: "#888", fontWeight: 600, marginBottom: 4 }}>
+              {selectedAgent || "Agent"}
+            </div>
+            <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.4 }}>
+              {agentCommentary}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
