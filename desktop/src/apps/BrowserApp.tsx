@@ -11,6 +11,13 @@ import {
   Star,
   AlertTriangle,
 } from "lucide-react";
+import {
+  Button,
+  Card,
+  CardContent,
+  Toolbar,
+  ToolbarGroup,
+} from "@/components/ui";
 
 const DEFAULT_URL = "https://duckduckgo.com";
 
@@ -164,44 +171,45 @@ export function BrowserApp({ windowId: _windowId }: { windowId: string }) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Navigation — URL row */}
-      <form
-        onSubmit={handleSubmit}
-        className="flex flex-col gap-1.5 px-2 py-1.5 bg-shell-surface border-b border-shell-border"
-      >
-        {/* Row 1: nav buttons + URL input */}
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={goBack}
-            disabled={!canGoBack}
-            className="p-1.5 rounded-md hover:bg-shell-surface-hover disabled:opacity-30 transition-colors shrink-0"
-            aria-label="Back"
-          >
-            <ArrowLeft size={16} className="text-shell-text-secondary" />
-          </button>
-          <button
-            type="button"
-            onClick={goForward}
-            disabled={!canGoForward}
-            className="p-1.5 rounded-md hover:bg-shell-surface-hover disabled:opacity-30 transition-colors shrink-0"
-            aria-label="Forward"
-          >
-            <ArrowRight size={16} className="text-shell-text-secondary" />
-          </button>
-          <button
-            type="button"
-            onClick={refresh}
-            className="p-1.5 rounded-md hover:bg-shell-surface-hover transition-colors shrink-0"
-            aria-label="Refresh"
-          >
-            <RotateCw
-              size={16}
-              className={`text-shell-text-secondary ${loading ? "animate-spin" : ""}`}
-            />
-          </button>
+      {/* Navigation toolbar */}
+      <form onSubmit={handleSubmit}>
+        <Toolbar>
+          <ToolbarGroup>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={goBack}
+              disabled={!canGoBack}
+              aria-label="Back"
+            >
+              <ArrowLeft size={16} />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={goForward}
+              disabled={!canGoForward}
+              aria-label="Forward"
+            >
+              <ArrowRight size={16} />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={refresh}
+              aria-label="Refresh"
+            >
+              <RotateCw
+                size={16}
+                className={loading ? "animate-spin" : ""}
+              />
+            </Button>
+          </ToolbarGroup>
 
-          <div className="flex-1 flex items-center gap-2 px-2.5 py-1 rounded-md bg-shell-bg-deep border border-shell-border min-w-0">
+          <div className="flex-1 min-w-0 flex items-center gap-2 px-3 py-1 rounded-lg bg-shell-bg-deep border border-white/10">
             <Globe size={14} className="text-shell-text-tertiary shrink-0" />
             <input
               type="text"
@@ -212,68 +220,74 @@ export function BrowserApp({ windowId: _windowId }: { windowId: string }) {
               aria-label="URL"
             />
           </div>
-        </div>
 
-        {/* Row 2: action buttons */}
-        <div className="flex items-center gap-1.5 justify-center flex-wrap">
-          <button
-            type="button"
-            onClick={openInTab}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium transition-colors"
-            aria-label="Open in new tab"
-            title="Open in new tab"
-          >
-            <ExternalLink size={12} />
-            <span>Open in Tab</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={toggleMode}
-            className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors ${
-              mode === "embedded"
-                ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/25"
-                : "bg-shell-surface-hover text-shell-text-secondary border border-shell-border"
-            }`}
-            aria-label={mode === "embedded" ? "Switch to external mode" : "Switch to embedded mode"}
-            title={mode === "embedded" ? "Embedded mode" : "External mode"}
-          >
-            <Globe size={12} />
-            <span>{mode === "embedded" ? "Embed" : "Ext"}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={copyUrl}
-            className="p-1.5 rounded-md hover:bg-shell-surface-hover transition-colors relative"
-            aria-label="Copy URL"
-            title="Copy URL"
-          >
-            <Copy size={14} className="text-shell-text-secondary" />
-            {copied && (
-              <span className="absolute -bottom-6 right-0 text-[10px] bg-shell-surface border border-shell-border rounded px-1 py-0.5 text-shell-text-secondary whitespace-nowrap z-10">
-                Copied!
-              </span>
-            )}
-          </button>
-
-          <button
-            type="button"
-            onMouseEnter={() => setAgentTooltip(true)}
-            onMouseLeave={() => setAgentTooltip(false)}
-            className="flex items-center gap-1 px-2 py-1 rounded-md bg-purple-500/15 hover:bg-purple-500/25 text-purple-400 text-xs transition-colors border border-purple-500/25 relative"
-            aria-label="Agent Browse"
-            title="Agent Browse"
-          >
-            <Bot size={12} />
-            <span>Agent</span>
-            {agentTooltip && (
-              <span className="absolute top-full right-0 mt-1 text-[10px] bg-shell-surface border border-shell-border rounded px-2 py-1 text-shell-text-secondary whitespace-nowrap z-10 shadow-md">
-                Requires browser-use plugin
-              </span>
-            )}
-          </button>
-        </div>
+          <ToolbarGroup>
+            <Button
+              type="button"
+              variant="default"
+              size="sm"
+              onClick={openInTab}
+              aria-label="Open in new tab"
+              title="Open in new tab"
+            >
+              <ExternalLink size={12} />
+              <span>Open in Tab</span>
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={toggleMode}
+              aria-label={
+                mode === "embedded"
+                  ? "Switch to external mode"
+                  : "Switch to embedded mode"
+              }
+              title={mode === "embedded" ? "Embedded mode" : "External mode"}
+            >
+              <Globe size={12} />
+              <span>{mode === "embedded" ? "Embed" : "Ext"}</span>
+            </Button>
+            <div className="relative">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={copyUrl}
+                aria-label="Copy URL"
+                title="Copy URL"
+              >
+                <Copy size={14} />
+              </Button>
+              {copied && (
+                <span className="absolute -bottom-6 right-0 text-[10px] bg-shell-surface border border-shell-border rounded px-1 py-0.5 text-shell-text-secondary whitespace-nowrap z-10">
+                  Copied!
+                </span>
+              )}
+            </div>
+            <div
+              className="relative"
+              onMouseEnter={() => setAgentTooltip(true)}
+              onMouseLeave={() => setAgentTooltip(false)}
+            >
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                aria-label="Agent Browse"
+                title="Agent Browse"
+              >
+                <Bot size={12} />
+                <span>Agent</span>
+              </Button>
+              {agentTooltip && (
+                <span className="absolute top-full right-0 mt-1 text-[10px] bg-shell-surface border border-shell-border rounded px-2 py-1 text-shell-text-secondary whitespace-nowrap z-10 shadow-md">
+                  Requires browser-use plugin
+                </span>
+              )}
+            </div>
+          </ToolbarGroup>
+        </Toolbar>
       </form>
 
       {/* Bookmarks bar */}
@@ -299,65 +313,67 @@ export function BrowserApp({ windowId: _windowId }: { windowId: string }) {
       {/* Browser content */}
       {mode === "external" ? (
         /* External mode — show prompt to open in tab */
-        <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center">
-          <Globe size={48} className="text-shell-text-tertiary" />
-          <div>
-            <h3 className="text-lg font-medium text-shell-text mb-1">
-              External Browser Mode
-            </h3>
-            <p className="text-sm text-shell-text-secondary max-w-md">
-              Pages open in a new browser tab for full compatibility. This is the
-              default on iOS and recommended for sites that don't render well
-              embedded.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={openInTab}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors"
-          >
-            <ExternalLink size={18} />
-            Open {new URL(url).hostname} in Tab
-          </button>
-          <button
-            type="button"
-            onClick={toggleMode}
-            className="text-xs text-shell-text-tertiary hover:text-shell-text-secondary transition-colors underline"
-          >
-            Switch to embedded mode
-          </button>
+        <div className="flex-1 flex items-center justify-center p-8">
+          <Card className="max-w-md w-full">
+            <CardContent className="flex flex-col items-center gap-4 pt-6 text-center">
+              <Globe size={48} className="text-shell-text-tertiary" />
+              <div>
+                <h3 className="text-lg font-medium text-shell-text mb-1">
+                  External Browser Mode
+                </h3>
+                <p className="text-sm text-shell-text-secondary">
+                  Pages open in a new browser tab for full compatibility. This
+                  is the default on iOS and recommended for sites that don't
+                  render well embedded.
+                </p>
+              </div>
+              <Button type="button" onClick={openInTab}>
+                <ExternalLink size={16} />
+                Open {new URL(url).hostname} in Tab
+              </Button>
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                onClick={toggleMode}
+              >
+                Switch to embedded mode
+              </Button>
+            </CardContent>
+          </Card>
         </div>
       ) : loadError ? (
         /* Embedded mode — load error fallback */
-        <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center">
-          <AlertTriangle size={48} className="text-amber-500" />
-          <div>
-            <h3 className="text-lg font-medium text-shell-text mb-1">
-              Could not load this page
-            </h3>
-            <p className="text-sm text-shell-text-secondary max-w-md">
-              This site could not be loaded through the proxy. Open it directly
-              in a new tab instead.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={openInTab}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors"
-          >
-            <ExternalLink size={18} />
-            Open in Tab
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setLoadError(false);
-              setLoading(true);
-            }}
-            className="text-xs text-shell-text-tertiary hover:text-shell-text-secondary transition-colors underline"
-          >
-            Try again in embedded mode
-          </button>
+        <div className="flex-1 flex items-center justify-center p-8">
+          <Card className="max-w-md w-full">
+            <CardContent className="flex flex-col items-center gap-4 pt-6 text-center">
+              <AlertTriangle size={48} className="text-amber-500" />
+              <div>
+                <h3 className="text-lg font-medium text-shell-text mb-1">
+                  Could not load this page
+                </h3>
+                <p className="text-sm text-shell-text-secondary">
+                  This site could not be loaded through the proxy. Open it
+                  directly in a new tab instead.
+                </p>
+              </div>
+              <Button type="button" onClick={openInTab}>
+                <ExternalLink size={16} />
+                Open in Tab
+              </Button>
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                onClick={() => {
+                  setLoadError(false);
+                  setLoading(true);
+                }}
+              >
+                Try again in embedded mode
+              </Button>
+            </CardContent>
+          </Card>
         </div>
       ) : (
         /* Embedded mode — proxy iframe */
