@@ -363,6 +363,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     from tinyagentos.routes.desktop import router as desktop_router
     app.include_router(desktop_router)
 
+    from tinyagentos.routes.terminal import router as terminal_router
+    app.include_router(terminal_router)
+
     # Lobby demo (internal only — not included in public builds)
     try:
         from tinyagentos.lobby.routes import router as lobby_router
