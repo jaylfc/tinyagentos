@@ -22,6 +22,7 @@ import {
   AlertCircle,
   Download,
 } from "lucide-react";
+import { Button, Card, Toolbar, ToolbarGroup, ToolbarSpacer } from "@/components/ui";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -292,27 +293,27 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
         </div>
 
         {/* Workspace */}
-        <button
+        <Button
+          variant={location === "workspace" ? "secondary" : "ghost"}
           onClick={() => { setLocation("workspace"); setCurrentPath(""); if (isMobile) setMobileShowFiles(true); }}
-          className={`flex items-center gap-2 px-3 py-2 mx-1.5 rounded-lg transition-colors text-left ${
-            location === "workspace" ? "bg-accent/15 text-accent" : "hover:bg-shell-surface text-shell-text"
-          }`}
+          className="w-full justify-start mx-1.5 px-3"
           aria-label="My Workspace"
         >
           <HardDrive size={16} />
           <span className="truncate">My Workspace</span>
-        </button>
+        </Button>
 
         {/* Shared Folders */}
-        <button
+        <Button
+          variant="ghost"
           onClick={() => setSharedExpanded(!sharedExpanded)}
-          className="flex items-center gap-2 px-3 py-2 mx-1.5 mt-1 rounded-lg hover:bg-shell-surface transition-colors text-left text-shell-text"
+          className="w-full justify-start mx-1.5 mt-1 px-3"
           aria-label="Toggle shared folders"
         >
           <Share2 size={16} />
-          <span className="flex-1 truncate">Shared Folders</span>
+          <span className="flex-1 truncate text-left">Shared Folders</span>
           <ChevronRight size={14} className={`transition-transform ${sharedExpanded ? "rotate-90" : ""}`} />
-        </button>
+        </Button>
 
         {sharedExpanded && (
           <div className="ml-5 mr-1.5">
@@ -320,18 +321,17 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
               <div className="px-3 py-2 text-xs text-shell-text-tertiary">No shared folders</div>
             )}
             {sharedFolders.map((sf) => (
-              <button
+              <Button
                 key={sf.id}
+                variant={location === sf.name ? "secondary" : "ghost"}
                 onClick={() => { setLocation(sf.name); setCurrentPath(""); if (isMobile) setMobileShowFiles(true); }}
-                className={`flex items-center gap-2 w-full px-3 py-1.5 rounded-lg transition-colors text-left text-xs ${
-                  location === sf.name ? "bg-accent/15 text-accent" : "hover:bg-shell-surface text-shell-text-secondary"
-                }`}
+                className="w-full justify-start px-3 py-1.5 h-auto text-xs font-normal"
                 aria-label={`Shared folder: ${sf.name}`}
                 title={sf.description}
               >
                 <Folder size={14} />
                 <span className="truncate">{sf.name}</span>
-              </button>
+              </Button>
             ))}
           </div>
         )}
@@ -351,76 +351,88 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
   const mainContentUI = (
     <div className="flex-1 flex flex-col min-w-0">
       {/* ---- Toolbar ---- */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-white/5 bg-shell-bg-deep shrink-0 flex-wrap">
-        {/* Mobile back button */}
-        {isMobile && (
-          <button
-            onClick={() => setMobileShowFiles(false)}
-            className="flex items-center gap-1 text-xs text-shell-text-secondary"
-          >
-            <ChevronLeft size={14} /> Back
-          </button>
-        )}
-        {/* Back button */}
-        {currentPath && (
-            <button
+      <Toolbar className="shrink-0">
+        <ToolbarGroup>
+          {/* Mobile back button */}
+          {isMobile && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setMobileShowFiles(false)}
+              className="text-xs"
+            >
+              <ChevronLeft size={14} /> Back
+            </Button>
+          )}
+          {/* Back button */}
+          {currentPath && (
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={goUp}
-              className="p-1.5 rounded-md hover:bg-shell-surface transition-colors text-shell-text-secondary hover:text-shell-text"
+              className="h-8 w-8"
               aria-label="Go up one directory"
             >
               <ArrowLeft size={16} />
-            </button>
+            </Button>
           )}
+        </ToolbarGroup>
 
-          {/* Breadcrumbs */}
-          <nav className="flex items-center gap-1 text-xs min-w-0 flex-1" aria-label="File path">
-            <button
-              onClick={() => navigateTo("")}
-              className={`px-1.5 py-0.5 rounded hover:bg-shell-surface transition-colors truncate ${
-                !currentPath ? "text-shell-text font-medium" : "text-shell-text-secondary"
-              }`}
-            >
-              {location === "workspace" ? "Workspace" : location}
-            </button>
-            {pathSegments.map((seg, i) => {
-              const segPath = pathSegments.slice(0, i + 1).join("/");
-              const isLast = i === pathSegments.length - 1;
-              return (
-                <span key={segPath} className="flex items-center gap-1 min-w-0">
-                  <ChevronRight size={12} className="text-shell-text-tertiary shrink-0" />
-                  <button
-                    onClick={() => navigateTo(segPath)}
-                    className={`px-1.5 py-0.5 rounded hover:bg-shell-surface transition-colors truncate ${
-                      isLast ? "text-shell-text font-medium" : "text-shell-text-secondary"
-                    }`}
-                  >
-                    {seg}
-                  </button>
-                </span>
-              );
-            })}
-          </nav>
+        {/* Breadcrumbs */}
+        <nav className="flex items-center gap-1 text-xs min-w-0 flex-1" aria-label="File path">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => navigateTo("")}
+            className={`h-7 px-1.5 truncate ${!currentPath ? "text-shell-text font-medium" : ""}`}
+          >
+            {location === "workspace" ? "Workspace" : location}
+          </Button>
+          {pathSegments.map((seg, i) => {
+            const segPath = pathSegments.slice(0, i + 1).join("/");
+            const isLast = i === pathSegments.length - 1;
+            return (
+              <span key={segPath} className="flex items-center gap-1 min-w-0">
+                <ChevronRight size={12} className="text-shell-text-tertiary shrink-0" />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => navigateTo(segPath)}
+                  className={`h-7 px-1.5 truncate ${isLast ? "text-shell-text font-medium" : ""}`}
+                >
+                  {seg}
+                </Button>
+              </span>
+            );
+          })}
+        </nav>
 
+        <ToolbarSpacer />
+
+        <ToolbarGroup>
           {/* Actions */}
           {location === "workspace" && (
-            <button
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={handleNewFolder}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs bg-shell-surface hover:bg-white/10 transition-colors"
+              className="h-8 w-8"
               aria-label="New folder"
+              title="New folder"
             >
               <FolderPlus size={14} />
-              <span className="hidden sm:inline">New Folder</span>
-            </button>
+            </Button>
           )}
 
-          <button
+          <Button
+            variant="default"
+            size="sm"
             onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs bg-accent/20 text-accent hover:bg-accent/30 transition-colors"
             aria-label="Upload file"
           >
             <Upload size={14} />
             <span className="hidden sm:inline">Upload</span>
-          </button>
+          </Button>
           <input
             ref={fileInputRef}
             type="file"
@@ -430,31 +442,38 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
             aria-label="File upload input"
           />
 
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={() => fetchFiles(currentPath)}
-            className="p-1.5 rounded-md hover:bg-shell-surface transition-colors text-shell-text-secondary hover:text-shell-text"
+            className="h-8 w-8"
             aria-label="Refresh file list"
           >
             <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-          </button>
+          </Button>
 
           <div className="flex items-center rounded-lg bg-shell-surface overflow-hidden">
-            <button
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={() => setViewMode("grid")}
-              className={`p-1.5 transition-colors ${viewMode === "grid" ? "bg-accent/20 text-accent" : "text-shell-text-secondary hover:text-shell-text"}`}
+              className={`h-8 w-8 rounded-none ${viewMode === "grid" ? "bg-accent/20 text-accent hover:bg-accent/25" : ""}`}
               aria-label="Grid view"
             >
               <LayoutGrid size={14} />
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={() => setViewMode("list")}
-              className={`p-1.5 transition-colors ${viewMode === "list" ? "bg-accent/20 text-accent" : "text-shell-text-secondary hover:text-shell-text"}`}
+              className={`h-8 w-8 rounded-none ${viewMode === "list" ? "bg-accent/20 text-accent hover:bg-accent/25" : ""}`}
               aria-label="List view"
             >
               <List size={14} />
-            </button>
+            </Button>
           </div>
-        </div>
+        </ToolbarGroup>
+      </Toolbar>
 
         {/* ---- Error banner ---- */}
         {error && (
@@ -513,8 +532,11 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
               {sortedFiles.map((f) => {
                 const Icon = getFileIcon(f.name, f.is_dir);
                 return (
-                  <button
+                  <Card
                     key={f.path || f.name}
+                    className="group relative bg-transparent border-transparent hover:bg-shell-surface hover:border-white/[0.06] transition-colors"
+                  >
+                  <button
                     onClick={() => {
                       if (f.is_dir) {
                         navigateTo(f.path || (currentPath ? `${currentPath}/${f.name}` : f.name));
@@ -525,7 +547,7 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
                         window.open(`/api/workspace/files/${encodeURIComponent(f.path || f.name)}`, "_blank");
                       }
                     }}
-                    className="group relative flex flex-col items-center gap-2 p-3 rounded-xl hover:bg-shell-surface transition-colors text-center"
+                    className="flex flex-col items-center gap-2 p-3 text-center w-full rounded-xl"
                     aria-label={f.is_dir ? `Open folder ${f.name}` : `File ${f.name}`}
                   >
                     <Icon
@@ -574,6 +596,7 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
                       </span>
                     )}
                   </button>
+                  </Card>
                 );
               })}
             </div>
@@ -632,7 +655,9 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
                             </a>
                           )}
                           {location === "workspace" && (
-                            <button
+                            <Button
+                              variant="ghost"
+                              size="icon"
                               onClick={() => {
                                 if (deleteConfirm === f.path) {
                                   handleDelete(f.path);
@@ -640,16 +665,16 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
                                   setDeleteConfirm(f.path);
                                 }
                               }}
-                              className={`p-1 rounded-md transition-all ${
+                              className={`h-7 w-7 transition-all ${
                                 deleteConfirm === f.path
-                                  ? "bg-red-500/20 text-red-400 opacity-100"
-                                  : "opacity-0 group-hover:opacity-100 hover:bg-red-500/20 text-shell-text-tertiary hover:text-red-400"
+                                  ? "bg-red-500/20 text-red-400 opacity-100 hover:bg-red-500/25 hover:text-red-400"
+                                  : "opacity-0 group-hover:opacity-100 hover:bg-red-500/20 hover:text-red-400"
                               }`}
                               aria-label={deleteConfirm === f.path ? `Confirm delete ${f.name}` : `Delete ${f.name}`}
                               title={deleteConfirm === f.path ? "Click again to confirm" : "Delete"}
                             >
                               <Trash2 size={13} />
-                            </button>
+                            </Button>
                           )}
                         </div>
                       </td>
