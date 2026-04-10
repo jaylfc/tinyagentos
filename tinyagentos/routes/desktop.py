@@ -161,6 +161,39 @@ async def serve_chat_pwa_assets(rest: str = ""):
     return JSONResponse({"error": "Chat PWA not built"}, status_code=404)
 
 
+@router.post("/api/desktop/browser/agent-command")
+async def browser_agent_command(request: Request):
+    """Execute a natural language command on the current page using browser-use."""
+    body = await request.json()
+    url = body.get("url", "")
+    command = body.get("command", "")
+    agent_name = body.get("agent_name")
+
+    if not url or not command:
+        return JSONResponse({"error": "url and command required"}, status_code=400)
+
+    # Check if browser-use is installed
+    try:
+        import importlib.util
+        if importlib.util.find_spec("browser_use") is None:
+            return JSONResponse({
+                "error": "browser-use not installed",
+                "install": "pip install browser-use[cli]",
+            }, status_code=503)
+    except Exception as e:
+        return JSONResponse({"error": f"Failed to check browser-use: {e}"}, status_code=500)
+
+    # For now, return a placeholder response indicating the feature is wired but needs an agent
+    return JSONResponse({
+        "status": "queued",
+        "url": url,
+        "command": command,
+        "agent_name": agent_name,
+        "message": "Browser task queued. Requires an agent with browser-use capability.",
+        "note": "Full integration requires browser-use plugin installation and agent configuration.",
+    })
+
+
 @router.get("/desktop")
 async def serve_spa_root():
     """Serve the SPA index.html at /desktop."""

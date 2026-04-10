@@ -175,6 +175,30 @@ export function BrowserApp({ windowId: _windowId }: { windowId: string }) {
     setLoadError(false);
   }, []);
 
+  const runAgentCommand = useCallback(async () => {
+    if (!agentCommand.trim()) return;
+    setAgentLoading(true);
+    setAgentResult(null);
+    try {
+      const res = await fetch("/api/desktop/browser/agent-command", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, command: agentCommand }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setAgentResult(
+          `Error: ${data.error}${data.install ? ` (Install: ${data.install})` : ""}`,
+        );
+      } else {
+        setAgentResult(data.message || "Command sent");
+      }
+    } catch (e) {
+      setAgentResult(`Error: ${e}`);
+    }
+    setAgentLoading(false);
+  }, [agentCommand, url]);
+
   return (
     <div className="flex flex-col h-full">
       {/* Navigation toolbar */}
@@ -271,27 +295,17 @@ export function BrowserApp({ windowId: _windowId }: { windowId: string }) {
                 </span>
               )}
             </div>
-            <div
-              className="relative"
-              onMouseEnter={() => setAgentTooltip(true)}
-              onMouseLeave={() => setAgentTooltip(false)}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setAgentDialogOpen(true)}
+              aria-label="Agent Browse"
+              title="Ask an agent to browse"
             >
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                aria-label="Agent Browse"
-                title="Agent Browse"
-              >
-                <Bot size={12} />
-                <span>Agent</span>
-              </Button>
-              {agentTooltip && (
-                <span className="absolute top-full right-0 mt-1 text-[10px] bg-shell-surface border border-shell-border rounded px-2 py-1 text-shell-text-secondary whitespace-nowrap z-10 shadow-md">
-                  Requires browser-use plugin
-                </span>
-              )}
-            </div>
+              <Bot size={12} />
+              <span>Agent</span>
+            </Button>
           </ToolbarGroup>
         </Toolbar>
       </form>
@@ -392,6 +406,62 @@ export function BrowserApp({ windowId: _windowId }: { windowId: string }) {
           onLoad={handleIframeLoad}
           onError={handleIframeError}
         />
+      )}
+
+      {agentDialogOpen && (
+        <div
+          className="fixed inset-0 z-[10002] flex items-center justify-center bg-black/50 backdrop-blur-sm"
+          onClick={() => setAgentDialogOpen(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Agent Browse command"
+        >
+          <Card
+            className="w-[90vw] max-w-md p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <CardContent className="p-0 space-y-3">
+              <div>
+                <Label>Ask an agent to help on this page</Label>
+                <p className="text-xs text-shell-text-tertiary mt-1">
+                  Example: "Find the pricing", "Fill out the contact form", "Extract all product names"
+                </p>
+              </div>
+              <Textarea
+                value={agentCommand}
+                onChange={(e) => setAgentCommand(e.target.value)}
+                placeholder="What do you want the agent to do?"
+                rows={3}
+              />
+              {agentResult && (
+                <div className="p-2 rounded bg-white/5 text-xs text-shell-text-secondary border border-white/10">
+                  {agentResult}
+                </div>
+              )}
+              <div className="flex gap-2 justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setAgentDialogOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={runAgentCommand}
+                  disabled={agentLoading || !agentCommand.trim()}
+                >
+                  {agentLoading ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Bot size={14} />
+                  )}
+                  Run
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
     </div>
   );
