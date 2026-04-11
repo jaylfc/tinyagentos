@@ -124,7 +124,11 @@ async def api_system(request: Request):
             "agents": len(config.agents),
             "backends": len(config.backends),
             "catalog_apps": len(registry.list_available()),
-            "installed_apps": len(registry.list_installed()),
+            "installed_apps": (
+                request.app.state.installation_state.installed_count()
+                if getattr(request.app.state, "installation_state", None)
+                else len(registry.list_installed())
+            ),
         },
         "cluster": _get_cluster_stats(request),
     }

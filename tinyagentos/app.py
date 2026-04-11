@@ -25,6 +25,7 @@ from tinyagentos.notifications import NotificationStore
 from tinyagentos.qmd_client import QmdClient
 from tinyagentos.backend_adapters import check_backend_health
 from tinyagentos.benchmark import BenchmarkStore
+from tinyagentos.installation_state import InstallationState
 from tinyagentos.scheduler import BackendCatalog, HistoryStore, ScoreCache, TaskScheduler
 from tinyagentos.scheduler.discovery import build_scheduler as build_resource_scheduler
 from tinyagentos.relationships import RelationshipManager
@@ -209,6 +210,11 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         except Exception:
             logger.exception("backend catalog failed to start — routes will fall back to static config")
         app.state.backend_catalog = backend_catalog
+
+        # Joined view of the registry cache + live catalog probes.
+        # Used by the Store / Dashboard / Models routes instead of
+        # registry.is_installed() / list_installed() directly.
+        app.state.installation_state = InstallationState(registry, backend_catalog)
 
         # Start the score cache — bridges the async benchmark store to the
         # scheduler's sync admission path via a 15s polling loop.

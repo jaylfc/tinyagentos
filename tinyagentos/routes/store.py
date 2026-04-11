@@ -21,10 +21,19 @@ class UninstallRequest(BaseModel):
 router = APIRouter()
 
 
-def _build_app_items(registry, profile_id: str, type_filter: str | None = None, query: str | None = None):
-    """Build app item dicts for templates, with compat info and optional filtering."""
+def _build_app_items(registry, profile_id: str, type_filter: str | None = None, query: str | None = None, installation=None):
+    """Build app item dicts for templates, with compat info and optional filtering.
+
+    The ``installation`` argument is an InstallationState that joins the
+    registry cache with the live BackendCatalog; callers that pass it
+    get accurate 'installed' state for services and models. Passing
+    ``None`` falls back to the registry cache only (tests and early
+    startup paths)."""
     apps = registry.list_available(type_filter=type_filter or None)
-    installed_ids = {a["id"] for a in registry.list_installed()}
+    if installation is not None:
+        installed_ids = {entry["id"] for entry in installation.list_installed()}
+    else:
+        installed_ids = {a["id"] for a in registry.list_installed()}
     items = []
     for a in apps:
         if query and query.lower() not in a.name.lower() and query.lower() not in a.description.lower():
@@ -52,7 +61,8 @@ async def store_page(request: Request):
     templates = request.app.state.templates
     registry = request.app.state.registry
     profile_id = request.app.state.hardware_profile.profile_id
-    items = _build_app_items(registry, profile_id)
+    installation = getattr(request.app.state, "installation_state", None)
+    items = _build_app_items(registry, profile_id, installation=installation)
     installed_apps = [i for i in items if i["installed"]]
     return templates.TemplateResponse(request, "store.html", {
         "active_page": "store",
@@ -66,7 +76,8 @@ async def app_grid_partial(request: Request, type: str | None = None, q: str | N
     templates = request.app.state.templates
     registry = request.app.state.registry
     profile_id = request.app.state.hardware_profile.profile_id
-    items = _build_app_items(registry, profile_id, type_filter=type, query=q)
+    installation = getattr(request.app.state, "installation_state", None)
+    items = _build_app_items(registry, profile_id, type_filter=type, query=q, installation=installation)
     return templates.TemplateResponse(request, "partials/app_grid.html", {
         "apps": items,
     })
@@ -76,13 +87,15 @@ async def app_grid_partial(request: Request, type: str | None = None, q: str | N
 async def list_catalog(request: Request, type: str | None = None):
     """List all available apps in the catalog, optionally filtered by type."""
     registry = request.app.state.registry
+    installation = getattr(request.app.state, "installation_state", None)
     apps = registry.list_available(type_filter=type)
     return [
         {
             "id": a.id, "name": a.name, "type": a.type, "version": a.version,
             "description": a.description, "icon": a.icon,
             "requires": a.requires, "hardware_tiers": a.hardware_tiers,
-            "installed": registry.is_installed(a.id),
+            "installed": (installation.is_installed(a.id) if installation else registry.is_installed(a.id)),
+            "state": (installation.state(a.id) if installation else ("installed" if registry.is_installed(a.id) else "not_installed")),
         }
         for a in apps
     ]
@@ -90,7 +103,16 @@ async def list_catalog(request: Request, type: str | None = None):
 
 @router.get("/api/store/installed")
 async def list_installed(request: Request):
-    """List currently installed apps."""
+    """List currently installed apps.
+
+    Backend-driven: returns the union of the registry cache and the live
+    BackendCatalog. Each row carries a ``state`` field — 'running' for
+    live-probed entries, 'stale' for cache entries whose backend is
+    currently unreachable, 'installed' for types without a live probe
+    (agent frameworks, plugins)."""
+    installation = getattr(request.app.state, "installation_state", None)
+    if installation is not None:
+        return installation.list_installed()
     return request.app.state.registry.list_installed()
 
 
@@ -98,6 +120,7 @@ async def list_installed(request: Request):
 async def get_app(request: Request, app_id: str):
     """Get detailed information about a specific app."""
     registry = request.app.state.registry
+    installation = getattr(request.app.state, "installation_state", None)
     app = registry.get(app_id)
     if not app:
         return JSONResponse({"error": f"App '{app_id}' not found"}, status_code=404)
@@ -107,7 +130,8 @@ async def get_app(request: Request, app_id: str):
         "requires": app.requires, "install": app.install,
         "hardware_tiers": app.hardware_tiers, "config_schema": app.config_schema,
         "variants": app.variants, "capabilities": app.capabilities,
-        "installed": registry.is_installed(app.id),
+        "installed": (installation.is_installed(app.id) if installation else registry.is_installed(app.id)),
+        "state": (installation.state(app.id) if installation else ("installed" if registry.is_installed(app.id) else "not_installed")),
     }
 
 
