@@ -526,3 +526,91 @@ async def destroy_agent(request: Request, name: str):
         config.agents = [a for a in config.agents if a["name"] != name]
         await save_config_locked(config, config.config_path)
     return result
+
+
+@router.post("/api/agents/{name}/resume")
+async def resume_agent(request: Request, name: str):
+    """Clear the paused flag on an agent, allowing it to accept new calls."""
+    config = request.app.state.config
+    agent = find_agent(config, name)
+    if not agent:
+        return JSONResponse({"error": f"Agent '{name}' not found"}, status_code=404)
+    if not agent.get("paused", False):
+        return {"status": "ok", "name": name, "paused": False}
+    agent["paused"] = False
+    await save_config_locked(config, config.config_path)
+    return {"status": "resumed", "name": name, "paused": False}
+
+
+class AgentModelUpdate(BaseModel):
+    model: str
+
+
+@router.post("/api/agents/{name}/model")
+async def update_agent_model(request: Request, name: str, body: AgentModelUpdate):
+    """Update an agent's primary model and resume it if it was paused.
+
+    Validates the requested model against currently-reachable cluster models
+    (local backend catalog + online workers).  Returns 409 if the model is
+    not reachable anywhere in the cluster right now.
+    """
+    config = request.app.state.config
+    agent = find_agent(config, name)
+    if not agent:
+        return JSONResponse({"error": f"Agent '{name}' not found"}, status_code=404)
+
+    model_id = body.model.strip()
+    if not model_id:
+        return JSONResponse({"error": "model must not be empty"}, status_code=400)
+
+    # Validate reachability against the live cluster state.
+    from tinyagentos.cluster.model_resolver import find_model_hosts
+
+    cluster = getattr(request.app.state, "cluster_manager", None)
+    catalog = getattr(request.app.state, "backend_catalog", None)
+    local_models = catalog.all_models() if catalog is not None else []
+
+    cloud_models: list[str] = []
+    try:
+        for b in config.backends or []:
+            if b.get("type") in ("openai", "anthropic"):
+                for m in b.get("models") or []:
+                    mid = (m.get("id") or m.get("name") or "") if isinstance(m, dict) else str(m)
+                    if mid:
+                        cloud_models.append(mid)
+    except Exception:  # noqa: BLE001
+        pass
+
+    location = find_model_hosts(
+        model_id,
+        cluster_state=cluster,
+        local_models=local_models,
+        cloud_models=cloud_models,
+    )
+
+    if location.kind == "not_found":
+        return JSONResponse(
+            {
+                "error": (
+                    f"model '{model_id}' is not reachable anywhere in the cluster right now. "
+                    f"Make sure the model is downloaded and the worker is online."
+                ),
+                "model": model_id,
+            },
+            status_code=409,
+        )
+
+    # Update the agent's model and clear the paused flag so it can
+    # immediately start accepting calls on the new model.
+    agent["model"] = model_id
+    was_paused = agent.get("paused", False)
+    agent["paused"] = False
+    await save_config_locked(config, config.config_path)
+
+    return {
+        "status": "updated",
+        "name": name,
+        "model": model_id,
+        "resumed": was_paused,
+        "location": location.kind,
+    }

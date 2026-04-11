@@ -211,3 +211,92 @@ class TestDeployRouting:
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "deploying"
+
+
+@pytest.mark.asyncio
+class TestResumeRoute:
+    async def test_resume_clears_paused_flag(self, client, app, tmp_data_dir):
+        # Manually pause the test-agent
+        agent = app.state.config.agents[0]
+        assert agent["name"] == "test-agent"
+        agent["paused"] = True
+
+        resp = await client.post("/api/agents/test-agent/resume")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "resumed"
+        assert data["paused"] is False
+
+        # Persisted to disk too
+        from tinyagentos.config import load_config
+        config = load_config(tmp_data_dir / "config.yaml")
+        assert config.agents[0].get("paused") is False
+
+    async def test_resume_not_found(self, client):
+        resp = await client.post("/api/agents/no-such-agent/resume")
+        assert resp.status_code == 404
+
+    async def test_resume_already_running(self, client):
+        """Resuming a non-paused agent is a no-op, returns 200."""
+        resp = await client.post("/api/agents/test-agent/resume")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["paused"] is False
+
+
+@pytest.mark.asyncio
+class TestModelUpdateRoute:
+    async def test_model_update_with_reachable_model(self, client, app):
+        """Updating to a model that lives on an online worker succeeds."""
+        _seed_worker(app, "gpu-box", ["qwen2.5-7b"])
+
+        resp = await client.post("/api/agents/test-agent/model", json={"model": "qwen2.5-7b"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "updated"
+        assert data["model"] == "qwen2.5-7b"
+
+    async def test_model_update_resumes_paused_agent(self, client, app, tmp_data_dir):
+        """Swapping model on a paused agent clears the paused flag."""
+        _seed_worker(app, "gpu-box", ["phi3"])
+        agent = app.state.config.agents[0]
+        agent["paused"] = True
+
+        resp = await client.post("/api/agents/test-agent/model", json={"model": "phi3"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["resumed"] is True
+        assert data["paused"] is False if "paused" in data else True
+
+        from tinyagentos.config import load_config
+        config = load_config(tmp_data_dir / "config.yaml")
+        assert config.agents[0].get("paused") is False
+
+    async def test_model_update_rejects_unreachable_model(self, client, app):
+        """Requesting a model that no worker has returns 409."""
+        app.state.cluster_manager._workers.clear()
+
+        resp = await client.post("/api/agents/test-agent/model", json={"model": "ghost-model"})
+        assert resp.status_code == 409
+        data = resp.json()
+        assert "not reachable" in data["error"]
+
+    async def test_model_update_not_found(self, client):
+        resp = await client.post("/api/agents/no-such-agent/model", json={"model": "phi3"})
+        assert resp.status_code == 404
+
+    async def test_model_update_empty_model_rejected(self, client):
+        resp = await client.post("/api/agents/test-agent/model", json={"model": "   "})
+        assert resp.status_code == 400
+
+    async def test_model_update_with_local_model(self, client, app):
+        """A model in the local backend catalog is reachable."""
+        class _FakeCatalog:
+            def all_models(self, capability=None):
+                return [{"name": "local-llm", "id": "local-llm"}]
+
+        app.state.backend_catalog = _FakeCatalog()
+        app.state.cluster_manager._workers.clear()
+
+        resp = await client.post("/api/agents/test-agent/model", json={"model": "local-llm"})
+        assert resp.status_code == 200
