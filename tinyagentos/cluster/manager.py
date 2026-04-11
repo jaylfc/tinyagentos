@@ -73,7 +73,21 @@ class ClusterManager:
                 level="info",
             )
 
-    def heartbeat(self, name: str, load: float = 0.0, models: list[str] | None = None) -> bool:
+    def heartbeat(
+        self,
+        name: str,
+        load: float = 0.0,
+        models: list[str] | None = None,
+        backends: list[dict] | None = None,
+        capabilities: list[str] | None = None,
+    ) -> bool:
+        """Accept a worker heartbeat.
+
+        Backend-driven: when ``backends`` or ``capabilities`` are supplied
+        (worker agent v2+), overwrite the worker's cached view so the
+        cluster-wide catalog stays fresh. Old-style heartbeats that only
+        carry load/models still work.
+        """
         worker = self._workers.get(name)
         if not worker:
             return False
@@ -82,6 +96,19 @@ class ClusterManager:
         worker.status = "online"
         if models is not None:
             worker.models = models
+        if backends is not None:
+            worker.backends = backends
+            # Derive a flat model list from the live backend catalog for
+            # compatibility with the existing worker.models field
+            flat_models: list[str] = []
+            for b in backends:
+                for m in b.get("models") or []:
+                    name_m = m.get("name") or m.get("id") or ""
+                    if name_m and name_m not in flat_models:
+                        flat_models.append(name_m)
+            worker.models = flat_models
+        if capabilities is not None:
+            worker.capabilities = list(capabilities)
         return True
 
     def unregister_worker(self, name: str) -> bool:

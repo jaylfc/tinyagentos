@@ -26,6 +26,10 @@ class HeartbeatBody(BaseModel):
     name: str
     load: float = 0.0
     models: list[str] | None = None
+    # Backend-driven fields (worker agent v2+). Both optional so legacy
+    # worker agents that only report load + models still validate.
+    backends: list[dict] | None = None
+    capabilities: list[str] | None = None
 
 
 class RouteRequest(BaseModel):
@@ -84,7 +88,13 @@ async def register_worker(request: Request, body: WorkerRegister):
 @router.post("/api/cluster/heartbeat")
 async def worker_heartbeat(request: Request, body: HeartbeatBody):
     cluster = request.app.state.cluster_manager
-    ok = cluster.heartbeat(body.name, load=body.load, models=body.models)
+    ok = cluster.heartbeat(
+        body.name,
+        load=body.load,
+        models=body.models,
+        backends=body.backends,
+        capabilities=body.capabilities,
+    )
     if not ok:
         return JSONResponse({"error": "Worker not registered"}, status_code=404)
     return {"status": "ok"}
