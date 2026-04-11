@@ -1314,6 +1314,39 @@ The framework adapter design is **done** when:
   Scheduler widget shows local-only — the two will merge once Phase
   2 lands.
 
+- **Sequential model loading + idle eviction (Phase 1.5).** Today
+  rkllama starts with `--preload qwen3-embedding-0.6b,qwen3-reranker-0.6b,qmd-query-expansion`
+  and qmd serve holds those connections open, so the Orange Pi's NPU
+  RAM is permanently consumed by chat models even when the user is
+  only doing image gen. A user can't fit a bigger image gen model
+  alongside the chat models without first manually killing rkllama.
+  The fix is on-demand loading at the resource scheduler layer:
+
+  1. **Drop preloading** — no `--preload` on rkllama. Load on first
+     request.
+  2. **Per-resource model registry** in the scheduler tracks what's
+     resident on each accelerator (NPU, GPU, CPU), how recently each
+     was used, how much memory each occupies.
+  3. **Idle eviction** after a configurable per-resource timeout
+     (NPU default 60 s, GPU 300 s, CPU never).
+  4. **LRU eviction under capacity pressure** when a new request needs
+     more memory than the resource has free.
+  5. **Cluster-aware cache locality** — when routing in cluster mode
+     (Phase 2), prefer the worker that already has the model loaded.
+  6. **User-pinned always-resident models** for the workloads where
+     reload latency would be intolerable (e.g. an embedding model
+     hit on every chat turn).
+
+  The qmd upstream maintainer is already on record agreeing this
+  belongs in a stacked PR after the centralised-serve PR (#511) lands
+  — TAOS implementing this in our qmd-server fork and contributing
+  it back is the right path. See the discussion at
+  https://github.com/tobi/qmd/pull/511 for the design history.
+
+  This is meaningful enough to deserve its own design pass but small
+  enough to land before Phase 2 cluster dispatch. Tracked separately
+  as a Phase 1.5 milestone.
+
 - **Remote backend installation from the controller UI.** The Phase 1
   worker installer (`install-worker.sh`) installs only the worker
   daemon. The worker auto-detects existing backends (Ollama, llama-cpp,
