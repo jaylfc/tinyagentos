@@ -37,6 +37,7 @@ interface Framework {
   id: string;
   name: string;
   description: string;
+  verification_status: "tested" | "beta" | "experimental" | "broken";
 }
 
 interface Model {
@@ -50,12 +51,6 @@ interface Model {
 /*  Fallback data                                                      */
 /* ------------------------------------------------------------------ */
 
-const MOCK_FRAMEWORKS: Framework[] = [
-  { id: "langchain", name: "LangChain", description: "Build context-aware reasoning applications" },
-  { id: "autogen", name: "AutoGen", description: "Multi-agent conversation framework" },
-  { id: "crewai", name: "CrewAI", description: "Role-based autonomous AI agents" },
-  { id: "custom", name: "Custom", description: "Bring your own agent framework" },
-];
 
 const COLORS = [
   "#3b82f6", "#8b5cf6", "#ec4899", "#f59e0b",
@@ -292,8 +287,9 @@ function DeployWizard({
   const [color, setColor] = useState(COLORS[0]);
 
   // Step 2
-  const [frameworks, setFrameworks] = useState<Framework[]>(MOCK_FRAMEWORKS);
+  const [frameworks, setFrameworks] = useState<Framework[]>([]);
   const [selectedFramework, setSelectedFramework] = useState<string>("");
+  const [showExperimental, setShowExperimental] = useState(false);
 
   // Step 3
   const [models, setModels] = useState<Model[]>([]);
@@ -323,26 +319,28 @@ function DeployWizard({
     if (!open) return;
     (async () => {
       try {
-        const res = await fetch("/api/store/catalog?type=agent-framework", {
+        const res = await fetch("/api/frameworks", {
           headers: { Accept: "application/json" },
         });
         const ct = res.headers.get("content-type") ?? "";
         if (res.ok && ct.includes("application/json")) {
           const data = await res.json();
           if (Array.isArray(data) && data.length > 0) {
-            // Only show installed frameworks (catalog returns all with `installed` flag)
-            const installed = data.filter((a: Record<string, unknown>) => a.installed);
-            const pool = installed.length > 0 ? installed : data;
+            // Filter out broken adapters entirely
+            const visible = data.filter(
+              (a: Record<string, unknown>) => a.verification_status !== "broken"
+            );
             setFrameworks(
-              pool.map((a: Record<string, unknown>) => ({
+              visible.map((a: Record<string, unknown>) => ({
                 id: String(a.id),
                 name: String(a.name ?? a.id),
                 description: String(a.description ?? ""),
+                verification_status: (a.verification_status as Framework["verification_status"]) ?? "experimental",
               }))
             );
           }
         }
-      } catch { /* use fallback */ }
+      } catch { /* leave frameworks empty, wizard will show nothing selectable */ }
     })();
     (async () => {
       const localModels: Model[] = [];
@@ -447,6 +445,7 @@ function DeployWizard({
       setName("");
       setColor(COLORS[0]);
       setSelectedFramework("");
+      setShowExperimental(false);
       setSelectedModel("");
       setModels([]);
       setModelsLoaded(false);
@@ -610,20 +609,67 @@ function DeployWizard({
           {step === 1 && (
             <div className="space-y-2">
               <span className="block text-xs text-shell-text-secondary mb-2">Select Framework</span>
-              {frameworks.map((fw) => (
-                <button
-                  key={fw.id}
-                  onClick={() => setSelectedFramework(fw.id)}
-                  className={`w-full text-left px-4 py-3 rounded-lg border transition-colors ${
-                    selectedFramework === fw.id
-                      ? "border-accent bg-accent/10"
-                      : "border-white/5 bg-shell-bg-deep hover:bg-white/5"
-                  }`}
-                >
-                  <div className="text-sm font-medium">{fw.name}</div>
-                  <div className="text-xs text-shell-text-secondary mt-0.5">{fw.description}</div>
-                </button>
-              ))}
+              {frameworks
+                .filter((fw) => fw.verification_status !== "experimental" || showExperimental)
+                .map((fw) => {
+                  const isExperimental = fw.verification_status === "experimental";
+                  const selectable = !isExperimental || showExperimental;
+                  return (
+                    <button
+                      key={fw.id}
+                      onClick={() => selectable ? setSelectedFramework(fw.id) : undefined}
+                      disabled={!selectable}
+                      aria-disabled={!selectable}
+                      className={`w-full text-left px-4 py-3 rounded-lg border transition-colors ${
+                        !selectable
+                          ? "border-white/5 bg-shell-bg-deep opacity-40 cursor-not-allowed"
+                          : selectedFramework === fw.id
+                            ? "border-accent bg-accent/10"
+                            : "border-white/5 bg-shell-bg-deep hover:bg-white/5"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className={`text-sm font-medium ${isExperimental ? "text-shell-text-tertiary" : ""}`}>
+                          {fw.name}
+                        </span>
+                        {fw.verification_status === "beta" && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/20 text-amber-400 leading-none">
+                            beta
+                          </span>
+                        )}
+                        {fw.verification_status === "experimental" && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-zinc-500/20 text-zinc-400 leading-none">
+                            experimental
+                          </span>
+                        )}
+                      </div>
+                      <div className={`text-xs mt-0.5 ${isExperimental ? "text-shell-text-tertiary" : "text-shell-text-secondary"}`}>
+                        {fw.description}
+                      </div>
+                    </button>
+                  );
+                })}
+              {/* Experimental toggle */}
+              <label
+                htmlFor="show-experimental-frameworks"
+                className="flex items-center gap-2 mt-3 cursor-pointer select-none"
+              >
+                <input
+                  id="show-experimental-frameworks"
+                  type="checkbox"
+                  checked={showExperimental}
+                  onChange={(e) => {
+                    setShowExperimental(e.target.checked);
+                    // Deselect if currently selected framework becomes hidden
+                    if (!e.target.checked) {
+                      const fw = frameworks.find((f) => f.id === selectedFramework);
+                      if (fw?.verification_status === "experimental") setSelectedFramework("");
+                    }
+                  }}
+                  className="accent-accent"
+                />
+                <span className="text-xs text-shell-text-secondary">Show experimental frameworks</span>
+              </label>
             </div>
           )}
 
