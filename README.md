@@ -536,4 +536,6 @@ TinyAgentOS makes AI agents accessible on affordable hardware.
 
 ## License
 
-MIT
+AGPL-3.0-or-later. See [LICENSE](LICENSE).
+
+Self-host it on your own hardware forever, fork it, modify it, sell hardware preloaded with it, run it inside your company. If you run a modified version as a network service that other people use, you must offer those users the modified source.
