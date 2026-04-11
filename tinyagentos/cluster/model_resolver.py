@@ -60,13 +60,29 @@ def _normalise(model_id: str) -> str:
     )
 
 
+def _ext_match(longer: str, shorter: str) -> bool:
+    """True if ``longer`` is ``shorter`` plus a file extension.
+
+    We only allow the ``.`` separator to act as a variant boundary when the
+    character after the dot is a letter, so ``qwen2.5-7b.gguf`` still
+    matches ``qwen2.5-7b`` but ``qwen3.5-4b`` does NOT match ``qwen3``
+    (the ``.5`` is a version, not an extension).
+    """
+    if not longer.startswith(shorter + "."):
+        return False
+    tail = longer[len(shorter) + 1 :]
+    return bool(tail) and tail[0].isalpha()
+
+
 def _model_matches(target: str, candidate: str) -> bool:
     """True if ``candidate`` is the same model as ``target``.
 
     Loose prefix match on the normalised form so variant-suffix backends
-    (``-q4_k_m``, ``.gguf``, ``-instruct``) still resolve. The target is
-    the user's pick from the wizard; the candidate is whatever the
-    backend reports.
+    (``-q4_k_m``, ``-instruct``, ``.gguf``, ``.safetensors``) still
+    resolve. The target is the user's pick from the wizard; the candidate
+    is whatever the backend reports. The ``.`` separator only matches
+    when the following character is a letter, so ``qwen3`` cannot be
+    treated as a shorter alias for ``qwen3.5``.
     """
     if not target or not candidate:
         return False
@@ -75,10 +91,14 @@ def _model_matches(target: str, candidate: str) -> bool:
     if t == c:
         return True
     # Allow backend-reported ids that carry a variant suffix or extension
-    if c.startswith(t + "-") or c.startswith(t + "."):
+    if c.startswith(t + "-"):
+        return True
+    if _ext_match(c, t):
         return True
     # Allow wizard-picked ids that are a shorter alias of the backend id
-    if t.startswith(c + "-") or t.startswith(c + "."):
+    if t.startswith(c + "-"):
+        return True
+    if _ext_match(t, c):
         return True
     return False
 
