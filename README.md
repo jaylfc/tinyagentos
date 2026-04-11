@@ -285,6 +285,8 @@ Full transparency on every file, service, user, and port the installers touch. N
 
 ### Controller install (`scripts/install-server.sh`)
 
+Run `curl -fsSL https://raw.githubusercontent.com/jaylfc/tinyagentos/master/scripts/install-server.sh | sudo bash` on a fresh Debian / Ubuntu / Fedora / Arch / Alpine box to get the controller fully installed — repo cloned to `~/tinyagentos/`, venv created, all deps installed, and both `tinyagentos.service` (port 6969) and `qmd.service` (port 7832) registered and started.
+
 | Where | What |
 |---|---|
 | `/etc/systemd/system/tinyagentos.service` | Main controller systemd unit. Runs uvicorn on port 6969. |
