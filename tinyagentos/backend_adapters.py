@@ -35,6 +35,56 @@ class OllamaCompatAdapter(BackendAdapter):
             return {"status": "error", "response_ms": elapsed_ms, "models": []}
 
 
+class RknnSdAdapter(BackendAdapter):
+    """Adapter for the darkbit1001-style RKNN Stable Diffusion server.
+
+    Exposes POST /generate returning a raw image/png body. Health is proven
+    by the presence of /openapi.json (the server uses no explicit /health).
+    """
+
+    async def health(self, client: httpx.AsyncClient, url: str) -> dict:
+        start = time.monotonic()
+        base = url.rstrip("/")
+        try:
+            resp = await client.get(f"{base}/openapi.json", timeout=10)
+            elapsed_ms = int((time.monotonic() - start) * 1000)
+            resp.raise_for_status()
+            return {
+                "status": "ok",
+                "response_ms": elapsed_ms,
+                "models": [{"name": "lcm-dreamshaper-v7-rknn", "size_mb": 0}],
+            }
+        except Exception:
+            elapsed_ms = int((time.monotonic() - start) * 1000)
+            return {"status": "error", "response_ms": elapsed_ms, "models": []}
+
+
+class StableDiffusionCppAdapter(BackendAdapter):
+    """Adapter for leejet/stable-diffusion.cpp sd-server.
+
+    sd-server exposes an A1111-compatible /sdapi/v1/txt2img endpoint and no
+    /health or /v1/models. We probe /sdapi/v1/options and /sdapi/v1/sd-models
+    to confirm it's alive and list loaded weights.
+    """
+
+    async def health(self, client: httpx.AsyncClient, url: str) -> dict:
+        start = time.monotonic()
+        base = url.rstrip("/")
+        try:
+            resp = await client.get(f"{base}/sdapi/v1/sd-models", timeout=10)
+            elapsed_ms = int((time.monotonic() - start) * 1000)
+            resp.raise_for_status()
+            data = resp.json()
+            models = [
+                {"name": m.get("title", m.get("model_name", "")), "size_mb": 0}
+                for m in (data if isinstance(data, list) else [])
+            ]
+            return {"status": "ok", "response_ms": elapsed_ms, "models": models}
+        except Exception:
+            elapsed_ms = int((time.monotonic() - start) * 1000)
+            return {"status": "error", "response_ms": elapsed_ms, "models": []}
+
+
 class OpenAICompatAdapter(BackendAdapter):
     """Adapter for OpenAI-compatible APIs (llama.cpp, vLLM).
 
@@ -81,6 +131,8 @@ _ADAPTERS: dict[str, BackendAdapter] = {
     "mlx": OpenAICompatAdapter(),  # MLX via mlx-lm server — OpenAI-compatible
     "openai": OpenAICompatAdapter(),  # OpenAI API
     "anthropic": OpenAICompatAdapter(),  # Anthropic API (health check via OpenAI-compat endpoint)
+    "sd-cpp": StableDiffusionCppAdapter(),  # leejet/stable-diffusion.cpp sd-server
+    "rknn-sd": RknnSdAdapter(),  # darkbit1001 LCM Dreamshaper on RK3588 NPU
 }
 
 

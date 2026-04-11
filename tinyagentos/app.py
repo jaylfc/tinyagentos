@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 import httpx
+
+logger = logging.getLogger(__name__)
 from fastapi import FastAPI
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -20,7 +23,9 @@ from tinyagentos.download_manager import DownloadManager
 from tinyagentos.metrics import MetricsStore
 from tinyagentos.notifications import NotificationStore
 from tinyagentos.qmd_client import QmdClient
-from tinyagentos.scheduler import TaskScheduler
+from tinyagentos.backend_adapters import check_backend_health
+from tinyagentos.scheduler import BackendCatalog, TaskScheduler
+from tinyagentos.scheduler.discovery import build_scheduler as build_resource_scheduler
 from tinyagentos.relationships import RelationshipManager
 from tinyagentos.secrets import SecretsStore
 from tinyagentos.training import TrainingManager
@@ -76,6 +81,15 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     relationship_mgr = RelationshipManager(data_dir / "relationships.db")
     channel_store = ChannelStore(data_dir / "channels.db")
     scheduler = TaskScheduler(data_dir / "scheduler.db")
+
+    async def _probe_backend(backend: dict) -> dict:
+        return await check_backend_health(http_client, backend)
+
+    backend_catalog = BackendCatalog(
+        backends=config.backends,
+        probe_fn=_probe_backend,
+        interval_seconds=30.0,
+    )
     fallback = BackendFallback(config.backends, http_client)
     cluster_manager = ClusterManager(notifications=notif_store)
     task_router = TaskRouter(cluster_manager, http_client)
@@ -128,6 +142,8 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         await skills.init()
         app.state.config = config
         app.state.config_path = config_path
+        app.state.models_dir = data_dir / "models"
+        app.state.models_dir.mkdir(parents=True, exist_ok=True)
         app.state.metrics = metrics_store
         app.state.notifications = notif_store
         app.state.qmd_client = qmd_client
@@ -177,6 +193,27 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.health_monitor = monitor
         await monitor.start()
         await cluster_manager.start()
+        # Start the live backend catalog — everything that asks "what's
+        # available?" reads from this rather than the filesystem.
+        try:
+            await backend_catalog.start()
+        except Exception:
+            logger.exception("backend catalog failed to start — routes will fall back to static config")
+        app.state.backend_catalog = backend_catalog
+
+        # Build the resource scheduler from hardware profile + live catalog.
+        # Phase 1: local resources only (NPU + CPU), capability-based routing
+        # with fallback and priority. Cluster-aware dispatch is Phase 3.
+        try:
+            resource_scheduler = build_resource_scheduler(hardware_profile, backend_catalog)
+            app.state.resource_scheduler = resource_scheduler
+            logger.info(
+                "resource scheduler ready: %s",
+                [r.name for r in resource_scheduler.resources()],
+            )
+        except Exception:
+            logger.exception("resource scheduler failed to build — routes will use static config")
+            app.state.resource_scheduler = None
         # Detect and set container runtime
         from tinyagentos.containers.backend import detect_runtime, set_backend
         from tinyagentos.containers.lxc import LXCBackend
@@ -192,6 +229,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         adapter_manager.stop_all()
         for c in list(getattr(app.state, "channel_hub_connectors", {}).values()):
             await c.stop()
+        await backend_catalog.stop()
         await cluster_manager.stop()
         llm_proxy.stop()
         await monitor.stop()
@@ -331,6 +369,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     from tinyagentos.routes.images import router as images_router
     app.include_router(images_router)
+
+    from tinyagentos.routes.scheduler import router as scheduler_router
+    app.include_router(scheduler_router)
 
     from tinyagentos.routes.video import router as video_router
     app.include_router(video_router)

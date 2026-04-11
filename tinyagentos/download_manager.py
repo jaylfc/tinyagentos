@@ -56,9 +56,9 @@ class DownloadManager:
     async def _download(self, task: DownloadTask, expected_sha256: str | None = None):
         task.status = "downloading"
         task.started_at = time.time()
-        task.dest.parent.mkdir(parents=True, exist_ok=True)
         sha = hashlib.sha256()
         try:
+            task.dest.parent.mkdir(parents=True, exist_ok=True)
             async with httpx.AsyncClient(timeout=None, follow_redirects=True) as client:
                 async with client.stream("GET", task.url) as resp:
                     resp.raise_for_status()
