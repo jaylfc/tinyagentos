@@ -111,7 +111,7 @@ def normalize_agent(agent: dict) -> dict:
         agent["paused"] = False
     # KV cache quantization mode for this agent's inference calls.  Defaults
     # to "fp16" so old configs and new configs with no explicit preference
-    # behave identically.  The value is intentionally a free-form string —
+    # behave identically.  The value is intentionally a free-form string -
     # the worker capability probe is the source of truth for valid values, not
     # a hardcoded allowlist here.
     #

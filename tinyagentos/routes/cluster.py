@@ -150,7 +150,7 @@ async def kv_quant_options(request: Request):
     """Return the set-union of KV cache quant types across all online workers.
 
     The deploy wizard fetches this to decide whether to show a KV quant
-    dropdown.  When only ["fp16"] is returned, the wizard shows nothing — no
+    dropdown.  When only ["fp16"] is returned, the wizard shows nothing, no
     dead toggle, no greyed-out control.  As soon as any online worker
     advertises a second type the dropdown materialises automatically.
 

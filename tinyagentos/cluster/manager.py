@@ -78,7 +78,7 @@ class ClusterManager:
 
         Always includes "fp16" as the baseline.  If every online worker only
         supports fp16 the result is ["fp16"].  The deploy wizard uses this to
-        decide whether to show the KV quant dropdown at all — if the list has
+        decide whether to show the KV quant dropdown at all, if the list has
         only one entry the control must not be rendered.
         """
         types: set[str] = {"fp16"}
@@ -161,7 +161,7 @@ class ClusterManager:
         entire mesh can do right now' without polling every worker
         individually.
 
-        Offline workers are skipped entirely — their stale data is not
+        Offline workers are skipped entirely, their stale data is not
         useful and could mislead routing. The in-process BackendCatalog
         on the controller handles the local-host view; this method
         handles the remote-worker view.

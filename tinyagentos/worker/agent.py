@@ -85,7 +85,7 @@ class WorkerAgent:
         """
         try:
             if backend_type in ("sd-cpp", "rknn-sd"):
-                # Image-gen backends — KV quant is not applicable.
+                # Image-gen backends, KV quant is not applicable.
                 return []
             if backend_type == "vllm":
                 # vLLM exposes kv_cache_dtype in its model config.  Upstream
@@ -107,7 +107,7 @@ class WorkerAgent:
                 # rknn-toolkit does not expose KV cache quantization at the
                 # Python API level.  Return the safe default.
                 return ["fp16"]
-            # Unknown backend type — default safe.
+            # Unknown backend type, default safe.
             return ["fp16"]
         except Exception:
             return ["fp16"]
@@ -145,7 +145,7 @@ class WorkerAgent:
                 data = resp.json()
                 name = data.get("model") or ""
                 return [{"name": name, "size_mb": 0}] if name else []
-            # llama-cpp / vllm — OpenAI compat /v1/models
+            # llama-cpp / vllm, OpenAI compat /v1/models
             resp = await client.get(f"{base_url}/v1/models")
             if resp.status_code != 200:
                 return None
@@ -169,7 +169,7 @@ class WorkerAgent:
             per_backend = b.get("kv_quant_support")
             if per_backend is not None:
                 quant_types.update(per_backend)
-        # Always include fp16 as the baseline — a worker with no LLM backends
+        # Always include fp16 as the baseline, a worker with no LLM backends
         # at all still defaults to fp16 for protocol compatibility.
         quant_types.add("fp16")
         return sorted(quant_types)
@@ -293,12 +293,12 @@ class WorkerAgent:
             return 0
 
     async def run(self):
-        """Main worker loop — register, heartbeat, re-register on loss.
+        """Main worker loop, register, heartbeat, re-register on loss.
 
         The controller's in-memory cluster registry is wiped on every
         controller restart. When that happens our heartbeats start
         coming back as 404 'Worker not registered'. Treat that as a
-        signal to re-register and resume — without it, every controller
+        signal to re-register and resume, without it, every controller
         restart leaves the cluster view empty until the worker is
         manually restarted.
         """
@@ -318,7 +318,7 @@ class WorkerAgent:
                 # deregister, etc). Drop our registered state and the
                 # next loop iteration will re-register.
                 logger.warning(
-                    f"controller returned 404 on heartbeat — re-registering '{self.name}'"
+                    f"controller returned 404 on heartbeat, re-registering '{self.name}'"
                 )
                 self._registered = False
             elif status == 0:
