@@ -163,6 +163,18 @@ def _detect_ram() -> int:
     return 0
 
 
+def _path_exists_safe(p: Path) -> bool:
+    """Path.exists() raises PermissionError on paths the caller can't
+    stat — e.g. /sys/kernel/debug/rknpu/load when running unprivileged.
+    Treat denied as 'not present' so detection on non-Rockchip hosts
+    doesn't crash the worker. Same fix applies to any other privileged
+    path probe."""
+    try:
+        return p.exists()
+    except (PermissionError, OSError):
+        return False
+
+
 def _detect_npu() -> NpuInfo:
     # Rockchip RKNPU — detect via multiple paths (driver exposes different interfaces per board)
     rknpu_paths = [
@@ -170,7 +182,7 @@ def _detect_npu() -> NpuInfo:
         Path("/sys/kernel/debug/rknpu/load"),  # debugfs — most reliable detection
         Path("/sys/class/devfreq/fdab0000.npu"),  # RK3588 NPU devfreq node
     ]
-    if any(p.exists() for p in rknpu_paths):
+    if any(_path_exists_safe(p) for p in rknpu_paths):
         # Detect SoC variant — RK3588 has 3 cores at 6 TOPS, RK3576 has 1 core at 6 TOPS,
         # RK3568 has 1 core at 1 TOPS
         soc = ""
