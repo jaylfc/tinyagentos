@@ -119,7 +119,7 @@ if (-not (Test-Path $venvPython)) {
 
 Log "installing worker python deps into .venv"
 & $venvPython -m pip install --quiet --upgrade pip
-& $venvPython -m pip install --quiet httpx pydantic psutil fastapi uvicorn pyyaml pillow
+& $venvPython -m pip install --quiet httpx pydantic psutil fastapi uvicorn pyyaml pillow libtorrent
 
 # --- first-boot benchmark -----------------------------------------------
 

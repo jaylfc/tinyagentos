@@ -29,6 +29,25 @@ class DownloadManager:
     def __init__(self):
         self._tasks: dict[str, DownloadTask] = {}
         self._running: dict[str, asyncio.Task] = {}
+        # Lazy-instantiated torrent downloader — created on first use so
+        # TinyAgentOS installs without libtorrent still boot. The
+        # TorrentDownloader import raises TorrentNotAvailable if the
+        # Python binding is missing.
+        self._torrent = None
+
+    def _get_torrent_downloader(self):
+        if self._torrent is not None:
+            return self._torrent
+        try:
+            from tinyagentos.torrent_downloader import (
+                TorrentDownloader,
+                TorrentNotAvailable,
+            )
+            self._torrent = TorrentDownloader()
+            return self._torrent
+        except Exception as exc:
+            logger.debug("torrent downloader unavailable: %s", exc)
+            return None
 
     def start_download(
         self,
@@ -36,11 +55,27 @@ class DownloadManager:
         url: str,
         dest: Path,
         expected_sha256: str | None = None,
+        magnet: str | None = None,
+        license_allows_redistribution: bool = False,
     ) -> DownloadTask:
+        """Start a model download.
+
+        If a ``magnet`` URI is supplied AND the variant's licence
+        allows redistribution AND libtorrent is installed, the torrent
+        swarm is tried first. On peer timeout / SHA mismatch / any
+        torrent error the download falls back transparently to HTTP
+        using ``url``. The caller sees a single DownloadTask either
+        way and never has to branch on transport.
+        """
         task = DownloadTask(id=download_id, url=url, dest=dest)
         self._tasks[download_id] = task
         self._running[download_id] = asyncio.create_task(
-            self._download(task, expected_sha256)
+            self._download_with_fallback(
+                task,
+                expected_sha256=expected_sha256,
+                magnet=magnet,
+                license_allows_redistribution=license_allows_redistribution,
+            )
         )
         return task
 
@@ -52,6 +87,60 @@ class DownloadManager:
 
     def list_all(self) -> list[DownloadTask]:
         return list(self._tasks.values())
+
+    async def _download_with_fallback(
+        self,
+        task: DownloadTask,
+        *,
+        expected_sha256: str | None = None,
+        magnet: str | None = None,
+        license_allows_redistribution: bool = False,
+    ) -> None:
+        """Hybrid download path: swarm first, HTTP fallback.
+
+        Torrent path is only attempted if the caller provided a magnet
+        AND the manifest allowed redistribution AND libtorrent is
+        installed. Any torrent-side failure (peer timeout, sha mismatch,
+        runtime error) logs a warning and falls through to the regular
+        HTTP path so the user always gets their model.
+        """
+        torrent = None
+        if (
+            magnet
+            and license_allows_redistribution
+            and (torrent := self._get_torrent_downloader()) is not None
+        ):
+            task.status = "downloading"
+            task.started_at = time.time()
+            try:
+                def _progress(t):
+                    task.total_bytes = t.total_bytes
+                    task.downloaded_bytes = t.downloaded_bytes
+
+                await torrent.download(
+                    task_id=task.id,
+                    magnet_or_torrent=magnet,
+                    dest=task.dest,
+                    expected_sha256=expected_sha256,
+                    progress_cb=_progress,
+                )
+                task.status = "complete"
+                task.completed_at = time.time()
+                logger.info("Downloaded %s via torrent swarm", task.id)
+                return
+            except Exception as exc:
+                logger.warning(
+                    "Torrent download for %s failed (%s) — falling back to HTTP",
+                    task.id,
+                    exc,
+                )
+                # Reset state so the HTTP path starts clean
+                task.downloaded_bytes = 0
+                task.total_bytes = 0
+                task.status = "pending"
+                task.error = ""
+
+        await self._download(task, expected_sha256)
 
     async def _download(self, task: DownloadTask, expected_sha256: str | None = None):
         task.status = "downloading"

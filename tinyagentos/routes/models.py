@@ -253,11 +253,20 @@ async def download_model(request: Request, body: DownloadRequest):
 
     download_id = f"{body.app_id}-{body.variant_id}"
     dm = request.app.state.download_manager
+    # Hybrid download: DownloadManager tries the torrent swarm first if
+    # the variant declares a magnet URI and the catalog publisher has
+    # marked its licence as allowing redistribution. Failures fall back
+    # transparently to HTTP — the user never has to know which
+    # transport ran.
     dm.start_download(
         download_id=download_id,
         url=url,
         dest=dest,
         expected_sha256=variant.get("sha256"),
+        magnet=variant.get("magnet"),
+        license_allows_redistribution=bool(
+            variant.get("license_allows_redistribution", False)
+        ),
     )
 
     return {

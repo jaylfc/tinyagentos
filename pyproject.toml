@@ -12,6 +12,11 @@ dependencies = [
     "aiosqlite>=0.20.0",
     "psutil>=5.9.0",
     "python-multipart>=0.0.9",
+    # Model torrent mesh — every instance is a potential peer so
+    # downloads distribute across the swarm rather than hammering a
+    # single mirror. Worker install scripts install the OS-level
+    # libtorrent-rasterbar as a prerequisite on each platform.
+    "libtorrent>=2.0.9",
 ]
 
 [project.optional-dependencies]

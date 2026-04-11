@@ -49,21 +49,24 @@ log "install_dir=$INSTALL_DIR branch=$BRANCH"
 
 ensure_linux_deps() {
     if command -v apt-get >/dev/null 2>&1; then
-        log "installing apt deps (python3, venv, git, curl)"
+        log "installing apt deps (python3, venv, git, curl, libtorrent)"
         sudo apt-get update -qq
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-            python3 python3-venv python3-pip git curl ca-certificates
+            python3 python3-venv python3-pip git curl ca-certificates \
+            libtorrent-rasterbar-dev libboost-python-dev
     elif command -v dnf >/dev/null 2>&1; then
-        log "installing dnf deps (python3, git, curl)"
-        sudo dnf install -y -q python3 python3-pip python3-virtualenv git curl
+        log "installing dnf deps (python3, git, curl, libtorrent)"
+        sudo dnf install -y -q python3 python3-pip python3-virtualenv git curl \
+            libtorrent-rasterbar-devel boost-python3-devel
     elif command -v pacman >/dev/null 2>&1; then
         log "installing pacman deps"
-        sudo pacman -Sy --noconfirm --needed python python-pip git curl
+        sudo pacman -Sy --noconfirm --needed python python-pip git curl \
+            libtorrent-rasterbar boost
     elif command -v apk >/dev/null 2>&1; then
         log "installing apk deps"
-        sudo apk add --no-cache python3 py3-pip git curl
+        sudo apk add --no-cache python3 py3-pip git curl libtorrent-rasterbar
     else
-        warn "unrecognised package manager — assuming python3/git/curl already present"
+        warn "unrecognised package manager — assuming python3/git/curl/libtorrent already present"
     fi
 }
 
@@ -78,6 +81,14 @@ ensure_macos_deps() {
     fi
     if ! command -v git >/dev/null 2>&1; then
         die "git not found"
+    fi
+    # libtorrent for the model torrent mesh — brew ships it as
+    # libtorrent-rasterbar with python bindings.
+    if command -v brew >/dev/null 2>&1; then
+        if ! brew list libtorrent-rasterbar >/dev/null 2>&1; then
+            log "installing libtorrent-rasterbar via brew"
+            brew install libtorrent-rasterbar || warn "brew install libtorrent-rasterbar failed — torrent path will be unavailable"
+        fi
     fi
 }
 
@@ -116,7 +127,8 @@ log "installing worker python deps into .venv"
     fastapi \
     uvicorn \
     pyyaml \
-    pillow
+    pillow \
+    libtorrent
 
 # --- first-boot benchmark -----------------------------------------------
 
