@@ -12,6 +12,17 @@ A full web desktop environment with 26 bundled apps, 87 catalog apps, 43 MCP plu
 
 ## Quick Start
 
+**Controller (server):**
+
+```bash
+# Debian / Ubuntu / Fedora / Arch / Alpine / macOS — one-line install
+curl -fsSL https://raw.githubusercontent.com/jaylfc/tinyagentos/master/scripts/install-server.sh | sudo bash
+```
+
+Run without `sudo` to install as a user-mode systemd unit instead. The script is idempotent — safe to re-run on an existing install. Supports env-var overrides for install path, branch, and port.
+
+**Manual / development:**
+
 ```bash
 pip install -e .
 python -m uvicorn tinyagentos.app:create_app --factory --host 0.0.0.0 --port 6969
@@ -40,11 +51,13 @@ TinyAgentOS ships with a full browser-based desktop environment. Open it at `htt
 
 ### 26 Bundled Desktop Apps
 
-**Platform apps (13):** Messages (WebSocket chat), Agents (deploy wizard + logs + skills), Store (43+ apps), Settings (multi-section with Memory capture toggles), Models, Memory (User + Agent sections), Channels, Secrets, Tasks, Import, Images, Dashboard, Files (real VFS with workspace + shared folders).
+**Platform apps (15):** Messages (WebSocket chat), Agents (deploy wizard + logs + skills), Store (43+ apps), Settings (multi-section with Memory capture toggles), Models, Memory (User + Agent sections), Channels, Secrets, Tasks, Import, Images, Dashboard, Files (real VFS with workspace + shared folders), Cluster (worker management + health), Providers (cloud LLM provider management — add/test/remove OpenAI, Anthropic, and compatible APIs).
 
 **OS apps (8):** Calculator (math.js), Calendar (month view), Contacts (CRUD), Browser (URL-rewriting proxy, agent-ready), Media Player (Plyr), Text Editor (CodeMirror 6 with Obsidian-style theme), Image Viewer (zoom/rotate), Terminal (real PTY + SSH client).
 
 **Games (3):** Chess (plays against real agents via LLM), Wordle, Crosswords.
+
+The Activity app includes a Cluster overview panel showing live worker status and resource stats alongside the process monitor. The Model Browser surfaces cloud models (from configured providers) alongside local catalog models, with a provider badge per entry. The deploy wizard accepts cloud models as inference targets.
 
 ## Key Features
 
@@ -75,6 +88,8 @@ tinyagentos-worker http://your-server:6969
 # Android — one-line Termux setup
 curl -sL https://raw.githubusercontent.com/jaylfc/tinyagentos/master/tinyagentos/worker/android_setup.sh | bash
 ```
+
+**Hardware detection on minimal systems.** The worker detects NVIDIA GPUs even when `nvidia-smi` is not installed: it probes `/proc/driver/nvidia` to confirm the driver is loaded and looks up VRAM from a known-cards table keyed by device ID. On native (non-container) hosts the installer offers to install `nvidia-utils` (via `apt`/`dnf`/`pacman`, matching the loaded driver branch automatically). Rockchip NPU detection uses unprivileged sysfs paths so it works inside LXC containers and other restricted environments where `/sys/kernel/debug` is inaccessible. Hosts that have neither GPU nor NPU are registered as CPU workers and contribute embeddings and small-model inference.
 
 **Sudo and freshness.** The Linux/macOS worker installer is designed to run on **either a fresh Debian install or your existing system** — no clean slate required. It installs cleanly on Debian, Ubuntu, Fedora, Arch, Alpine, and macOS.
 
@@ -136,18 +151,19 @@ Features unlock automatically based on your hardware and cluster. Solo Pi sees c
 - **Deployment** — auto-converts and deploys to all backends in the cluster
 
 ### Agent Memory System
-Each agent runs its own QMD (Query Markup Documents) instance inside its container. This is a local, offline-first knowledge base that the agent reads and writes to.
+A single `qmd.service` systemd unit runs on the controller host (port 7832) and serves all per-agent memory indexes. There is no per-container QMD process — agents reach memory over HTTP via injected environment variables. Per-tenant isolation is handled by `dbPath` routing: each agent's index lives at `data/agent-memory/{name}/index.sqlite` on the host and is addressed by passing the path as a query param or body field. Agent A cannot reach Agent B's index; the user's personal index is invisible to agents unless they have an explicit `can_read_user_memory` grant.
 
 - **Document ingestion** — drag-and-drop files into agent memory via the web UI or API. Supports text, markdown, PDFs, code.
 - **Automatic embedding** — documents are chunked and embedded using your local inference backend (NPU, GPU, or CPU). No external API calls.
-- **Keyword search** — FTS5 full-text search across all documents with ranking
-- **Vector search** — semantic similarity search via sqlite-vec using locally-generated embeddings
+- **Keyword search** — FTS5 full-text search across all documents with ranking (`GET /search`)
+- **Vector search** — semantic similarity search via sqlite-vec using locally-generated embeddings (`POST /vsearch`)
 - **Hybrid search** — combines keyword + vector results using Reciprocal Rank Fusion for best-of-both accuracy
+- **Browse / collections** — `GET /browse`, `GET /collections`, `POST /ingest`, `POST /delete-chunk`
 - **Memory browser** — web UI to search across all agents' knowledge bases from one place
-- **Framework-independent** — memory lives in the container, not in the framework. Switch frameworks and the agent's entire knowledge base stays intact.
+- **Framework-independent** — memory lives on the host, not in the framework or the container. Switch frameworks and the agent's entire knowledge base stays intact.
 - **Portable** — export an agent's config, channels, and memory. Import on another TinyAgentOS instance.
 
-The QMD fork adds a remote model server (`qmd serve`) with an Ollama-compatible embedding backend, batch embedding, and retry logic. Each agent's QMD is accessible over HTTP so the platform can query it without touching the container filesystem.
+The QMD fork adds a remote model server (`qmd serve`) with an Ollama-compatible embedding backend, batch embedding, and retry logic. LiteLLM also exposes a `/v1/embeddings` endpoint that routes to the same backends so frameworks using the OpenAI embeddings API work without any shim.
 
 ### Agent Workspace
 Click on any agent to enter their "virtual computer" — a tablet-like interface with app icons: Messages, Memory, Files, Tasks, Channels, Logs. Browse their conversations, search their knowledge, manage their files. Like logging into their personal device.
@@ -193,13 +209,13 @@ Built-in browser with a server-side proxy that rewrites HTML URLs and strips `X-
 Search across agents, apps, messages, and files from a single endpoint. Finds anything on the platform instantly.
 
 ### Monitoring & Management
-- **Dashboard** — KPIs, CPU/RAM sparklines, activity feed, quick actions, backend health, cluster stats
+- **Dashboard** — KPIs, CPU/RAM sparklines, activity feed, quick actions, backend health, cluster stats. The Loaded Models widget unions controller-local models with each cluster worker's heartbeat-reported models, with a per-host badge on each entry. It always renders — shows an empty state when nothing is loaded rather than hiding.
 - **Health Debug Page** — checks all services, backends, agents, disk, RAM with live status
-- **Notifications** — health alerts, backend up/down, worker join/leave, webhook forwarding (Slack/Discord/Telegram)
+- **Notifications** — health alerts, backend up/down, worker join/leave, webhook forwarding (Slack/Discord/Telegram). Toast notifications appear top-right. The welcome notification is gated on a `localStorage` flag so it fires once per install, not on every page load.
 - **Agent Logs** — real-time log viewer with auto-refresh
 - **Backup & Restore** — downloadable config backup, one-click restore, scheduled auto-backup (daily/weekly)
 - **System Updates** — pull latest from GitHub via Settings page
-- **Provider Management** — add/test/remove inference providers with live connectivity checks
+- **Provider Management** — add/test/remove inference providers with live connectivity checks. The Providers desktop app manages cloud LLM credentials; the model browser reflects configured providers automatically.
 
 ## App Catalog (87 Catalog Apps + 26 Desktop Apps + 43 MCP Plugins)
 
@@ -271,9 +287,11 @@ TinyAgentOS Controller (FastAPI + htmx + React Desktop Shell)
 Worker Apps (Windows / macOS / Linux)
 ├── System tray icon (no dock/taskbar window)
 ├── Auto-discovers local inference backends
-├── Reports hardware profile to controller
-└── Heartbeat with load monitoring
+├── Reports hardware profile to controller (including loaded models per heartbeat)
+└── Heartbeat with load monitoring; re-registers automatically on controller restart
 ```
+
+The architectural plan for the OpenClaw → Hermes → OpenClaw round-trip (the TAOS Framework Integration Bridge) is at [docs/superpowers/specs/2026-04-11-taos-framework-integration-bridge-design.md](docs/superpowers/specs/2026-04-11-taos-framework-integration-bridge-design.md). The bridge is not yet wired — see Known Limitations below. For the framework-agnostic runtime rule that makes this possible, see [docs/design/framework-agnostic-runtime.md](docs/design/framework-agnostic-runtime.md).
 
 ## Resource Overhead
 
@@ -370,18 +388,21 @@ sudo systemctl status tinyagentos
 
 On RK3588 boards with NPU image generation enabled, the CPU and NPU image backends ship as additional units at `tinyagentos-sdcpp.service` and `tinyagentos-rknn-sd.service`. Both are started and enabled by the install script.
 
+## RK3588 NPU Setup
+
+`scripts/install-rknpu.sh` is an opt-in automated installer for the full Rockchip NPU stack. It pins `librknnrt` to 2.3.0, installs the jaylfc fork of rkllama, and preloads three chat models. All binaries are fetched from `huggingface.co/jaysom/tinyagentos-rockchip-mirror` — a TAOS-controlled mirror — and SHA256-verified before installation. If any checksum fails the script hard-aborts.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jaylfc/tinyagentos/master/scripts/install-rknpu.sh | sudo bash
+```
+
+See [docs/mirror-policy.md](docs/mirror-policy.md) for the mirror governance policy — what is mirrored, when it updates, how to verify integrity independently, and how to self-host the mirror for air-gapped deployments. The same policy will extend to RK3576, Raspberry Pi 4, Mac mini / Apple Silicon, and x86 classes as those verified install paths land.
+
 ## RK3588 NPU Image Generation — Runtime Version Pin
 
 **If you're running image generation on the Rockchip NPU, `/usr/lib/librknnrt.so` must be version 2.3.0.** The LCM Dreamshaper UNet RKNN file was compiled with `rknn-toolkit2 2.3.0` (2024-11-07) and segfaults at the first UNet inference step under `librknnrt 2.3.2` (2025-04-09) due to tightened tensor-layout validation in the newer runtime. The data-format fix (NHWC on unet + vae_decoder) is necessary but not sufficient; the runtime also needs to match.
 
-The install script pulls the correct version from darkbit1001's model repo. If you install manually, use:
-
-```bash
-curl -fL -o ~/.local/share/tinyagentos/rknn-sd/librknnrt.so \
-  https://huggingface.co/darkbit1001/Stable-Diffusion-1.5-LCM-ONNX-RKNN2/resolve/main/librknnrt.so
-sudo cp ~/.local/share/tinyagentos/rknn-sd/librknnrt.so /usr/lib/librknnrt.so
-sudo ldconfig
-```
+`scripts/install-rknpu.sh` handles this automatically. For manual installs, all binaries including `librknnrt.so 2.3.0` are available from the TAOS mirror at `huggingface.co/jaysom/tinyagentos-rockchip-mirror`. Do not pull from community repos directly — use the mirror so the SHA256 is known.
 
 Verify:
 
@@ -394,6 +415,14 @@ strings /usr/lib/librknnrt.so | grep "librknnrt version"
 
 **Rollback**: if you ever need to restore the newer runtime (losing NPU SD), `sudo cp /home/$USER/rkllama/src/rkllama/lib/librknnrt.so /usr/lib/librknnrt.so && sudo ldconfig`.
 
+## Known Limitations
+
+**Sequential model loading (deferred to Phase 1.5).** On shared RK3588 hardware, rkllama currently preloads three chat models permanently at startup. This consumes a significant portion of NPU RKNN slot budget, which means NPU image generation (LCM Dreamshaper) cannot run concurrently on the same board. The design for cooperative slot management and sequential load/unload is documented; it is not yet implemented. For now, if you need NPU image generation on the same board as LLM inference, disable the preloaded chat models in rkllama config and load models manually.
+
+**Cluster-wide scheduler aggregation (deferred to v2).** The cluster scheduler currently routes tasks based on individual worker heartbeats. Aggregating the full cluster view for capacity planning, bin-packing, and priority preemption across all workers is a v2 milestone. The spec is at `docs/design/resource-scheduler.md`.
+
+**OpenClaw → Hermes round-trip not yet wired.** The TAOS Framework Integration Bridge — the mechanism for routing an OpenClaw agent through Hermes and back — is designed but not implemented. See the architecture section below.
+
 ## Design Docs
 
 - [docs/design/desktop-shell.md](docs/design/desktop-shell.md) — full desktop shell spec
@@ -402,6 +431,9 @@ strings /usr/lib/librknnrt.so | grep "librknnrt version"
 - [docs/design/plan-desktop-shell-core.md](docs/design/plan-desktop-shell-core.md) — shell implementation plan
 - [docs/design/plan-desktop-os-apps.md](docs/design/plan-desktop-os-apps.md) — OS apps implementation plan
 - [docs/design/plan-desktop-mobile-view.md](docs/design/plan-desktop-mobile-view.md) — mobile view implementation plan
+- [docs/design/framework-agnostic-runtime.md](docs/design/framework-agnostic-runtime.md) — containers hold code, hosts hold state (load-bearing architectural rule)
+- [docs/superpowers/specs/2026-04-11-taos-framework-integration-bridge-design.md](docs/superpowers/specs/2026-04-11-taos-framework-integration-bridge-design.md) — TAOS Framework Integration Bridge design (OpenClaw → Hermes → OpenClaw round-trip, not yet implemented)
+- [docs/mirror-policy.md](docs/mirror-policy.md) — binary mirror governance: what is mirrored, SHA256 verification, self-hosting guide
 
 ## Development
 
@@ -465,6 +497,13 @@ CI runs automatically on every push (Python 3.10-3.13 + security audit).
 - [x] Loaded Models panel in Model Browser — shows running models, purpose, and VRAM/RAM usage
 - [x] iOS PWA pill bar — safe-area-aware bottom nav with back / home / card-switcher / notifications
 - [x] Model download manager — writes to `data/models/`, streams progress, surfaces errors
+- [x] Cluster app + Cluster panel in Activity — dedicated worker management app and read-only cluster overview in Activity
+- [x] Providers app + cloud models in Model Browser — manage cloud LLM providers, provider badge per model, deploy wizard accepts cloud models
+- [x] Loaded Models widget — unions controller-local + cluster worker models, host badge per entry, always renders
+- [x] Host-managed qmd.service — single qmd process on the controller host, per-agent index isolation via dbPath routing
+- [x] Worker hardware detection without nvidia-smi — `/proc/driver/nvidia` probe + VRAM lookup table; installer offers nvidia-utils on native hosts
+- [x] install-server.sh — controller installer companion to install-worker.sh; supports Debian/Ubuntu/Fedora/Arch/Alpine + macOS; system or user-mode systemd unit
+- [x] install-rknpu.sh — opt-in Rockchip NPU setup; pins librknnrt 2.3.0, installs rkllama fork, preloads three chat models; all binaries from TAOS mirror with SHA256 verification
 
 ### In Progress
 - [ ] Fresh install test on clean hardware (#2)

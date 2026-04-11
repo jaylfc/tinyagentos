@@ -197,5 +197,8 @@ path breaks.
   concern; containers don't hold weights either)
 - `docs/design/cluster-dispatch.md` — migrating agents across workers (the rule
   makes this almost free)
+- `docs/superpowers/specs/2026-04-11-taos-framework-integration-bridge-design.md`
+  — TAOS Framework Integration Bridge: the concrete design for routing an
+  OpenClaw agent through Hermes and back, enabled by this rule
 - Issues #29, #30, #32, #33, #34 — backend-driven scheduler wiring, the
   reason this cleanup unblocks real work
