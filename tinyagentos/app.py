@@ -511,6 +511,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     from tinyagentos.routes.activity import router as activity_router
     app.include_router(activity_router)
 
+    from tinyagentos.routes.frameworks import router as frameworks_router
+    app.include_router(frameworks_router)
+
     # Lobby demo (internal only — not included in public builds)
     try:
         from tinyagentos.lobby.routes import router as lobby_router
