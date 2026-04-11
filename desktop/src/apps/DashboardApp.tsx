@@ -62,6 +62,36 @@ interface LoadedModel {
   ram_mb?: number | null;
 }
 
+interface SchedulerResource {
+  name: string;
+  platform: string;
+  runtime: string;
+  runtime_version: string;
+  concurrency: number;
+  in_flight: number;
+  capabilities: string[];
+}
+
+interface SchedulerStats {
+  submitted: number;
+  completed: number;
+  errors: number;
+  rejected: number;
+  active: number;
+  resources: SchedulerResource[];
+}
+
+interface SchedulerTask {
+  task_id: string;
+  capability: string;
+  submitter: string;
+  resource: string | null;
+  status: string;
+  elapsed_seconds: number | null;
+  started_at: number | null;
+  completed_at: number | null;
+}
+
 function formatBytes(bps: number): string {
   if (bps < 1024) return `${bps} B/s`;
   if (bps < 1024 * 1024) return `${(bps / 1024).toFixed(1)} KB/s`;
@@ -101,14 +131,18 @@ function LoadBar({ value, label, unit = "%" }: { value: number; label?: string; 
 export function DashboardApp({ windowId: _windowId }: { windowId: string }) {
   const [data, setData] = useState<ActivityData | null>(null);
   const [loadedModels, setLoadedModels] = useState<LoadedModel[]>([]);
+  const [schedulerStats, setSchedulerStats] = useState<SchedulerStats | null>(null);
+  const [schedulerTasks, setSchedulerTasks] = useState<SchedulerTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
-      const [actRes, modRes] = await Promise.all([
+      const [actRes, modRes, schedStatsRes, schedTasksRes] = await Promise.all([
         fetch("/api/activity", { headers: { Accept: "application/json" } }),
         fetch("/api/models/loaded", { headers: { Accept: "application/json" } }).catch(() => null),
+        fetch("/api/scheduler/stats", { headers: { Accept: "application/json" } }).catch(() => null),
+        fetch("/api/scheduler/tasks?limit=8", { headers: { Accept: "application/json" } }).catch(() => null),
       ]);
       if (actRes.ok) {
         const json = await actRes.json();
@@ -118,6 +152,13 @@ export function DashboardApp({ windowId: _windowId }: { windowId: string }) {
       if (modRes && modRes.ok) {
         const json = await modRes.json();
         setLoadedModels(json.loaded ?? []);
+      }
+      if (schedStatsRes && schedStatsRes.ok) {
+        setSchedulerStats(await schedStatsRes.json());
+      }
+      if (schedTasksRes && schedTasksRes.ok) {
+        const json = await schedTasksRes.json();
+        setSchedulerTasks(json.tasks ?? []);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load");
@@ -403,6 +444,90 @@ export function DashboardApp({ windowId: _windowId }: { windowId: string }) {
                   </div>
                 ))}
               </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Resource scheduler */}
+        {schedulerStats && (
+          <Card className="col-span-12 p-4">
+            <CardContent className="p-0">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Activity size={14} className="text-violet-400" />
+                  <h3 className="text-xs font-semibold text-shell-text">Scheduler</h3>
+                </div>
+                <div className="flex items-center gap-3 text-[10px] text-shell-text-tertiary tabular-nums">
+                  <span>submitted {schedulerStats.submitted}</span>
+                  <span>done {schedulerStats.completed}</span>
+                  {schedulerStats.errors > 0 && (
+                    <span className="text-red-400">err {schedulerStats.errors}</span>
+                  )}
+                  {schedulerStats.rejected > 0 && (
+                    <span className="text-amber-400">rejected {schedulerStats.rejected}</span>
+                  )}
+                  <span className="text-emerald-400">active {schedulerStats.active}</span>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-3">
+                {schedulerStats.resources.map((r) => (
+                  <div
+                    key={r.name}
+                    className="p-2 rounded-lg bg-white/[0.02] border border-white/5"
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[11px] font-medium text-shell-text">{r.name}</span>
+                      <span className="text-[10px] text-shell-text-tertiary tabular-nums">
+                        {r.in_flight}/{r.concurrency}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-shell-text-tertiary truncate">
+                      {r.platform} · {r.runtime}{r.runtime_version && ` ${r.runtime_version}`}
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {r.capabilities.map((c) => (
+                        <span
+                          key={c}
+                          className="text-[9px] px-1.5 py-0.5 rounded-full bg-violet-500/10 text-violet-300"
+                        >
+                          {c}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {schedulerTasks.length > 0 && (
+                <div className="mt-2 space-y-0.5">
+                  <div className="text-[10px] text-shell-text-tertiary mb-1">Recent tasks</div>
+                  {schedulerTasks.slice(0, 8).map((t) => {
+                    const statusColor =
+                      t.status === "complete"
+                        ? "text-emerald-400"
+                        : t.status === "running"
+                        ? "text-violet-400"
+                        : t.status === "error"
+                        ? "text-red-400"
+                        : t.status === "rejected"
+                        ? "text-amber-400"
+                        : "text-shell-text-tertiary";
+                    return (
+                      <div
+                        key={t.task_id}
+                        className="flex items-center gap-2 text-[10px] py-0.5 tabular-nums"
+                      >
+                        <span className={`${statusColor} w-16`}>{t.status}</span>
+                        <span className="text-shell-text-secondary w-28 truncate">{t.capability}</span>
+                        <span className="text-shell-text w-28 truncate">{t.resource ?? "-"}</span>
+                        <span className="text-shell-text-tertiary flex-1 truncate">{t.submitter}</span>
+                        <span className="text-shell-text-tertiary w-14 text-right">
+                          {t.elapsed_seconds != null ? `${t.elapsed_seconds.toFixed(1)}s` : ""}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
