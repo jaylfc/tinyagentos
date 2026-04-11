@@ -7,6 +7,7 @@ import {
   workersToAggregated,
   HOST_BADGE_CLASS,
 } from "@/lib/models";
+import { availableKvQuantTypes } from "@/lib/cluster";
 import { useProcessStore } from "@/stores/process-store";
 import { getApp } from "@/registry/app-registry";
 import {
@@ -34,6 +35,7 @@ interface Agent {
   paused?: boolean;
   on_worker_failure?: "pause" | "fallback" | "escalate-immediately";
   fallback_models?: string[];
+  kv_cache_quant?: string;
 }
 
 interface Framework {
@@ -341,6 +343,11 @@ function DeployWizard({
   const [onWorkerFailure, setOnWorkerFailure] = useState<"pause" | "fallback" | "escalate-immediately">("pause");
   const [fallbackModels, setFallbackModels] = useState<string[]>([]);
 
+  // KV cache quantization — only visible when the cluster advertises more
+  // than one supported type.  Fetched once when the wizard opens.
+  const [kvQuantOptions, setKvQuantOptions] = useState<string[]>(["fp16"]);
+  const [kvCacheQuant, setKvCacheQuant] = useState<string>("fp16");
+
   const [deploying, setDeploying] = useState(false);
 
   const [deployError, setDeployError] = useState<string | null>(null);
@@ -373,6 +380,28 @@ function DeployWizard({
         }
       } catch { /* leave frameworks empty, wizard will show nothing selectable */ }
     })();
+    // Fetch cluster-wide KV quant options.  The dropdown only renders if
+    // the cluster reports more than one supported type, so this is a no-op
+    // today and silently stays invisible.
+    (async () => {
+      try {
+        const res = await fetch("/api/cluster/kv-quant-options", {
+          headers: { Accept: "application/json" },
+        });
+        const ct = res.headers.get("content-type") ?? "";
+        if (res.ok && ct.includes("application/json")) {
+          const data = await res.json();
+          if (Array.isArray(data?.options) && data.options.length > 0) {
+            setKvQuantOptions(data.options as string[]);
+          }
+        }
+      } catch {
+        // Fall back to computing from the workers fetch we already do below.
+        // If that also fails we stay on the ["fp16"] default and no dropdown
+        // is shown.
+      }
+    })();
+
     (async () => {
       const localModels: Model[] = [];
       try {
@@ -416,6 +445,15 @@ function DeployWizard({
             hostKind: "worker",
           });
         }
+        // Fall back: if the dedicated kv-quant-options fetch above already
+        // found more than one option, leave it.  Otherwise compute from the
+        // workers we just fetched so we get the same answer without a second
+        // round-trip.
+        setKvQuantOptions((prev) => {
+          if (prev.length > 1) return prev;
+          const computed = availableKvQuantTypes(workers);
+          return computed.length > 0 ? computed : ["fp16"];
+        });
       } catch { /* ignore */ }
 
       // Also fetch cloud provider models
@@ -485,6 +523,8 @@ function DeployWizard({
       setCanReadUserMemory(false);
       setOnWorkerFailure("pause");
       setFallbackModels([]);
+      setKvQuantOptions(["fp16"]);
+      setKvCacheQuant("fp16");
       setDeploying(false);
       setDeployError(null);
     }
@@ -531,6 +571,7 @@ function DeployWizard({
           can_read_user_memory: canReadUserMemory,
           on_worker_failure: onWorkerFailure,
           fallback_models: fallbackModels,
+          kv_cache_quant: kvCacheQuant,
         }),
       });
       if (!res.ok) {
@@ -926,6 +967,31 @@ function DeployWizard({
                   )}
                 </div>
               </div>
+              {/* KV cache quant — only shown when at least one cluster worker
+                  advertises a type beyond fp16.  If the cluster only has fp16
+                  support this block is completely absent from the DOM. */}
+              {kvQuantOptions.length > 1 && (
+                <div>
+                  <Label htmlFor="agent-kv-quant" className="mb-1.5 block">
+                    KV cache quantization
+                  </Label>
+                  <select
+                    id="agent-kv-quant"
+                    value={kvCacheQuant}
+                    onChange={(e) => setKvCacheQuant(e.target.value)}
+                    className="flex h-9 w-full rounded-lg border border-white/10 bg-shell-bg-deep px-3 py-1 text-sm text-shell-text focus-visible:outline-none focus-visible:border-accent/40 focus-visible:ring-2 focus-visible:ring-accent/20 transition-colors"
+                    aria-describedby="agent-kv-quant-desc"
+                  >
+                    {kvQuantOptions.map((opt) => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
+                  </select>
+                  <p id="agent-kv-quant-desc" className="mt-1 text-xs text-shell-text-tertiary">
+                    Quantization applied to the KV cache during inference. fp16 is the default.
+                    Additional options appear only when a cluster worker supports them.
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
@@ -944,6 +1010,10 @@ function DeployWizard({
                   ["User Memory", canReadUserMemory ? "Allowed (read-only)" : "Denied"],
                   ["On failure", onWorkerFailure],
                   ["Fallbacks", fallbackModels.filter(Boolean).join(", ") || "none"],
+                  // Only include KV quant in the review when the cluster
+                  // actually offers a choice — avoids surfacing an fp16-only
+                  // entry that would confuse users who never saw the dropdown.
+                  ...(kvQuantOptions.length > 1 ? [["KV quant", kvCacheQuant]] : []),
                 ].map(([label, value]) => (
                   <div key={label} className="flex items-center justify-between px-4 py-2.5">
                     <span className="text-xs text-shell-text-secondary">{label}</span>
@@ -1036,6 +1106,7 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
                 paused: Boolean(a.paused),
                 on_worker_failure: (a.on_worker_failure as Agent["on_worker_failure"]) ?? "pause",
                 fallback_models: Array.isArray(a.fallback_models) ? (a.fallback_models as string[]) : [],
+                kv_cache_quant: a.kv_cache_quant ? String(a.kv_cache_quant) : "fp16",
               }))
             );
             setLoading(false);
@@ -1192,3 +1263,12 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
     </div>
   );
 }
+
+// TODO (#144): Cluster widget KV quant chip.
+// Once a backend actually reports a type beyond fp16, add a small chip to the
+// loaded-model row in DashboardApp's cluster widget showing the active KV
+// quant mode.  The chip should be absent when the mode is fp16 (the default),
+// visible for anything else.  The data is already in ClusterWorker
+// kv_cache_quant_support and flows through to the model list in
+// /api/cluster/backends.  No dead widget today — wait for a real reporter.
+

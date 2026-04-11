@@ -87,6 +87,10 @@ export interface ClusterWorker {
    *  Derived from the catalog manifests on the controller — never duplicates
    *  entries that are already in `capabilities`. */
   potential_capabilities?: string[];
+  /** KV cache quantization types this worker can serve.  Absent on workers
+   *  running old agent code; treat missing as ["fp16"].  A worker running a
+   *  TurboQuant-capable backend will list additional entries here. */
+  kv_cache_quant_support?: string[];
 }
 
 export type WorkerStatus = "online" | "stale" | "offline" | "unknown";
@@ -216,6 +220,25 @@ export function workerHardwareSummary(worker: ClusterWorker): string {
   const parts = [cpuShort, ramGb, accel];
   if (osStr) parts.push(osStr);
   return parts.join("  \u00b7  ");
+}
+
+/**
+ * Return the set-union of KV cache quant types across the provided workers,
+ * with "fp16" always present as the baseline.
+ *
+ * The deploy wizard calls this (or fetches /api/cluster/kv-quant-options
+ * directly) to decide whether to render a KV quant dropdown.  If the
+ * returned array has length === 1, no control should be shown at all.
+ */
+export function availableKvQuantTypes(workers: ClusterWorker[]): string[] {
+  const types = new Set<string>(["fp16"]);
+  for (const w of workers) {
+    const support = w.kv_cache_quant_support;
+    if (Array.isArray(support)) {
+      for (const t of support) types.add(t);
+    }
+  }
+  return Array.from(types).sort();
 }
 
 /** Format a unix-seconds timestamp as a short relative string like "3s ago" / "2m ago". */
