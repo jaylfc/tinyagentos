@@ -28,6 +28,7 @@ from tinyagentos.benchmark import BenchmarkStore
 from tinyagentos.installation_state import InstallationState
 from tinyagentos.scheduler import BackendCatalog, HistoryStore, ScoreCache, TaskScheduler
 from tinyagentos.scheduler.discovery import build_scheduler as build_resource_scheduler
+from tinyagentos.torrent_settings import TorrentSettingsStore
 from tinyagentos.relationships import RelationshipManager
 from tinyagentos.secrets import SecretsStore
 from tinyagentos.training import TrainingManager
@@ -78,7 +79,8 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     notif_store = NotificationStore(data_dir / "notifications.db")
     qmd_client = QmdClient(config.qmd.get("url", "http://localhost:7832"))
     http_client = httpx.AsyncClient(timeout=30)
-    download_manager = DownloadManager()
+    torrent_settings_store = TorrentSettingsStore(data_dir / "torrent_settings.json")
+    download_manager = DownloadManager(torrent_settings_store=torrent_settings_store)
     secrets_store = SecretsStore(data_dir / "secrets.db")
     relationship_mgr = RelationshipManager(data_dir / "relationships.db")
     channel_store = ChannelStore(data_dir / "channels.db")
@@ -156,6 +158,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.qmd_client = qmd_client
         app.state.http_client = http_client
         app.state.download_manager = download_manager
+        app.state.torrent_settings_store = torrent_settings_store
         app.state.secrets = secrets_store
         app.state.relationships = relationship_mgr
         app.state.channels = channel_store
@@ -417,6 +420,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     from tinyagentos.routes.benchmarks import router as benchmarks_router
     app.include_router(benchmarks_router)
+
+    from tinyagentos.routes.torrent import router as torrent_router
+    app.include_router(torrent_router)
 
     from tinyagentos.routes.video import router as video_router
     app.include_router(video_router)

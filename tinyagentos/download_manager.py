@@ -26,9 +26,10 @@ class DownloadTask:
 
 
 class DownloadManager:
-    def __init__(self):
+    def __init__(self, torrent_settings_store=None):
         self._tasks: dict[str, DownloadTask] = {}
         self._running: dict[str, asyncio.Task] = {}
+        self._torrent_settings_store = torrent_settings_store
         # Lazy-instantiated torrent downloader — created on first use so
         # TinyAgentOS installs without libtorrent still boot. The
         # TorrentDownloader import raises TorrentNotAvailable if the
@@ -39,15 +40,23 @@ class DownloadManager:
         if self._torrent is not None:
             return self._torrent
         try:
-            from tinyagentos.torrent_downloader import (
-                TorrentDownloader,
-                TorrentNotAvailable,
-            )
-            self._torrent = TorrentDownloader()
+            from tinyagentos.torrent_downloader import TorrentDownloader
+
+            settings = None
+            if self._torrent_settings_store is not None:
+                settings = self._torrent_settings_store.load()
+            self._torrent = TorrentDownloader(settings=settings)
             return self._torrent
         except Exception as exc:
             logger.debug("torrent downloader unavailable: %s", exc)
             return None
+
+    def apply_torrent_settings(self, settings) -> None:
+        """Hot-apply new torrent settings to a running libtorrent session.
+        No-op if the session hasn't been started yet — next call to
+        _get_torrent_downloader will read the fresh store."""
+        if self._torrent is not None:
+            self._torrent.apply_settings(settings)
 
     def start_download(
         self,

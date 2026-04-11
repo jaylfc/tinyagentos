@@ -97,14 +97,14 @@ def should_use_torrent(variant: dict, seed_enabled: bool) -> bool:
        (default: False — we do not redistribute by default, only when
        the catalog publisher has explicitly marked the variant as
        allowed per its licence)
-    4. Seed mode doesn't gate *download*; seeding is a post-download
-       choice. This function answers 'should we TRY the torrent path'
-       not 'should we keep seeding after completion'.
 
-    The ``seed_enabled`` argument is accepted so the function can be
-    extended later (e.g. 'only use torrent when seeding is enabled
-    OR when the HTTP source is rate-limited') without changing the
-    call sites.
+    Note on ``seed_enabled``: opting out of seeding does NOT prevent
+    the user from downloading via the swarm — downloads via magnet
+    always work when libtorrent is installed. The flag only controls
+    whether the torrent is kept in the session after completion (i.e.
+    whether we seed back to other peers). See
+    :class:`TorrentDownloader.download` for the post-complete
+    release hook that honours this distinction.
     """
     if not TORRENT_AVAILABLE:
         return False
@@ -122,14 +122,18 @@ class TorrentDownloader:
     download, poll status at 1Hz, emit progress via the task object.
     Completed downloads remain in the session (seeding) until removed
     via ``release()``.
+
+    The session honours the user's torrent settings: upload rate
+    limit (KB/s), max active seeds, listen port. A False seed_enabled
+    flag doesn't prevent construction (we still want downloads) —
+    it's enforced higher up in should_use_torrent and the DownloadManager.
     """
 
     def __init__(
         self,
         *,
+        settings: "TorrentSettings | None" = None,
         listen_port_range: tuple[int, int] = (6881, 6889),
-        download_rate_limit: int = 0,  # 0 = unlimited
-        upload_rate_limit: int = 0,
         peer_timeout_seconds: float = 30.0,
     ):
         if not TORRENT_AVAILABLE:
@@ -137,18 +141,40 @@ class TorrentDownloader:
                 "libtorrent is not installed — install python-libtorrent "
                 "to enable the torrent download path"
             )
+        from tinyagentos.torrent_settings import TorrentSettings
+        self.settings = settings or TorrentSettings()
+        upload_bps = max(0, self.settings.upload_rate_limit_kbps * 1024)
         self._session = lt.session({
             "listen_interfaces": f"0.0.0.0:{listen_port_range[0]}",
             "enable_dht": True,
             "enable_lsd": True,
             "enable_upnp": True,
             "enable_natpmp": True,
-            "download_rate_limit": download_rate_limit,
-            "upload_rate_limit": upload_rate_limit,
+            "download_rate_limit": 0,  # downloads are always unlimited
+            "upload_rate_limit": upload_bps,
+            "active_seeds": self.settings.max_active_seeds,
+            "active_limit": max(self.settings.max_active_seeds + 5, 25),
         })
         self._peer_timeout = peer_timeout_seconds
         self._handles: dict[str, "lt.torrent_handle"] = {}  # type: ignore
         self._tasks: dict[str, TorrentTask] = {}
+
+    def apply_settings(self, settings) -> None:
+        """Hot-apply changed settings to the running libtorrent session.
+
+        Called by PUT /api/torrent/settings so users can change the
+        upload cap or seed count without restarting TinyAgentOS.
+        """
+        self.settings = settings
+        upload_bps = max(0, settings.upload_rate_limit_kbps * 1024)
+        try:
+            self._session.apply_settings({
+                "upload_rate_limit": upload_bps,
+                "active_seeds": settings.max_active_seeds,
+                "active_limit": max(settings.max_active_seeds + 5, 25),
+            })
+        except Exception:
+            logger.exception("failed to hot-apply torrent settings")
 
     def list_tasks(self) -> list[TorrentTask]:
         return list(self._tasks.values())
@@ -221,6 +247,13 @@ class TorrentDownloader:
                 task.status = "error"
                 task.error = "sha256 mismatch"
                 raise TorrentError("sha256 mismatch after torrent download")
+
+        # Seeding opt-out: if the user has disabled seeding, release
+        # the torrent handle now that the download is complete. The
+        # file stays on disk (delete_files=False) so the model is
+        # still usable; only the back-upload to other peers stops.
+        if not self.settings.seed_enabled:
+            self.release(task_id, delete_files=False)
 
         return task
 
