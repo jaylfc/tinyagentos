@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Bot, Plus, Trash2, ScrollText, Play, Server, X, ChevronRight, ChevronLeft, Check, Wrench, MessageSquare } from "lucide-react";
+import { Bot, Plus, Trash2, ScrollText, Play, Server, X, ChevronRight, ChevronLeft, Check, Wrench, MessageSquare, Download } from "lucide-react";
 import { AgentSkillsPanel } from "./AgentSkillsPanel";
 import { AgentMessagesPanel } from "./AgentMessagesPanel";
+import { useProcessStore } from "@/stores/process-store";
+import { getApp } from "@/registry/app-registry";
 import {
   Button,
   Card,
@@ -46,13 +48,6 @@ const MOCK_FRAMEWORKS: Framework[] = [
   { id: "autogen", name: "AutoGen", description: "Multi-agent conversation framework" },
   { id: "crewai", name: "CrewAI", description: "Role-based autonomous AI agents" },
   { id: "custom", name: "Custom", description: "Bring your own agent framework" },
-];
-
-const MOCK_MODELS: Model[] = [
-  { id: "qwen2.5-7b", name: "Qwen 2.5 7B" },
-  { id: "llama3-8b", name: "Llama 3 8B" },
-  { id: "mistral-7b", name: "Mistral 7B" },
-  { id: "phi3-mini", name: "Phi-3 Mini" },
 ];
 
 const COLORS = [
@@ -294,8 +289,16 @@ function DeployWizard({
   const [selectedFramework, setSelectedFramework] = useState<string>("");
 
   // Step 3
-  const [models, setModels] = useState<Model[]>(MOCK_MODELS);
+  const [models, setModels] = useState<Model[]>([]);
+  const [modelsLoaded, setModelsLoaded] = useState(false);
   const [selectedModel, setSelectedModel] = useState<string>("");
+
+  const openWindow = useProcessStore((s) => s.openWindow);
+  const openModelsApp = useCallback(() => {
+    const app = getApp("models");
+    if (app) openWindow("models", app.defaultSize);
+    onClose();
+  }, [openWindow, onClose]);
 
   // Step 4
   const [memory, setMemory] = useState("512");
@@ -348,16 +351,17 @@ function DeployWizard({
             : Array.isArray(data?.models)
               ? data.models
               : [];
-          if (list.length > 0) {
-            setModels(
-              list.map((m) => ({
-                id: String(m.id),
-                name: String(m.name ?? m.id),
-              }))
-            );
-          }
+          // Only include models the user has actually downloaded.
+          const downloaded = list.filter((m) => m.has_downloaded_variant === true);
+          setModels(
+            downloaded.map((m) => ({
+              id: String(m.id),
+              name: String(m.name ?? m.id),
+            }))
+          );
         }
-      } catch { /* use fallback */ }
+      } catch { /* leave models empty — step 2 will show empty state */ }
+      setModelsLoaded(true);
     })();
   }, [open]);
 
@@ -369,6 +373,8 @@ function DeployWizard({
       setColor(COLORS[0]);
       setSelectedFramework("");
       setSelectedModel("");
+      setModels([]);
+      setModelsLoaded(false);
       setMemory("512");
       setCpus("1");
       setCanReadUserMemory(false);
@@ -427,13 +433,17 @@ function DeployWizard({
   return (
     <div
       className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      style={{
+        paddingTop: "calc(1rem + env(safe-area-inset-top, 0px))",
+        paddingBottom: "calc(1rem + env(safe-area-inset-bottom, 0px))",
+      }}
       onClick={() => onClose()}
       role="dialog"
       aria-modal="true"
       aria-label="Deploy Agent"
     >
       <div
-        className="w-full max-w-lg max-h-full bg-shell-surface rounded-xl border border-white/10 shadow-2xl overflow-hidden flex flex-col"
+        className="w-full max-w-lg max-h-full min-h-0 bg-shell-surface rounded-xl border border-white/10 shadow-2xl overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -483,7 +493,7 @@ function DeployWizard({
         </div>
 
         {/* Body */}
-        <div className="px-5 py-5 min-h-[220px] flex-1 overflow-y-auto">
+        <div className="px-5 py-5 flex-1 min-h-0 overflow-y-auto">
           {/* Step 0: Name + Color */}
           {step === 0 && (
             <Card className="p-0 border-0 bg-transparent shadow-none space-y-4">
@@ -546,20 +556,51 @@ function DeployWizard({
           {step === 2 && (
             <div className="space-y-2">
               <span className="block text-xs text-shell-text-secondary mb-2">Select Model</span>
-              {models.map((m) => (
-                <button
-                  key={m.id}
-                  onClick={() => setSelectedModel(m.id)}
-                  className={`w-full text-left px-4 py-3 rounded-lg border transition-colors ${
-                    selectedModel === m.id
-                      ? "border-accent bg-accent/10"
-                      : "border-white/5 bg-shell-bg-deep hover:bg-white/5"
-                  }`}
-                >
-                  <div className="text-sm font-medium">{m.name}</div>
-                  <div className="text-xs text-shell-text-tertiary">{m.id}</div>
-                </button>
-              ))}
+              {modelsLoaded && models.length === 0 ? (
+                <div className="flex flex-col items-center justify-center gap-3 py-8 px-4 text-center rounded-lg border border-white/5 bg-shell-bg-deep">
+                  <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-accent/10">
+                    <Download size={20} className="text-accent" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-shell-text">No downloaded models yet.</p>
+                    <p className="text-xs text-shell-text-tertiary mt-1">
+                      Download a model first to deploy an agent that can use it.
+                    </p>
+                  </div>
+                  <Button size="sm" onClick={openModelsApp}>
+                    <Download size={13} />
+                    Get more models
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  {models.map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={() => setSelectedModel(m.id)}
+                      className={`w-full text-left px-4 py-3 rounded-lg border transition-colors ${
+                        selectedModel === m.id
+                          ? "border-accent bg-accent/10"
+                          : "border-white/5 bg-shell-bg-deep hover:bg-white/5"
+                      }`}
+                    >
+                      <div className="text-sm font-medium">{m.name}</div>
+                      <div className="text-xs text-shell-text-tertiary">{m.id}</div>
+                    </button>
+                  ))}
+                  {models.length > 0 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={openModelsApp}
+                      className="w-full mt-2"
+                    >
+                      <Download size={13} />
+                      Get more models
+                    </Button>
+                  )}
+                </>
+              )}
             </div>
           )}
 
@@ -781,7 +822,7 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
   }
 
   return (
-    <div className="flex flex-col h-full bg-shell-bg text-shell-text select-none relative">
+    <div className="flex flex-col h-full min-h-0 overflow-hidden bg-shell-bg text-shell-text select-none relative">
       {/* Toolbar */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
         <div className="flex items-center gap-2">
