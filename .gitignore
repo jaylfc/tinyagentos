@@ -29,6 +29,18 @@ tinyagentos/lobby/
 tests/test_lobby.py
 docs/specs/2026-04-05-lobby-chat-room-design.md
 
+# Private strategy, business, commercial docs — never public.
+# Anything discussing pricing, tiers, margins, vision, monetisation,
+# cloud reselling economics, or subscription plans lives here.
+docs/strategy/
+docs/business/
+docs/internal/
+docs/private/
+*.private.md
+# Private cloud platform design — contains tier pricing, Stripe flow,
+# storage wholesale costs, cloud worker reselling economics.
+docs/superpowers/specs/2026-04-11-tinyagentos-cloud-platform-design.md
+
 # OS
 .DS_Store
 .venv/
