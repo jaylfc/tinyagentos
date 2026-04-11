@@ -16,6 +16,9 @@ data/.auth_sessions
 data/images/
 data/videos/
 data/secrets.db
+data/models/
+data/workspace/
+data/*.log
 
 # Environment
 .env
