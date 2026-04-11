@@ -200,14 +200,51 @@ detect_and_advise_accelerators() {
     fi
 
     # ── Rockchip RKNPU ──────────────────────────────────────────────
-    if [[ -e /dev/rknpu ]] || [[ -d /sys/class/devfreq/fdab0000.npu ]]; then
+    local rknpu_present=0
+    if [[ -e /dev/rknpu ]]; then
+        rknpu_present=1
+    else
+        for _npu_devfreq in /sys/class/devfreq/*.npu; do
+            [[ -d "$_npu_devfreq" ]] && { rknpu_present=1; break; }
+        done
+    fi
+    if (( rknpu_present )); then
         found_any=1
+        # rkllama might be installed as a top-level command, or as a
+        # venv-local entrypoint under ~/rkllama/rkllama-env/bin. Check
+        # both — the install-rknpu.sh layout uses the venv path.
+        local rkllama_found=0
         if command -v rkllama >/dev/null 2>&1; then
+            rkllama_found=1
+        elif [[ -x "$HOME/rkllama/rkllama-env/bin/rkllama_server" ]]; then
+            rkllama_found=1
+        fi
+        if (( rkllama_found )); then
             log "rknpu: device present + rkllama backend installed"
         else
             warn "Rockchip NPU detected but rkllama is not installed"
             warn "  worker will run without NPU acceleration until you install rkllama"
+            warn "  run: sudo bash scripts/install-rknpu.sh    (or set TAOS_RKNPU_SETUP=1 before re-running this installer to opt in automatically)"
             warn "  see: https://github.com/notpunchnox/rkllama"
+            # Chained auto-install: if the caller opted in via env var,
+            # run scripts/install-rknpu.sh now so rkllama is already
+            # serving on :8080 before the worker systemd unit lands.
+            if [[ "${TAOS_RKNPU_SETUP:-}" == "1" || "${TAOS_RKNPU_SETUP:-}" == "true" ]]; then
+                local rknpu_script=""
+                if [[ -x "$(dirname "$0")/install-rknpu.sh" ]]; then
+                    rknpu_script="$(dirname "$0")/install-rknpu.sh"
+                elif [[ -x "$INSTALL_DIR/scripts/install-rknpu.sh" ]]; then
+                    rknpu_script="$INSTALL_DIR/scripts/install-rknpu.sh"
+                fi
+                if [[ -n "$rknpu_script" ]]; then
+                    log "TAOS_RKNPU_SETUP=1 — chaining into $rknpu_script"
+                    TAOS_RKNPU_SETUP=1 sudo -E bash "$rknpu_script" --yes \
+                        || warn "install-rknpu.sh failed — continuing worker install anyway"
+                else
+                    warn "TAOS_RKNPU_SETUP=1 but install-rknpu.sh not found locally yet"
+                    warn "  it will be available after the worker repo is cloned; run it then"
+                fi
+            fi
         fi
     fi
 
