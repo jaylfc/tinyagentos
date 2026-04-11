@@ -6,7 +6,7 @@ import shutil
 from pathlib import Path
 
 from fastapi import APIRouter, Request, UploadFile, File
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -151,6 +151,19 @@ async def api_mkdir(request: Request, body: MkdirRequest):
     target.mkdir(parents=True, exist_ok=True)
     rel = target.relative_to(workspace)
     return {"path": str(rel), "status": "created"}
+
+
+@router.get("/api/workspace/files/{file_path:path}")
+async def api_get_file(request: Request, file_path: str):
+    """Stream a single file from the user workspace — used for thumbnails,
+    previews, and direct downloads from the Files app."""
+    workspace = _get_workspace_root(request)
+    target = _resolve_safe(workspace, file_path)
+    if target is None:
+        return JSONResponse({"error": "Invalid path"}, status_code=400)
+    if not target.exists() or not target.is_file():
+        return JSONResponse({"error": f"'{file_path}' not found"}, status_code=404)
+    return FileResponse(target, filename=target.name)
 
 
 @router.delete("/api/workspace/files/{file_path:path}")

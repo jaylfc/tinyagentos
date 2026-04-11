@@ -59,6 +59,23 @@ def _models_dir(request: Request) -> Path:
     return getattr(request.app.state, "models_dir", DEFAULT_MODELS_DIR)
 
 
+def _is_service_installed(variant: dict) -> bool:
+    """Detect whether a multi-file service-backed variant (e.g. RKNN SD) is
+    installed on disk outside the ``data/models`` tree. Looks for an
+    ``install_script`` marker and a representative file at the install path.
+    """
+    if not variant.get("multi_file"):
+        return False
+    # darkbit1001 / happyme531 layout — models live under
+    # ~/.local/share/tinyagentos/rknn-sd/model/{text_encoder,unet,vae_decoder}
+    # and the install marker is the unet rknn weights.
+    if variant.get("backend") and "rknn-stable-diffusion" in variant.get("backend", []):
+        install_root = Path.home() / ".local" / "share" / "tinyagentos" / "rknn-sd"
+        unet = install_root / "model" / "unet" / "model.rknn"
+        return unet.exists() and unet.stat().st_size > 1_000_000_000
+    return False
+
+
 def _variant_compatibility(variant: dict, hardware_profile) -> str:
     """Return green/yellow/red based on hardware compatibility."""
     ram_mb = hardware_profile.ram_mb
@@ -84,14 +101,75 @@ def _variant_compatibility(variant: dict, hardware_profile) -> str:
         return "red"
 
 
-def _model_to_dict(manifest, hardware_profile, downloaded_files: list[dict]) -> dict:
-    """Convert an AppManifest to a model dict with compatibility info."""
+def _matches_live_backend(
+    manifest_id: str, variant: dict, live_models: list[dict]
+) -> bool:
+    """True if any live backend is currently advertising this specific variant.
+
+    Backend-driven: we ask the live catalog ``catalog.all_models()`` for the
+    full loaded-model list and match against the combined
+    ``manifest_id-variant_id`` token. To avoid matching sibling variants
+    under the same manifest, we require the backend model name to mention
+    the variant id (either an exact match on the full id, or ``manifest_id``
+    plus a token from the variant id separated by ``-`` or ``_``).
+    """
+    if not live_models:
+        return False
+    variant_id = variant.get("id", "").lower()
+    if not variant_id:
+        return False
+    manifest_lower = manifest_id.lower()
+    full_id = f"{manifest_lower}-{variant_id}"
+    # Variant id may be dotted/hyphenated; require at least the first token
+    # to appear in the backend model name.
+    variant_token = variant_id.split("-")[0].split("_")[0]
+    if not variant_token:
+        return False
+
+    for m in live_models:
+        name = (m.get("name") or m.get("id") or "").lower().replace("_", "-")
+        if not name:
+            continue
+        normalised_variant = variant_id.replace("_", "-")
+        normalised_full = full_id.replace("_", "-")
+        # Exact or prefix match on the full id is definitive.
+        if name == normalised_full or name.startswith(normalised_full + "-"):
+            return True
+        # Otherwise require both the manifest id and the variant token to
+        # appear in the backend name to disambiguate siblings.
+        if manifest_lower in name and variant_token in name.split(manifest_lower, 1)[-1]:
+            return True
+        if name == normalised_variant or name.endswith("-" + normalised_variant):
+            return True
+    return False
+
+
+def _model_to_dict(
+    manifest,
+    hardware_profile,
+    downloaded_files: list[dict],
+    live_models: list[dict] | None = None,
+) -> dict:
+    """Convert an AppManifest to a model dict with compatibility info.
+
+    ``live_models`` is the current flat list from BackendCatalog.all_models().
+    If supplied, variants advertised by any live backend are marked downloaded.
+    The on-disk filesystem scan (``downloaded_files``) remains as a fallback
+    for models that have been pulled to ``data/models`` but no backend has
+    loaded yet — though this is a transitional state; the long-term answer is
+    always the live catalog.
+    """
     downloaded_filenames = {d["filename"] for d in downloaded_files}
+    live_models = live_models or []
 
     variants = []
     for v in manifest.variants:
         expected_filename = f"{manifest.id}-{v['id']}.{v.get('format', 'bin')}"
-        is_downloaded = expected_filename in downloaded_filenames
+        is_downloaded = (
+            _matches_live_backend(manifest.id, v, live_models)
+            or expected_filename in downloaded_filenames
+            or _is_service_installed(v)
+        )
         compat = _variant_compatibility(v, hardware_profile)
         variants.append({
             **v,
@@ -126,16 +204,27 @@ async def models_page(request: Request):
 
 @router.get("/api/models")
 async def list_models(request: Request):
-    """List all available models with download status and compatibility."""
+    """List all available models with download status and compatibility.
+
+    Backend-driven: "downloaded" is computed from the live BackendCatalog
+    first (what's actually loaded right now on some backend), and only
+    falls back to the on-disk filesystem scan for files that are staged
+    but not yet loaded.
+    """
     registry = request.app.state.registry
     hardware_profile = request.app.state.hardware_profile
     models_dir = _models_dir(request)
+    catalog = getattr(request.app.state, "backend_catalog", None)
 
     models = registry.list_available(type_filter="model")
     downloaded = get_downloaded_models(models_dir)
+    live_models = catalog.all_models() if catalog is not None else []
 
     return {
-        "models": [_model_to_dict(m, hardware_profile, downloaded) for m in models],
+        "models": [
+            _model_to_dict(m, hardware_profile, downloaded, live_models)
+            for m in models
+        ],
         "downloaded_files": downloaded,
         "hardware_profile_id": hardware_profile.profile_id,
     }
