@@ -155,11 +155,33 @@ class DeployAgentRequest(BaseModel):
     memory_limit: str = "2GB"
     cpu_limit: int = 2
     can_read_user_memory: bool = False
+    # Optional pin: user explicitly picked a specific worker to run on.
+    # None means "controller decides" (and for worker-hosted models the
+    # controller will route to wherever the model already lives).
+    target_worker: str | None = None
 
 
 @router.post("/api/agents/deploy")
 async def deploy_agent_endpoint(request: Request, body: DeployAgentRequest):
-    """Deploy a new agent -- creates LXC container, installs framework and QMD (background)."""
+    """Deploy a new agent.
+
+    Resolution order for the requested model (task #176 route-only stub):
+
+    1. Controller-local model — runs on the controller like today.
+    2. Cloud provider model (openai / anthropic / litellm) — unchanged,
+       LiteLLM proxy handles it on the controller.
+    3. Worker-hosted model, no ``target_worker`` pin — route to the
+       worker that holds the model and return 202. The actual remote
+       launch is deferred to Phase 1.5; for now we return the holder's
+       name so the caller (and the user) knows where the agent needs
+       to land.
+    4. Worker-hosted model, ``target_worker`` pinned AND that worker has
+       the model — runs on the pinned worker (also 202 stub today).
+    5. Worker-hosted model, ``target_worker`` pinned but that worker
+       does NOT have the model — 409 with the list of workers that do.
+       We never silently retarget a pinned deploy.
+    6. Model not found anywhere in the cluster — 404.
+    """
     config = request.app.state.config
     name_error = validate_agent_name(body.name)
     if name_error:
@@ -172,6 +194,103 @@ async def deploy_agent_endpoint(request: Request, body: DeployAgentRequest):
             return JSONResponse({"error": f"Unknown framework '{body.framework}'. Available: {sorted(known)}"}, status_code=400)
     if find_agent(config, body.name):
         return JSONResponse({"error": f"Agent '{body.name}' already exists"}, status_code=409)
+
+    # ------------------------------------------------------------------
+    # Cross-worker deploy routing (task #176 stub)
+    # ------------------------------------------------------------------
+    # Resolve the requested model's host BEFORE we touch config or kick
+    # off a background deploy. If the model lives on a remote worker we
+    # need to either route there (no local container) or reject the
+    # deploy with a clear 409 when the user's pin conflicts with where
+    # the model actually is.
+    if body.model:
+        from tinyagentos.cluster.model_resolver import find_model_hosts
+
+        cluster = getattr(request.app.state, "cluster_manager", None)
+        catalog = getattr(request.app.state, "backend_catalog", None)
+        local_models = catalog.all_models() if catalog is not None else []
+
+        # Cloud model ids are whatever openai/anthropic-typed backends
+        # advertise. Keep this a best-effort: missing provider state just
+        # means cloud models resolve as "not_found" and the caller can
+        # retry once providers are configured.
+        cloud_models: list[str] = []
+        try:
+            for b in config.backends or []:
+                if b.get("type") in ("openai", "anthropic"):
+                    for m in b.get("models") or []:
+                        if isinstance(m, dict):
+                            mid = m.get("id") or m.get("name") or ""
+                        else:
+                            mid = str(m)
+                        if mid:
+                            cloud_models.append(mid)
+        except Exception:  # noqa: BLE001
+            pass
+
+        location = find_model_hosts(
+            body.model,
+            cluster_state=cluster,
+            local_models=local_models,
+            cloud_models=cloud_models,
+        )
+
+        if location.kind == "not_found":
+            return JSONResponse(
+                {
+                    "error": (
+                        f"model '{body.model}' was not found on the controller, "
+                        f"on any online worker, or among configured cloud providers. "
+                        f"Download it first or pick a model that is already in the cluster."
+                    ),
+                },
+                status_code=404,
+            )
+
+        if location.kind == "worker":
+            # Case 5: pin conflict — user asked for a specific worker
+            # that does not hold the model.
+            if body.target_worker and body.target_worker not in location.hosts:
+                return JSONResponse(
+                    {
+                        "error": (
+                            f"model '{body.model}' is not on worker "
+                            f"'{body.target_worker}'. It is available on: "
+                            f"{location.hosts}. Deploy there, or wait for "
+                            f"Phase 1.5 network model placement."
+                        ),
+                        "model": body.model,
+                        "pinned_worker": body.target_worker,
+                        "available_on": location.hosts,
+                    },
+                    status_code=409,
+                )
+
+            # Cases 3 + 4: route to the worker that holds the model.
+            # Phase 1.5 will actually instruct the worker to launch; for
+            # now we return a 202 naming the destination so the caller
+            # knows where the agent needs to land. Deliberately do NOT
+            # add a local agent entry — a ghost entry on the controller
+            # for an agent that lives on Fedora would confuse both the
+            # UI and the LXC bulk-ops endpoints.
+            chosen = body.target_worker or location.canonical_host
+            return JSONResponse(
+                {
+                    "status": "routed",
+                    "name": body.name,
+                    "model": body.model,
+                    "worker": chosen,
+                    "available_on": location.hosts,
+                    "message": (
+                        f"model '{body.model}' lives on worker '{chosen}'. "
+                        f"Routed deploy target only — remote launch lands "
+                        f"with Phase 1.5 network model placement."
+                    ),
+                },
+                status_code=202,
+            )
+        # kind == "controller" or "cloud": fall through to the unchanged
+        # controller-local deploy path below.
 
     # Add agent entry immediately with deploying status. qmd_url has
     # been removed from the agent schema — every agent reads and writes
