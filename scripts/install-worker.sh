@@ -143,7 +143,60 @@ fi
 
 # --- system service install ---------------------------------------------
 
-install_linux_systemd() {
+# A system-level unit is preferred whenever the script has sudo access
+# (which is always true on Linux because the apt/dnf/etc step earlier
+# already used sudo). System units survive logout, run from boot, and
+# avoid the PAM-session gymnastics required for `systemctl --user` on a
+# fresh host where the install user has never had an active login.
+#
+# The user-mode path is kept as a fallback for the rare environment
+# where sudo is genuinely unavailable.
+
+have_root_or_sudo() {
+    if [[ "$(id -u)" = "0" ]]; then
+        return 0
+    fi
+    if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+        return 0
+    fi
+    return 1
+}
+
+install_linux_systemd_system() {
+    local unit="/etc/systemd/system/tinyagentos-worker.service"
+    local sudo_cmd=""
+    if [[ "$(id -u)" != "0" ]]; then
+        sudo_cmd="sudo"
+    fi
+
+    $sudo_cmd tee "$unit" > /dev/null <<EOF
+[Unit]
+Description=TinyAgentOS Worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=$USER
+Group=$(id -gn)
+WorkingDirectory=$INSTALL_DIR
+ExecStart=$INSTALL_DIR/.venv/bin/python -m tinyagentos.worker $CONTROLLER_URL --name $WORKER_NAME
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    log "installed $unit (system unit, runs as $USER)"
+    $sudo_cmd systemctl daemon-reload
+    $sudo_cmd systemctl enable --now tinyagentos-worker
+    log "worker running as system service"
+    log "check: systemctl status tinyagentos-worker"
+    log "logs:  journalctl -u tinyagentos-worker -f"
+}
+
+install_linux_systemd_user() {
     local unit_dir="$HOME/.config/systemd/user"
     local unit="$unit_dir/tinyagentos-worker.service"
     mkdir -p "$unit_dir"
@@ -163,13 +216,40 @@ Environment=PYTHONUNBUFFERED=1
 [Install]
 WantedBy=default.target
 EOF
-    log "installed $unit"
-    systemctl --user daemon-reload
-    systemctl --user enable --now tinyagentos-worker
+    log "installed $unit (user unit fallback — sudo unavailable)"
+
+    # Make the user manager start on boot without an active login. Must
+    # happen BEFORE the systemctl --user calls so the user bus is up.
     loginctl enable-linger "$USER" 2>/dev/null || true
+
+    # When run from a non-interactive context (curl|bash, ssh -c, etc),
+    # XDG_RUNTIME_DIR may be unset and systemctl --user can't find the
+    # user bus. Set it explicitly and wait briefly for the user manager
+    # to come up after enable-linger.
+    export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+    local tries=0
+    while [[ $tries -lt 10 ]] && ! systemctl --user is-system-running >/dev/null 2>&1; do
+        sleep 1
+        tries=$((tries + 1))
+    done
+
+    if ! systemctl --user daemon-reload 2>/dev/null; then
+        warn "user systemd not reachable — leaving the unit on disk so it activates on next login"
+        warn "to start manually: systemctl --user daemon-reload && systemctl --user enable --now tinyagentos-worker"
+        return 0
+    fi
+    systemctl --user enable --now tinyagentos-worker
     log "worker running as user systemd service"
     log "check: systemctl --user status tinyagentos-worker"
     log "logs:  journalctl --user -u tinyagentos-worker -f"
+}
+
+install_linux_systemd() {
+    if have_root_or_sudo; then
+        install_linux_systemd_system
+    else
+        install_linux_systemd_user
+    fi
 }
 
 install_macos_launchd() {
@@ -221,4 +301,8 @@ log "install complete"
 log "worker name: $WORKER_NAME"
 log "controller:  $CONTROLLER_URL"
 log "install dir: $INSTALL_DIR"
-log "to upgrade later: cd $INSTALL_DIR && git pull && systemctl --user restart tinyagentos-worker"
+if have_root_or_sudo; then
+    log "to upgrade later: cd $INSTALL_DIR && git pull && sudo systemctl restart tinyagentos-worker"
+else
+    log "to upgrade later: cd $INSTALL_DIR && git pull && systemctl --user restart tinyagentos-worker"
+fi
