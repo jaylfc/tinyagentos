@@ -415,9 +415,24 @@ strings /usr/lib/librknnrt.so | grep "librknnrt version"
 
 **Rollback**: if you ever need to restore the newer runtime (losing NPU SD), `sudo cp /home/$USER/rkllama/src/rkllama/lib/librknnrt.so /usr/lib/librknnrt.so && sudo ldconfig`.
 
+## RK3588 NPU SD runtime — ez_rknn_async
+
+TinyAgentOS runs the LCM Dreamshaper Stable Diffusion pipeline on RK3588 through `ez_rknn_async` — happyme531's drop-in replacement for Rockchip's `rknn-toolkit-lite2`. It supports `run_async` callbacks, multi-core tensor parallel inference (`tp_mode='all'`), and concurrent data-parallel sessions pinned to specific NPU cores — capabilities the stock runtime does not expose.
+
+Measured on an Orange Pi 5 Plus with the LCM Dreamshaper submodels:
+
+| Stage | Before (stock runtime) | After (ez_rknn_async, tp_mode=all) |
+|---|---|---|
+| UNet warm latency | ~5.66 s | **4.49 s** (20% faster) |
+| VAE decode | ~10.55 s | **8.05 s** (24% faster) |
+| Full 4-step LCM generation (warm) | ~33 s | **~26 s (21% faster)** |
+| Two concurrent sessions on cores 0 and 1 | — | **1.78× throughput** |
+
+The benchmark harness is at `scripts/spikes/ez-rknn-async/`. Set `RKNN_SD_LEGACY_WRAPPER=1` on the `tinyagentos-rknn-sd.service` unit to fall back to the stock runtime if you hit an issue; `/health` on the service reports which backend is in use via a `runtime` field. The package (`ztu_somemodelruntime_ez_rknn_async`) is pulled in as a standard pip dependency during worker install on RK3588 hosts.
+
 ## Known Limitations
 
-**Sequential model loading (deferred to Phase 1.5).** On shared RK3588 hardware, rkllama currently preloads three chat models permanently at startup. This consumes a significant portion of NPU RKNN slot budget, which means NPU image generation (LCM Dreamshaper) cannot run concurrently on the same board. The design for cooperative slot management and sequential load/unload is documented; it is not yet implemented. For now, if you need NPU image generation on the same board as LLM inference, disable the preloaded chat models in rkllama config and load models manually.
+**Sequential model loading (deferred to Phase 1.5).** On shared RK3588 hardware, rkllama runs in lazy-load mode (no `--preload`), and the RKNN SD server lazy-loads its pipeline on the first /generate request. That already frees several GB of NPU memory when either is idle. The remaining work is a proper resource scheduler with per-model TTL eviction, LRU under pressure, and the core-aware resource model described in `docs/superpowers/specs/2026-04-11-taos-framework-integration-bridge-design.md` §Phase 1.5. Until that lands, two heavyweight models on the same board will still fight for NPU cores at load time.
 
 **Cluster-wide scheduler aggregation (deferred to v2).** The cluster scheduler currently routes tasks based on individual worker heartbeats. Aggregating the full cluster view for capacity planning, bin-packing, and priority preemption across all workers is a v2 milestone. The spec is at `docs/design/resource-scheduler.md`.
 
@@ -533,6 +548,18 @@ TinyAgentOS makes AI agents accessible on affordable hardware.
 - **Contact:** jaylfc25@gmail.com
 - **Donate:** [Buy Me a Coffee](https://buymeacoffee.com/jaylfc)
 - **Hardware donations/loans:** We test on real hardware. If you have spare SBCs, GPUs, or dev boards and want to help expand compatibility, reach out.
+
+## Acknowledgments
+
+TinyAgentOS stands on a lot of excellent community work, particularly on Rockchip. Shout-outs where they are earned:
+
+- **happyme531** — author of [ztu_somemodelruntime_ez_rknn_async](https://github.com/happyme531/ztu_somemodelruntime_ez_rknn_async), the ORT-style Python runtime that makes multi-core NPU inference on RK3588 actually work. Also the original author of the LCM Dreamshaper RKNN port. Without this library, the 21% SD speedup and the 1.78× concurrent-session throughput on the Orange Pi 5 Plus would not exist.
+- **darkbit1001** — the NHWC `data_format` fix for UNet and VAE decoder under `librknnrt 2.3.2` that made SD on RK3588 run cleanly in the first place. Upstreamed to happyme531's repo as [discussion #6](https://huggingface.co/happyme531/Stable-Diffusion-1.5-LCM-ONNX-RKNN2/discussions/6).
+- **c01zaut** — Qwen2.5 1.5B → 14B RKLLM model ports that let chat work on RK3588 at all.
+- **NotPunchnox** — original rkllama HTTP server that TinyAgentOS extends with a rerank patch.
+- **tobi** and contributors on [qmd](https://github.com/tobi/qmd) — the embedding / reranker / query-expansion pipeline that TinyAgentOS uses for memory search, including the centralised `qmd serve` mode ([PR #511](https://github.com/tobi/qmd/pull/511)).
+
+If you maintain one of the libraries above and want a different phrasing or a link added, open an issue and I will fix it.
 
 ## License
 
