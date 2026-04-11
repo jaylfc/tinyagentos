@@ -34,15 +34,21 @@ CPU_POTENTIAL_CAPABILITIES: set[str] = {
     "vision",
 }
 
-# NPU-only accelerators serve whatever models have been compiled for them.
-# On RK3588 that's today a subset — embeddings, rerank, LLM chat (via
-# rkllama) and image-gen (via rknn-sd). Other capabilities could be added
-# once RKNN-exported models exist.
+# The RK3588 NPU can in principle run every inference capability —
+# happyme531 and others have published RKNN ports of whisper, OpenVoice,
+# MeloTTS, F5-TTS, Bert-VITS2, Kokoro TTS, Florence-2, segment-anything,
+# OmniParser, TangoFlux, VoxCPM, as well as the obvious LLM / embedding
+# / rerank / image-gen surface via rkllama and rknn-sd. The potential
+# set matches the CPU's universal set; ``capabilities`` (the live view)
+# is still filtered to what's actually loaded on a backend right now.
 NPU_RK3588_POTENTIAL_CAPABILITIES: set[str] = {
     "llm-chat",
     "embedding",
     "reranking",
     "image-generation",
+    "speech-to-text",
+    "text-to-speech",
+    "vision",
 }
 
 logger = logging.getLogger(__name__)
@@ -152,11 +158,20 @@ def build_scheduler(
                     return b.url
             return None
 
+        # RK3588 has 3 NPU cores and rknn-toolkit supports multi-context
+        # execution across them — rkllama already exploits this to hold
+        # qwen3-embedding, qwen3-reranker, and qmd-query-expansion
+        # simultaneously. So the Resource's concurrency is 3, NOT 1.
+        # The image-gen UNet is the one case that wants exclusive use
+        # because darkbit1001's lcm_server explicitly warns against
+        # multi-core UNet execution; that's enforced separately by the
+        # image-gen backend serialising its own /generate calls, not at
+        # the scheduler level.
         scheduler.register(
             Resource(
                 name="npu-rk3588",
                 signature=signature,
-                concurrency=1,  # RK3588 NPU serialises across the 3 cores
+                concurrency=3,
                 tier=Tier.NPU,
                 potential_capabilities=NPU_RK3588_POTENTIAL_CAPABILITIES,
                 get_capabilities=_npu_capabilities,
