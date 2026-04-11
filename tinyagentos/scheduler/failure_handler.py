@@ -150,11 +150,11 @@ async def handle_call(
     policy:
         One of "pause", "fallback", "escalate-immediately".
     cluster_manager:
-        ClusterManager instance — used for heartbeat-grace polling.
+        ClusterManager instance, used for heartbeat-grace polling.
     notif_store:
-        NotificationStore instance — used to emit the pause notification.
+        NotificationStore instance, used to emit the pause notification.
     config:
-        AppConfig instance — used to mark the agent as paused in-process.
+        AppConfig instance, used to mark the agent as paused in-process.
     primary_worker:
         Name of the worker serving the primary model.  Included in the
         notification payload.
@@ -177,7 +177,7 @@ async def handle_call(
     agent = _find_agent(config, agent_name)
     if agent and agent.get("paused"):
         raise AgentPausedError(
-            f"agent '{agent_name}' is paused — resume it before submitting calls"
+            f"agent '{agent_name}' is paused, resume it before submitting calls"
         )
 
     # "escalate-immediately": skip grace window and fallback chain entirely,
@@ -188,7 +188,7 @@ async def handle_call(
             return await with_retry(primary_call)
         except Exception as exc:
             logger.error(
-                "failure_handler: escalate-immediately — primary call failed for '%s': %s",
+                "failure_handler: escalate-immediately, primary call failed for '%s': %s",
                 agent_name, exc,
             )
             await _pause_and_notify(
@@ -206,7 +206,7 @@ async def handle_call(
             )
         except WorkerUnavailableError as exc:
             logger.error(
-                "failure_handler: pause policy — worker '%s' down for agent '%s': %s",
+                "failure_handler: pause policy, worker '%s' down for agent '%s': %s",
                 primary_worker, agent_name, exc,
             )
             await _pause_and_notify(
