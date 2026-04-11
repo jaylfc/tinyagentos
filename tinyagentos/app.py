@@ -216,6 +216,17 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         # registry.is_installed() / list_installed() directly.
         app.state.installation_state = InstallationState(registry, backend_catalog)
 
+        # LiteLLM config reload on catalog change — keeps the proxy's
+        # routing table in sync with live backend state. Subscriber is
+        # a no-op if the proxy isn't running (LiteLLM not installed) or
+        # if the catalog signature hasn't changed.
+        async def _reload_llm_proxy_on_catalog_change() -> None:
+            if not llm_proxy.is_running():
+                return
+            await llm_proxy.reload_config(config.backends)
+
+        backend_catalog.subscribe(_reload_llm_proxy_on_catalog_change)
+
         # Start the score cache — bridges the async benchmark store to the
         # scheduler's sync admission path via a 15s polling loop.
         try:

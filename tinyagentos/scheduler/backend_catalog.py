@@ -117,6 +117,35 @@ class BackendCatalog:
         self._task: Optional[asyncio.Task] = None
         self._lock = asyncio.Lock()
         self._initial_probe_done = asyncio.Event()
+        # Subscribers called whenever the backend state meaningfully
+        # changes (status flip or model set diff). Each subscriber is an
+        # async callable taking no arguments. Failures are logged and
+        # isolated — one bad subscriber can't break the poll loop.
+        self._subscribers: list[Callable[[], Awaitable[None]]] = []
+        self._last_signature: str = ""
+
+    def subscribe(self, callback: Callable[[], Awaitable[None]]) -> None:
+        """Register an async callback for backend state changes.
+
+        The callback fires after every probe pass that produces a
+        different catalog state from the previous one. Use this to
+        trigger derived-state rebuilds (e.g. LiteLLM config reload,
+        scheduler resource re-registration).
+        """
+        self._subscribers.append(callback)
+
+    def _catalog_signature(self) -> str:
+        """Stable signature of the current catalog state. Changes when a
+        backend's status flips, its model list changes, or its URL
+        changes. Used to decide whether to fire subscriber callbacks."""
+        parts = []
+        for name in sorted(self._entries.keys()):
+            entry = self._entries[name]
+            model_names = tuple(
+                sorted((m.get("name") or m.get("id") or "") for m in entry.models)
+            )
+            parts.append((name, entry.status, entry.url, model_names))
+        return repr(parts)
 
     async def start(self) -> None:
         """Kick off the background polling task and wait for the first pass."""
@@ -198,6 +227,7 @@ class BackendCatalog:
                 try:
                     async with self._lock:
                         await self._probe_all()
+                        await self._notify_if_changed()
                 except Exception:
                     logger.exception("backend catalog probe failed")
                 if not self._initial_probe_done.is_set():
@@ -208,6 +238,19 @@ class BackendCatalog:
         except Exception:
             logger.exception("backend catalog poll loop crashed")
             raise
+
+    async def _notify_if_changed(self) -> None:
+        """Fire subscriber callbacks if the catalog signature changed
+        since the previous probe pass."""
+        new_sig = self._catalog_signature()
+        if new_sig == self._last_signature:
+            return
+        self._last_signature = new_sig
+        for callback in self._subscribers:
+            try:
+                await callback()
+            except Exception:
+                logger.exception("backend catalog subscriber failed")
 
     async def _probe_all(self) -> None:
         now = time.time()

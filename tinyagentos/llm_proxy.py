@@ -141,6 +141,41 @@ class LLMProxy:
             self._process = None
             logger.info("LiteLLM proxy stopped")
 
+    async def reload_config(self, backends: list[dict]) -> bool:
+        """Rewrite the LiteLLM config with a new backend list and signal
+        the proxy to re-read it.
+
+        LiteLLM supports config hot-reload via SIGHUP on recent versions.
+        If SIGHUP fails (older LiteLLM, or the proxy isn't running yet)
+        this falls back to stop + start so the new config still takes
+        effect. Safe to call repeatedly — idempotent if the config
+        hasn't actually changed.
+
+        Called by the BackendCatalog subscriber when a backend goes up
+        or down, or when a model loads/unloads on any registered
+        backend. Backend-driven discovery in practice: the proxy's
+        routing table reflects live reality, not a static snapshot
+        from startup.
+        """
+        import signal
+
+        new_path = self.write_config(backends)
+        if not self.is_running():
+            return False
+
+        try:
+            assert self._process is not None
+            self._process.send_signal(signal.SIGHUP)
+            logger.info("LiteLLM proxy reloaded via SIGHUP (config %s)", new_path)
+            return True
+        except Exception as exc:
+            logger.warning(
+                "LiteLLM SIGHUP reload failed (%s) — falling back to restart",
+                exc,
+            )
+            self.stop()
+            return await self.start(backends)
+
     async def create_agent_key(self, agent_name: str, models: list[str] | None = None,
                                 max_budget: float | None = None) -> str | None:
         """Create a per-agent virtual key via LiteLLM API."""
