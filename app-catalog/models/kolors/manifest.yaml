@@ -1,0 +1,23 @@
+id: kolors
+name: Kolors
+type: model
+version: 1.0.0
+description: "Kuaishou's bilingual (EN/ZH) text-to-image model — strong Chinese prompt support"
+homepage: https://huggingface.co/Kwai-Kolors/Kolors
+license: Apache-2.0
+capabilities: [image-generation, multilingual]
+
+variants:
+  - id: unet-fp16
+    name: "UNet FP16 (5.1GB)"
+    format: safetensors
+    size_mb: 5100
+    min_ram_mb: 8192
+    download_url: https://huggingface.co/Kwai-Kolors/Kolors/resolve/main/unet/diffusion_pytorch_model.fp16.safetensors
+    backend: [diffusers, comfyui]
+
+hardware_tiers:
+  x86-cuda-8gb: {recommended: unet-fp16}
+  x86-cuda-12gb: {recommended: unet-fp16}
+  apple-silicon: {recommended: unet-fp16}
+  cpu-only: unsupported

@@ -12,14 +12,14 @@ variants:
     format: gguf
     size_mb: 4800
     min_ram_mb: 6144
-    download_url: https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/qwen3-8b-q4_k_m.gguf
+    download_url: https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q4_K_M.gguf
     backend: [ollama, llama-cpp, vllm]
   - id: q8_0
     name: "Q8_0 (8.5GB)"
     format: gguf
     size_mb: 8500
     min_ram_mb: 10240
-    download_url: https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/qwen3-8b-q8_0.gguf
+    download_url: https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf
     backend: [ollama, llama-cpp, vllm]
 
 hardware_tiers:

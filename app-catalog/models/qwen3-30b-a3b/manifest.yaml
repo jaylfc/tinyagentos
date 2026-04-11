@@ -8,15 +8,15 @@ capabilities: [chat, tool-calling, code, reasoning]
 
 variants:
   - id: q4_k_m
-    name: "Q4_K_M (4.5GB)"
+    name: "Q4_K_M (18.6GB)"
     format: gguf
-    size_mb: 4500
-    min_ram_mb: 6144
-    download_url: https://huggingface.co/Qwen/Qwen3-30B-A3B-GGUF/resolve/main/qwen3-30b-a3b-q4_k_m.gguf
+    size_mb: 18600
+    min_ram_mb: 22528
+    download_url: https://huggingface.co/Qwen/Qwen3-30B-A3B-GGUF/resolve/main/Qwen3-30B-A3B-Q4_K_M.gguf
     backend: [ollama, llama-cpp]
 
 hardware_tiers:
-  arm-npu-16gb: {recommended: q4_k_m}
-  x86-cuda-8gb: {recommended: q4_k_m}
-  x86-vulkan-8gb: {recommended: q4_k_m}
+  arm-npu-32gb: {recommended: q4_k_m}
+  x86-cuda-24gb: {recommended: q4_k_m}
+  x86-vulkan-16gb: {recommended: q4_k_m}
   cpu-only: {recommended: q4_k_m, notes: "Slow but MoE keeps it efficient"}

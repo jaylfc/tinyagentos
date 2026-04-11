@@ -1,0 +1,22 @@
+id: stable-cascade
+name: Stable Cascade
+type: model
+version: 1.0.0
+description: "Stability AI's efficient 3-stage cascade — strong quality at reduced compute"
+homepage: https://huggingface.co/stabilityai/stable-cascade
+license: "stable-cascade-nc-community (non-commercial)"
+capabilities: [image-generation]
+
+variants:
+  - id: stage-c
+    name: "Stage C Safetensors (14.4GB)"
+    format: safetensors
+    size_mb: 14400
+    min_ram_mb: 16384
+    download_url: https://huggingface.co/stabilityai/stable-cascade/resolve/main/stage_c.safetensors
+    backend: [comfyui, diffusers]
+
+hardware_tiers:
+  x86-cuda-16gb: {recommended: stage-c}
+  x86-cuda-24gb: {recommended: stage-c}
+  cpu-only: unsupported

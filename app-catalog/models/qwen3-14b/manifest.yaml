@@ -11,7 +11,7 @@ variants:
     format: gguf
     size_mb: 8500
     min_ram_mb: 10240
-    download_url: https://huggingface.co/Qwen/Qwen3-14B-GGUF/resolve/main/qwen3-14b-q4_k_m.gguf
+    download_url: https://huggingface.co/Qwen/Qwen3-14B-GGUF/resolve/main/Qwen3-14B-Q4_K_M.gguf
     backend: [ollama, llama-cpp, vllm, exo]
 hardware_tiers:
   arm-npu-32gb: {recommended: q4_k_m}

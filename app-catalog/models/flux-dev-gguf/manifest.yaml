@@ -1,0 +1,23 @@
+id: flux-dev-gguf
+name: Flux.1 Dev (GGUF)
+type: model
+version: 1.0.0
+description: "Flux.1 Dev in GGUF — higher quality than Schnell, requires more steps. Non-commercial license."
+homepage: https://huggingface.co/city96/FLUX.1-dev-gguf
+license: "flux-1-dev-non-commercial-license"
+capabilities: [image-generation]
+
+variants:
+  - id: q4_k_s
+    name: "Q4_K_S (6.8GB)"
+    format: gguf
+    size_mb: 6800
+    min_ram_mb: 10240
+    download_url: https://huggingface.co/city96/FLUX.1-dev-gguf/resolve/main/flux1-dev-Q4_K_S.gguf
+    backend: [stable-diffusion-cpp, comfyui]
+    quality: good
+
+hardware_tiers:
+  arm-cpu-16gb: {recommended: q4_k_s, warning: "Very slow on ARM"}
+  x86-cuda-12gb: {recommended: q4_k_s}
+  cpu-only: {recommended: q4_k_s, warning: "Very slow"}

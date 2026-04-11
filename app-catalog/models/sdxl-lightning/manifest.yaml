@@ -1,0 +1,30 @@
+id: sdxl-lightning
+name: SDXL Lightning
+type: model
+version: 1.0.0
+description: "ByteDance's SDXL distillation — 2-step and 4-step variants, fast generation"
+homepage: https://huggingface.co/ByteDance/SDXL-Lightning
+license: "openrail++"
+capabilities: [image-generation]
+
+variants:
+  - id: 2step
+    name: "2-step Safetensors (5.1GB)"
+    format: safetensors
+    size_mb: 5100
+    min_ram_mb: 8192
+    download_url: https://huggingface.co/ByteDance/SDXL-Lightning/resolve/main/sdxl_lightning_2step.safetensors
+    backend: [comfyui, diffusers]
+  - id: 4step
+    name: "4-step Safetensors (5.1GB)"
+    format: safetensors
+    size_mb: 5100
+    min_ram_mb: 8192
+    download_url: https://huggingface.co/ByteDance/SDXL-Lightning/resolve/main/sdxl_lightning_4step.safetensors
+    backend: [comfyui, diffusers]
+
+hardware_tiers:
+  x86-cuda-8gb: {recommended: 4step}
+  x86-cuda-12gb: {recommended: 2step}
+  apple-silicon: {recommended: 4step}
+  cpu-only: unsupported

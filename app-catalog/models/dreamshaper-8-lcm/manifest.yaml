@@ -4,46 +4,58 @@ type: model
 version: 8.0
 capabilities: [image-generation]
 description: "Photorealistic and stylized images — LCM-distilled, 4-step generation. Community favourite on low-end hardware."
+homepage: https://huggingface.co/Lykon/DreamShaper
+license: "CreativeML OpenRAIL-M"
 
 variants:
-  - id: q4-gguf
-    name: "Q4 GGUF (830MB, CPU)"
+  - id: iq2_xs-gguf
+    name: "IQ2_XS GGUF (1.5GB, CPU)"
     format: gguf
-    size_mb: 830
+    size_mb: 1530
     backend: [stable-diffusion-cpp]
-    min_ram_mb: 2048
-    download_url: https://huggingface.co/gsdf/Dreamshaper-8/resolve/main/dreamshaper_8Q4_0.gguf
+    min_ram_mb: 2560
+    download_url: https://huggingface.co/stduhpf/dreamshaper-8LCM-im-GGUF-sdcpp/resolve/main/dreamshaper_8LCM-iq2_xs.gguf
     sha256: ""
     quality: good
 
-  - id: q8-gguf
-    name: "Q8 GGUF (1.6GB, CPU)"
+  - id: iq4_nl-gguf
+    name: "IQ4_NL GGUF (1.6GB, CPU)"
     format: gguf
-    size_mb: 1600
+    size_mb: 1570
     backend: [stable-diffusion-cpp]
     min_ram_mb: 3072
-    download_url: https://huggingface.co/gsdf/Dreamshaper-8/resolve/main/dreamshaper_8Q8_0.gguf
+    download_url: https://huggingface.co/stduhpf/dreamshaper-8LCM-im-GGUF-sdcpp/resolve/main/dreamshaper_8LCM-iq4_nl.gguf
     sha256: ""
     quality: better
 
+  - id: lcm-safetensors
+    name: "DreamShaper8 LCM Safetensors (2.1GB)"
+    format: safetensors
+    size_mb: 2130
+    backend: [comfyui, sd-webui, diffusers]
+    min_ram_mb: 4096
+    download_url: https://huggingface.co/Lykon/DreamShaper/resolve/main/DreamShaper8_LCM.safetensors
+    sha256: ""
+    quality: best
+
   - id: fp16
-    name: "FP16 Safetensors (2.1GB, GPU)"
+    name: "DreamShaper 8 FP16 Safetensors (2.1GB)"
     format: safetensors
     size_mb: 2100
     backend: [comfyui, sd-webui]
     min_ram_mb: 4096
-    download_url: https://huggingface.co/Lykon/dreamshaper-8/resolve/main/dreamshaper_8.safetensors
+    download_url: https://huggingface.co/Lykon/DreamShaper/resolve/main/DreamShaper_8_pruned.safetensors
     sha256: ""
     quality: best
 
 hardware_tiers:
-  arm-cpu-8gb: {recommended: q4-gguf, fallback: q4-gguf}
-  arm-cpu-16gb: {recommended: q8-gguf, fallback: q4-gguf}
-  arm-npu-16gb: {recommended: q8-gguf, fallback: q4-gguf}
-  x86-cpu-8gb: {recommended: q4-gguf, fallback: q4-gguf}
-  x86-cpu-16gb: {recommended: q8-gguf, fallback: q4-gguf}
-  x86-vulkan-8gb: {recommended: fp16, fallback: q8-gguf}
-  x86-cuda-8gb: {recommended: fp16, fallback: q8-gguf}
-  x86-cuda-12gb: {recommended: fp16, fallback: q8-gguf}
-  apple-silicon: {recommended: fp16, fallback: q8-gguf}
-  cpu-only: {recommended: q4-gguf, fallback: q4-gguf}
+  arm-cpu-8gb: {recommended: iq2_xs-gguf, fallback: iq2_xs-gguf}
+  arm-cpu-16gb: {recommended: iq4_nl-gguf, fallback: iq2_xs-gguf}
+  arm-npu-16gb: {recommended: iq4_nl-gguf, fallback: iq2_xs-gguf}
+  x86-cpu-8gb: {recommended: iq2_xs-gguf, fallback: iq2_xs-gguf}
+  x86-cpu-16gb: {recommended: iq4_nl-gguf, fallback: iq2_xs-gguf}
+  x86-vulkan-8gb: {recommended: lcm-safetensors, fallback: iq4_nl-gguf}
+  x86-cuda-8gb: {recommended: lcm-safetensors, fallback: iq4_nl-gguf}
+  x86-cuda-12gb: {recommended: lcm-safetensors}
+  apple-silicon: {recommended: lcm-safetensors, fallback: iq4_nl-gguf}
+  cpu-only: {recommended: iq2_xs-gguf, fallback: iq2_xs-gguf}

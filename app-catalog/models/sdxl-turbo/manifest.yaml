@@ -4,21 +4,41 @@ type: model
 version: 1.0.0
 description: "Real-time image generation — single-step SDXL distillation, fast on GPU"
 homepage: https://huggingface.co/stabilityai/sdxl-turbo
+license: "sai-nc-community (non-commercial)"
 capabilities: [image-generation]
 
 variants:
-  - id: gguf-q4
-    name: "GGUF Q4 (3.5GB, GPU)"
+  - id: q4_0
+    name: "Q4_0 GGUF (3.9GB)"
     format: gguf
-    size_mb: 3500
+    size_mb: 3900
     min_ram_mb: 6144
-    download_url: https://huggingface.co/stabilityai/sdxl-turbo-gguf/resolve/main/sdxl-turbo-Q4_K_M.gguf
+    download_url: https://huggingface.co/gpustack/stable-diffusion-xl-1.0-turbo-GGUF/resolve/main/stable-diffusion-xl-1.0-turbo-Q4_0.gguf
     backend: [stable-diffusion-cpp, comfyui]
+    quality: good
+  - id: q8_0
+    name: "Q8_0 GGUF (5GB)"
+    format: gguf
+    size_mb: 5000
+    min_ram_mb: 8192
+    download_url: https://huggingface.co/gpustack/stable-diffusion-xl-1.0-turbo-GGUF/resolve/main/stable-diffusion-xl-1.0-turbo-Q8_0.gguf
+    backend: [stable-diffusion-cpp, comfyui]
+    quality: better
+  - id: fp16
+    name: "FP16 GGUF (6.9GB)"
+    format: gguf
+    size_mb: 6900
+    min_ram_mb: 10240
+    download_url: https://huggingface.co/gpustack/stable-diffusion-xl-1.0-turbo-GGUF/resolve/main/stable-diffusion-xl-1.0-turbo-FP16.gguf
+    backend: [stable-diffusion-cpp, comfyui]
+    quality: best
 
 hardware_tiers:
-  arm-npu-16gb: unsupported
-  arm-npu-32gb: unsupported
-  x86-cuda-8gb: {recommended: gguf-q4}
-  x86-cuda-12gb: {recommended: gguf-q4}
-  x86-vulkan-8gb: {recommended: gguf-q4}
-  cpu-only: unsupported
+  arm-cpu-16gb: {recommended: q4_0, fallback: q4_0, warning: "Slow without GPU"}
+  arm-npu-32gb: {recommended: q8_0, fallback: q4_0}
+  x86-cpu-16gb: {recommended: q4_0}
+  x86-cuda-8gb: {recommended: q8_0, fallback: q4_0}
+  x86-cuda-12gb: {recommended: fp16, fallback: q8_0}
+  x86-vulkan-8gb: {recommended: q4_0}
+  apple-silicon: {recommended: q8_0}
+  cpu-only: {recommended: q4_0, warning: "Slow on CPU"}

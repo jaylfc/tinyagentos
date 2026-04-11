@@ -1,0 +1,23 @@
+id: sd3.5-large-turbo-gguf
+name: Stable Diffusion 3.5 Large Turbo (GGUF)
+type: model
+version: 3.5.0
+description: "Stability AI's SD3.5 Large Turbo — 4-step high quality generation"
+homepage: https://huggingface.co/city96/stable-diffusion-3.5-large-turbo-gguf
+license: "Stability AI Community License"
+capabilities: [image-generation]
+
+variants:
+  - id: q4_0
+    name: "Q4_0 GGUF (4.6GB)"
+    format: gguf
+    size_mb: 4600
+    min_ram_mb: 8192
+    download_url: https://huggingface.co/city96/stable-diffusion-3.5-large-turbo-gguf/resolve/main/sd3.5_large_turbo-Q4_0.gguf
+    backend: [stable-diffusion-cpp, comfyui]
+
+hardware_tiers:
+  arm-cpu-16gb: {recommended: q4_0, warning: "Slow"}
+  x86-cuda-8gb: {recommended: q4_0}
+  x86-cuda-12gb: {recommended: q4_0}
+  cpu-only: {recommended: q4_0, warning: "Slow"}

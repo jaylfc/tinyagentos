@@ -1,0 +1,21 @@
+id: auraflow-v0.3
+name: AuraFlow v0.3
+type: model
+version: 0.3.0
+description: "Fal's fully open flow-matching text-to-image — Apache 2.0, 6.8B params"
+homepage: https://huggingface.co/fal/AuraFlow-v0.3
+license: Apache-2.0
+capabilities: [image-generation]
+
+variants:
+  - id: fp16
+    name: "Safetensors (13.6GB)"
+    format: safetensors
+    size_mb: 13600
+    min_ram_mb: 16384
+    download_url: https://huggingface.co/fal/AuraFlow-v0.3/resolve/main/aura_flow_0.3.safetensors
+    backend: [comfyui, diffusers]
+
+hardware_tiers:
+  x86-cuda-24gb: {recommended: fp16}
+  cpu-only: unsupported

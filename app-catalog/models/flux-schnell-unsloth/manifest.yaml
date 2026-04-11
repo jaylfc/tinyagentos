@@ -1,0 +1,24 @@
+id: flux-schnell-unsloth
+name: Flux.1 Schnell (Unsloth GGUF)
+type: model
+version: 1.0.0
+description: "Unsloth's Flux Schnell GGUFs — Apache 2.0, 4-step generation, wide quant coverage"
+homepage: https://huggingface.co/unsloth/FLUX.1-schnell-GGUF
+license: Apache-2.0
+capabilities: [image-generation]
+
+variants:
+  - id: q4_k_m
+    name: "Q4_K_M (6.8GB)"
+    format: gguf
+    size_mb: 6800
+    min_ram_mb: 10240
+    download_url: https://huggingface.co/unsloth/FLUX.1-schnell-GGUF/resolve/main/flux1-schnell-Q4_K_M.gguf
+    backend: [stable-diffusion-cpp, comfyui]
+    quality: good
+
+hardware_tiers:
+  arm-cpu-16gb: {recommended: q4_k_m, warning: "Slow on ARM CPU"}
+  x86-cuda-8gb: {recommended: q4_k_m}
+  x86-cuda-12gb: {recommended: q4_k_m}
+  cpu-only: {recommended: q4_k_m, warning: "Slow"}
