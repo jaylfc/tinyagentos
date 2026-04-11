@@ -1,4 +1,4 @@
-# platform/Caddyfile, TinyAgentOS platform LXC
+# scripts/platform/Caddyfile, TinyAgentOS platform LXC
 #
 # DNS records you must create before Caddy can issue TLS certificates.
 # All four records should point to the platform LXC IP address.

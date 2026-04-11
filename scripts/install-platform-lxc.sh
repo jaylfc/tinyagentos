@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# platform/install-lxc.sh, Proxmox LXC provisioner for tinyagentos.com
+# scripts/install-platform-lxc.sh, Proxmox LXC provisioner for tinyagentos.com
 #
 # Creates a Debian 12 unprivileged LXC container with the configuration
 # required to host tinyagentos.com services, then runs provision.sh inside
@@ -8,7 +8,7 @@
 # Run this on the Proxmox host as root (or with sudo).
 #
 # Usage:
-#     sudo bash platform/install-lxc.sh
+#     sudo bash scripts/install-platform-lxc.sh
 #
 # Environment overrides:
 #     CTID            container ID (default: next free ID from pvesh)
@@ -186,13 +186,13 @@ CADDYFILE="${SCRIPT_DIR}/Caddyfile"
 if [[ -f "$CADDYFILE" ]]; then
     log "copying Caddyfile"
     pct exec "$CTID" -- mkdir -p /root/platform
-    pct push "$CTID" "$CADDYFILE" /root/platform/Caddyfile
+    pct push "$CTID" "$CADDYFILE" /root/scripts/platform/Caddyfile
 fi
 
 SITE_DIR="${SCRIPT_DIR}/site/public"
 if [[ -d "$SITE_DIR" ]]; then
     log "copying site/public into container"
-    pct exec "$CTID" -- mkdir -p /root/platform/site/public
+    pct exec "$CTID" -- mkdir -p /root/site/public
     # pct push doesn't support directories; use tar
     tar -C "$SCRIPT_DIR" -czf /tmp/taos-site-public.tar.gz site/public
     pct push "$CTID" /tmp/taos-site-public.tar.gz /root/taos-site-public.tar.gz
@@ -228,7 +228,7 @@ success "    ssh root@$ct_ip"
 success ""
 success "  Next steps:"
 success "    1. Point DNS records for all four subdomains at $ct_ip"
-success "       (see platform/Caddyfile for the full DNS record list)"
+success "       (see scripts/platform/Caddyfile for the full DNS record list)"
 success "    2. Once DNS propagates, Caddy will auto-issue Let's Encrypt certs"
 success "       via HTTP-01 on first request to each domain."
 success "    3. Verify with: curl -I https://tinyagentos.com"
@@ -239,5 +239,5 @@ success "    pct exec $CTID -- bash -c 'caddy validate --config /etc/caddy/Caddy
 success "    pct exec $CTID -- bash -c 'psql -U tinyagentos -c \"\\\\conninfo\"'"
 success "    pct exec $CTID -- bash -c 'test -c /dev/net/tun && echo tun-ok'"
 success ""
-success "  See platform/DEPLOYMENT.md for the full runbook."
+success "  See docs/deploy/platform.md for the full runbook."
 success ""

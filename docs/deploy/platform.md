@@ -49,7 +49,7 @@ LAN and note the gateway IP.
 
 **e. Repo is accessible on the Proxmox host.**
 
-Either clone the repo or ensure `platform/install-lxc.sh` and its siblings
+Either clone the repo or ensure `scripts/install-platform-lxc.sh` and its siblings
 are present on the host filesystem:
 
 ```bash
@@ -86,12 +86,12 @@ after everything is confirmed working.
 cd /opt/tinyagentos
 
 # Example: static IP 192.168.1.50/24, gateway 192.168.1.1, default bridge + storage
-sudo CTID=200 CT_IP=192.168.1.50/24 CT_GW=192.168.1.1 bash platform/install-lxc.sh
+sudo CTID=200 CT_IP=192.168.1.50/24 CT_GW=192.168.1.1 bash scripts/install-platform-lxc.sh
 ```
 
 Or with DHCP:
 ```bash
-sudo CTID=200 bash platform/install-lxc.sh
+sudo CTID=200 bash scripts/install-platform-lxc.sh
 ```
 
 Available env vars:
@@ -283,7 +283,7 @@ Once the above is confirmed working, these are the natural next steps:
 | Ref | Task |
 |-----|------|
 | #91 | Add GitHub Actions workflow to auto-deploy docs on push to `master` |
-| #91 | Build MkDocs site and deploy: `cd platform/site/docs && mkdocs build && rsync ...` |
+| #91 | Build MkDocs site and deploy: `cd site/docs && mkdocs build && rsync ...` |
 | #92 | Verify opentracker IPv6 announce endpoint and UDP announce (see issue #92 acceptance criteria) |
 | #92 | Add AAAA DNS records for IPv6 |
 |  | Set up `restic` backup job for Postgres and `/var/www` |

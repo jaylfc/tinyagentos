@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# platform/provision.sh, inside-the-LXC provisioner for tinyagentos.com
+# scripts/platform/provision.sh, inside-the-LXC provisioner for tinyagentos.com
 #
 # Runs once on first boot via install-lxc.sh. Safe to re-run: if the
 # sentinel file /var/lib/tinyagentos-platform/provisioned exists the script

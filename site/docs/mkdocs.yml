@@ -1,11 +1,11 @@
 # MkDocs configuration for docs.tinyagentos.com
 #
 # Build:
-#   cd platform/site/docs
+#   cd site/docs
 #   pip install mkdocs mkdocs-material
 #   mkdocs build
 #
-# Output: platform/site/docs/site/
+# Output: site/docs/site/
 # Deploy: rsync -av --delete site/ root@<LXC-IP>:/var/www/docs.tinyagentos.com/public/
 #
 # The docs_dir points at the main repo's docs/ directory.
@@ -22,7 +22,7 @@ repo_url: https://github.com/jaylfc/tinyagentos
 repo_name: jaylfc/tinyagentos
 edit_uri: edit/master/docs/
 
-# Path relative to platform/site/docs/, resolves to the repo root's docs/
+# Path relative to site/docs/, resolves to the repo root's docs/
 docs_dir: ../../../docs
 
 # Output directory (relative to mkdocs.yml)
