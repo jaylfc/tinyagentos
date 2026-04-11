@@ -147,11 +147,14 @@ export function SearchPalette({ open, onClose, onOpenApp }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-[10003] flex justify-center pt-[15vh] bg-black/30 backdrop-blur-sm"
+      className="fixed inset-0 z-[10003] flex justify-center pt-[15vh] bg-black/30 backdrop-blur-sm px-4"
       onClick={onClose}
+      style={{
+        paddingTop: "calc(env(safe-area-inset-top, 0px) + 15vh)",
+      }}
     >
       <div
-        className="w-[560px] max-h-[420px] rounded-xl border border-shell-border-strong overflow-hidden flex flex-col"
+        className="w-full max-w-[560px] max-h-[420px] rounded-xl border border-shell-border-strong overflow-hidden flex flex-col"
         style={{
           backgroundColor: "rgba(26, 27, 46, 0.97)",
           boxShadow: "0 16px 64px rgba(0,0,0,0.5)",

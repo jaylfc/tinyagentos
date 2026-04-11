@@ -218,8 +218,8 @@ function SystemInfoSection() {
   return (
     <section aria-label="System information">
       <h2 className="text-lg font-semibold mb-5">System Information</h2>
-      <div className="rounded-2xl bg-white/[0.04] border border-white/[0.06] overflow-hidden backdrop-blur-sm">
-        <table className="w-full text-sm">
+      <div className="rounded-2xl bg-white/[0.04] border border-white/[0.06] overflow-x-auto backdrop-blur-sm">
+        <table className="w-full text-sm min-w-[360px]">
           <tbody>
             {rows.map(([label, value]) => (
               <tr key={label} className="border-b border-white/5 last:border-0">

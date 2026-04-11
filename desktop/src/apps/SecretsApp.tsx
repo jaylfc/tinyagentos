@@ -76,18 +76,18 @@ function AddEditDialog({
 
   return (
     <div
-      className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
       aria-label={isEdit ? "Edit secret" : "Add secret"}
     >
       <Card
-        className="w-full max-w-md shadow-2xl overflow-hidden bg-shell-surface"
+        className="w-full max-w-md max-h-full flex flex-col shadow-2xl overflow-hidden bg-shell-surface"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <CardHeader className="flex flex-row items-center justify-between border-b border-white/5 px-5 py-4">
+        <CardHeader className="flex flex-row items-center justify-between border-b border-white/5 px-5 py-4 shrink-0">
           <div className="flex items-center gap-2">
             <KeyRound size={16} className="text-accent" />
             <CardTitle className="text-sm font-semibold">{isEdit ? "Edit Secret" : "Add Secret"}</CardTitle>
@@ -104,7 +104,7 @@ function AddEditDialog({
         </CardHeader>
 
         <form onSubmit={handleSubmit}>
-          <CardContent className="px-5 py-4 space-y-3.5">
+          <CardContent className="px-5 py-4 space-y-3.5 flex-1 overflow-y-auto">
             <div className="space-y-1.5">
               <Label htmlFor="secret-name">Name</Label>
               <Input
@@ -356,7 +356,8 @@ export function SecretsApp({ windowId: _windowId }: { windowId: string }) {
             )}
           </div>
         ) : (
-          <table className="w-full text-left" aria-label="Secrets table">
+          <div className="overflow-x-auto -mx-4 md:mx-0">
+            <table className="w-full text-left min-w-[720px]" aria-label="Secrets table">
             <thead>
               <tr className="border-b border-white/5 text-[11px] uppercase tracking-wider text-shell-text-tertiary">
                 <th className="px-4 py-2.5 font-medium">Name</th>
@@ -448,7 +449,8 @@ export function SecretsApp({ windowId: _windowId }: { windowId: string }) {
                 </tr>
               ))}
             </tbody>
-          </table>
+            </table>
+          </div>
         )}
       </div>
 

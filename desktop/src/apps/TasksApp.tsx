@@ -444,17 +444,17 @@ export function TasksApp({ windowId: _windowId }: { windowId: string }) {
       {/* Add/Edit Task Dialog */}
       {showDialog && (
         <div
-          className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
           onClick={() => resetForm()}
           role="dialog"
           aria-modal="true"
           aria-label={editingId ? "Edit Task" : "Add Task"}
         >
           <Card
-            className="w-full max-w-md shadow-2xl overflow-hidden bg-shell-surface"
+            className="w-full max-w-md max-h-full flex flex-col shadow-2xl overflow-hidden bg-shell-surface"
             onClick={(e) => e.stopPropagation()}
           >
-            <CardHeader className="flex flex-row items-center justify-between border-b border-white/5 px-5 py-4">
+            <CardHeader className="flex flex-row items-center justify-between border-b border-white/5 px-5 py-4 shrink-0">
               <CardTitle className="text-sm font-semibold">{editingId ? "Edit Task" : "Add Task"}</CardTitle>
               <Button
                 variant="ghost"
@@ -467,7 +467,7 @@ export function TasksApp({ windowId: _windowId }: { windowId: string }) {
               </Button>
             </CardHeader>
 
-            <CardContent className="px-5 py-4 space-y-3">
+            <CardContent className="px-5 py-4 space-y-3 flex-1 overflow-y-auto">
               <div className="space-y-1.5">
                 <Label htmlFor="task-name">Name</Label>
                 <Input
@@ -533,7 +533,7 @@ export function TasksApp({ windowId: _windowId }: { windowId: string }) {
               </div>
             )}
 
-            <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-white/5">
+            <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-white/5 shrink-0">
               <Button
                 variant="ghost"
                 onClick={resetForm}

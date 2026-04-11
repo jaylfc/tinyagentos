@@ -744,8 +744,8 @@ export function MessagesApp({ windowId: _windowId }: { windowId: string }) {
 
       {/* ---- Create Channel Dialog ---- */}
       {showCreate && (
-        <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-50">
-          <Card className="w-[380px] shadow-2xl bg-zinc-900">
+        <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-[380px] max-h-full flex flex-col shadow-2xl bg-zinc-900">
             <CardHeader className="flex flex-row items-center justify-between gap-2 p-0 px-4 py-3 border-b border-white/[0.06]">
               <CardTitle className="text-sm font-medium">New Channel</CardTitle>
               <Button

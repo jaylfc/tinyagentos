@@ -14,15 +14,19 @@ export function WallpaperPicker({ open, onClose }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-[10002] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+      className="fixed inset-0 z-[10002] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
       onClick={onClose}
+      style={{
+        paddingTop: "calc(env(safe-area-inset-top, 0px) + 16px)",
+        paddingBottom: "calc(40px + env(safe-area-inset-bottom, 0px) * 0.35 + 16px)",
+      }}
     >
       <div
-        className="w-[500px] max-h-[80vh] rounded-xl border border-shell-border-strong overflow-hidden"
+        className="w-full max-w-[500px] max-h-full flex flex-col rounded-xl border border-shell-border-strong overflow-hidden"
         style={{ backgroundColor: "rgba(26, 27, 46, 0.98)" }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-4 py-3 border-b border-shell-border">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-shell-border shrink-0">
           <h3 className="text-sm font-medium text-shell-text">Change Wallpaper</h3>
           <button
             onClick={onClose}
@@ -32,7 +36,7 @@ export function WallpaperPicker({ open, onClose }: Props) {
             ×
           </button>
         </div>
-        <div className="p-4 grid grid-cols-2 gap-3 overflow-y-auto max-h-[60vh]">
+        <div className="p-4 grid grid-cols-2 gap-3 overflow-y-auto flex-1">
           {wallpapers.map((wp) => (
             <button
               key={wp.id}

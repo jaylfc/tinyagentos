@@ -640,7 +640,8 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
 
           {/* ---- List view ---- */}
           {!loading && sortedFiles.length > 0 && viewMode === "list" && (
-            <table className="w-full text-xs" aria-label="File list">
+            <div className="overflow-x-auto">
+            <table className="w-full text-xs min-w-[520px]" aria-label="File list">
               <thead>
                 <tr className="text-left text-shell-text-tertiary border-b border-white/5">
                   <th className="px-3 py-2 font-medium">Name</th>
@@ -732,6 +733,7 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
                 })}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       </div>

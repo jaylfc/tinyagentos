@@ -426,18 +426,18 @@ function DeployWizard({
 
   return (
     <div
-      className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
       onClick={() => onClose()}
       role="dialog"
       aria-modal="true"
       aria-label="Deploy Agent"
     >
       <div
-        className="w-full max-w-lg bg-shell-surface rounded-xl border border-white/10 shadow-2xl overflow-hidden"
+        className="w-full max-w-lg max-h-full bg-shell-surface rounded-xl border border-white/10 shadow-2xl overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-white/5 shrink-0">
           <div className="flex items-center gap-2">
             <Play size={16} className="text-accent" />
             <h2 className="text-sm font-semibold">Deploy Agent</h2>
@@ -454,7 +454,7 @@ function DeployWizard({
         </div>
 
         {/* Step indicators */}
-        <div className="flex items-center gap-1 px-5 py-3 border-b border-white/5">
+        <div className="flex items-center gap-1 px-5 py-3 border-b border-white/5 shrink-0 overflow-x-auto">
           {STEPS.map((label, i) => (
             <div key={label} className="flex items-center gap-1">
               <div
@@ -483,7 +483,7 @@ function DeployWizard({
         </div>
 
         {/* Body */}
-        <div className="px-5 py-5 min-h-[220px]">
+        <div className="px-5 py-5 min-h-[220px] flex-1 overflow-y-auto">
           {/* Step 0: Name + Color */}
           {step === 0 && (
             <Card className="p-0 border-0 bg-transparent shadow-none space-y-4">
@@ -674,7 +674,7 @@ function DeployWizard({
         )}
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-5 py-3 border-t border-white/5">
+        <div className="flex items-center justify-between px-5 py-3 border-t border-white/5 shrink-0">
           <Button
             variant="outline"
             size="sm"
