@@ -28,8 +28,9 @@
 #     TAOS_RKLLAMA_REF        git ref  (default: 33002c82a2b8813042cce9ca2e5ed6bb899287f2)
 #     TAOS_RKLLAMA_PORT       HTTP port (default: 8080)
 #     TAOS_QMD_EXPANSION_URL  override URL for qmd-query-expansion-1.7B-rk3588.rkllm
-#                             (no public HF mirror exists yet; if you have
-#                             one, point this at the resolve/main URL)
+#                             (default is the TAOS HF mirror at
+#                             jaysom/tinyagentos-rockchip-mirror; only set
+#                             this if you are self-hosting a different copy)
 #
 # Safety:
 #   - Gated on confirmation / env var. Non-interactive without the env
@@ -44,7 +45,20 @@ set -euo pipefail
 
 # -------- Config ----------------------------------------------------------
 
-LIBRKNNRT_URL="https://huggingface.co/darkbit1001/Stable-Diffusion-1.5-LCM-ONNX-RKNN2/resolve/main/librknnrt.so"
+# Every binary required for the verified RK3588 install path is mirrored in
+# the TAOS-controlled HuggingFace repo `jaysom/tinyagentos-rockchip-mirror`.
+# The mirror exists so that third-party upstream repos (dulimov/, happyme531/,
+# darkbit1001/) disappearing or silently changing contents cannot break the
+# install for Rockchip users. See docs/mirror-policy.md. The original
+# upstream URLs are preserved in comments below as documented fallbacks.
+
+TAOS_MIRROR_REPO="jaysom/tinyagentos-rockchip-mirror"
+TAOS_MIRROR_BASE="https://huggingface.co/${TAOS_MIRROR_REPO}/resolve/main"
+
+# librknnrt 2.3.0 (build c949ad889d, 2024-11-07)
+# Upstream fallback: https://huggingface.co/darkbit1001/Stable-Diffusion-1.5-LCM-ONNX-RKNN2/resolve/main/librknnrt.so
+LIBRKNNRT_URL="${TAOS_MIRROR_BASE}/librknnrt-2.3.0-c949ad889d-20241107.so"
+LIBRKNNRT_SHA256="73993ed4b440460825f21611731564503cc1d5a0c123746477da6cd574f34885"
 LIBRKNNRT_DEST="/usr/lib/librknnrt.so"
 LIBRKNNRT_EXPECTED_VERSION="2.3.0"
 
@@ -52,23 +66,25 @@ RKLLAMA_REPO="${TAOS_RKLLAMA_REPO:-https://github.com/jaylfc/rkllama.git}"
 RKLLAMA_REF="${TAOS_RKLLAMA_REF:-33002c82a2b8813042cce9ca2e5ed6bb899287f2}"
 RKLLAMA_PORT="${TAOS_RKLLAMA_PORT:-8080}"
 
-# Canonical upstream sources for the rk3588 RKLLM model files. The
-# query-expansion variant is not yet publicly mirrored as RKLLM; the
-# default URL is a placeholder that the script checks first and skips
-# if already present on disk. Override with TAOS_QMD_EXPANSION_URL.
-EMBEDDING_REPO="dulimov/Qwen3-Embedding-0.6B-rk3588-1.2.1"
-EMBEDDING_FILE="Qwen3-Embedding-0.6B-rk3588-w8a8-opt-1-hybrid-ratio-0.5.rkllm"
-EMBEDDING_URL="https://huggingface.co/${EMBEDDING_REPO}/resolve/main/${EMBEDDING_FILE}"
+# Qwen3-Embedding-0.6B rk3588 rkllm weights.
+# Upstream fallback: https://huggingface.co/dulimov/Qwen3-Embedding-0.6B-rk3588-1.2.1/resolve/main/Qwen3-Embedding-0.6B-rk3588-w8a8-opt-1-hybrid-ratio-0.5.rkllm
+EMBEDDING_URL="${TAOS_MIRROR_BASE}/models/qwen3-embedding-0.6b.rkllm"
+EMBEDDING_SHA256="417d4a9d413b03089a2b9e4f31fb36a9ea3c45c92bcb19dcce6cc3873af88967"
 EMBEDDING_LOCAL_NAME="Qwen3-Embedding-0.6B.rkllm"
 EMBEDDING_HF_TOKENIZER="Qwen/Qwen3-Embedding-0.6B"
 
-RERANKER_REPO="dulimov/Qwen3-Reranker-0.6B-rk3588-1.2.1"
-RERANKER_FILE="Qwen3-Reranker-0.6B-rk3588-w8a8-opt-1-hybrid-ratio-0.5.rkllm"
-RERANKER_URL="https://huggingface.co/${RERANKER_REPO}/resolve/main/${RERANKER_FILE}"
+# Qwen3-Reranker-0.6B rk3588 rkllm weights.
+# Upstream fallback: https://huggingface.co/dulimov/Qwen3-Reranker-0.6B-rk3588-1.2.1/resolve/main/Qwen3-Reranker-0.6B-rk3588-w8a8-opt-1-hybrid-ratio-0.5.rkllm
+RERANKER_URL="${TAOS_MIRROR_BASE}/models/qwen3-reranker-0.6b.rkllm"
+RERANKER_SHA256="192795fd984051c85ba4c2a75c6b97e7971d9b66964083e144c6d2db96c9176a"
 RERANKER_LOCAL_NAME="Qwen3-Reranker-0.6B.rkllm"
 RERANKER_HF_TOKENIZER="Qwen/Qwen3-Reranker-0.6B"
 
-QMD_EXPANSION_URL="${TAOS_QMD_EXPANSION_URL:-https://huggingface.co/jaylfc/qmd-query-expansion-rk3588/resolve/main/qmd-query-expansion-1.7B-rk3588.rkllm}"
+# qmd-query-expansion 1.7B rk3588 rkllm weights — no upstream mirror; the
+# TAOS HF mirror is the canonical source. TAOS_QMD_EXPANSION_URL still lets
+# advanced users point at a different host, but the default is the mirror.
+QMD_EXPANSION_URL="${TAOS_QMD_EXPANSION_URL:-${TAOS_MIRROR_BASE}/models/qmd-query-expansion-1.7b.rkllm}"
+QMD_EXPANSION_SHA256="1cbc71a05fc9c789c2ec12b72b580c4cad74d91f5d04679e8256cf4ecb6d712c"
 QMD_EXPANSION_LOCAL_NAME="qmd-query-expansion-1.7B-rk3588.rkllm"
 QMD_EXPANSION_HF_TOKENIZER="Qwen/Qwen3-1.7B"
 
@@ -77,6 +93,21 @@ QMD_EXPANSION_HF_TOKENIZER="Qwen/Qwen3-1.7B"
 log()  { printf '\033[1;34m[rknpu]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[rknpu]\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[1;31m[rknpu]\033[0m %s\n' "$*" >&2; exit 1; }
+
+# verify_sha256 <file> <expected_hex> <label>
+# Hard-fails on mismatch: a corrupted download or a tampered mirror must
+# never be silently accepted.
+verify_sha256() {
+    local file="$1" expected="$2" label="$3" actual
+    if ! command -v sha256sum >/dev/null 2>&1; then
+        die "sha256sum not available — cannot verify $label integrity"
+    fi
+    actual="$(sha256sum "$file" | awk '{print $1}')"
+    if [[ "$actual" != "$expected" ]]; then
+        die "sha256 mismatch for $label: expected $expected, got $actual — corrupted download or tampered mirror, refusing to install"
+    fi
+    log "sha256 ok for $label (${actual:0:12}…)"
+}
 
 # -------- global rollback state ------------------------------------------
 
@@ -254,6 +285,8 @@ pin_librknnrt() {
     fi
     log "downloaded $(( sz / 1024 / 1024 )) MiB"
 
+    verify_sha256 "$tmp" "$LIBRKNNRT_SHA256" "librknnrt.so"
+
     # Back up the existing file.
     if [[ -f "$LIBRKNNRT_DEST" ]]; then
         LIBRKNNRT_BACKUP="${LIBRKNNRT_DEST}.bak.$(date +%Y%m%d-%H%M%S)"
@@ -316,7 +349,7 @@ install_rkllama() {
 # weight file. Skipped cleanly if the weight already exists.
 fetch_model() {
     local model_name="$1" local_weight="$2" url="$3" hf_tokenizer="$4"
-    local system_prompt="$5" temperature="$6"
+    local system_prompt="$5" temperature="$6" expected_sha="$7"
     local dir="$RKLLAMA_MODELS/$model_name"
     local weight="$dir/$local_weight"
 
@@ -325,7 +358,8 @@ fetch_model() {
         local sz
         sz="$(stat -c%s "$weight" 2>/dev/null || echo 0)"
         if (( sz > 100 * 1024 * 1024 )); then
-            log "model $model_name already present ($(( sz / 1024 / 1024 )) MiB) — skipping"
+            log "model $model_name already present ($(( sz / 1024 / 1024 )) MiB) — verifying checksum"
+            verify_sha256 "$weight" "$expected_sha" "$model_name"
         else
             warn "$weight is only $sz bytes, looks truncated — re-downloading"
             run_as_user rm -f "$weight"
@@ -339,6 +373,7 @@ fetch_model() {
             run_as_user rm -f "$weight.part"
             die "failed to download $url — if there is no public RKLLM mirror for this model, set TAOS_QMD_EXPANSION_URL or pre-place the file at $weight and re-run"
         fi
+        verify_sha256 "$weight.part" "$expected_sha" "$model_name"
         run_as_user mv "$weight.part" "$weight"
     fi
 
@@ -357,15 +392,15 @@ pull_models() {
 
     fetch_model "qwen3-embedding-0.6b" "$EMBEDDING_LOCAL_NAME" "$EMBEDDING_URL" \
         "$EMBEDDING_HF_TOKENIZER" \
-        "You are a helpful AI assistant." "0.7"
+        "You are a helpful AI assistant." "0.7" "$EMBEDDING_SHA256"
 
     fetch_model "qwen3-reranker-0.6b" "$RERANKER_LOCAL_NAME" "$RERANKER_URL" \
         "$RERANKER_HF_TOKENIZER" \
-        "You are a helpful AI assistant." "0.1"
+        "You are a helpful AI assistant." "0.1" "$RERANKER_SHA256"
 
     fetch_model "qmd-query-expansion" "$QMD_EXPANSION_LOCAL_NAME" "$QMD_EXPANSION_URL" \
         "$QMD_EXPANSION_HF_TOKENIZER" \
-        "You are a search query expansion assistant." "0.1"
+        "You are a search query expansion assistant." "0.1" "$QMD_EXPANSION_SHA256"
 }
 
 # -------- (6) systemd unit -----------------------------------------------
@@ -485,6 +520,7 @@ EOF
 
 main() {
     log "TinyAgentOS RKNPU + rkllama installer starting"
+    log "binaries pulled from TAOS mirror at jaysom/tinyagentos-rockchip-mirror (HF) — see docs/mirror-policy.md"
 
     detect_board
     detect_rknpu_driver
