@@ -73,14 +73,20 @@ export function App() {
 
   useSessionPersistence();
 
-  // Welcome notification on first mount
+  // Welcome notification — shown once per install, gated on a
+  // localStorage flag so reload / refresh / re-mount don't replay it.
+  // Users can re-trigger by clearing the flag from devtools.
   useEffect(() => {
+    const WELCOME_FLAG = "taos.welcome.shown";
+    if (typeof window === "undefined") return;
+    if (window.localStorage.getItem(WELCOME_FLAG)) return;
     useNotificationStore.getState().addNotification({
       source: "system",
       title: "Welcome to TinyAgentOS",
       body: "Click the bell to see notifications from your agents",
       level: "info",
     });
+    window.localStorage.setItem(WELCOME_FLAG, "1");
   }, []);
 
   // Mobile handlers
