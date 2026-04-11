@@ -2,6 +2,12 @@
 
 **Date:** 2026-04-05
 **Status:** Draft
+**Amended:** 2026-04-11 — cluster worker capabilities follow **backend-driven
+discovery**: a worker advertises "I can do image-generation, embedding,
+llm-chat" by live-probing its own backends on startup and on heartbeat, not
+by declaring a static config. The controller's view of "what can the cluster
+do right now" is a union of every worker's live backend catalog. See
+[resource-scheduler.md §Backend-driven discovery](resource-scheduler.md).
 
 ## The Insight
 

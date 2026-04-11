@@ -1,5 +1,13 @@
 # Dual Container Runtime: LXC + Docker
 
+**Amended:** 2026-04-11 — container runtime detection follows
+**backend-driven discovery**. Rather than storing "lxc" or "docker" in a
+config file, the platform probes `incus version` and `docker info` at
+startup, caches the result briefly, and routes container operations to
+whichever is live right now. If both are available, user preference
+wins; if neither, container-dependent features gracefully disable. See
+[resource-scheduler.md §Backend-driven discovery](resource-scheduler.md).
+
 ## Overview
 
 Refactor the container management layer to support both LXC (via incus) and Docker as deployment backends. LXC is preferred on bare metal/SBCs for lower overhead and systemd support. Docker is required for VPS and cloud deployments where LXC isn't available. The runtime is auto-detected on startup with a user override in settings.

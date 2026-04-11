@@ -1,5 +1,12 @@
 # Platform Plan 1: Hardware Detection + App Registry Implementation Plan
 
+**Amended:** 2026-04-11 — app/model "installed" state follows
+**backend-driven discovery**. Rather than relying on filename conventions
+in `data/models/` or a static `installed.json`, the app registry asks each
+live backend what it has loaded or can currently serve and unions that
+with the on-disk manifest catalog. Static state files remain as a cache
+but are never the source of truth. See
+[resource-scheduler.md §Backend-driven discovery](resource-scheduler.md).
 
 **Goal:** Add hardware auto-detection and an app registry that can parse manifests, track installed apps, and manage app lifecycle (install/uninstall/start/stop) — the foundation for the App Store, Model Manager, and Agent Deployer.
 

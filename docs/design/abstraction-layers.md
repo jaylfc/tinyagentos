@@ -2,6 +2,13 @@
 
 **Date:** 2026-04-06
 **Status:** Approved
+**Amended:** 2026-04-11 — every abstraction in this document now follows the
+**backend-driven discovery** principle: availability queries (is model X
+loaded? is connector Y online? is capability Z routable?) are answered by
+probing the live subsystem, not by reading the filesystem or static config.
+Manifests describe potential; live probes describe reality. See
+[resource-scheduler.md §Backend-driven discovery](resource-scheduler.md) for
+the canonical treatment of this principle.
 
 ## Overview
 

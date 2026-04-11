@@ -1,5 +1,12 @@
 # Abstraction Plan 1: LLM Proxy (LiteLLM Integration)
 
+**Amended:** 2026-04-11 — the LiteLLM config follows **backend-driven
+discovery**. Rather than generating a static config once at startup from
+the backend list, TinyAgentOS regenerates the LiteLLM config whenever the
+live `BackendCatalog` changes (backend comes up, model loads/unloads,
+worker joins/leaves). The proxy routes only to models that are currently
+advertised as ready. See
+[resource-scheduler.md §Backend-driven discovery](resource-scheduler.md).
 
 **Goal:** Run LiteLLM as a hidden internal proxy so all agent frameworks access models via a single OpenAI-compatible endpoint with per-agent virtual keys, auto-configured from TinyAgentOS backend config.
 

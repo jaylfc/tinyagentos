@@ -2,7 +2,13 @@
 
 **Date:** 2026-04-05
 **Status:** Draft
-**Author:** Jay + Claude
+**Amended:** 2026-04-11 — the Store's "Available / Installed / Running"
+states follow **backend-driven discovery**. "Available" = in the catalog
+manifest and compatible with this hardware. "Installed" = the backend
+advertising the service is currently reachable. "Running" = a live
+capability probe returns OK. The old `installed.json` file is a cache,
+not the source of truth. See
+[resource-scheduler.md §Backend-driven discovery](resource-scheduler.md).
 
 ## Overview
 
