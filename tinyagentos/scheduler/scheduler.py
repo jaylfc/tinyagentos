@@ -70,6 +70,13 @@ class Scheduler:
     async def submit(self, task: Task) -> object:
         """Dispatch a task to the first admitted preferred resource.
 
+        If ``task.preferred_resources`` is empty OR the caller does not
+        care about order, the scheduler picks the best-fit resource by
+        (admission passes, lowest tier, best benchmark score). This
+        gives sensible smart routing out of the box: GPU > NPU > CPU,
+        with benchmark scores breaking ties within a tier once the
+        benchmark store has data.
+
         Raises :class:`NoResourceAvailableError` if no resource can run it.
         """
         self._submitted += 1
@@ -84,15 +91,46 @@ class Scheduler:
         )
         self._history.append(record)
 
-        tried: list[str] = []
-        for ref in task.preferred_resources:
-            resource = self._resources.get(ref.name)
-            if resource is None:
-                tried.append(f"{ref.name}=unknown")
-                continue
+        # Build the candidate order. If the caller supplied explicit
+        # preferred_resources we honour that order. Otherwise we
+        # auto-route by (tier, benchmark score).
+        if task.preferred_resources:
+            candidates = [
+                self._resources.get(ref.name) for ref in task.preferred_resources
+            ]
+            # Keep explicit ref order but filter out unknowns, which we
+            # still record in `tried` so observability is honest.
+            ordered: list = []
+            tried: list[str] = []
+            for ref, resource in zip(task.preferred_resources, candidates):
+                if resource is None:
+                    tried.append(f"{ref.name}=unknown")
+                    continue
+                ordered.append((resource, ref.name))
+        else:
+            # Auto-route: every resource that might admit the task, sorted
+            # by (tier, -score). Lower tier wins; higher score wins ties.
+            ordered_with_key: list[tuple[int, float, "Resource", str]] = []
+            tried = []
+            for resource in self._resources.values():
+                if task.capability.value not in resource.capabilities:
+                    # Not ready right now (backend-driven) — admission would
+                    # reject. Include in the tried list so the error is clear.
+                    tried.append(
+                        f"{resource.name}=capability '{task.capability.value}' not loaded"
+                    )
+                    continue
+                score = resource.score_for(task.capability.value, None) or 0.0
+                ordered_with_key.append(
+                    (resource.tier, -score, resource, resource.name)
+                )
+            ordered_with_key.sort(key=lambda x: (x[0], x[1]))
+            ordered = [(r, name) for _, _, r, name in ordered_with_key]
+
+        for resource, ref_name in ordered:
             admitted, reason = resource.can_admit(task)
             if not admitted:
-                tried.append(f"{ref.name}={reason}")
+                tried.append(f"{ref_name}={reason}")
                 continue
 
             # Found a home — run it
@@ -146,7 +184,9 @@ class Scheduler:
                     "runtime_version": r.signature.runtime_version,
                     "concurrency": r.concurrency,
                     "in_flight": r.in_flight,
+                    "tier": r.tier,
                     "capabilities": sorted(r.capabilities),
+                    "potential_capabilities": sorted(r.potential_capabilities),
                 }
                 for r in self._resources.values()
             ],

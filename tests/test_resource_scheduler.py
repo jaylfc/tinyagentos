@@ -26,6 +26,7 @@ from tinyagentos.scheduler import (
     Scheduler,
     Task,
 )
+from tinyagentos.scheduler.resource import Tier
 
 
 def _make_resource(
@@ -38,13 +39,19 @@ def _make_resource(
     runtime_version: str = "1.0",
     memory_mb: int = 999_999,
     backend_url: str = "http://backend",
+    tier: int = Tier.CPU,
+    potential_capabilities: set[str] | None = None,
+    score_lookup=None,
 ) -> Resource:
     return Resource(
         name=name,
         signature=ResourceSignature(platform, runtime, runtime_version),
         concurrency=concurrency,
+        tier=tier,
+        potential_capabilities=potential_capabilities,
         get_capabilities=lambda caps=capabilities: set(caps),
         backend_lookup=lambda cap, url=backend_url: url,
+        score_lookup=score_lookup,
         memory_probe=lambda mb=memory_mb: mb,
     )
 
@@ -247,6 +254,129 @@ async def test_scheduler_propagates_payload_exceptions():
     history = sched.history(limit=1)
     assert history[0].status.value == "error"
     assert "boom" in history[0].error
+
+
+@pytest.mark.asyncio
+async def test_auto_route_prefers_lower_tier():
+    """With no explicit preferred_resources, scheduler picks by tier."""
+    calls: list[str] = []
+
+    async def payload(resource: Resource) -> str:
+        calls.append(resource.name)
+        return "ok"
+
+    sched = Scheduler()
+    sched.register(
+        _make_resource("cpu", capabilities={"image-generation"}, tier=Tier.CPU)
+    )
+    sched.register(
+        _make_resource("npu", capabilities={"image-generation"}, tier=Tier.NPU)
+    )
+    sched.register(
+        _make_resource("gpu", capabilities={"image-generation"}, tier=Tier.GPU)
+    )
+
+    # No preferred_resources → scheduler auto-routes by tier
+    task = Task(
+        capability=Capability.IMAGE_GENERATION,
+        payload=payload,
+        preferred_resources=[],  # auto-route
+        priority=Priority.INTERACTIVE_USER,
+        submitter="test",
+    )
+    await sched.submit(task)
+
+    assert calls == ["gpu"]  # tier 0 wins over NPU (1) and CPU (2)
+
+
+@pytest.mark.asyncio
+async def test_auto_route_uses_benchmark_score_as_tiebreaker():
+    """Within a tier, higher benchmark score wins."""
+    calls: list[str] = []
+
+    async def payload(resource: Resource) -> str:
+        calls.append(resource.name)
+        return "ok"
+
+    # Both resources are CPU tier, but one has a higher benchmark score
+    def fast_scorer(capability: str, model):
+        return 100.0  # fast
+
+    def slow_scorer(capability: str, model):
+        return 10.0  # slow
+
+    sched = Scheduler()
+    sched.register(
+        _make_resource(
+            "cpu-pi4",
+            capabilities={"embedding"},
+            tier=Tier.CPU,
+            score_lookup=slow_scorer,
+        )
+    )
+    sched.register(
+        _make_resource(
+            "cpu-fedora",
+            capabilities={"embedding"},
+            tier=Tier.CPU,
+            score_lookup=fast_scorer,
+        )
+    )
+
+    task = Task(
+        capability=Capability.EMBEDDING,
+        payload=payload,
+        preferred_resources=[],
+        priority=Priority.INTERACTIVE_USER,
+        submitter="test",
+    )
+    await sched.submit(task)
+    assert calls == ["cpu-fedora"]  # higher score wins the tie
+
+
+@pytest.mark.asyncio
+async def test_explicit_preferred_resources_override_auto_route():
+    """An explicit preferred_resources list ignores the tier ranking."""
+    calls: list[str] = []
+
+    async def payload(resource: Resource) -> str:
+        calls.append(resource.name)
+        return "ok"
+
+    sched = Scheduler()
+    sched.register(
+        _make_resource("gpu", capabilities={"image-generation"}, tier=Tier.GPU)
+    )
+    sched.register(
+        _make_resource("cpu", capabilities={"image-generation"}, tier=Tier.CPU)
+    )
+
+    # Caller wants CPU specifically — auto-route would pick GPU
+    task = Task(
+        capability=Capability.IMAGE_GENERATION,
+        payload=payload,
+        preferred_resources=[ResourceRef("cpu")],
+        priority=Priority.INTERACTIVE_USER,
+        submitter="test",
+    )
+    await sched.submit(task)
+    assert calls == ["cpu"]
+
+
+def test_resource_potential_capabilities():
+    """Resource exposes both current and potential capability sets."""
+    r = _make_resource(
+        "cpu",
+        capabilities={"image-generation"},
+        potential_capabilities={"llm-chat", "embedding", "image-generation", "speech-to-text"},
+    )
+    # Current is what the backend catalog says right now
+    assert r.capabilities == {"image-generation"}
+    # Potential is the static hardware-class set, unioned with current
+    assert "llm-chat" in r.potential_capabilities
+    assert "embedding" in r.potential_capabilities
+    assert "speech-to-text" in r.potential_capabilities
+    assert "image-generation" in r.potential_capabilities
 
 
 @pytest.mark.asyncio

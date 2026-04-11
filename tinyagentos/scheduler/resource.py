@@ -20,6 +20,21 @@ from tinyagentos.scheduler.types import ResourceSignature, Task
 logger = logging.getLogger(__name__)
 
 
+class Tier:
+    """Static tier ranking for resources. Lower wins.
+
+    Tiers let the scheduler prefer a faster class of hardware when both
+    are available. GPU (CUDA/ROCm/Vulkan/Metal/MLX) is fastest, NPU
+    second, CPU is the universal fallback. Cluster network resources
+    (remote workers over HTTP) come last because they add round-trip
+    latency on top of whatever the remote device's local tier is.
+    """
+    GPU = 0
+    NPU = 1
+    CPU = 2
+    CLUSTER = 3
+
+
 class Resource:
     """An accelerator or CPU pool. One instance per physical device.
 
@@ -27,13 +42,23 @@ class Resource:
         name: stable id — "npu-rk3588", "cpu-inference", "gpu-cuda-0", ...
         signature: runtime identity for admission matching
         concurrency: how many Tasks can run in parallel
-        memory_probe: optional callable returning available RAM in MB
-        get_capabilities: callable returning the current set of capabilities
-                          this resource can serve, derived from the live
-                          backend catalog (backend-driven discovery)
+        tier: static tier ranking (see Tier class) — lower is faster
+        potential_capabilities: what this hardware class *could* run given
+                                a suitable backend, even if no backend for
+                                that capability is loaded right now. Used
+                                by the UI to show latent capability and
+                                by suggestion tooling.
+        get_capabilities: callable returning the set of capabilities this
+                          resource can serve *right now*, derived from the
+                          live backend catalog (backend-driven).
         backend_lookup: callable that returns the live backend URL for a
                         given capability — used by payloads that need to
                         know where to POST the actual request
+        score_lookup: optional callable that returns the latest benchmark
+                      score for a (capability, model) pair. Scheduler uses
+                      this alongside tier for smart routing. None if no
+                      benchmark data is available yet.
+        memory_probe: optional callable returning available RAM in MB
     """
 
     def __init__(
@@ -43,24 +68,58 @@ class Resource:
         concurrency: int,
         get_capabilities: Callable[[], set[str]],
         backend_lookup: Callable[[str], Optional[str]],
+        tier: int = Tier.CPU,
+        potential_capabilities: Optional[set[str]] = None,
+        score_lookup: Optional[Callable[[str, Optional[str]], Optional[float]]] = None,
         memory_probe: Optional[Callable[[], int]] = None,
     ):
         self.name = name
         self.signature = signature
         self.concurrency = concurrency
+        self.tier = tier
         self._semaphore = asyncio.Semaphore(concurrency)
         self._in_flight = 0
         self._get_capabilities = get_capabilities
         self._backend_lookup = backend_lookup
+        self._score_lookup = score_lookup
+        self._potential = set(potential_capabilities or set())
         self._memory_probe = memory_probe or _default_memory_probe
 
     @property
     def capabilities(self) -> set[str]:
         """Live set of capabilities this resource can currently serve.
 
-        Backend-driven: answers by asking the catalog, not from a static field.
+        Backend-driven: answers by asking the catalog, not a static field.
+        Use this for admission decisions.
         """
         return self._get_capabilities()
+
+    @property
+    def potential_capabilities(self) -> set[str]:
+        """Set of capabilities this resource *could* run given a suitable
+        backend. For CPU this is typically all capabilities because
+        CPU-only implementations exist for every inference task (just
+        slower). For NPU/GPU it's what the hardware class supports.
+
+        The union of potential and current capabilities gives the UI a
+        full picture: 'ready now: [image-generation] · latent: [embedding,
+        llm-chat, speech-to-text, ...]'.
+        """
+        return self._potential | self.capabilities
+
+    def score_for(self, capability: str, model: Optional[str] = None) -> Optional[float]:
+        """Latest benchmark score for this resource on the given capability.
+
+        Returns None if no benchmark data exists yet, which is the common
+        case on first boot — the scheduler then falls back to tier-only
+        routing until benchmarks populate.
+        """
+        if self._score_lookup is None:
+            return None
+        try:
+            return self._score_lookup(capability, model)
+        except Exception:
+            return None
 
     @property
     def in_flight(self) -> int:

@@ -69,7 +69,9 @@ interface SchedulerResource {
   runtime_version: string;
   concurrency: number;
   in_flight: number;
+  tier: number;
   capabilities: string[];
+  potential_capabilities: string[];
 }
 
 interface SchedulerStats {
@@ -470,32 +472,66 @@ export function DashboardApp({ windowId: _windowId }: { windowId: string }) {
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-3">
-                {schedulerStats.resources.map((r) => (
-                  <div
-                    key={r.name}
-                    className="p-2 rounded-lg bg-white/[0.02] border border-white/5"
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[11px] font-medium text-shell-text">{r.name}</span>
-                      <span className="text-[10px] text-shell-text-tertiary tabular-nums">
-                        {r.in_flight}/{r.concurrency}
-                      </span>
-                    </div>
-                    <div className="text-[10px] text-shell-text-tertiary truncate">
-                      {r.platform} · {r.runtime}{r.runtime_version && ` ${r.runtime_version}`}
-                    </div>
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {r.capabilities.map((c) => (
+                {schedulerStats.resources.map((r) => {
+                  const tierLabel = ["GPU", "NPU", "CPU", "CLUSTER"][r.tier] ?? "?";
+                  const tierColor = [
+                    "text-emerald-400 bg-emerald-500/10",
+                    "text-violet-400 bg-violet-500/10",
+                    "text-sky-400 bg-sky-500/10",
+                    "text-amber-400 bg-amber-500/10",
+                  ][r.tier] ?? "text-shell-text-tertiary bg-white/5";
+                  const ready = new Set(r.capabilities);
+                  const latent = r.potential_capabilities.filter((c) => !ready.has(c));
+                  return (
+                    <div
+                      key={r.name}
+                      className="p-2 rounded-lg bg-white/[0.02] border border-white/5"
+                    >
+                      <div className="flex items-center justify-between mb-1 gap-2">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span
+                            className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold ${tierColor}`}
+                          >
+                            {tierLabel}
+                          </span>
+                          <span className="text-[11px] font-medium text-shell-text truncate">
+                            {r.name}
+                          </span>
+                        </div>
                         <span
-                          key={c}
-                          className="text-[9px] px-1.5 py-0.5 rounded-full bg-violet-500/10 text-violet-300"
+                          className="text-[10px] text-shell-text-tertiary tabular-nums shrink-0"
+                          title={`${r.in_flight} tasks running, ${r.concurrency - r.in_flight} slots free`}
                         >
-                          {c}
+                          {r.in_flight} active · {r.concurrency} slots
                         </span>
-                      ))}
+                      </div>
+                      <div className="text-[10px] text-shell-text-tertiary truncate">
+                        {r.platform} · {r.runtime}
+                        {r.runtime_version && ` ${r.runtime_version}`}
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {r.capabilities.map((c) => (
+                          <span
+                            key={`ready-${c}`}
+                            className="text-[9px] px-1.5 py-0.5 rounded-full bg-violet-500/20 text-violet-200 font-medium"
+                            title="Ready now — backend is loaded"
+                          >
+                            {c}
+                          </span>
+                        ))}
+                        {latent.map((c) => (
+                          <span
+                            key={`latent-${c}`}
+                            className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/[0.03] text-shell-text-tertiary border border-white/5"
+                            title="Latent — supported by this hardware class but no backend loaded"
+                          >
+                            {c}
+                          </span>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
               {schedulerTasks.length > 0 && (
                 <div className="mt-2 space-y-0.5">

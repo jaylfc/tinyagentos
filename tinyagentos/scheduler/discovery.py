@@ -14,9 +14,36 @@ from pathlib import Path
 from typing import Optional
 
 from tinyagentos.scheduler.backend_catalog import BackendCatalog
-from tinyagentos.scheduler.resource import Resource
+from tinyagentos.scheduler.resource import Resource, Tier
 from tinyagentos.scheduler.scheduler import Scheduler
 from tinyagentos.scheduler.types import ResourceSignature
+
+
+# Every capability a CPU can run given the right backend. CPU is the
+# universal fallback — nothing is exclusive to GPU/NPU at the capability
+# level, just faster on those devices. This set feeds the CPU resource's
+# ``potential_capabilities`` so the UI shows latent coverage even when no
+# CPU backend for that capability is currently loaded.
+CPU_POTENTIAL_CAPABILITIES: set[str] = {
+    "llm-chat",
+    "embedding",
+    "reranking",
+    "image-generation",
+    "speech-to-text",
+    "text-to-speech",
+    "vision",
+}
+
+# NPU-only accelerators serve whatever models have been compiled for them.
+# On RK3588 that's today a subset — embeddings, rerank, LLM chat (via
+# rkllama) and image-gen (via rknn-sd). Other capabilities could be added
+# once RKNN-exported models exist.
+NPU_RK3588_POTENTIAL_CAPABILITIES: set[str] = {
+    "llm-chat",
+    "embedding",
+    "reranking",
+    "image-generation",
+}
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +84,7 @@ def _physical_cores() -> int:
 def build_scheduler(
     hardware_profile,
     catalog: BackendCatalog,
+    benchmark_store=None,
 ) -> Scheduler:
     """Instantiate a Scheduler and register the resources the live catalog
     currently supports.
@@ -67,6 +95,32 @@ def build_scheduler(
     tasks fall through to `cpu-inference` until the backend returns.
     """
     scheduler = Scheduler()
+
+    def _make_score_lookup(resource_name: str):
+        """Return a score_lookup callable bound to this resource name.
+
+        Pulls the latest benchmark row for (worker_id=<resource_name>,
+        capability) from the benchmark store if one is wired up.
+        Returns None if there's no store or no record for that pairing
+        yet. Scheduler falls back to tier-only routing in that case.
+        """
+        if benchmark_store is None:
+            return None
+
+        def _lookup(capability: str, model):
+            import asyncio
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                return None
+            # Schedule a lookup — but this is sync from the scheduler's
+            # admission path. We sidestep by reading the most recent
+            # cached value. Phase 2: add an in-memory LRU so this is truly
+            # O(1) and async-free. For Phase 1 we only read if called
+            # from an already-async context via create_task.
+            return None  # Phase 2: actual async read from benchmark_store
+
+        return _lookup
 
     # NPU (RK3588) — only if a healthy rknn-sd or rkllama backend exists
     npu_backends = (
@@ -103,8 +157,11 @@ def build_scheduler(
                 name="npu-rk3588",
                 signature=signature,
                 concurrency=1,  # RK3588 NPU serialises across the 3 cores
+                tier=Tier.NPU,
+                potential_capabilities=NPU_RK3588_POTENTIAL_CAPABILITIES,
                 get_capabilities=_npu_capabilities,
                 backend_lookup=_npu_backend_for,
+                score_lookup=_make_score_lookup("npu-rk3588"),
             )
         )
 
@@ -139,8 +196,11 @@ def build_scheduler(
             name="cpu-inference",
             signature=cpu_signature,
             concurrency=cpu_concurrency,
+            tier=Tier.CPU,
+            potential_capabilities=CPU_POTENTIAL_CAPABILITIES,
             get_capabilities=_cpu_capabilities,
             backend_lookup=_cpu_backend_for,
+            score_lookup=_make_score_lookup("cpu-inference"),
         )
     )
 
