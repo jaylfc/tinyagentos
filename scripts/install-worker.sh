@@ -134,8 +134,34 @@ detect_and_advise_accelerators() {
         if (( nv_driver && nv_devices )); then
             log "nvidia: kernel module loaded + device nodes present (CUDA / Vulkan available)"
             if (( ! nv_userspace )); then
-                warn "nvidia-smi is not installed — VRAM size will report as unknown to the controller"
-                warn "  optional: install nvidia-utils-XXX matching your driver version"
+                # Driver is loaded but the userspace utils (nvidia-smi)
+                # aren't installed. nvidia-utils is a thin userspace
+                # wrapper that talks to an already-loaded driver — it
+                # never touches the kernel module or DKMS, so installing
+                # it is safe even though we have a 'never auto-install
+                # nvidia-driver' rule. Without it, the worker falls back
+                # to a known-cards lookup table for VRAM reporting,
+                # which is approximate.
+                local nv_driver_branch=""
+                if [[ -r /proc/driver/nvidia/version ]]; then
+                    nv_driver_branch="$(grep -oP 'NVRM version:[^0-9]*\K[0-9]+' /proc/driver/nvidia/version 2>/dev/null | head -1)"
+                fi
+                if command -v apt-get >/dev/null 2>&1 && [[ -n "$nv_driver_branch" ]]; then
+                    log "installing nvidia-utils-$nv_driver_branch (matches loaded driver branch — safe userspace only)"
+                    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "nvidia-utils-$nv_driver_branch" 2>/dev/null \
+                        || warn "apt could not find nvidia-utils-$nv_driver_branch — VRAM will use the lookup table fallback"
+                elif command -v dnf >/dev/null 2>&1; then
+                    log "installing xorg-x11-drv-nvidia-cuda (provides nvidia-smi)"
+                    sudo dnf install -y -q xorg-x11-drv-nvidia-cuda 2>/dev/null \
+                        || warn "dnf could not install nvidia userspace — VRAM will use the lookup table fallback"
+                elif command -v pacman >/dev/null 2>&1; then
+                    log "installing nvidia-utils"
+                    sudo pacman -S --noconfirm --needed nvidia-utils 2>/dev/null \
+                        || warn "pacman could not install nvidia-utils — VRAM will use the lookup table fallback"
+                else
+                    warn "nvidia-smi is not installed and no compatible package manager found"
+                    warn "  VRAM will be reported from the known-cards lookup table"
+                fi
             fi
         elif (( nv_on_bus )); then
             warn "NVIDIA GPU detected on the PCIe bus but the kernel module is not loaded"

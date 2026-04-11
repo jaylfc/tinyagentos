@@ -127,22 +127,73 @@ export function workerShortIp(worker: ClusterWorker): string {
 }
 
 /**
- * One-line hardware summary string matching the spec:
- * "{cpu_model_short}  ·  {ram_gb} GB  ·  {gpu_or_npu_summary}  ·  {os.distro} {os.version}"
+ * Compact a verbose NVIDIA model string into "{vram}GB NVIDIA {short}".
+ *
+ * Examples:
+ *   "NVIDIA GeForce RTX 3060 Lite Hash Rate" + 12288 → "12GB NVIDIA 3060"
+ *   "NVIDIA GeForce RTX 4090"                + 24576 → "24GB NVIDIA 4090"
+ *   "NVIDIA RTX A6000"                       + 49152 → "48GB NVIDIA A6000"
+ *   "NVIDIA A100-SXM4-80GB"                  + 81920 → "80GB NVIDIA A100"
+ *   unknown card with no VRAM                        → "NVIDIA <name>"
+ *
+ * Rules:
+ *  - drop "GeForce", "RTX", "GTX", "Quadro", "Tesla"
+ *  - drop marketing suffixes like "Lite Hash Rate" / "(rev a1)" / "OEM"
+ *  - drop the "NVIDIA " prefix from the inner model name (we re-add it
+ *    in the canonical position)
+ *  - VRAM rounded to whole GB so "11264 MB" displays as "11GB", not "11.0GB"
+ */
+function formatNvidiaGpu(modelRaw: string, vramMb: number): string {
+  if (!modelRaw) return vramMb ? `${Math.round(vramMb / 1024)}GB NVIDIA GPU` : "NVIDIA GPU";
+
+  let m = modelRaw;
+  m = m.replace(/\(rev [^)]+\)/gi, "");
+  m = m.replace(/Lite Hash Rate/gi, "");
+  m = m.replace(/\b(GeForce|RTX|GTX|Quadro|Tesla|OEM|SUPER)\b/gi, " ");
+  m = m.replace(/^NVIDIA\s+/i, "");
+  m = m.replace(/\s+/g, " ").trim();
+
+  // Trim trailing variant suffixes that aren't part of the canonical name.
+  m = m.replace(/^([A-Za-z0-9 ]+?)\s+(?:[A-Z]+\d*-)?\d+GB$/i, "$1");
+  m = m.replace(/-(SXM\d?|PCIE)?-?\d+GB.*$/i, "");
+
+  if (!m) m = "GPU";
+
+  if (vramMb && vramMb > 0) {
+    return `${Math.round(vramMb / 1024)}GB NVIDIA ${m}`;
+  }
+  return `NVIDIA ${m}`;
+}
+
+/**
+ * One-line hardware summary string:
+ *   "{cpu_model_short}  ·  {ram_gb} GB RAM  ·  {gpu_or_npu_summary}  ·  {os.distro} {os.version}"
+ *
+ * RAM gets the explicit "RAM" suffix so it doesn't get confused with VRAM
+ * which is now embedded in the GPU summary.
  */
 export function workerHardwareSummary(worker: ClusterWorker): string {
   const hw = worker.hardware ?? {};
   const cpuModel = hw.cpu?.model ?? "";
   const cpuShort = (cpuModel.split("@")[0] ?? "").trim() || "Unknown CPU";
 
-  const ramGb = hw.ram_mb ? `${Math.round(hw.ram_mb / 1024)} GB` : "? GB";
+  const ramGb = hw.ram_mb ? `${Math.round(hw.ram_mb / 1024)}GB RAM` : "? RAM";
 
   let accel: string;
   const gpu = hw.gpu;
   const npu = hw.npu;
   if (gpu && gpu.type && gpu.type !== "none" && gpu.type !== "") {
-    const vramGb = gpu.vram_mb ? ` (${(gpu.vram_mb / 1024).toFixed(1)} GB)` : "";
-    accel = `${gpu.model || gpu.type}${vramGb}`;
+    if (gpu.type === "nvidia") {
+      accel = formatNvidiaGpu(gpu.model ?? "", gpu.vram_mb ?? 0);
+    } else if (gpu.type === "amd") {
+      const vramGb = gpu.vram_mb ? `${Math.round(gpu.vram_mb / 1024)}GB ` : "";
+      accel = `${vramGb}AMD ${gpu.model ?? "GPU"}`.trim();
+    } else if (gpu.type === "apple") {
+      accel = gpu.model ?? "Apple Silicon";
+    } else {
+      const vramGb = gpu.vram_mb ? ` (${(gpu.vram_mb / 1024).toFixed(1)} GB)` : "";
+      accel = `${gpu.model || gpu.type}${vramGb}`;
+    }
   } else if (npu && npu.type && npu.type !== "none" && npu.type !== "") {
     const tops = npu.tops ? ` (${npu.tops} TOPS)` : "";
     accel = `${npu.device || npu.type}${tops}`;

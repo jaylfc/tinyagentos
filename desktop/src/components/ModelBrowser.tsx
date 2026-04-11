@@ -12,6 +12,7 @@ import {
   Package,
   Activity,
   CircuitBoard,
+  Cloud,
 } from "lucide-react";
 import { Button, Card, CardContent, Input } from "@/components/ui";
 
@@ -53,6 +54,13 @@ interface CatalogModel {
   has_downloaded_variant?: boolean;
 }
 
+interface CloudModel {
+  id: string;
+  name?: string;
+  providerName: string;
+  providerType: string;
+}
+
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -78,6 +86,8 @@ function formatSize(mb?: number): string {
   return `${mb} MB`;
 }
 
+const CLOUD_BACKEND_TYPES = ["openai", "anthropic"];
+
 export function ModelBrowser({
   open,
   onClose,
@@ -85,9 +95,10 @@ export function ModelBrowser({
   onModelDownloaded,
 }: Props) {
   const [models, setModels] = useState<CatalogModel[]>([]);
+  const [cloudModels, setCloudModels] = useState<CloudModel[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"all" | "compatible" | "downloaded">(
+  const [filter, setFilter] = useState<"all" | "compatible" | "downloaded" | "cloud">(
     "compatible",
   );
   const [downloading, setDownloading] = useState<
@@ -118,6 +129,41 @@ export function ModelBrowser({
     }
   }, [open, refreshLoaded]);
 
+  const refreshCloud = useCallback(async () => {
+    try {
+      const res = await fetch("/api/providers", {
+        headers: { Accept: "application/json" },
+      });
+      const ct = res.headers.get("content-type") ?? "";
+      if (!res.ok || !ct.includes("application/json")) {
+        setCloudModels([]);
+        return;
+      }
+      const providers = await res.json();
+      const entries: CloudModel[] = [];
+      for (const p of (Array.isArray(providers) ? providers : [])) {
+        if (!CLOUD_BACKEND_TYPES.includes(p.type)) continue;
+        const pModels: { id?: string; name?: string }[] = Array.isArray(p.models) ? p.models : [];
+        if (pModels.length === 0) {
+          // Provider is configured but returned no model list — show placeholder entry
+          entries.push({
+            id: p.model ?? "default",
+            providerName: p.name,
+            providerType: p.type,
+          });
+        } else {
+          for (const m of pModels) {
+            const modelId = m.id ?? m.name ?? "unknown";
+            entries.push({ id: modelId, name: m.name, providerName: p.name, providerType: p.type });
+          }
+        }
+      }
+      setCloudModels(entries);
+    } catch {
+      setCloudModels([]);
+    }
+  }, []);
+
   const refresh = useCallback(async () => {
     try {
       const res = await fetch("/api/models", {
@@ -143,10 +189,12 @@ export function ModelBrowser({
     if (open) {
       setLoading(true);
       refresh();
+      refreshCloud();
     }
-  }, [open, refresh]);
+  }, [open, refresh, refreshCloud]);
 
-  const filtered = useMemo(() => {
+  const filteredLocal = useMemo(() => {
+    if (filter === "cloud") return [];
     return models.filter((m) => {
       if (
         search &&
@@ -166,6 +214,18 @@ export function ModelBrowser({
       return true;
     });
   }, [models, search, filter]);
+
+  const filteredCloud = useMemo(() => {
+    if (filter === "downloaded" || filter === "compatible") return [];
+    return cloudModels.filter((m) => {
+      if (!search) return true;
+      const q = search.toLowerCase();
+      return m.id.toLowerCase().includes(q) || m.providerName.toLowerCase().includes(q) || m.providerType.toLowerCase().includes(q);
+    });
+  }, [cloudModels, search, filter]);
+
+  // Keep a single alias for backward compat in render
+  const filtered = filteredLocal;
 
   const startDownload = useCallback(
     async (modelId: string, variantId: string) => {
@@ -282,8 +342,8 @@ export function ModelBrowser({
               className="pl-9"
             />
           </div>
-          <div className="flex gap-1">
-            {(["all", "compatible", "downloaded"] as const).map((f) => (
+          <div className="flex gap-1 flex-wrap">
+            {(["all", "compatible", "downloaded", "cloud"] as const).map((f) => (
               <Button
                 key={f}
                 variant={filter === f ? "secondary" : "ghost"}
@@ -293,8 +353,10 @@ export function ModelBrowser({
                 {f === "all"
                   ? "All"
                   : f === "compatible"
-                    ? "Compatible"
-                    : "Downloaded"}
+                    ? "Local"
+                    : f === "downloaded"
+                      ? "Downloaded"
+                      : "Cloud"}
               </Button>
             ))}
           </div>
@@ -370,126 +432,174 @@ export function ModelBrowser({
                 className="animate-spin text-shell-text-tertiary"
               />
             </div>
-          ) : filtered.length === 0 ? (
+          ) : filtered.length === 0 && filteredCloud.length === 0 ? (
             <div className="text-center py-12 text-shell-text-tertiary">
               <Package size={32} className="mx-auto mb-3" />
               <p className="text-sm">No models match your criteria</p>
             </div>
           ) : (
-            filtered.map((model) => (
-              <Card key={model.id} className="p-4">
-                <CardContent className="p-0">
-                  <div className="flex items-start justify-between gap-3 mb-2">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-sm font-semibold text-shell-text">
-                        {model.name}
-                      </h3>
-                      {model.description && (
-                        <p className="text-xs text-shell-text-secondary mt-1 line-clamp-2">
-                          {model.description}
-                        </p>
-                      )}
-                      {model.license && (
-                        <span className="inline-block mt-1.5 text-[10px] px-2 py-0.5 rounded-full bg-white/5 text-shell-text-tertiary">
-                          {model.license}
-                        </span>
-                      )}
+            <>
+              {/* Local catalog models */}
+              {filtered.map((model) => (
+                <Card key={model.id} className="p-4">
+                  <CardContent className="p-0">
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-sm font-semibold text-shell-text">
+                          {model.name}
+                        </h3>
+                        {model.description && (
+                          <p className="text-xs text-shell-text-secondary mt-1 line-clamp-2">
+                            {model.description}
+                          </p>
+                        )}
+                        {model.license && (
+                          <span className="inline-block mt-1.5 text-[10px] px-2 py-0.5 rounded-full bg-white/5 text-shell-text-tertiary">
+                            {model.license}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="space-y-1.5 mt-3">
-                    {(model.variants ?? []).map((variant) => {
-                      const key = `${model.id}:${variant.id}`;
-                      const dl = downloading[key];
-                      return (
-                        <div
-                          key={variant.id}
-                          className="flex items-center gap-3 p-2.5 rounded-lg bg-white/[0.02] border border-white/[0.04]"
-                        >
+                    <div className="space-y-1.5 mt-3">
+                      {(model.variants ?? []).map((variant) => {
+                        const key = `${model.id}:${variant.id}`;
+                        const dl = downloading[key];
+                        return (
                           <div
-                            className={`w-2 h-2 rounded-full ${COMPAT_COLOURS[variant.compatibility] ?? "bg-white/20"} shrink-0`}
-                            title={
-                              COMPAT_LABELS[variant.compatibility] ?? "Unknown"
-                            }
-                          />
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-medium text-shell-text truncate">
-                                {variant.name}
-                              </span>
-                              {variant.downloaded && (
-                                <Check
-                                  size={12}
-                                  className="text-emerald-400 shrink-0"
-                                />
-                              )}
-                            </div>
-                            <div className="flex items-center gap-3 mt-0.5 text-[10px] text-shell-text-tertiary">
-                              <span className="flex items-center gap-1">
-                                <HardDrive size={10} />
-                                {formatSize(variant.size_mb)}
-                              </span>
-                              {variant.min_ram_mb && (
-                                <span className="flex items-center gap-1">
-                                  <Cpu size={10} />
-                                  {formatSize(variant.min_ram_mb)} RAM
+                            key={variant.id}
+                            className="flex items-center gap-3 p-2.5 rounded-lg bg-white/[0.02] border border-white/[0.04]"
+                          >
+                            <div
+                              className={`w-2 h-2 rounded-full ${COMPAT_COLOURS[variant.compatibility] ?? "bg-white/20"} shrink-0`}
+                              title={
+                                COMPAT_LABELS[variant.compatibility] ?? "Unknown"
+                              }
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-medium text-shell-text truncate">
+                                  {variant.name}
                                 </span>
-                              )}
-                              {variant.requires_npu &&
-                                variant.requires_npu.length > 0 && (
-                                  <span className="flex items-center gap-1 text-amber-400">
-                                    <Zap size={10} />
-                                    NPU: {variant.requires_npu.join(", ")}
+                                {variant.downloaded && (
+                                  <Check
+                                    size={12}
+                                    className="text-emerald-400 shrink-0"
+                                  />
+                                )}
+                              </div>
+                              <div className="flex items-center gap-3 mt-0.5 text-[10px] text-shell-text-tertiary">
+                                <span className="flex items-center gap-1">
+                                  <HardDrive size={10} />
+                                  {formatSize(variant.size_mb)}
+                                </span>
+                                {variant.min_ram_mb && (
+                                  <span className="flex items-center gap-1">
+                                    <Cpu size={10} />
+                                    {formatSize(variant.min_ram_mb)} RAM
                                   </span>
                                 )}
-                              {variant.format && (
-                                <span className="text-shell-text-tertiary">
-                                  {variant.format.toUpperCase()}
+                                {variant.requires_npu &&
+                                  variant.requires_npu.length > 0 && (
+                                    <span className="flex items-center gap-1 text-amber-400">
+                                      <Zap size={10} />
+                                      NPU: {variant.requires_npu.join(", ")}
+                                    </span>
+                                  )}
+                                {variant.format && (
+                                  <span className="text-shell-text-tertiary">
+                                    {variant.format.toUpperCase()}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="shrink-0">
+                              {dl ? (
+                                <div className="flex items-center gap-2 text-xs text-shell-text-secondary">
+                                  <Loader2
+                                    size={12}
+                                    className="animate-spin"
+                                  />
+                                  {dl.percent.toFixed(0)}%
+                                </div>
+                              ) : variant.downloaded ? (
+                                <span className="text-xs text-emerald-400 px-2">
+                                  Installed
                                 </span>
+                              ) : variant.compatibility === "red" ? (
+                                <span
+                                  className="text-[10px] text-red-400 flex items-center gap-1 px-2"
+                                  title="Not compatible with this hardware"
+                                >
+                                  <AlertTriangle size={10} />
+                                  Unsupported
+                                </span>
+                              ) : (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() =>
+                                    startDownload(model.id, variant.id)
+                                  }
+                                >
+                                  <Download size={12} />
+                                  Download
+                                </Button>
                               )}
                             </div>
                           </div>
-                          <div className="shrink-0">
-                            {dl ? (
-                              <div className="flex items-center gap-2 text-xs text-shell-text-secondary">
-                                <Loader2
-                                  size={12}
-                                  className="animate-spin"
-                                />
-                                {dl.percent.toFixed(0)}%
-                              </div>
-                            ) : variant.downloaded ? (
-                              <span className="text-xs text-emerald-400 px-2">
-                                Installed
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+
+              {/* Cloud provider models */}
+              {filteredCloud.length > 0 && (
+                <>
+                  {filtered.length > 0 && (
+                    <div className="flex items-center gap-2 pt-2">
+                      <div className="flex-1 border-t border-white/5" />
+                      <span className="text-[10px] text-shell-text-tertiary uppercase tracking-wide px-2">Cloud</span>
+                      <div className="flex-1 border-t border-white/5" />
+                    </div>
+                  )}
+                  {filteredCloud.map((cm) => (
+                    <Card key={`cloud-${cm.providerName}-${cm.id}`} className="p-4">
+                      <CardContent className="p-0">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Cloud size={13} className="text-violet-400 shrink-0" />
+                              <h3 className="text-sm font-semibold text-shell-text truncate">
+                                {cm.name ?? cm.id}
+                              </h3>
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300 font-medium shrink-0">
+                                {cm.providerName}
                               </span>
-                            ) : variant.compatibility === "red" ? (
-                              <span
-                                className="text-[10px] text-red-400 flex items-center gap-1 px-2"
-                                title="Not compatible with this hardware"
-                              >
-                                <AlertTriangle size={10} />
-                                Unsupported
-                              </span>
-                            ) : (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() =>
-                                  startDownload(model.id, variant.id)
-                                }
-                              >
-                                <Download size={12} />
-                                Download
-                              </Button>
+                            </div>
+                            <p className="text-xs text-shell-text-secondary mt-1">{cm.providerType}</p>
+                            {cm.name && cm.name !== cm.id && (
+                              <p className="text-[10px] text-shell-text-tertiary mt-0.5 font-mono">{cm.id}</p>
                             )}
                           </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="shrink-0"
+                            onClick={() => onModelDownloaded?.(cm.id, "cloud")}
+                            aria-label={`Use ${cm.id} from ${cm.providerName} in agent`}
+                          >
+                            Use in agent
+                          </Button>
                         </div>
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
-            ))
+                      </CardContent>
+                    </Card>
+                  ))}
+                </>
+              )}
+            </>
           )}
         </div>
       </div>

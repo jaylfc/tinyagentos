@@ -247,6 +247,105 @@ def _detect_nvidia_via_proc() -> tuple[str, bool]:
         return "", False
 
 
+# VRAM lookup table for common NVIDIA GPUs. Used when neither nvidia-smi
+# nor libnvidia-ml is available (containers, minimal images, restricted
+# userspace). PCI BAR sizes can't be used because they're rounded up to
+# the nearest power of 2 — a 12GB 3060 reports a 16GB BAR1, which is
+# the addressable aperture, not the actual VRAM.
+#
+# Keys are normalised model substrings (matched as case-insensitive
+# substrings against the canonical name from /proc/driver/nvidia or
+# nvidia-smi). Order matters: longer / more-specific keys first so
+# "3080 Ti" matches before "3080".
+_NVIDIA_VRAM_MB = [
+    # RTX 50 series (Blackwell, 2025+)
+    ("rtx 5090",       32768),
+    ("rtx 5080",       16384),
+    ("rtx 5070 ti",    16384),
+    ("rtx 5070",       12288),
+    ("rtx 5060 ti",     8192),
+    ("rtx 5060",        8192),
+    # RTX 40 series (Ada Lovelace)
+    ("rtx 4090",       24576),
+    ("rtx 4080 super", 16384),
+    ("rtx 4080",       16384),
+    ("rtx 4070 ti super", 16384),
+    ("rtx 4070 super", 12288),
+    ("rtx 4070 ti",    12288),
+    ("rtx 4070",       12288),
+    ("rtx 4060 ti",     8192),
+    ("rtx 4060",        8192),
+    # RTX 30 series (Ampere)
+    ("rtx 3090 ti",    24576),
+    ("rtx 3090",       24576),
+    ("rtx 3080 ti",    12288),
+    ("rtx 3080",       10240),  # 10 GB common variant; 12 GB exists too
+    ("rtx 3070 ti",     8192),
+    ("rtx 3070",        8192),
+    ("rtx 3060 ti",     8192),
+    ("rtx 3060",       12288),  # 12 GB common variant; 8 GB exists too
+    ("rtx 3050",        8192),
+    # RTX 20 series (Turing)
+    ("rtx 2080 ti",    11264),
+    ("rtx 2080 super",  8192),
+    ("rtx 2080",        8192),
+    ("rtx 2070 super",  8192),
+    ("rtx 2070",        8192),
+    ("rtx 2060 super",  8192),
+    ("rtx 2060",        6144),
+    # GTX 16 / 10 series
+    ("gtx 1660 ti",     6144),
+    ("gtx 1660 super",  6144),
+    ("gtx 1660",        6144),
+    ("gtx 1650",        4096),
+    ("gtx 1080 ti",    11264),
+    ("gtx 1080",        8192),
+    ("gtx 1070 ti",     8192),
+    ("gtx 1070",        8192),
+    ("gtx 1060",        6144),
+    # Datacenter / workstation
+    ("h100",           81920),
+    ("a100 80",        81920),
+    ("a100",           40960),
+    ("l40s",           49152),
+    ("l40",            49152),
+    ("l4",             24576),
+    ("a40",            49152),
+    ("a30",            24576),
+    ("a10",            24576),
+    ("a6000",          49152),
+    ("a5000",          24576),
+    ("a4500",          20480),
+    ("a4000",          16384),
+    ("a2000",           6144),
+    # Older Tesla
+    ("tesla v100 32",  32768),
+    ("tesla v100",     16384),
+    ("tesla t4",       16384),
+    ("tesla p100 16",  16384),
+    ("tesla p100",     12288),
+    ("tesla p40",      24576),
+    ("tesla p4",        8192),
+]
+
+
+def _nvidia_vram_for_model(model: str) -> int:
+    """Return known VRAM in MB for a NVIDIA GPU model name, or 0 if unknown.
+
+    Used as a final fallback when neither nvidia-smi nor libnvidia-ml
+    can give us the actual figure. The lookup is approximate — if the
+    user has a non-standard variant (e.g. 8 GB 3060 vs 12 GB 3060),
+    install nvidia-smi for exact reporting.
+    """
+    if not model:
+        return 0
+    needle = model.lower()
+    for key, mb in _NVIDIA_VRAM_MB:
+        if key in needle:
+            return mb
+    return 0
+
+
 def _detect_gpu() -> GpuInfo:
     gpu = GpuInfo()
     # Apple Silicon — unified memory acts as VRAM, MLX-accelerated
@@ -276,10 +375,13 @@ def _detect_gpu() -> GpuInfo:
         gpu.type = "nvidia"
         gpu.model = proc_model or "NVIDIA GPU (unknown model)"
         # Driver present implies CUDA + Vulkan are usable. We can't
-        # report VRAM without nvidia-smi or pynvml; the controller
-        # treats vram_mb=0 as 'unknown' rather than 'no GPU'.
+        # query exact VRAM without nvidia-smi or pynvml, so fall back
+        # to a known-cards lookup table keyed by the model name. If
+        # the card isn't in the table, vram_mb stays 0 and the
+        # controller treats that as 'unknown' rather than 'no GPU'.
         gpu.cuda = True
         gpu.vulkan = True
+        gpu.vram_mb = _nvidia_vram_for_model(gpu.model)
         return gpu
 
     lspci = _run(["lspci"])

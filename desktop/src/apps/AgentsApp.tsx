@@ -338,6 +338,7 @@ function DeployWizard({
       } catch { /* use fallback */ }
     })();
     (async () => {
+      const localModels: Model[] = [];
       try {
         const res = await fetch("/api/models", {
           headers: { Accept: "application/json" },
@@ -353,14 +354,41 @@ function DeployWizard({
               : [];
           // Only include models the user has actually downloaded.
           const downloaded = list.filter((m) => m.has_downloaded_variant === true);
-          setModels(
-            downloaded.map((m) => ({
+          localModels.push(
+            ...downloaded.map((m) => ({
               id: String(m.id),
               name: String(m.name ?? m.id),
             }))
           );
         }
-      } catch { /* leave models empty — step 2 will show empty state */ }
+      } catch { /* leave local models empty */ }
+
+      // Also fetch cloud provider models
+      const cloudModels: Model[] = [];
+      try {
+        const res = await fetch("/api/providers", {
+          headers: { Accept: "application/json" },
+        });
+        const ct = res.headers.get("content-type") ?? "";
+        if (res.ok && ct.includes("application/json")) {
+          const providers = await res.json();
+          const CLOUD_TYPES = ["openai", "anthropic"];
+          for (const p of (Array.isArray(providers) ? providers : [])) {
+            if (!CLOUD_TYPES.includes(p.type)) continue;
+            const pModels: { id?: string; name?: string }[] = Array.isArray(p.models) ? p.models : [];
+            if (pModels.length === 0) {
+              cloudModels.push({ id: p.model ?? "default", name: `${p.name} default` });
+            } else {
+              for (const m of pModels) {
+                const modelId = m.id ?? m.name ?? "unknown";
+                cloudModels.push({ id: modelId, name: `${m.name ?? modelId} (${p.name})` });
+              }
+            }
+          }
+        }
+      } catch { /* ignore */ }
+
+      setModels([...localModels, ...cloudModels]);
       setModelsLoaded(true);
     })();
   }, [open]);
