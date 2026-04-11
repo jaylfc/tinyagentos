@@ -1,18 +1,21 @@
 """OpenAI-compatible image generation server backed by RKNN2 Stable Diffusion on RK3588.
 
-Wraps darkbit1001's patched LCM Dreamshaper pipeline (rknnlcm.py) — the fix
-is UNet + VAE decoder using data_format='nhwc' with a Python-side transpose
-at the RKNN boundary. happyme531's original runner segfaults on librknnrt
-2.3.2 because it passes NCHW and relies on the runtime's auto-conversion.
+Default backend: ez_rknn_async (happyme531's ztu_somemodelruntime_ez_rknn_async).
+  - tp_mode=all on unet + vae_decoder gives ~1.26x / 1.25x single-inference wins.
+  - layout='nhwc' is handled inside the ez runtime (no Python-side transpose needed).
+
+Legacy backend (rknn-toolkit-lite2 / darkbit1001's rknnlcm.py): set
+  RKNN_SD_LEGACY_WRAPPER=1  to revert to the old path if ez breaks on your install.
 
 Exposes POST /v1/images/generations so the TinyAgentOS Images app can call
 the NPU backend identically to the CPU sd.cpp backend.
 
 Environment:
-  RKNN_SD_MODEL_DIR   directory containing text_encoder/unet/vae_decoder (default: ~/.local/share/tinyagentos/rknn-sd/model)
-  RKNN_SD_WRAPPER     path to rknnlcm.py                                 (default: ~/.local/share/tinyagentos/rknn-sd/rknnlcm.py)
-  RKNN_SD_HOST        bind host                                          (default: 0.0.0.0)
-  RKNN_SD_PORT        bind port                                          (default: 7863)
+  RKNN_SD_MODEL_DIR        directory containing text_encoder/unet/vae_decoder (default: ~/.local/share/tinyagentos/rknn-sd/model)
+  RKNN_SD_WRAPPER          path to rknnlcm.py for legacy path               (default: ~/.local/share/tinyagentos/rknn-sd/rknnlcm.py)
+  RKNN_SD_LEGACY_WRAPPER   set to 1 to force the rknn-toolkit-lite2 path    (default: unset / use ez)
+  RKNN_SD_HOST             bind host                                         (default: 0.0.0.0)
+  RKNN_SD_PORT             bind port                                         (default: 7863)
 
 Run:
   python -m tinyagentos.services.rknn_sd_server
@@ -45,6 +48,7 @@ MODEL_DIR = Path(os.environ.get("RKNN_SD_MODEL_DIR", DEFAULT_HOME / "model"))
 WRAPPER_PATH = Path(os.environ.get("RKNN_SD_WRAPPER", DEFAULT_HOME / "rknnlcm.py"))
 HOST = os.environ.get("RKNN_SD_HOST", "0.0.0.0")
 PORT = int(os.environ.get("RKNN_SD_PORT", "7863"))
+USE_LEGACY_WRAPPER = os.environ.get("RKNN_SD_LEGACY_WRAPPER", "").strip() == "1"
 
 
 def _load_wrapper_module():
@@ -105,7 +109,20 @@ class GenerateRequest(BaseModel):
 app = FastAPI(title="RKNN Stable Diffusion", version="0.1.0")
 _pipe = None
 _load_error: Optional[str] = None
+_runtime_name: str = "ez_rknn_async" if not USE_LEGACY_WRAPPER else "rknn-toolkit-lite2"
 _pipe_lock = asyncio.Lock()  # serialise lazy loads on the first concurrent request
+
+
+def _build_pipeline_ez():
+    """Build the LCM pipeline using the ez_rknn_async backend (default).
+
+    Uses tp_mode=all on unet and vae_decoder for the ~1.26x / 1.25x
+    single-inference wins measured on 2026-04-11. text_encoder uses
+    tp_mode=0 (single core; the model is tiny — no benefit from all).
+    """
+    from tinyagentos.services import rknn_sd_ez
+    logger.info("using ez_rknn_async backend (tp_mode=all on unet/vae)")
+    return rknn_sd_ez.build_pipeline(str(MODEL_DIR))
 
 
 def _ensure_pipeline_sync():
@@ -116,14 +133,20 @@ def _ensure_pipeline_sync():
     generating any images. Lazy loading frees the NPU memory budget
     for chat models / TTS / etc when image gen is idle. Sequential
     eviction is the next piece (Phase 1.5)."""
-    global _pipe, _load_error
+    global _pipe, _load_error, _runtime_name
     if _pipe is not None:
         return
     try:
         start = time.time()
-        module = _load_wrapper_module()
-        _pipe = _build_pipeline(module)
-        logger.info(f"Pipeline lazy-loaded in {time.time() - start:.1f}s")
+        if USE_LEGACY_WRAPPER:
+            logger.info("RKNN_SD_LEGACY_WRAPPER=1 — using rknn-toolkit-lite2 path")
+            module = _load_wrapper_module()
+            _pipe = _build_pipeline(module)
+            _runtime_name = "rknn-toolkit-lite2"
+        else:
+            _pipe = _build_pipeline_ez()
+            _runtime_name = "ez_rknn_async"
+        logger.info(f"Pipeline lazy-loaded in {time.time() - start:.1f}s (runtime={_runtime_name})")
     except Exception as exc:
         _load_error = str(exc)
         logger.exception("Failed to load RKNN pipeline")
@@ -156,11 +179,13 @@ async def health():
     # Health is independent of pipeline state — the server is alive
     # even before the first lazy load. The 'pipeline_loaded' field
     # tells callers whether the next /generate will pay the load
-    # latency or hit a warm pipeline.
+    # latency or hit a warm pipeline. 'runtime' shows which backend
+    # will be (or was) used: "ez_rknn_async" (default) or "rknn-toolkit-lite2".
     return {
         "status": "ok",
         "model": "lcm-dreamshaper-v7-rknn",
         "backend": "rknn2",
+        "runtime": _runtime_name,
         "pipeline_loaded": _pipe is not None,
         "load_error": _load_error,
     }
