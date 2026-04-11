@@ -4,6 +4,8 @@ import time
 
 import httpx
 
+from tinyagentos.clients.retry import with_retry
+
 
 class QmdClient:
     """HTTP client for qmd serve API."""
@@ -21,11 +23,15 @@ class QmdClient:
 
     async def embed(self, text: str) -> list[float]:
         """Get embedding vector for text via qmd serve /embed."""
-        resp = await self._client.post(
-            f"{self.base_url}/embed",
-            json={"text": text},
-        )
-        resp.raise_for_status()
+        url = f"{self.base_url}/embed"
+        client = self._client
+
+        async def _call():
+            resp = await client.post(url, json={"text": text})
+            resp.raise_for_status()
+            return resp
+
+        resp = await with_retry(_call)
         return resp.json()["embedding"]
 
     async def health(self) -> dict:

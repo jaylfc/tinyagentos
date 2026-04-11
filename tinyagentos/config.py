@@ -4,10 +4,13 @@ import asyncio
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 
 import yaml
 
 VALID_BACKEND_TYPES = {"rkllama", "ollama", "llama-cpp", "vllm", "exo", "mlx", "openai", "anthropic"}
+
+VALID_ON_WORKER_FAILURE = {"pause", "fallback", "escalate-immediately"}
 
 DEFAULT_CONFIG = {
     "server": {"host": "0.0.0.0", "port": 6969},
@@ -52,11 +55,16 @@ def load_config(path: Path) -> AppConfig:
         raise ValueError(f"Invalid YAML: {e}")
     if not isinstance(data, dict):
         raise ValueError("Invalid YAML: expected a mapping at top level")
+    agents = data.get("agents", [])
+    # Back-fill fields added in the worker-failure-handling update so old
+    # config files without them get sensible defaults without error.
+    for agent in agents:
+        normalize_agent(agent)
     return AppConfig(
         server=data.get("server", DEFAULT_CONFIG["server"].copy()),
         backends=data.get("backends", []),
         qmd=data.get("qmd", DEFAULT_CONFIG["qmd"].copy()),
-        agents=data.get("agents", []),
+        agents=agents,
         metrics=data.get("metrics", DEFAULT_CONFIG["metrics"].copy()),
         webhooks=data.get("webhooks", []),
         config_path=path,
@@ -70,6 +78,38 @@ def validate_agent_name(name: str) -> str | None:
     if not AGENT_NAME_RE.match(name):
         return "Agent name must be 1-63 lowercase alphanumeric chars or hyphens, starting with alphanumeric"
     return None
+
+
+def _default_on_worker_failure(agent: dict) -> str:
+    """Return the default on_worker_failure policy for an agent dict.
+
+    Defaults to "fallback" when at least one fallback model is configured,
+    "pause" otherwise.
+    """
+    if agent.get("fallback_models"):
+        return "fallback"
+    return "pause"
+
+
+def normalize_agent(agent: dict) -> dict:
+    """Apply defaults for fields added in the worker-failure-handling update.
+
+    Safe to call on old config dicts that predate these fields.  Mutates
+    and returns the same dict so callers can do::
+
+        normalize_agent(agent_dict)
+
+    or::
+
+        agent = normalize_agent({...})
+    """
+    if "fallback_models" not in agent:
+        agent["fallback_models"] = []
+    if "on_worker_failure" not in agent:
+        agent["on_worker_failure"] = _default_on_worker_failure(agent)
+    if "paused" not in agent:
+        agent["paused"] = False
+    return agent
 
 def save_config(config: AppConfig, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -94,4 +134,13 @@ def validate_config(config: AppConfig) -> list[str]:
         if name in seen_agents:
             errors.append(f"agents[{i}]: duplicate agent name '{name}'")
         seen_agents.add(name)
+        owf = a.get("on_worker_failure")
+        if owf is not None and owf not in VALID_ON_WORKER_FAILURE:
+            errors.append(
+                f"agents[{i}]: invalid on_worker_failure '{owf}', "
+                f"must be one of {sorted(VALID_ON_WORKER_FAILURE)}"
+            )
+        fb = a.get("fallback_models")
+        if fb is not None and not isinstance(fb, list):
+            errors.append(f"agents[{i}]: fallback_models must be a list")
     return errors
