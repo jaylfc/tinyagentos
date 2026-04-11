@@ -316,14 +316,22 @@ if [[ -z "${TAOS_SKIP_QMD:-}" ]]; then
     if ! command -v qmd >/dev/null 2>&1; then
         log "qmd not found on PATH — installing via npm"
         if command -v npm >/dev/null 2>&1; then
-            npm install -g "github:jaylfc/qmd#feat/remote-llm-provider" \
-                || warn "npm install of qmd failed — qmd.service may not start correctly"
+            # Run as root so npm can write to the system global prefix
+            # (/usr/lib/node_modules on Debian).  HOME=/root ensures npm
+            # uses root's own cache dir rather than the calling user's
+            # ~/.npm directory (which root can't write to).
+            sudo HOME=/root npm install -g "github:jaylfc/qmd#feat/remote-llm-provider" \
+                || die "npm install of qmd failed — cannot continue (qmd.service would never start)"
+            # Confirm the binary is reachable before we proceed.
+            if ! command -v qmd >/dev/null 2>&1; then
+                die "qmd binary not found on PATH after npm install — check npm global prefix and PATH"
+            fi
         else
             warn "npm not found — cannot install qmd; skipping qmd.service install"
             TAOS_SKIP_QMD=1
         fi
     else
-        log "qmd already installed at $(command -v qmd)"
+        log "qmd already installed at $(command -v qmd) — skipping npm install"
     fi
 
     if [[ -z "${TAOS_SKIP_QMD:-}" ]]; then
@@ -337,9 +345,9 @@ if [[ -z "${TAOS_SKIP_QMD:-}" ]]; then
                 $local_sudo cp scripts/systemd/qmd.service /etc/systemd/system/qmd.service
                 $local_sudo systemctl daemon-reload
                 $local_sudo systemctl enable --now qmd.service
-                log "waiting for qmd to become ready on port $TAOS_QMD_PORT..."
+                log "waiting for qmd to become ready on port $TAOS_QMD_PORT (up to 60 s)..."
                 qmd_tries=0
-                while [[ $qmd_tries -lt 30 ]]; do
+                while [[ $qmd_tries -lt 60 ]]; do
                     if curl -sf "http://localhost:$TAOS_QMD_PORT/health" >/dev/null 2>&1; then
                         log "qmd is up"
                         break
@@ -347,9 +355,13 @@ if [[ -z "${TAOS_SKIP_QMD:-}" ]]; then
                     sleep 1
                     qmd_tries=$((qmd_tries + 1))
                 done
-                if [[ $qmd_tries -ge 30 ]]; then
-                    warn "qmd did not respond within 30 seconds — it may still be starting"
+                if [[ $qmd_tries -ge 60 ]]; then
+                    warn "qmd did not respond within 60 seconds — it may still be starting"
                     warn "check: systemctl status qmd"
+                    if command -v journalctl >/dev/null 2>&1; then
+                        warn "last 10 lines of qmd journal:"
+                        journalctl -u qmd --no-pager -n 10 2>/dev/null || true
+                    fi
                 fi
             else
                 warn "scripts/systemd/qmd.service not found in repo — skipping qmd.service install"
