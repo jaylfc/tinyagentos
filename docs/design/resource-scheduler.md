@@ -1,5 +1,7 @@
 # Resource Scheduler
 
+**Status:** Phase 1 implemented — see `tinyagentos/scheduler/` and the closed tracking issue #25. Phase 2 (cluster dispatch + hot model swap) is tracked by #26. Phase 3 (aged queues + batching + per-agent quotas) is planned but unscheduled.
+
 Unified queue for NPU / GPU / CPU-heavy work across the platform. Prevents
 contention, exposes a clean priority/preemption model, and gives apps a
 sensible place to ask for compute instead of fighting for it.

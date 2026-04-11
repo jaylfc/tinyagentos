@@ -1,5 +1,7 @@
 # TinyAgentOS Complete & Polish Implementation Plan
 
+**Status:** Implemented — this plan has landed; see the feature on `master` for the current state.
+
 
 **Goal:** Fill all gaps identified in the codebase audit — background deploy, 3 missing UI pages, event system, store CRUD gaps, LLM proxy status card, and tests for 10 untested route modules.
 

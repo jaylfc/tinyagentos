@@ -1,5 +1,7 @@
 # Dual Container Runtime Implementation Plan
 
+**Status:** Implemented — this plan has landed; see the feature on `master` for the current state.
+
 **Goal:** Refactor the container management layer to support both LXC (incus) and Docker behind a common interface, with auto-detection and user override in settings.
 
 **Architecture:** Extract the current `containers.py` into a `containers/` package with an ABC and two backend implementations. A `__init__.py` re-exports the same function names for backward compatibility. Detection logic picks the best runtime on startup. Settings page shows detected runtimes with an override dropdown.

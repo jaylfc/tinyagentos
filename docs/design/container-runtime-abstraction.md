@@ -1,5 +1,7 @@
 # Dual Container Runtime: LXC + Docker
 
+**Status:** Implemented — `tinyagentos/containers/backend.py` auto-detects runtime at startup; both LXC and Docker backends are in `tinyagentos/containers/`.
+
 **Amended:** 2026-04-11 — container runtime detection follows
 **backend-driven discovery**. Rather than storing "lxc" or "docker" in a
 config file, the platform probes `incus version` and `docker info` at

@@ -1,5 +1,7 @@
 # TinyAgentOS Complete & Polish Design
 
+**Status:** Implemented — the five workstreams listed below have landed on `master`. Retained for historical context.
+
 Five independent workstreams that fill gaps identified by a full codebase audit. No new architecture — everything extends existing patterns (FastAPI routes, htmx partials, Pico CSS, SQLite via BaseStore, pytest).
 
 ## A) Dashboard & Monitoring Polish

@@ -1,5 +1,7 @@
 # Message Hub Core
 
+**Status:** Implemented — chat messages, channels, canvas store, and WebSocket hub all landed. See `tinyagentos/routes/chat_*.py` and `tinyagentos/chat_*.py` for the runtime.
+
 ## Overview
 
 A built-in Discord/Slack-style messaging system where users communicate with their agents, collaborate on files, and view rich visual output. Real-time WebSocket-based with markdown formatting, code blocks, interactive components, file sharing, threads, reactions, and a canvas system powered by CanvasX for visual agent output.

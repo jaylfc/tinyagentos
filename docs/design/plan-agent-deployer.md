@@ -1,5 +1,7 @@
 # Platform Plan 4: Agent Deployer — Design Notes
 
+**Status:** Implemented — this plan has landed; see the feature on `master` for the current state.
+
 ## Overview
 
 The Agent Deployer creates agents through the GUI: pick framework → pick model → configure → deploy into LXC container.

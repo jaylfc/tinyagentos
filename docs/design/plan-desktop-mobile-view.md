@@ -1,5 +1,7 @@
 # Desktop Shell Mobile & Tablet View — Implementation Plan
 
+**Status:** Implemented — this plan has landed; see the feature on `master` for the current state.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add responsive mobile and tablet modes to the desktop shell, inspired by Palm webOS card multitasking, Android navigation, iOS fluidity, and KDE Plasma Mobile. No edge gestures (avoids OS conflicts). Uses a pill-bar navigator and webOS-style card app switcher.

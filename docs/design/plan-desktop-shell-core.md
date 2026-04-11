@@ -1,5 +1,7 @@
 # Desktop Shell Core — Implementation Plan
 
+**Status:** Implemented — this plan has landed; see the feature on `master` for the current state.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the desktop shell foundation — React SPA with top bar, dock, window manager (float + snap), launchpad, and process manager — that can host app windows. This plan does NOT migrate existing pages to React. It delivers a working desktop shell with a few placeholder apps so the window system can be tested end-to-end.

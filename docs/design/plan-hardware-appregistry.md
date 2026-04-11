@@ -1,5 +1,7 @@
 # Platform Plan 1: Hardware Detection + App Registry Implementation Plan
 
+**Status:** Implemented — hardware detection and app registry both shipped; see `tinyagentos/hardware.py` and `tinyagentos/registry.py`.
+
 **Amended:** 2026-04-11 — app/model "installed" state follows
 **backend-driven discovery**. Rather than relying on filename conventions
 in `data/models/` or a static `installed.json`, the app registry asks each

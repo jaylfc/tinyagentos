@@ -1,5 +1,7 @@
 # Model Torrent Mesh
 
+**Status:** Draft — design only. Phase 1 tracked by #47, Phase 2 by #48, Phase 3 by #49.
+
 Peer-to-peer model distribution for TinyAgentOS. Every instance that downloads
 a model becomes a seeder, taking load off the central mirror server and making
 the catalog resilient to mirror outages.

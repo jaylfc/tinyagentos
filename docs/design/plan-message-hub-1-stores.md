@@ -1,5 +1,7 @@
 # Message Hub — Plan 1: Message & Channel Stores
 
+**Status:** Implemented — this plan has landed; see the feature on `master` for the current state.
+
 **Goal:** Build the SQLite data layer for the chat system: message store with rich content support, channel store with types/members, read position tracking, and file attachment metadata.
 
 **Architecture:** Two new BaseStore subclasses (ChatMessageStore, ChatChannelStore) following the existing pattern. Single SQLite database at `data/chat.db`. All methods async. The stores are pure data access with no WebSocket or routing logic.

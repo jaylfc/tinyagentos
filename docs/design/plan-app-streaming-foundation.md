@@ -1,5 +1,7 @@
 # App Streaming Foundation Implementation Plan
 
+**Status:** In progress — tracked by #22. Session store, streaming pages, user workspace, agent-bridge, expert agents, and 12 app manifests have landed; remaining work is the containerised streaming runtime itself.
+
 
 **Goal:** Build the foundation layer for containerised app streaming: session manager, streaming page with sidebar chat, user workspace file browser, WebSocket proxy, and the agent-bridge daemon spec.
 

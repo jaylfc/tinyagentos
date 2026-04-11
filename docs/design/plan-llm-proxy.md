@@ -1,5 +1,7 @@
 # Abstraction Plan 1: LLM Proxy (LiteLLM Integration)
 
+**Status:** Implemented — this plan has landed; see the feature on `master` for the current state.
+
 **Amended:** 2026-04-11 — the LiteLLM config follows **backend-driven
 discovery**. Rather than generating a static config once at startup from
 the backend list, TinyAgentOS regenerates the LiteLLM config whenever the

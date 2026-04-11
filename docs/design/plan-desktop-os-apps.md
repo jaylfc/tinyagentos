@@ -1,5 +1,7 @@
 # Desktop Shell OS Apps — Implementation Plan
 
+**Status:** Implemented — this plan has landed; see the feature on `master` for the current state.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build 8 bundled OS utility apps for the desktop shell — Calculator, Calendar, Contacts, Browser, Media Player, Text Editor, Image Viewer, Terminal. Each replaces its PlaceholderApp in the registry.

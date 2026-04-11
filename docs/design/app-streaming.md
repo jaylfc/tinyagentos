@@ -1,5 +1,7 @@
 # Containerised App Streaming with Agent Integration
 
+**Status:** In progress — tracked by #22. The session / workspace / agent-bridge / orchestration layers are shipped; containerised runtime is the remaining piece.
+
 ## Overview
 
 Wrap desktop applications in Docker containers with pre-wired MCP servers, stream them to any device via the browser, and let agents interact with them through structured tools, batch commands, keyboard injection, and optional computer-use vision.
