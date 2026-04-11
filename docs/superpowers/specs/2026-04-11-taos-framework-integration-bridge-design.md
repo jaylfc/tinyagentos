@@ -1357,6 +1357,27 @@ The framework adapter design is **done** when:
      reload latency would be intolerable (e.g. an embedding model
      hit on every chat turn).
 
+  7. **Lazy lifecycle wrappers for backends that don't support
+     lazy load natively.** Some backends (`stable-diffusion.cpp`'s
+     `sd-server`, `llama.cpp`'s `llama-server` for the larger
+     fallback chat path, `ggml-org/whisper.cpp`'s server) load their
+     model at process startup and have no built-in idle eviction.
+     Phase 1.5 ships a small Python proxy per backend that:
+
+     - Listens on the user-facing port
+     - Starts the underlying server subprocess on the first request
+     - Stops the underlying subprocess after the per-class TTL with
+       no requests
+     - Restarts on the next request, paying the cold-start latency
+       once
+
+     The wrapper looks like the `LLMProxy` and `QmdClient` lifecycle
+     pattern we already have. ~50 LOC per backend, fully isolated
+     so the upstream binaries don't need patching. The CPU/Vulkan
+     stable-diffusion.cpp fallback specifically has been the largest
+     standing waste on the orange pi (1.6 GB pinned with zero recent
+     calls); the wrapper is the right fix for it.
+
   The qmd upstream maintainer is already on record agreeing this
   belongs in a stacked PR after the centralised-serve PR (#511) lands
   — TAOS implementing this in our qmd-server fork and contributing
