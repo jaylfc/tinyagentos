@@ -28,11 +28,19 @@ class WorkerAgent:
         """
         from tinyagentos.scheduler.backend_catalog import BACKEND_CAPABILITIES
 
+        # Probe both the standard upstream ports AND the TAOS-namespaced
+        # ones. install-worker.sh installs a TAOS-bundled Ollama on
+        # 21434 to avoid colliding with any existing user Ollama on
+        # 11434; we want to detect both so the user's pre-existing
+        # backends are first-class citizens alongside the bundled one.
         candidates = [
             ("rkllama", "http://localhost:8080"),
-            ("ollama", "http://localhost:11434"),
+            ("ollama", "http://localhost:11434"),         # user / system Ollama (default port)
+            ("ollama", "http://localhost:21434"),         # TAOS-bundled Ollama (taos-ollama.service)
             ("llama-cpp", "http://localhost:8000"),
+            ("llama-cpp", "http://localhost:18080"),      # TAOS-bundled llama.cpp (future)
             ("vllm", "http://localhost:8000"),
+            ("vllm", "http://localhost:18000"),           # TAOS-bundled vLLM (future)
             ("sd-cpp", "http://localhost:7864"),
             ("rknn-sd", "http://localhost:7863"),
         ]

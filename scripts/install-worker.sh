@@ -288,6 +288,149 @@ detect_and_advise_accelerators() {
 
 detect_and_advise_accelerators
 
+# --- bundled Ollama backend (TAOS-namespaced) ----------------------------
+#
+# install-worker.sh installs a TAOS-namespaced Ollama by default so a
+# fresh worker comes up with at least one functional inference backend
+# out of the box. Without this, the worker registers with the controller
+# but reports zero backends until the user manually installs something.
+#
+# Crucially, this is *not* a system-wide Ollama install:
+#
+#   - Binary lives at $INSTALL_DIR/backends/ollama/bin/ollama
+#       NOT /usr/local/bin/ollama
+#   - Models live at $INSTALL_DIR/backends/ollama/models/
+#       NOT ~/.ollama/models
+#   - Listens on TAOS_OLLAMA_PORT (default 21434)
+#       NOT 11434
+#   - Runs as a dedicated systemd unit named taos-ollama.service
+#       NOT ollama.service
+#   - Removing the worker removes only the namespaced files
+#
+# This means a user with an existing ollama install (their own models,
+# their own port, their own service) keeps everything they had — TAOS
+# adds its own ollama alongside on a different port. The worker
+# auto-detects both and the controller routes between them.
+#
+# Skip with TAOS_NO_OLLAMA=1 if you have an existing ollama you want
+# to be the only one, or you don't need any LLM backend at all (e.g.
+# this worker only does image gen via the NPU).
+
+install_taos_ollama() {
+    if [[ "${TAOS_NO_OLLAMA:-}" == "1" || "${TAOS_NO_OLLAMA:-}" == "true" ]]; then
+        log "TAOS_NO_OLLAMA=1 — skipping bundled Ollama install"
+        return 0
+    fi
+
+    local ollama_dir="$INSTALL_DIR/backends/ollama"
+    local ollama_bin="$ollama_dir/bin/ollama"
+    local ollama_models="$ollama_dir/models"
+    local ollama_port="${TAOS_OLLAMA_PORT:-21434}"
+
+    if [[ -x "$ollama_bin" ]]; then
+        log "TAOS-namespaced Ollama already installed at $ollama_bin — skipping download"
+    else
+        log "installing TAOS-namespaced Ollama into $ollama_dir (will not touch any existing system Ollama)"
+        mkdir -p "$ollama_dir/bin" "$ollama_models"
+
+        # Pull the static linux binary directly. Avoids the upstream
+        # install.sh which auto-installs cuda-drivers system-wide and
+        # creates /usr/local/bin/ollama + /etc/systemd/system/ollama.service —
+        # both things we never want.
+        local arch_suffix
+        case "$arch" in
+            x86_64)  arch_suffix="amd64" ;;
+            aarch64|arm64) arch_suffix="arm64" ;;
+            *) warn "unsupported arch '$arch' for bundled Ollama — skipping"; return 0 ;;
+        esac
+
+        local ollama_url="https://github.com/ollama/ollama/releases/latest/download/ollama-linux-${arch_suffix}.tar.zst"
+        local tmp_dir="$ollama_dir/.download"
+        mkdir -p "$tmp_dir"
+
+        # zstd may not be installed by default on minimal images
+        if ! command -v zstd >/dev/null 2>&1; then
+            if command -v apt-get >/dev/null 2>&1; then
+                sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq zstd
+            elif command -v dnf >/dev/null 2>&1; then
+                sudo dnf install -y -q zstd
+            elif command -v pacman >/dev/null 2>&1; then
+                sudo pacman -S --noconfirm --needed zstd
+            elif command -v apk >/dev/null 2>&1; then
+                sudo apk add --no-cache zstd
+            fi
+        fi
+
+        if ! curl -fsSL --retry 3 -o "$tmp_dir/ollama.tar.zst" "$ollama_url"; then
+            warn "failed to download bundled Ollama from $ollama_url"
+            warn "  worker will start with no LLM backend; install one manually"
+            return 0
+        fi
+
+        # Extract — Ollama tar.zst contains bin/ + lib/ at the root
+        if ! (cd "$tmp_dir" && tar --use-compress-program=unzstd -xf ollama.tar.zst); then
+            warn "failed to extract Ollama tarball"
+            return 0
+        fi
+
+        # Move the binary + libs into the namespaced dir
+        if [[ -f "$tmp_dir/bin/ollama" ]]; then
+            mv "$tmp_dir/bin/ollama" "$ollama_bin"
+            chmod +x "$ollama_bin"
+        else
+            warn "Ollama tarball did not contain bin/ollama at the expected path"
+            return 0
+        fi
+        if [[ -d "$tmp_dir/lib" ]]; then
+            mkdir -p "$ollama_dir/lib"
+            cp -r "$tmp_dir/lib/." "$ollama_dir/lib/"
+        fi
+        rm -rf "$tmp_dir"
+
+        log "TAOS Ollama installed at $ollama_bin"
+    fi
+
+    # systemd unit — system-level if we have sudo, user-level otherwise.
+    # Names the unit 'taos-ollama' explicitly so it doesn't collide
+    # with the user's own ollama.service if they have one.
+    local unit_path="/etc/systemd/system/taos-ollama.service"
+    local sudo_cmd=""
+    [[ "$(id -u)" != "0" ]] && sudo_cmd="sudo"
+
+    if have_root_or_sudo; then
+        $sudo_cmd tee "$unit_path" > /dev/null <<EOF
+[Unit]
+Description=TinyAgentOS bundled Ollama (TAOS-namespaced)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=$USER
+Group=$(id -gn)
+Environment=OLLAMA_HOST=127.0.0.1:$ollama_port
+Environment=OLLAMA_MODELS=$ollama_models
+Environment=LD_LIBRARY_PATH=$ollama_dir/lib:$ollama_dir/lib/ollama
+ExecStart=$ollama_bin serve
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+        $sudo_cmd systemctl daemon-reload
+        $sudo_cmd systemctl enable --now taos-ollama.service
+        log "taos-ollama.service running on 127.0.0.1:$ollama_port"
+        log "  models dir: $ollama_models"
+        log "  to add a model:  OLLAMA_HOST=127.0.0.1:$ollama_port $ollama_bin pull qwen3:4b"
+    else
+        warn "no sudo available — skipping systemd unit install for taos-ollama"
+        warn "  start manually: OLLAMA_HOST=127.0.0.1:$ollama_port OLLAMA_MODELS=$ollama_models $ollama_bin serve &"
+    fi
+}
+
+install_taos_ollama
+
 # --- clone / update the repo ---------------------------------------------
 
 if [[ ! -d "$INSTALL_DIR/.git" ]]; then
