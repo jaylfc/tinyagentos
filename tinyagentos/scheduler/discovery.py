@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Optional
 
 from tinyagentos.scheduler.backend_catalog import BackendCatalog
+from tinyagentos.scheduler.history_store import HistoryStore
 from tinyagentos.scheduler.resource import Resource, Tier
 from tinyagentos.scheduler.scheduler import Scheduler
 from tinyagentos.scheduler.score_cache import ScoreCache
@@ -92,6 +93,7 @@ def build_scheduler(
     catalog: BackendCatalog,
     benchmark_store=None,
     score_cache: ScoreCache | None = None,
+    history_store: HistoryStore | None = None,
 ) -> Scheduler:
     """Instantiate a Scheduler and register the resources the live catalog
     currently supports.
@@ -101,7 +103,7 @@ def build_scheduler(
     offline at startup, the `npu-rk3588` Resource is NOT registered and
     tasks fall through to `cpu-inference` until the backend returns.
     """
-    scheduler = Scheduler()
+    scheduler = Scheduler(history_store=history_store)
 
     def _make_score_lookup(resource_name: str):
         """Return a sync score_lookup callable for this resource name.

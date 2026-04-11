@@ -19,6 +19,7 @@ from tinyagentos.scheduler.types import (
     TaskStatus,
 )
 from tinyagentos.scheduler.backend_catalog import BackendCatalog, BackendEntry
+from tinyagentos.scheduler.history_store import HistoryStore
 from tinyagentos.scheduler.resource import Resource
 from tinyagentos.scheduler.scheduler import Scheduler
 from tinyagentos.scheduler.score_cache import ScoreCache
@@ -28,6 +29,7 @@ __all__ = [
     "BackendCatalog",
     "BackendEntry",
     "Capability",
+    "HistoryStore",
     "NoResourceAvailableError",
     "Priority",
     "Resource",

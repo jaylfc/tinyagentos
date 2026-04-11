@@ -16,7 +16,7 @@ import asyncio
 import collections
 import logging
 import time
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from tinyagentos.scheduler.resource import Resource
 from tinyagentos.scheduler.types import (
@@ -25,6 +25,9 @@ from tinyagentos.scheduler.types import (
     TaskRecord,
     TaskStatus,
 )
+
+if TYPE_CHECKING:
+    from tinyagentos.scheduler.history_store import HistoryStore
 
 logger = logging.getLogger(__name__)
 
@@ -41,14 +44,33 @@ class Scheduler:
         result = await scheduler.submit(task)
     """
 
-    def __init__(self):
+    def __init__(self, history_store: "HistoryStore | None" = None):
         self._resources: dict[str, Resource] = {}
         self._history: collections.deque[TaskRecord] = collections.deque(maxlen=HISTORY_MAX)
+        self._history_store = history_store
         self._lock = asyncio.Lock()
         self._submitted = 0
         self._rejected = 0
         self._errors = 0
         self._completed = 0
+
+    def _persist_terminal(self, record: TaskRecord) -> None:
+        """Fire-and-forget write to the persistent history store.
+
+        Called from the submit path on terminal transitions. If no store
+        is wired up (tests, startup race) this is a no-op. Failures are
+        logged by the store itself and never propagate to the caller.
+        """
+        if self._history_store is None:
+            return
+        try:
+            asyncio.create_task(
+                self._history_store.record_terminal(record),
+                name=f"scheduler-history-{record.task_id}",
+            )
+        except RuntimeError:
+            # No running loop (e.g. being called from a sync test)
+            pass
 
     def register(self, resource: Resource) -> None:
         """Add a resource. Safe to call during startup only."""
@@ -144,6 +166,7 @@ class Scheduler:
                 record.completed_at = time.time()
                 record.elapsed_seconds = elapsed
                 self._completed += 1
+                self._persist_terminal(record)
                 return result
             except Exception as exc:  # noqa: BLE001 — propagate after recording
                 record.status = TaskStatus.ERROR
@@ -153,6 +176,7 @@ class Scheduler:
                 logger.exception(
                     "scheduler: task %s on %s raised", task.id, resource.name
                 )
+                self._persist_terminal(record)
                 raise
 
         # No resource accepted
@@ -160,14 +184,31 @@ class Scheduler:
         record.completed_at = time.time()
         record.error = "; ".join(tried) or "no preferred resources"
         self._rejected += 1
+        self._persist_terminal(record)
         raise NoResourceAvailableError(
             f"no resource can run {task.capability.value} "
             f"(submitter={task.submitter}, tried: {record.error})"
         )
 
     def history(self, limit: int = 100) -> list[TaskRecord]:
-        """Most recent task records, newest first."""
+        """Most recent in-memory task records, newest first.
+
+        Bounded by HISTORY_MAX — for older records use
+        :meth:`history_since` which reads from the persistent store.
+        """
         return list(self._history)[-limit:][::-1]
+
+    async def history_since(self, timestamp: float, limit: int = 500) -> list[dict]:
+        """Persistent history query — returns dicts, newest first.
+
+        Reads from the :class:`HistoryStore` if one is wired up, empty
+        list otherwise. Use ``history()`` for the in-memory hot path
+        (running tasks, very recent completions) and ``history_since``
+        for trend windows that exceed the deque cap.
+        """
+        if self._history_store is None:
+            return []
+        return await self._history_store.since(timestamp, limit=limit)
 
     def stats(self) -> dict:
         active = sum(r.in_flight for r in self._resources.values())

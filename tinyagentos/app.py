@@ -25,7 +25,7 @@ from tinyagentos.notifications import NotificationStore
 from tinyagentos.qmd_client import QmdClient
 from tinyagentos.backend_adapters import check_backend_health
 from tinyagentos.benchmark import BenchmarkStore
-from tinyagentos.scheduler import BackendCatalog, ScoreCache, TaskScheduler
+from tinyagentos.scheduler import BackendCatalog, HistoryStore, ScoreCache, TaskScheduler
 from tinyagentos.scheduler.discovery import build_scheduler as build_resource_scheduler
 from tinyagentos.relationships import RelationshipManager
 from tinyagentos.secrets import SecretsStore
@@ -84,6 +84,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     scheduler = TaskScheduler(data_dir / "scheduler.db")
     benchmark_store = BenchmarkStore(data_dir / "benchmarks.db")
     score_cache = ScoreCache(benchmark_store, poll_interval_seconds=15.0)
+    scheduler_history_store = HistoryStore(data_dir / "scheduler_history.db")
 
     async def _probe_backend(backend: dict) -> dict:
         return await check_backend_health(http_client, backend)
@@ -144,6 +145,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         await installed_apps.init()
         await skills.init()
         await benchmark_store.init()
+        await scheduler_history_store.init()
         app.state.config = config
         app.state.config_path = config_path
         app.state.models_dir = data_dir / "models"
@@ -186,6 +188,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.skills = skills
         app.state.benchmark_store = benchmark_store
         app.state.score_cache = score_cache
+        app.state.scheduler_history_store = scheduler_history_store
         # Optionally start LiteLLM proxy (non-fatal if not installed)
         try:
             await llm_proxy.start(config.backends)
@@ -223,6 +226,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
                 backend_catalog,
                 benchmark_store=benchmark_store,
                 score_cache=score_cache,
+                history_store=scheduler_history_store,
             )
             app.state.resource_scheduler = resource_scheduler
             logger.info(
@@ -252,6 +256,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         await cluster_manager.stop()
         llm_proxy.stop()
         await monitor.stop()
+        await scheduler_history_store.close()
         await benchmark_store.close()
         await skills.close()
         await installed_apps.close()
