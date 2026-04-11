@@ -17,7 +17,13 @@ variants:
     backend: [diffusers, comfyui]
 
 hardware_tiers:
-  x86-cuda-8gb: {recommended: unet-fp16}
+  arm-cpu-8gb: {recommended: null, warning: "No GGUF quant available — FP16 weights too large for 8GB ARM"}
+  arm-cpu-16gb: {recommended: unet-fp16, warning: "Extremely slow on ARM CPU — 10+ minutes per image, no quant available"}
+  arm-npu-16gb: {recommended: unet-fp16, warning: "No RKNN or GGUF — runs on RK3588 CPU only, 10+ minutes per image"}
+  x86-cpu-8gb: {recommended: null, warning: "FP16 UNet + ChatGLM text encoder needs ~10GB RAM"}
+  x86-cpu-16gb: {recommended: unet-fp16, warning: "Slow — 5+ minutes per image, recommend GPU"}
+  x86-vulkan-8gb: {recommended: unet-fp16, warning: "Tight fit in 8GB — Vulkan SDXL pipeline support is partial"}
+  x86-cuda-8gb: {recommended: unet-fp16, notes: "Tight — ChatGLM text encoder adds overhead, expect offloading"}
   x86-cuda-12gb: {recommended: unet-fp16}
-  apple-silicon: {recommended: unet-fp16}
-  cpu-only: unsupported
+  apple-silicon: {recommended: unet-fp16, notes: "Requires 16GB+ unified memory"}
+  cpu-only: {recommended: null, warning: "Not recommended — no quantised variant, very slow on CPU"}

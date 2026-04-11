@@ -17,7 +17,13 @@ variants:
     backend: [comfyui, sd-webui, diffusers]
 
 hardware_tiers:
+  arm-cpu-8gb: {recommended: null, warning: "FP16 SDXL needs ~10GB RAM — no GGUF variant available"}
+  arm-cpu-16gb: {recommended: fp16, warning: "Very slow on ARM CPU — 8+ minutes per 1024px image, no quant available"}
+  arm-npu-16gb: {recommended: fp16, warning: "No RKNN or GGUF — runs on RK3588 CPU only, 8+ minutes per image"}
+  x86-cpu-8gb: {recommended: null, warning: "FP16 SDXL needs ~10GB RAM — insufficient"}
+  x86-cpu-16gb: {recommended: fp16, warning: "Slow — 3-6 minutes per 1024px image, recommend GPU"}
+  x86-vulkan-8gb: {recommended: fp16, warning: "Fits in 8GB — Vulkan SDXL support is decent but slower than CUDA"}
   x86-cuda-8gb: {recommended: fp16}
   x86-cuda-12gb: {recommended: fp16}
-  apple-silicon: {recommended: fp16}
-  cpu-only: unsupported
+  apple-silicon: {recommended: fp16, notes: "Runs well on 16GB+ M-series via diffusers/MPS"}
+  cpu-only: {recommended: null, warning: "Not recommended — no quantised variant, very slow on CPU"}
