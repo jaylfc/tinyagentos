@@ -80,8 +80,18 @@ async def create_container(
     image: str = "images:debian/bookworm",
     memory_limit: str = "2GB",
     cpu_limit: int = 2,
+    mounts: list[tuple[str, str]] | None = None,
+    env: dict[str, str] | None = None,
 ) -> dict:
-    """Create and start a new LXC container."""
+    """Create and start a new LXC container with mounts and env injected.
+
+    ``mounts`` is a list of ``(host_path, container_path)`` bind mounts
+    attached as incus disk devices. ``env`` is a dict of environment
+    variables set via ``incus config set environment.KEY VALUE``. Every
+    piece of per-agent state must enter through one of these; the
+    container image itself holds only the framework and base OS. See
+    ``docs/design/framework-agnostic-runtime.md``.
+    """
     code, output = await _run(
         ["incus", "launch", image, name], timeout=300,
     )
@@ -89,6 +99,20 @@ async def create_container(
         return {"success": False, "error": output}
     await _run(["incus", "config", "set", name, "limits.memory", memory_limit])
     await _run(["incus", "config", "set", name, "limits.cpu", str(cpu_limit)])
+    for idx, (host_path, container_path) in enumerate(mounts or []):
+        device_name = f"taos-mount-{idx}"
+        mcode, mout = await _run([
+            "incus", "config", "device", "add", name, device_name, "disk",
+            f"source={host_path}", f"path={container_path}",
+        ])
+        if mcode != 0:
+            logger.error(f"incus mount {host_path}->{container_path} failed: {mout}")
+    for key, value in (env or {}).items():
+        ecode, eout = await _run([
+            "incus", "config", "set", name, f"environment.{key}", value,
+        ])
+        if ecode != 0:
+            logger.error(f"incus env set {key} failed: {eout}")
     return {"success": True, "name": name}
 
 

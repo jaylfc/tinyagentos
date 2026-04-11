@@ -95,18 +95,27 @@ class DockerBackend(ContainerBackend):
         image: str = "ubuntu:22.04",
         memory_limit: str = "2GB",
         cpu_limit: int = 2,
+        mounts: list[tuple[str, str]] | None = None,
+        env: dict[str, str] | None = None,
     ) -> dict:
-        """Create and start a new container."""
-        agent_name = name.removeprefix("taos-agent-")
-        code, output = await self._run([
+        """Create and start a new container.
+
+        Every bind mount and env var the container needs must be passed
+        explicitly — nothing is baked into the image. See
+        ``docs/design/framework-agnostic-runtime.md``.
+        """
+        args = [
             self.binary, "run", "-d",
             "--name", name,
             "--memory", memory_limit,
             "--cpus", str(cpu_limit),
-            "-v", f"/data/agent-workspaces/{agent_name}:/workspace",
-            "-v", f"/data/agent-memory/{agent_name}:/memory",
-            image,
-        ], timeout=300)
+        ]
+        for host_path, container_path in mounts or []:
+            args += ["-v", f"{host_path}:{container_path}"]
+        for key, value in (env or {}).items():
+            args += ["-e", f"{key}={value}"]
+        args.append(image)
+        code, output = await self._run(args, timeout=300)
         if code != 0:
             return {"success": False, "error": output}
         return {"success": True, "name": name}

@@ -26,6 +26,9 @@ async def app_with_store(tmp_path):
     store = SkillStore(tmp_path / "skills.db")
     await store.init()
     app.state.skills = store
+    workspace_root = tmp_path / "agent-workspaces"
+    workspace_root.mkdir(parents=True, exist_ok=True)
+    app.state.agent_workspaces_dir = workspace_root
     try:
         yield app
     finally:

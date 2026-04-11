@@ -1,33 +1,26 @@
-"""Agent deployment — create LXC container, install framework + QMD, configure, start."""
+"""Agent deployment — create container, install framework, start.
+
+Honours the framework-agnostic runtime rule: containers hold code, hosts
+hold state. See ``docs/design/framework-agnostic-runtime.md``. This
+deployer installs only the agent framework into the container. Memory,
+workspace, secrets, and the embedding service all live on the host and
+reach the container via bind mounts or injected service URLs.
+
+A container produced by this deployer can be destroyed and rebuilt from
+the image with zero user-visible state loss, which is the whole point.
+"""
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from tinyagentos.containers import (
-    create_container, exec_in_container, push_file,
+    create_container, exec_in_container,
     start_container, stop_container, destroy_container,
 )
 
 logger = logging.getLogger(__name__)
-
-# Systemd service template for qmd serve inside agent container
-QMD_SERVICE = """[Unit]
-Description=QMD Serve (Agent Memory)
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/qmd serve --port 7832 --bind {bind} --backend rkllama --rkllama-url {rkllama_url}
-Restart=on-failure
-RestartSec=5
-Environment=NODE_ENV=production
-NoNewPrivileges=true
-
-[Install]
-WantedBy=multi-user.target
-"""
 
 
 @dataclass
@@ -35,10 +28,10 @@ class DeployRequest:
     name: str
     framework: str        # agent framework app_id
     model: str | None     # model app_id (optional)
+    data_dir: Path        # host data dir — all per-agent state lives under here
     color: str = "#888888"
     memory_limit: str = "2GB"
     cpu_limit: int = 2
-    rkllama_url: str = "http://localhost:8080"
     extra_config: dict | None = None
     can_read_user_memory: bool = False
     taos_host: str = "host.docker.internal"
@@ -46,21 +39,77 @@ class DeployRequest:
 
 
 async def deploy_agent(req: DeployRequest) -> dict:
-    """Full agent deployment: create container → install deps → configure → start.
-    Rolls back (destroys container) on any critical failure after creation."""
+    """Full agent deployment: create container → install framework → start.
+
+    Rolls back (destroys container) on any critical failure after creation.
+    No per-agent state is written inside the container — everything the
+    agent needs reaches it via bind mounts (``/workspace``, ``/memory``)
+    or injected service URL env vars (LLM proxy, embeddings, skills, user
+    memory). Destroying and re-running this on the same name is safe.
+    """
     import asyncio
-    import tempfile
 
     container_name = f"taos-agent-{req.name}"
     steps = []
 
-    # Step 1: Create container
+    # Per-agent host-side state directories. These are the mounts the
+    # container sees at /workspace and /memory. Created if missing so the
+    # first deploy of a new agent just works.
+    host_workspace = req.data_dir / "agent-workspaces" / req.name
+    host_memory = req.data_dir / "agent-memory" / req.name
+    host_workspace.mkdir(parents=True, exist_ok=True)
+    host_memory.mkdir(parents=True, exist_ok=True)
+
+    mounts = [
+        (str(host_workspace), "/workspace"),
+        (str(host_memory), "/memory"),
+    ]
+
+    # Env vars injected at container creation time — all point at host
+    # services so the container holds zero config it would lose on rebuild.
+    env: dict[str, str] = {}
+
+    # LLM proxy (LiteLLM). The proxy is also the embedding endpoint in the
+    # default configuration: LiteLLM exposes POST /v1/embeddings and will
+    # route to whichever embedding model the host catalog configures.
+    llm_key = None
+    if req.extra_config and req.extra_config.get("llm_proxy"):
+        proxy = req.extra_config["llm_proxy"]
+        if proxy.is_running():
+            llm_key = await proxy.create_agent_key(req.name)
+            if llm_key:
+                env["OPENAI_API_KEY"] = llm_key
+                env["OPENAI_BASE_URL"] = f"{proxy.url}/v1"
+                # Host-side embedding endpoint — same LiteLLM process,
+                # OpenAI-compatible /v1/embeddings. Framework-agnostic.
+                env["TAOS_EMBEDDING_URL"] = f"{proxy.url}/v1/embeddings"
+
+    # User memory (optional, permission-gated)
+    if req.can_read_user_memory:
+        env["TAOS_USER_MEMORY_URL"] = (
+            f"http://{req.taos_host}:{req.taos_port}"
+            f"/api/user-memory/agent-search?agent_name={req.name}"
+        )
+
+    # Skill runtime — all skill execution happens on the host via the
+    # in-process Skill MCP server. Container just needs the URL.
+    skill_server_url = f"http://{req.taos_host}:{req.taos_port}/api/skill-exec"
+    env["TAOS_SKILLS_URL"] = skill_server_url
+    env["TAOS_SKILLS_MCP_URL"] = skill_server_url
+    env["TAOS_SKILLS_TOOLS_URL"] = (
+        f"{skill_server_url}/tools?agent_name={req.name}"
+    )
+    env["TAOS_AGENT_NAME"] = req.name
+
+    # Step 1: Create container with mounts + env baked in at launch time
     logger.info(f"Creating container {container_name}")
     result = await create_container(
         container_name,
         image="images:debian/bookworm",
         memory_limit=req.memory_limit,
         cpu_limit=req.cpu_limit,
+        mounts=mounts,
+        env=env,
     )
     if not result["success"]:
         return {"success": False, "error": f"Container creation failed: {result.get('error')}", "steps": steps}
@@ -75,42 +124,19 @@ async def deploy_agent(req: DeployRequest) -> dict:
             await asyncio.sleep(2)
         steps.append("network_ready")
 
-        # Step 3: Install base dependencies
+        # Step 3: Install base dependencies (framework needs these)
         logger.info(f"Installing dependencies in {container_name}")
         code, output = await exec_in_container(
             container_name,
-            ["bash", "-c", "apt-get update -qq && apt-get install -y -qq python3 python3-pip python3-venv nodejs npm git curl"],
+            ["bash", "-c", "apt-get update -qq && apt-get install -y -qq python3 python3-pip python3-venv git curl"],
             timeout=600,
         )
         if code != 0:
             raise RuntimeError(f"Dependency install failed: {output}")
         steps.append("deps_installed")
 
-        # Step 4: Install QMD
-        logger.info(f"Installing QMD in {container_name}")
-        code, output = await exec_in_container(
-            container_name,
-            ["npm", "install", "-g", "github:jaylfc/qmd#feat/remote-llm-provider"],
-            timeout=300,
-        )
-        if code != 0:
-            logger.warning(f"QMD install warning: {output}")
-        steps.append("qmd_installed")
-
-        # Step 5: Configure qmd serve systemd service
-        # Bind to 0.0.0.0 inside container so the host can reach it
-        qmd_service_content = QMD_SERVICE.format(bind="0.0.0.0", rkllama_url=req.rkllama_url)
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".service", delete=False) as f:
-            f.write(qmd_service_content)
-            tmp_path = f.name
-        await push_file(container_name, tmp_path, "/etc/systemd/system/qmd-serve.service")
-        Path(tmp_path).unlink()
-        await exec_in_container(container_name, ["systemctl", "daemon-reload"])
-        await exec_in_container(container_name, ["systemctl", "enable", "qmd-serve"])
-        await exec_in_container(container_name, ["systemctl", "start", "qmd-serve"])
-        steps.append("qmd_serve_configured")
-
-        # Step 6: Install agent framework (if specified and not just "none")
+        # Step 4: Install agent framework (if specified and not just "none").
+        # This is the only thing beyond the base OS that lives in the image.
         if req.framework and req.framework != "none":
             logger.info(f"Installing framework {req.framework} in {container_name}")
             code, output = await exec_in_container(
@@ -122,60 +148,7 @@ async def deploy_agent(req: DeployRequest) -> dict:
                 logger.warning(f"Framework install warning: {output}")
             steps.append("framework_installed")
 
-        # Step 7: Inject LLM proxy env vars if proxy is running
-        llm_key = None
-        if req.extra_config and req.extra_config.get("llm_proxy"):
-            proxy = req.extra_config["llm_proxy"]
-            if proxy.is_running():
-                llm_key = await proxy.create_agent_key(req.name)
-                if llm_key:
-                    # Inject OpenAI-compatible env vars so agent frameworks auto-discover the proxy
-                    env_lines = [
-                        f'export OPENAI_API_KEY="{llm_key}"',
-                        f'export OPENAI_BASE_URL="{proxy.url}/v1"',
-                    ]
-                    env_script = "\n".join(env_lines) + "\n"
-                    import tempfile
-                    with tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False) as ef:
-                        ef.write(env_script)
-                        env_tmp = ef.name
-                    await push_file(container_name, env_tmp, "/etc/profile.d/llm-proxy.sh")
-                    Path(env_tmp).unlink()
-                    steps.append("llm_proxy_key_injected")
-
-        # Step 7b: Inject user memory env var if permission granted
-        if req.can_read_user_memory:
-            user_memory_url = (
-                f"http://{req.taos_host}:{req.taos_port}"
-                f"/api/user-memory/agent-search?agent_name={req.name}"
-            )
-            env_script = f'export TAOS_USER_MEMORY_URL="{user_memory_url}"\n'
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False) as umf:
-                umf.write(env_script)
-                um_tmp = umf.name
-            await push_file(container_name, um_tmp, "/etc/profile.d/taos-user-memory.sh")
-            Path(um_tmp).unlink()
-            steps.append("user_memory_env_injected")
-
-        # Step 7c: Inject Skill runtime env vars so the agent can discover and
-        # call its assigned skills via the in-process Skill MCP server.
-        skill_server_url = (
-            f"http://{req.taos_host}:{req.taos_port}/api/skill-exec"
-        )
-        skill_env_lines = [
-            f'export TAOS_SKILLS_URL="{skill_server_url}"',
-            f'export TAOS_SKILLS_MCP_URL="{skill_server_url}"',
-            f'export TAOS_SKILLS_TOOLS_URL="{skill_server_url}/tools?agent_name={req.name}"',
-        ]
-        skill_env_script = "\n".join(skill_env_lines) + "\n"
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False) as sf:
-            sf.write(skill_env_script)
-            skill_tmp = sf.name
-        await push_file(container_name, skill_tmp, "/etc/profile.d/taos-skills.sh")
-        Path(skill_tmp).unlink()
-        steps.append("skills_env_injected")
-
-        # Step 8: Get container IP
+        # Step 5: Get container IP
         code, output = await exec_in_container(container_name, ["hostname", "-I"])
         container_ip = output.strip().split()[0] if code == 0 and output.strip() else None
         steps.append("deployment_complete")
@@ -185,7 +158,6 @@ async def deploy_agent(req: DeployRequest) -> dict:
             "name": req.name,
             "container": container_name,
             "ip": container_ip,
-            "qmd_url": f"http://{container_ip}:7832" if container_ip else None,
             "llm_key": llm_key,
             "steps": steps,
         }
@@ -199,7 +171,13 @@ async def deploy_agent(req: DeployRequest) -> dict:
 
 
 async def undeploy_agent(name: str) -> dict:
-    """Stop and destroy an agent's container."""
+    """Stop and destroy an agent's container.
+
+    Host-side state (workspace, memory, secret grants) is left alone — the
+    rule says containers are disposable, state is the identity. Rerun
+    ``deploy_agent`` with the same name to bring the agent back exactly as
+    it was. Use a separate ``delete_agent`` flow to also remove host state.
+    """
     container_name = f"taos-agent-{name}"
     result = await destroy_container(container_name)
     return {"success": result["success"], "name": name}

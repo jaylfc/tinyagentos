@@ -1,33 +1,36 @@
+from pathlib import Path
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
 from tinyagentos.deployer import deploy_agent, undeploy_agent, DeployRequest
+
+
+def _req(**overrides) -> DeployRequest:
+    defaults = dict(
+        name="test",
+        framework="smolagents",
+        model=None,
+        data_dir=Path("/tmp/taos-test-data"),
+    )
+    defaults.update(overrides)
+    return DeployRequest(**defaults)
 
 
 class TestDeployAgent:
     @pytest.mark.asyncio
-    async def test_full_deployment_flow(self):
-        req = DeployRequest(
-            name="test",
-            framework="smolagents",
-            model=None,
-            rkllama_url="http://localhost:8080",
-        )
-
-        call_count = 0
+    async def test_full_deployment_flow(self, tmp_path):
+        req = _req(data_dir=tmp_path)
 
         async def mock_exec(name, cmd, **kwargs):
-            nonlocal call_count
-            call_count += 1
             cmd_str = " ".join(cmd)
             if "hostname -I" in cmd_str:
                 return (0, "10.0.0.5")
             return (0, "ok")
 
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
-             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec), \
-             patch("tinyagentos.deployer.push_file", new_callable=AsyncMock) as mock_push:
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec):
             mock_create.return_value = {"success": True, "name": "taos-agent-test"}
-            mock_push.return_value = (0, "")
 
             result = await deploy_agent(req)
             assert result["success"] is True
@@ -36,28 +39,36 @@ class TestDeployAgent:
             assert result["ip"] == "10.0.0.5"
             assert "deployment_complete" in result["steps"]
 
+            # Mounts and env are passed to create_container — the
+            # framework-agnostic runtime rule in action.
+            call_kwargs = mock_create.call_args.kwargs
+            mounts = call_kwargs["mounts"]
+            assert (str(tmp_path / "agent-workspaces" / "test"), "/workspace") in mounts
+            assert (str(tmp_path / "agent-memory" / "test"), "/memory") in mounts
+            env = call_kwargs["env"]
+            assert env["TAOS_AGENT_NAME"] == "test"
+            assert env["TAOS_SKILLS_URL"].endswith("/api/skill-exec")
+
     @pytest.mark.asyncio
-    async def test_handles_container_creation_failure(self):
-        req = DeployRequest(name="fail", framework="smolagents", model=None)
+    async def test_handles_container_creation_failure(self, tmp_path):
+        req = _req(name="fail", data_dir=tmp_path)
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create:
             mock_create.return_value = {"success": False, "error": "no space"}
             result = await deploy_agent(req)
             assert result["success"] is False
             assert "no space" in result["error"]
 
-
     @pytest.mark.asyncio
-    async def test_deployment_with_llm_proxy(self):
-        """Test that deployer injects proxy env vars when proxy is running."""
+    async def test_deployment_with_llm_proxy_injects_embedding_url(self, tmp_path):
+        """LLM proxy wired → OPENAI_BASE_URL and TAOS_EMBEDDING_URL land in env."""
         mock_proxy = MagicMock()
         mock_proxy.is_running.return_value = True
         mock_proxy.url = "http://localhost:4000"
         mock_proxy.create_agent_key = AsyncMock(return_value="sk-test-key-123")
 
-        req = DeployRequest(
+        req = _req(
             name="proxy-test",
-            framework="smolagents",
-            model=None,
+            data_dir=tmp_path,
             extra_config={"llm_proxy": mock_proxy},
         )
 
@@ -68,25 +79,21 @@ class TestDeployAgent:
             return (0, "ok")
 
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
-             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
-             patch("tinyagentos.deployer.push_file", new_callable=AsyncMock) as mock_push:
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn):
             mock_create.return_value = {"success": True, "name": "taos-agent-proxy-test"}
-            mock_push.return_value = (0, "")
 
             result = await deploy_agent(req)
             assert result["success"] is True
             assert result["llm_key"] == "sk-test-key-123"
-            assert "llm_proxy_key_injected" in result["steps"]
+            env = mock_create.call_args.kwargs["env"]
+            assert env["OPENAI_API_KEY"] == "sk-test-key-123"
+            assert env["OPENAI_BASE_URL"] == "http://localhost:4000/v1"
+            assert env["TAOS_EMBEDDING_URL"] == "http://localhost:4000/v1/embeddings"
             mock_proxy.create_agent_key.assert_called_once_with("proxy-test")
 
     @pytest.mark.asyncio
-    async def test_deployment_without_llm_proxy(self):
-        """Test that deployment works normally without proxy."""
-        req = DeployRequest(
-            name="no-proxy",
-            framework="smolagents",
-            model=None,
-        )
+    async def test_deployment_without_llm_proxy(self, tmp_path):
+        req = _req(name="no-proxy", data_dir=tmp_path)
 
         async def mock_exec_fn(name, cmd, **kwargs):
             cmd_str = " ".join(cmd)
@@ -95,20 +102,20 @@ class TestDeployAgent:
             return (0, "ok")
 
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
-             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
-             patch("tinyagentos.deployer.push_file", new_callable=AsyncMock) as mock_push:
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn):
             mock_create.return_value = {"success": True, "name": "taos-agent-no-proxy"}
-            mock_push.return_value = (0, "")
 
             result = await deploy_agent(req)
             assert result["success"] is True
             assert result.get("llm_key") is None
+            env = mock_create.call_args.kwargs["env"]
+            assert "OPENAI_API_KEY" not in env
+            assert "TAOS_EMBEDDING_URL" not in env
 
 
 class TestBackgroundDeploy:
     @pytest.mark.asyncio
     async def test_deploy_endpoint_returns_immediately(self, client):
-        """POST /api/agents/deploy should return immediately with status=deploying."""
         resp = await client.post("/api/agents/deploy", json={
             "name": "bg-test",
             "framework": "none",
@@ -121,7 +128,6 @@ class TestBackgroundDeploy:
 
     @pytest.mark.asyncio
     async def test_deploy_status_endpoint(self, client):
-        """GET /api/agents/{name}/deploy-status returns task state."""
         await client.post("/api/agents/deploy", json={
             "name": "status-test",
             "framework": "none",

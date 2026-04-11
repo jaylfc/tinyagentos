@@ -31,3 +31,4 @@ docs/specs/2026-04-05-lobby-chat-room-design.md
 
 # OS
 .DS_Store
+.venv/

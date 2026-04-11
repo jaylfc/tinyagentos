@@ -47,8 +47,21 @@ class ContainerBackend(ABC):
         image: str = "images:debian/bookworm",
         memory_limit: str = "2GB",
         cpu_limit: int = 2,
+        mounts: list[tuple[str, str]] | None = None,
+        env: dict[str, str] | None = None,
     ) -> dict:
-        """Create and start a new container."""
+        """Create and start a new container.
+
+        ``mounts`` is a list of ``(host_path, container_path)`` pairs. Every
+        piece of per-agent state — memory, workspace, vector stores — enters
+        the container through one of these bind mounts. See
+        ``docs/design/framework-agnostic-runtime.md``.
+
+        ``env`` is a dict of environment variables injected at container
+        creation time. Used for host-service endpoints (LLM proxy, embeddings,
+        skills, user memory) so the container holds no baked-in config and
+        can be destroyed and rebuilt without losing its wiring.
+        """
         ...
 
     @abstractmethod

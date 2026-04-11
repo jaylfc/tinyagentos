@@ -173,11 +173,13 @@ async def deploy_agent_endpoint(request: Request, body: DeployAgentRequest):
     if find_agent(config, body.name):
         return JSONResponse({"error": f"Agent '{body.name}' already exists"}, status_code=409)
 
-    # Add agent entry immediately with deploying status
+    # Add agent entry immediately with deploying status. qmd_url is no
+    # longer populated — agents reach the host-side embedding service via
+    # TAOS_EMBEDDING_URL. See docs/design/framework-agnostic-runtime.md.
     config.agents.append({
         "name": body.name,
         "host": "",
-        "qmd_url": "",
+        "qmd_url": "",  # kept for backwards-compat with routes that still read it
         "color": body.color,
         "status": "deploying",
         "can_read_user_memory": body.can_read_user_memory,
@@ -189,11 +191,8 @@ async def deploy_agent_endpoint(request: Request, body: DeployAgentRequest):
     deploy_tasks[body.name] = {"status": "deploying", "name": body.name}
 
     from tinyagentos.deployer import deploy_agent, DeployRequest
-    rkllama_url = "http://localhost:8080"
-    for b in config.backends:
-        if b.get("type") == "rkllama":
-            rkllama_url = b["url"]
-            break
+    data_dir = request.app.state.data_dir
+    llm_proxy = getattr(request.app.state, "llm_proxy", None)
 
     async def _background_deploy():
         try:
@@ -201,17 +200,17 @@ async def deploy_agent_endpoint(request: Request, body: DeployAgentRequest):
                 name=body.name,
                 framework=body.framework,
                 model=body.model,
+                data_dir=data_dir,
                 color=body.color,
                 memory_limit=body.memory_limit,
                 cpu_limit=body.cpu_limit,
-                rkllama_url=rkllama_url,
+                extra_config={"llm_proxy": llm_proxy} if llm_proxy else None,
                 can_read_user_memory=body.can_read_user_memory,
             ))
             agent = find_agent(config, body.name)
             if result.get("success"):
                 if agent is not None:
                     agent["host"] = result.get("ip", "")
-                    agent["qmd_url"] = result.get("qmd_url", "")
                     agent["status"] = "running"
                 deploy_tasks[body.name] = {"status": "success", "name": body.name, "result": result}
             else:

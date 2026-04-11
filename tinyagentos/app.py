@@ -151,6 +151,13 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         await scheduler_history_store.init()
         app.state.config = config
         app.state.config_path = config_path
+        app.state.data_dir = data_dir
+        # Per-agent state lives on the host and is mounted into containers.
+        # See docs/design/framework-agnostic-runtime.md.
+        app.state.agent_workspaces_dir = data_dir / "agent-workspaces"
+        app.state.agent_memory_dir = data_dir / "agent-memory"
+        app.state.agent_workspaces_dir.mkdir(parents=True, exist_ok=True)
+        app.state.agent_memory_dir.mkdir(parents=True, exist_ok=True)
         app.state.models_dir = data_dir / "models"
         app.state.models_dir.mkdir(parents=True, exist_ok=True)
         app.state.metrics = metrics_store
@@ -312,6 +319,11 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     # Set state eagerly so it's available even without lifespan (e.g. tests)
     app.state.config = config
     app.state.config_path = config_path
+    app.state.data_dir = data_dir
+    app.state.agent_workspaces_dir = data_dir / "agent-workspaces"
+    app.state.agent_memory_dir = data_dir / "agent-memory"
+    app.state.agent_workspaces_dir.mkdir(parents=True, exist_ok=True)
+    app.state.agent_memory_dir.mkdir(parents=True, exist_ok=True)
     app.state.metrics = metrics_store
     app.state.notifications = notif_store
     app.state.qmd_client = qmd_client

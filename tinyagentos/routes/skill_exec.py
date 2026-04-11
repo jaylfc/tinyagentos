@@ -9,6 +9,8 @@ to execute them.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
@@ -35,16 +37,31 @@ async def _skill_memory_search(args: dict, request: Request) -> dict:
     }
 
 
-async def _skill_file_read(args: dict, request: Request) -> dict:
-    """Read a file from the agent workspace."""
-    from pathlib import Path
+def _resolve_agent_workspace(request: Request, args: dict) -> Path:
+    """Return the per-agent workspace directory on the host.
 
+    Same directory that ``deployer.deploy_agent`` bind-mounts into the
+    container at ``/workspace``. Skills executed on behalf of an agent
+    read and write through this path so the state survives a container
+    rebuild or framework swap. See ``docs/design/framework-agnostic-runtime.md``.
+    """
+    agent_name = (
+        args.get("agent_name")
+        or request.query_params.get("agent_name")
+        or "default"
+    )
+    base = Path(request.app.state.agent_workspaces_dir) / agent_name
+    base.mkdir(parents=True, exist_ok=True)
+    return base
+
+
+async def _skill_file_read(args: dict, request: Request) -> dict:
+    """Read a file from the calling agent's workspace."""
     path = args.get("path", "")
-    data_dir = Path("/tmp/agent-workspace")
-    data_dir.mkdir(exist_ok=True)
-    target = (data_dir / path).resolve()
+    workspace = _resolve_agent_workspace(request, args)
+    target = (workspace / path).resolve()
     try:
-        if data_dir not in target.parents and target != data_dir:
+        if workspace not in target.parents and target != workspace:
             return {"error": "Path outside workspace"}
         if not target.is_file():
             return {"error": "File not found"}
@@ -54,16 +71,13 @@ async def _skill_file_read(args: dict, request: Request) -> dict:
 
 
 async def _skill_file_write(args: dict, request: Request) -> dict:
-    """Write a file to the agent workspace."""
-    from pathlib import Path
-
+    """Write a file to the calling agent's workspace."""
     path = args.get("path", "")
     content = args.get("content", "")
-    data_dir = Path("/tmp/agent-workspace")
-    data_dir.mkdir(exist_ok=True)
-    target = (data_dir / path).resolve()
+    workspace = _resolve_agent_workspace(request, args)
+    target = (workspace / path).resolve()
     try:
-        if data_dir not in target.parents and target != data_dir:
+        if workspace not in target.parents and target != workspace:
             return {"error": "Path outside workspace"}
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content)
@@ -202,6 +216,10 @@ async def execute_skill(skill_id: str, request: Request):
     """Execute a skill with the given arguments."""
     body = await request.json()
     args = body.get("args", {})
+    # Propagate agent_name from the request body into args so file-read
+    # and file-write resolve the right per-agent workspace.
+    if "agent_name" in body and "agent_name" not in args:
+        args["agent_name"] = body["agent_name"]
 
     skill_store = request.app.state.skills
     skill = await skill_store.get_skill(skill_id)
