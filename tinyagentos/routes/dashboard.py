@@ -375,27 +375,13 @@ async def api_health_check(request: Request):
 
     checks.append(await _timed_check("QMD Server", _check_qmd()))
 
-    # 6. Each agent's qmd_url
-    for agent in config.agents:
-        qmd_url = agent.get("qmd_url", "")
-        if qmd_url:
-            name = f"Agent QMD: {agent['name']}"
+    # Per-agent QMD health checks removed — there is no longer a
+    # per-agent QMD. One shared qmd.service on the host serves every
+    # agent's embed/rerank/expand traffic, and that single instance is
+    # already covered by the "QMD Server" check above. See
+    # docs/design/framework-agnostic-runtime.md.
 
-            async def _check_agent_qmd(url=qmd_url):
-                from tinyagentos.qmd_client import QmdClient
-                client = QmdClient(url)
-                await client.init()
-                try:
-                    result = await client.health()
-                    if result.get("status") == "error":
-                        return {"status": "error", "detail": result.get("error", "unreachable")}
-                    return {"status": "ok", "detail": f"{result.get('response_ms', 0)}ms"}
-                finally:
-                    await client.close()
-
-            checks.append(await _timed_check(name, _check_agent_qmd()))
-
-    # 7. Disk space
+    # 6. Disk space
     disk = shutil.disk_usage("/")
     disk_pct = (disk.used / disk.total) * 100
     disk_status = "ok" if disk_pct < 85 else ("warning" if disk_pct < 95 else "error")

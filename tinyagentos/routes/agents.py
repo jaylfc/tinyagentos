@@ -173,13 +173,14 @@ async def deploy_agent_endpoint(request: Request, body: DeployAgentRequest):
     if find_agent(config, body.name):
         return JSONResponse({"error": f"Agent '{body.name}' already exists"}, status_code=409)
 
-    # Add agent entry immediately with deploying status. qmd_url is no
-    # longer populated — agents reach the host-side embedding service via
-    # TAOS_EMBEDDING_URL. See docs/design/framework-agnostic-runtime.md.
+    # Add agent entry immediately with deploying status. qmd_url has
+    # been removed from the agent schema — every agent reads and writes
+    # through the shared host qmd.service, addressed by agent name and
+    # the bind-mounted per-agent SQLite at /memory. See
+    # docs/design/framework-agnostic-runtime.md.
     config.agents.append({
         "name": body.name,
         "host": "",
-        "qmd_url": "",  # kept for backwards-compat with routes that still read it
         "color": body.color,
         "status": "deploying",
         "can_read_user_memory": body.can_read_user_memory,

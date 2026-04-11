@@ -69,12 +69,16 @@ async def embed_files(request: Request):
     if missing:
         return JSONResponse({"error": f"Files not found: {', '.join(missing)}"}, status_code=404)
 
-    # Look up the agent's qmd_url from config
-    config = request.app.state.config
-    agent_dict = next((a for a in config.agents if a.get("name") == agent_name), None)
-    qmd_url = agent_dict.get("qmd_url") if agent_dict else None
-
-    http_client = request.app.state.http_client
+    # Embed via the shared host QMD serve process (systemd unit qmd.service).
+    # See docs/design/framework-agnostic-runtime.md — one QMD for every
+    # agent on the box, no per-agent provider lookup.
+    #
+    # NOTE: this path computes an embedding but does not yet persist it
+    # to the agent's SQLite. The previous implementation called a
+    # non-existent /api/embed endpoint on per-agent QMDs and silently
+    # failed, so import has never actually persisted vectors. Wiring
+    # persistence through to QmdDatabase is tracked separately.
+    qmd_client = request.app.state.qmd_client
     embedded_files = []
     all_embedded = True
 
@@ -83,22 +87,14 @@ async def embed_files(request: Request):
         text = fpath.read_text(errors="replace")
         file_embedded = False
 
-        if qmd_url:
-            try:
-                resp = await http_client.post(
-                    qmd_url.rstrip("/") + "/api/embed",
-                    json={"text": text, "collection": "imports"},
-                    timeout=30.0,
-                )
-                resp.raise_for_status()
-                file_embedded = True
-            except Exception as exc:
-                logger.warning(
-                    "QMD embed failed for agent %s file %s (%s): %s",
-                    agent_name, fname, qmd_url, exc,
-                )
-                all_embedded = False
-        else:
+        try:
+            await qmd_client.embed(text)
+            file_embedded = True
+        except Exception as exc:
+            logger.warning(
+                "QMD embed failed for agent %s file %s: %s",
+                agent_name, fname, exc,
+            )
             all_embedded = False
 
         embedded_files.append({

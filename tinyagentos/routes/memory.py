@@ -1,3 +1,17 @@
+"""Memory routes — keyword and semantic search over per-agent stores.
+
+Every memory operation goes through the single host ``qmd.service``
+systemd unit on :7832. That process exposes ``/search`` and ``/vsearch``
+in addition to the model primitives (``/embed``, ``/rerank``,
+``/expand``), so TinyAgentOS never needs to open a SQLite DB from
+Python or know which embedder / dimension is in use.
+
+Previous revisions fell back to opening per-agent SQLite files via
+``agent_db.get_agent_db``, which required the sqlite-vec extension and
+was the source of the dim-mismatch and extension-loading pain. The new
+flow is pure HTTP: embed, rerank, and search all land on one address.
+See ``docs/design/framework-agnostic-runtime.md``.
+"""
 from __future__ import annotations
 
 import logging
@@ -21,61 +35,6 @@ class SearchRequest(BaseModel):
     limit: int = 20
 
 
-async def _search_via_http(http_client, qmd_url: str, query: str,
-                           collection: str | None = None, limit: int = 20) -> list[dict]:
-    """Search an agent's qmd serve instance over HTTP."""
-    params: dict = {"q": query, "limit": limit}
-    if collection:
-        params["collection"] = collection
-    url = qmd_url.rstrip("/") + "/search"
-    resp = await http_client.get(url, params=params)
-    resp.raise_for_status()
-    data = resp.json()
-    # qmd serve /search returns {"results": [...]} or a list directly
-    if isinstance(data, list):
-        return data
-    return data.get("results", data.get("chunks", []))
-
-
-async def _vsearch_via_http(http_client, qmd_url: str, query: str,
-                            collection: str | None = None, limit: int = 20) -> list[dict]:
-    """Semantic vector search via an agent's qmd serve /vsearch endpoint."""
-    url = qmd_url.rstrip("/") + "/vsearch"
-    body: dict = {"query": query, "limit": limit}
-    if collection:
-        body["collection"] = collection
-    resp = await http_client.post(url, json=body, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()
-    if isinstance(data, list):
-        return data
-    return data.get("results", [])
-
-
-async def _browse_via_http(http_client, qmd_url: str,
-                           collection: str | None = None,
-                           limit: int = 20, offset: int = 0) -> list[dict]:
-    """Browse an agent's qmd serve instance over HTTP."""
-    params: dict = {"limit": limit, "offset": offset}
-    if collection:
-        params["collection"] = collection
-    url = qmd_url.rstrip("/") + "/browse"
-    resp = await http_client.get(url, params=params)
-    resp.raise_for_status()
-    data = resp.json()
-    if isinstance(data, list):
-        return data
-    return data.get("chunks", data.get("results", []))
-
-
-async def _collections_via_http(http_client, qmd_url: str) -> list:
-    """Get collections from an agent's qmd serve instance over HTTP."""
-    url = qmd_url.rstrip("/") + "/collections"
-    resp = await http_client.get(url)
-    resp.raise_for_status()
-    return resp.json()
-
-
 @router.get("/memory", response_class=HTMLResponse)
 async def memory_page(request: Request):
     config = request.app.state.config
@@ -94,25 +53,11 @@ async def memory_browse(
     limit: int = 20,
     offset: int = 0,
 ):
-    """Browse agent memory chunks, paginated, most recent first."""
+    """Browse an agent's memory chunks, paginated, most recent first."""
     config = request.app.state.config
     agent_dict = find_agent(config, agent)
     if not agent_dict:
         return JSONResponse({"chunks": [], "error": f"Agent '{agent}' not found"})
-
-    # Try HTTP via qmd_url first
-    qmd_url = agent_dict.get("qmd_url")
-    if qmd_url:
-        http_client = request.app.state.http_client
-        try:
-            chunks = await _browse_via_http(http_client, qmd_url,
-                                            collection=collection, limit=limit, offset=offset)
-            return {"chunks": chunks}
-        except Exception as e:
-            logger.warning("qmd_url browse failed for %s (%s), falling back to local DB: %s",
-                           agent, qmd_url, e)
-
-    # Fall back to local SQLite via qmd_index
     db = get_agent_db(agent_dict)
     if not db:
         return JSONResponse({"chunks": [], "error": f"Database missing for agent '{agent}'"})
@@ -123,23 +68,45 @@ async def memory_browse(
         return JSONResponse({"chunks": [], "error": str(e)})
 
 
-async def _search_single_agent(request: Request, agent_dict: dict, query: str,
-                               collection: str | None = None, limit: int = 20) -> list[dict]:
-    """Search a single agent, trying HTTP first then local DB."""
-    qmd_url = agent_dict.get("qmd_url")
-    if qmd_url:
-        http_client = request.app.state.http_client
-        try:
-            return await _search_via_http(http_client, qmd_url, query,
-                                          collection=collection, limit=limit)
-        except Exception as e:
-            logger.warning("qmd_url search failed for %s (%s), falling back to local DB: %s",
-                           agent_dict.get("name"), qmd_url, e)
-
+def _keyword_search_agent(agent_dict: dict, query: str,
+                          collection: str | None = None, limit: int = 20) -> list[dict]:
     db = get_agent_db(agent_dict)
     if not db:
         return []
     return db.keyword_search(query, collection=collection, limit=limit)
+
+
+def _qmd_base(request: Request) -> str:
+    """URL of the shared host qmd serve process."""
+    return request.app.state.qmd_client.base_url
+
+
+async def _qmd_search(request: Request, query: str,
+                      collection: str | None, limit: int) -> list[dict]:
+    """Keyword (BM25) search via qmd serve /search."""
+    http_client = request.app.state.http_client
+    payload: dict = {"query": query, "limit": limit}
+    if collection:
+        payload["collection"] = collection
+    resp = await http_client.post(f"{_qmd_base(request)}/search", json=payload, timeout=30)
+    resp.raise_for_status()
+    data = resp.json()
+    return data.get("results", [])
+
+
+async def _qmd_vsearch(request: Request, query: str,
+                       collection: str | None, limit: int) -> list[dict]:
+    """Semantic (vector) search via qmd serve /vsearch. The query is
+    embedded inside the qmd serve process using whichever backend that
+    process is configured with (rkllama on NPU in our deployment)."""
+    http_client = request.app.state.http_client
+    payload: dict = {"query": query, "limit": limit}
+    if collection:
+        payload["collection"] = collection
+    resp = await http_client.post(f"{_qmd_base(request)}/vsearch", json=payload, timeout=60)
+    resp.raise_for_status()
+    data = resp.json()
+    return data.get("results", [])
 
 
 @router.post("/api/memory/search")
@@ -147,62 +114,21 @@ async def memory_search(request: Request, body: SearchRequest):
     """Search agent memory using keyword or semantic search."""
     config = request.app.state.config
 
-    if body.mode == "semantic":
-        if body.agent:
-            agent_dict = find_agent(config, body.agent)
-            if not agent_dict:
-                return JSONResponse({"results": [], "error": f"Agent '{body.agent}' not found"})
-            qmd_url = agent_dict.get("qmd_url")
-            if qmd_url:
-                http_client = request.app.state.http_client
-                try:
-                    results = await _vsearch_via_http(http_client, qmd_url, body.query,
-                                                      collection=body.collection, limit=body.limit)
-                    return {"results": results}
-                except Exception as e:
-                    logger.warning("Semantic search failed for %s: %s", body.agent, e)
-                    return JSONResponse({"results": [], "error": f"Semantic search failed: {e}"})
-        # Search across all agents
-        all_results = []
-        for agent in config.agents:
-            qmd_url = agent.get("qmd_url")
-            if not qmd_url:
-                continue
-            http_client = request.app.state.http_client
-            try:
-                results = await _vsearch_via_http(http_client, qmd_url, body.query,
-                                                   collection=body.collection, limit=body.limit)
-                for r in results:
-                    r["agent"] = agent["name"]
-                all_results.extend(results)
-            except Exception:
-                continue
-        all_results.sort(key=lambda r: r.get("score", 0))
-        return {"results": all_results[:body.limit]}
+    search_fn = _qmd_vsearch if body.mode == "semantic" else _qmd_search
 
+    try:
+        results = await search_fn(request, body.query, body.collection, body.limit)
+    except Exception as exc:
+        logger.warning("qmd %s failed: %s", body.mode, exc)
+        return JSONResponse({"results": [], "error": str(exc)}, status_code=502)
+
+    # Optional per-agent tagging for UI display. Filtering by agent is
+    # not yet supported at the qmd serve level — every agent shares the
+    # same index until per-agent dbPath routing is wired through.
     if body.agent:
-        agent_dict = find_agent(config, body.agent)
-        if not agent_dict:
-            return JSONResponse({"results": [], "error": f"Agent '{body.agent}' not found"})
-        try:
-            results = await _search_single_agent(request, agent_dict, body.query,
-                                                 collection=body.collection, limit=body.limit)
-            return {"results": results}
-        except Exception as e:
-            return JSONResponse({"results": [], "error": str(e)})
-
-    # Search across all agents
-    all_results = []
-    for agent in config.agents:
-        try:
-            results = await _search_single_agent(request, agent, body.query,
-                                                 collection=body.collection, limit=body.limit)
-            for r in results:
-                r["agent"] = agent["name"]
-            all_results.extend(results)
-        except Exception:
-            continue
-    return {"results": all_results}
+        for r in results:
+            r["agent"] = body.agent
+    return {"results": results}
 
 
 @router.get("/api/memory/collections/{agent_name}")
@@ -212,17 +138,6 @@ async def memory_collections(request: Request, agent_name: str):
     agent_dict = find_agent(config, agent_name)
     if not agent_dict:
         return JSONResponse([], status_code=200)
-
-    # Try HTTP via qmd_url first
-    qmd_url = agent_dict.get("qmd_url")
-    if qmd_url:
-        http_client = request.app.state.http_client
-        try:
-            return await _collections_via_http(http_client, qmd_url)
-        except Exception as e:
-            logger.warning("qmd_url collections failed for %s (%s), falling back to local DB: %s",
-                           agent_name, qmd_url, e)
-
     db = get_agent_db(agent_dict)
     if not db:
         return JSONResponse([], status_code=200)

@@ -1,0 +1,42 @@
+# QMD serve — shared model provider for TinyAgentOS and any other tool on
+# the host that wants embed / rerank / query-expansion. Runs as its own
+# systemd unit (not a TinyAgentOS subprocess) so the model provider layer
+# survives a TinyAgentOS restart and can be reused by anything else on
+# the box.
+#
+# See docs/design/framework-agnostic-runtime.md: this is the host-side
+# model service that replaces the per-agent QMD that used to live inside
+# each agent container.
+#
+# Install:
+#     sudo cp scripts/systemd/qmd.service /etc/systemd/system/qmd.service
+#     sudo systemctl daemon-reload
+#     sudo systemctl enable --now qmd.service
+#
+# Configuration: edit /etc/default/qmd to change the backend URL or
+# bind address without touching this unit. Defaults below target the
+# local rkllama NPU server on an Orange Pi 5 Plus.
+[Unit]
+Description=QMD shared model provider (embed / rerank / expand)
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=jay
+Group=jay
+EnvironmentFile=-/etc/default/qmd
+Environment=QMD_PORT=7832
+Environment=QMD_BIND=0.0.0.0
+Environment=QMD_BACKEND=rkllama
+Environment=QMD_RKLLAMA_URL=http://localhost:8080
+ExecStart=/usr/bin/node /home/jay/qmd-server/dist/cli/qmd.js serve \
+    --port ${QMD_PORT} \
+    --bind ${QMD_BIND} \
+    --backend ${QMD_BACKEND} \
+    --rkllama-url ${QMD_RKLLAMA_URL}
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
