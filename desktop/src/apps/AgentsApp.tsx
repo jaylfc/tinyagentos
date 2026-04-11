@@ -2,6 +2,11 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { Bot, Plus, Trash2, ScrollText, Play, Server, X, ChevronRight, ChevronLeft, Check, Wrench, MessageSquare, Download } from "lucide-react";
 import { AgentSkillsPanel } from "./AgentSkillsPanel";
 import { AgentMessagesPanel } from "./AgentMessagesPanel";
+import {
+  fetchClusterWorkers,
+  workersToAggregated,
+  HOST_BADGE_CLASS,
+} from "@/lib/models";
 import { useProcessStore } from "@/stores/process-store";
 import { getApp } from "@/registry/app-registry";
 import {
@@ -37,6 +42,8 @@ interface Framework {
 interface Model {
   id: string;
   name: string;
+  host?: string;
+  hostKind?: "controller" | "worker" | "cloud";
 }
 
 /* ------------------------------------------------------------------ */
@@ -358,10 +365,29 @@ function DeployWizard({
             ...downloaded.map((m) => ({
               id: String(m.id),
               name: String(m.name ?? m.id),
+              host: "controller",
+              hostKind: "controller" as const,
             }))
           );
         }
       } catch { /* leave local models empty */ }
+
+      // Union in cluster-worker-hosted models. Each worker reports its
+      // backends[].models[] via heartbeat; any of them is a valid deploy
+      // target as far as the wizard is concerned — the user can pick it
+      // and the controller-side scheduler/copy will route accordingly.
+      const workerModels: Model[] = [];
+      try {
+        const workers = await fetchClusterWorkers();
+        for (const a of workersToAggregated(workers)) {
+          workerModels.push({
+            id: a.id,
+            name: a.name,
+            host: a.host,
+            hostKind: "worker",
+          });
+        }
+      } catch { /* ignore */ }
 
       // Also fetch cloud provider models
       const cloudModels: Model[] = [];
@@ -377,18 +403,39 @@ function DeployWizard({
             if (!CLOUD_TYPES.includes(p.type)) continue;
             const pModels: { id?: string; name?: string }[] = Array.isArray(p.models) ? p.models : [];
             if (pModels.length === 0) {
-              cloudModels.push({ id: p.model ?? "default", name: `${p.name} default` });
+              cloudModels.push({
+                id: p.model ?? "default",
+                name: `${p.name} default`,
+                host: p.name,
+                hostKind: "cloud",
+              });
             } else {
               for (const m of pModels) {
                 const modelId = m.id ?? m.name ?? "unknown";
-                cloudModels.push({ id: modelId, name: `${m.name ?? modelId} (${p.name})` });
+                cloudModels.push({
+                  id: modelId,
+                  name: `${m.name ?? modelId} (${p.name})`,
+                  host: p.name,
+                  hostKind: "cloud",
+                });
               }
             }
           }
         }
       } catch { /* ignore */ }
 
-      setModels([...localModels, ...cloudModels]);
+      // Dedupe: if the controller and a worker both report the same model id,
+      // prefer the controller entry. Worker entries with duplicate (host,id)
+      // pairs (e.g. same model under two backends) are kept once per worker.
+      const seen = new Set<string>();
+      const union: Model[] = [];
+      for (const m of [...localModels, ...workerModels, ...cloudModels]) {
+        const key = `${m.hostKind ?? "?"}:${m.host ?? "?"}:${m.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        union.push(m);
+      }
+      setModels(union);
       setModelsLoaded(true);
     })();
   }, [open]);
@@ -590,9 +637,9 @@ function DeployWizard({
                     <Download size={20} className="text-accent" />
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-shell-text">No downloaded models yet.</p>
+                    <p className="text-sm font-medium text-shell-text">No models available.</p>
                     <p className="text-xs text-shell-text-tertiary mt-1">
-                      Download a model first to deploy an agent that can use it.
+                      No models downloaded on the controller, hosted on cluster workers, or provided by cloud providers.
                     </p>
                   </div>
                   <Button size="sm" onClick={openModelsApp}>
@@ -602,20 +649,34 @@ function DeployWizard({
                 </div>
               ) : (
                 <>
-                  {models.map((m) => (
-                    <button
-                      key={m.id}
-                      onClick={() => setSelectedModel(m.id)}
-                      className={`w-full text-left px-4 py-3 rounded-lg border transition-colors ${
-                        selectedModel === m.id
-                          ? "border-accent bg-accent/10"
-                          : "border-white/5 bg-shell-bg-deep hover:bg-white/5"
-                      }`}
-                    >
-                      <div className="text-sm font-medium">{m.name}</div>
-                      <div className="text-xs text-shell-text-tertiary">{m.id}</div>
-                    </button>
-                  ))}
+                  {models.map((m) => {
+                    const showHost = m.host && m.hostKind !== "controller";
+                    const key = `${m.hostKind ?? "?"}:${m.host ?? "?"}:${m.id}`;
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => setSelectedModel(m.id)}
+                        className={`w-full text-left px-4 py-3 rounded-lg border transition-colors ${
+                          selectedModel === m.id
+                            ? "border-accent bg-accent/10"
+                            : "border-white/5 bg-shell-bg-deep hover:bg-white/5"
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <div className="text-sm font-medium truncate">{m.name}</div>
+                          {showHost && (
+                            <span
+                              className={HOST_BADGE_CLASS}
+                              title={`Hosted on ${m.host}`}
+                            >
+                              {m.host}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-shell-text-tertiary">{m.id}</div>
+                      </button>
+                    );
+                  })}
                   {models.length > 0 && (
                     <Button
                       variant="outline"

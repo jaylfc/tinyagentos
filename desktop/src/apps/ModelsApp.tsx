@@ -8,6 +8,15 @@ import {
   CardHeader,
   Input,
 } from "@/components/ui";
+import {
+  type AggregatedModel,
+  controllerDownloadedToAggregated,
+  workersToAggregated,
+  cloudProvidersToAggregated,
+  fetchClusterWorkers,
+  fetchCloudProviders,
+  HOST_BADGE_CLASS,
+} from "@/lib/models";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -19,6 +28,9 @@ interface DownloadedModel {
   size: string;
   format: string;
   quantization?: string;
+  host: string;
+  hostKind: "controller" | "worker" | "cloud";
+  backend?: string;
 }
 
 interface AvailableModel {
@@ -37,9 +49,22 @@ type SourceFilter = "all" | "huggingface" | "ollama" | "catalog";
 /* ------------------------------------------------------------------ */
 
 const MOCK_DOWNLOADED: DownloadedModel[] = [
-  { id: "qwen2.5-7b-q4", filename: "qwen2.5-7b-instruct-q4_k_m.gguf", size: "4.4 GB", format: "GGUF", quantization: "Q4_K_M" },
-  { id: "phi3-mini-q5", filename: "phi-3-mini-4k-q5_k_m.gguf", size: "2.8 GB", format: "GGUF", quantization: "Q5_K_M" },
+  { id: "qwen2.5-7b-q4", filename: "qwen2.5-7b-instruct-q4_k_m.gguf", size: "4.4 GB", format: "GGUF", quantization: "Q4_K_M", host: "controller", hostKind: "controller" },
+  { id: "phi3-mini-q5", filename: "phi-3-mini-4k-q5_k_m.gguf", size: "2.8 GB", format: "GGUF", quantization: "Q5_K_M", host: "controller", hostKind: "controller" },
 ];
+
+function aggregatedToDownloaded(a: AggregatedModel): DownloadedModel {
+  return {
+    id: a.key,
+    filename: a.name,
+    size: a.size ?? "",
+    format: a.format ?? (a.backend ?? "").toUpperCase() ?? "",
+    quantization: a.quantization,
+    host: a.host,
+    hostKind: a.hostKind,
+    backend: a.backend,
+  };
+}
 
 const MOCK_AVAILABLE: AvailableModel[] = [
   { id: "llama3-8b", name: "Llama 3 8B", description: "Meta's latest open model. Strong general-purpose reasoning and instruction following.", compatibility: "green", capabilities: ["chat", "code", "reasoning"], size: "4.7 GB" },
@@ -121,6 +146,11 @@ export function ModelsApp({ windowId: _windowId }: { windowId: string }) {
   const [isFallback, setIsFallback] = useState(false);
 
   const fetchModels = useCallback(async () => {
+    // Kick off cluster workers + providers in parallel with /api/models so the
+    // union (controller + workers + cloud) is ready in a single state flip.
+    const workersPromise = fetchClusterWorkers();
+    const providersPromise = fetchCloudProviders();
+
     try {
       const res = await fetch("/api/models", {
         headers: { Accept: "application/json" },
@@ -145,21 +175,32 @@ export function ModelsApp({ windowId: _windowId }: { windowId: string }) {
           const fmtSize = (mb: number) =>
             mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`;
 
-          const quantRegex = /[Qq]\d[_A-Za-z0-9]*/;
+          const controllerList: DownloadedModel[] = rawDownloaded.map((d) =>
+            aggregatedToDownloaded(
+              controllerDownloadedToAggregated({
+                filename: (d.filename as string) ?? "unknown",
+                size_mb: (d.size_mb as number) ?? 0,
+                format: (d.format as string) ?? "bin",
+              }),
+            ),
+          );
 
-          const downloadedList: DownloadedModel[] = rawDownloaded.map((d) => {
-            const filename = (d.filename as string) ?? "unknown";
-            const sizeMb = (d.size_mb as number) ?? 0;
-            const format = ((d.format as string) ?? "bin").toUpperCase();
-            const quantMatch = filename.match(quantRegex);
-            return {
-              id: filename,
-              filename,
-              size: fmtSize(sizeMb),
-              format,
-              quantization: quantMatch ? quantMatch[0].toUpperCase() : undefined,
-            };
-          });
+          // Await parallel sources and union them in.
+          const [workers, providers] = await Promise.all([
+            workersPromise,
+            providersPromise,
+          ]);
+          const workerList = workersToAggregated(workers).map(
+            aggregatedToDownloaded,
+          );
+          const cloudList = cloudProvidersToAggregated(providers).map(
+            aggregatedToDownloaded,
+          );
+          const downloadedList: DownloadedModel[] = [
+            ...controllerList,
+            ...workerList,
+            ...cloudList,
+          ];
 
           const availableList: AvailableModel[] = rawModels.map((m) => {
             const variants = Array.isArray(m.variants)
@@ -202,6 +243,29 @@ export function ModelsApp({ windowId: _windowId }: { windowId: string }) {
     } catch {
       /* fall through */
     }
+    // /api/models failed — still try to surface cluster workers + cloud so the
+    // user can at least see remote-hosted models.
+    try {
+      const [workers, providers] = await Promise.all([
+        workersPromise,
+        providersPromise,
+      ]);
+      const workerList = workersToAggregated(workers).map(
+        aggregatedToDownloaded,
+      );
+      const cloudList = cloudProvidersToAggregated(providers).map(
+        aggregatedToDownloaded,
+      );
+      if (workerList.length > 0 || cloudList.length > 0) {
+        setDownloaded([...workerList, ...cloudList]);
+        setAvailable(MOCK_AVAILABLE);
+        setIsFallback(true);
+        setLoading(false);
+        return;
+      }
+    } catch {
+      /* ignore */
+    }
     setDownloaded(MOCK_DOWNLOADED);
     setAvailable(MOCK_AVAILABLE);
     setIsFallback(true);
@@ -234,6 +298,8 @@ export function ModelsApp({ windowId: _windowId }: { windowId: string }) {
         size: model.size,
         format: "GGUF",
         quantization: "Q4_K_M",
+        host: "controller",
+        hostKind: "controller",
       },
     ]);
   };
@@ -346,34 +412,58 @@ export function ModelsApp({ windowId: _windowId }: { windowId: string }) {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {filteredDownloaded.map((model) => (
-                    <Card key={model.id}>
-                      <CardContent className="p-3.5 flex flex-col gap-2">
-                        <div className="flex items-start justify-between gap-2">
-                          <p className="text-sm font-medium truncate" title={model.filename}>
-                            {model.filename}
-                          </p>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleDelete(model.id)}
-                            className="h-7 w-7 hover:text-red-400 hover:bg-red-500/15"
-                            aria-label={`Delete ${model.filename}`}
-                            title="Delete model"
-                          >
-                            <Trash2 size={14} />
-                          </Button>
-                        </div>
-                        <div className="flex items-center gap-2 text-xs text-shell-text-tertiary">
-                          <span className="px-1.5 py-0.5 rounded bg-white/5 font-medium">{model.format}</span>
-                          {model.quantization && (
-                            <span className="px-1.5 py-0.5 rounded bg-white/5">{model.quantization}</span>
-                          )}
-                          <span className="ml-auto tabular-nums">{model.size}</span>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
+                  {filteredDownloaded.map((model) => {
+                    const isLocal = model.hostKind === "controller";
+                    return (
+                      <Card key={model.id}>
+                        <CardContent className="p-3.5 flex flex-col gap-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <p className="text-sm font-medium truncate" title={model.filename}>
+                                  {model.filename}
+                                </p>
+                                {!isLocal && (
+                                  <span
+                                    className={HOST_BADGE_CLASS}
+                                    title={`Hosted on ${model.host}`}
+                                  >
+                                    {model.host}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            {isLocal && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleDelete(model.id)}
+                                className="h-7 w-7 hover:text-red-400 hover:bg-red-500/15"
+                                aria-label={`Delete ${model.filename}`}
+                                title="Delete model"
+                              >
+                                <Trash2 size={14} />
+                              </Button>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 text-xs text-shell-text-tertiary">
+                            {model.format && (
+                              <span className="px-1.5 py-0.5 rounded bg-white/5 font-medium">{model.format}</span>
+                            )}
+                            {model.quantization && (
+                              <span className="px-1.5 py-0.5 rounded bg-white/5">{model.quantization}</span>
+                            )}
+                            {model.backend && !model.format && (
+                              <span className="px-1.5 py-0.5 rounded bg-white/5">{model.backend}</span>
+                            )}
+                            {model.size && (
+                              <span className="ml-auto tabular-nums">{model.size}</span>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
                 </div>
               )}
             </section>
