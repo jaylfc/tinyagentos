@@ -78,11 +78,17 @@ async def deploy_agent(req: DeployRequest) -> dict:
         if proxy.is_running():
             llm_key = await proxy.create_agent_key(req.name)
             if llm_key:
+                from tinyagentos.llm_proxy import EMBEDDING_ALIAS
                 env["OPENAI_API_KEY"] = llm_key
                 env["OPENAI_BASE_URL"] = f"{proxy.url}/v1"
                 # Host-side embedding endpoint — same LiteLLM process,
                 # OpenAI-compatible /v1/embeddings. Framework-agnostic.
                 env["TAOS_EMBEDDING_URL"] = f"{proxy.url}/v1/embeddings"
+                # Stable alias the host LiteLLM routes to whichever
+                # concrete embedding model the backends actually have
+                # loaded. Agents pick this up and pass it as the `model`
+                # field of their embedding requests.
+                env["TAOS_EMBEDDING_MODEL"] = EMBEDDING_ALIAS
 
     # User memory (optional, permission-gated)
     if req.can_read_user_memory:

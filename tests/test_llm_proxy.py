@@ -1,5 +1,12 @@
+from unittest.mock import patch
+
 import pytest
-from tinyagentos.llm_proxy import generate_litellm_config, LLMProxy
+from tinyagentos.llm_proxy import (
+    EMBEDDING_ALIAS,
+    _is_embedding_model,
+    generate_litellm_config,
+    LLMProxy,
+)
 
 
 class TestConfigGeneration:
@@ -35,6 +42,83 @@ class TestConfigGeneration:
         # rkllama is ollama-compatible
         model_param = config["model_list"][0]["litellm_params"]["model"]
         assert "ollama" in model_param.lower() or config["model_list"][0]["litellm_params"].get("api_base")
+
+
+class TestEmbeddingDiscovery:
+    def test_classifier_recognises_common_embedding_names(self):
+        assert _is_embedding_model("qwen3-embedding-0.6b")
+        assert _is_embedding_model("bge-large-en-v1.5")
+        assert _is_embedding_model("nomic-embed-text-v1.5")
+        assert _is_embedding_model("mxbai-embed-large")
+
+    def test_classifier_rejects_chat_and_reranker_models(self):
+        assert not _is_embedding_model("llama3-8b")
+        assert not _is_embedding_model("qwen3-4b-q4")
+        # Rerankers include the word "embed" sometimes, but we skip
+        # rerankers explicitly because LiteLLM doesn't front them yet.
+        assert not _is_embedding_model("qwen3-reranker-0.6b")
+        assert not _is_embedding_model("bge-reranker-v2-m3")
+
+    def test_embedding_model_registered_with_stable_alias(self):
+        """First embedding model discovered claims the stable taos-embedding-default
+        alias so the deployer can inject one name for every install."""
+        backends = [
+            {"name": "npu", "type": "rkllama", "url": "http://localhost:8080", "priority": 1},
+        ]
+        with patch(
+            "tinyagentos.llm_proxy._discover_ollama_models",
+            return_value=["qwen3-4b-chat", "qwen3-embedding-0.6b", "qwen3-reranker-0.6b"],
+        ):
+            config = generate_litellm_config(backends)
+
+        names = [e["model_name"] for e in config["model_list"]]
+        # Chat default entry still present
+        assert "default" in names
+        # Embedding model registered under its concrete name
+        assert "qwen3-embedding-0.6b" in names
+        # ...and under the stable alias the deployer injects
+        assert EMBEDDING_ALIAS in names
+        # Reranker is skipped
+        assert "qwen3-reranker-0.6b" not in names
+
+        # The alias and concrete entries must both be marked as embedding
+        alias_entry = next(e for e in config["model_list"] if e["model_name"] == EMBEDDING_ALIAS)
+        assert alias_entry.get("model_info", {}).get("mode") == "embedding"
+        assert alias_entry["litellm_params"]["api_base"] == "http://localhost:8080"
+        assert alias_entry["litellm_params"]["model"].startswith("ollama/")
+
+    def test_no_embedding_entries_when_probe_empty(self):
+        """Backend offline / probe fails → degrade gracefully with chat only."""
+        backends = [
+            {"name": "npu", "type": "rkllama", "url": "http://localhost:8080", "priority": 1},
+        ]
+        with patch("tinyagentos.llm_proxy._discover_ollama_models", return_value=[]):
+            config = generate_litellm_config(backends)
+        names = [e["model_name"] for e in config["model_list"]]
+        assert names == ["default"]
+
+    def test_first_backend_claims_alias_only_once(self):
+        """Multiple backends each serving embedding models should not fight for
+        the alias — first-sorted-by-priority wins, others still register under
+        their concrete names so clients can pin a specific backend."""
+        backends = [
+            {"name": "a", "type": "rkllama", "url": "http://a:8080", "priority": 1},
+            {"name": "b", "type": "ollama", "url": "http://b:11434", "priority": 2},
+        ]
+        def _fake_probe(url, timeout=2.0):
+            return ["bge-small-en-v1.5"] if "a" in url else ["nomic-embed-text-v1.5"]
+
+        with patch("tinyagentos.llm_proxy._discover_ollama_models", side_effect=_fake_probe):
+            config = generate_litellm_config(backends)
+
+        alias_entries = [e for e in config["model_list"] if e["model_name"] == EMBEDDING_ALIAS]
+        assert len(alias_entries) == 1
+        # Priority-1 backend ("a") won the alias
+        assert alias_entries[0]["litellm_params"]["api_base"] == "http://a:8080"
+        # Both concrete embedding names are still registered
+        names = [e["model_name"] for e in config["model_list"]]
+        assert "bge-small-en-v1.5" in names
+        assert "nomic-embed-text-v1.5" in names
 
 
 class TestLLMProxy:
