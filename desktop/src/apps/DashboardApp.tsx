@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   Activity, Cpu, MemoryStick, Zap, HardDrive, Thermometer, Network, CircuitBoard,
-  Gauge, Layers, RefreshCw, Loader2,
+  Gauge, Layers, RefreshCw, Loader2, Server,
 } from "lucide-react";
 import { Card, CardContent, Button } from "@/components/ui";
+import type { ClusterWorker } from "@/lib/cluster";
+import { workerStatus, workerHardwareSummary, workerShortIp, STATUS_PILL_CLASS, STATUS_LABEL } from "@/lib/cluster";
 
 interface ActivityData {
   timestamp: number;
@@ -135,6 +137,7 @@ export function DashboardApp({ windowId: _windowId }: { windowId: string }) {
   const [loadedModels, setLoadedModels] = useState<LoadedModel[]>([]);
   const [schedulerStats, setSchedulerStats] = useState<SchedulerStats | null>(null);
   const [schedulerTasks, setSchedulerTasks] = useState<SchedulerTask[]>([]);
+  const [clusterWorkers, setClusterWorkers] = useState<ClusterWorker[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -168,11 +171,29 @@ export function DashboardApp({ windowId: _windowId }: { windowId: string }) {
     setLoading(false);
   }, []);
 
+  const fetchCluster = useCallback(async () => {
+    try {
+      const res = await fetch("/api/cluster/workers", { headers: { Accept: "application/json" } });
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json)) setClusterWorkers(json as ClusterWorker[]);
+      }
+    } catch {
+      /* ignore — cluster is best-effort */
+    }
+  }, []);
+
   useEffect(() => {
     fetchData();
     const interval = setInterval(fetchData, 2000);
     return () => clearInterval(interval);
   }, [fetchData]);
+
+  useEffect(() => {
+    fetchCluster();
+    const interval = setInterval(fetchCluster, 10_000);
+    return () => clearInterval(interval);
+  }, [fetchCluster]);
 
   if (loading && !data) {
     return (
@@ -449,6 +470,111 @@ export function DashboardApp({ windowId: _windowId }: { windowId: string }) {
             </CardContent>
           </Card>
         )}
+
+        {/* Cluster workers */}
+        <Card className="col-span-12 p-4">
+          <CardContent className="p-0">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Server size={14} className="text-teal-400" />
+                <h3 className="text-xs font-semibold text-shell-text">
+                  Cluster ({clusterWorkers.length} worker{clusterWorkers.length === 1 ? "" : "s"})
+                </h3>
+              </div>
+              <Button variant="ghost" size="icon" onClick={fetchCluster} aria-label="Refresh cluster workers">
+                <RefreshCw size={12} />
+              </Button>
+            </div>
+            {clusterWorkers.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-2 py-6 text-center">
+                <p className="text-[11px] text-shell-text-tertiary">
+                  No workers registered yet.
+                </p>
+                <a
+                  href="https://github.com/jaylfc/tinyagentos#distributed-compute-cluster"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[11px] px-3 py-1.5 rounded-md bg-white/5 border border-white/10 text-shell-text-secondary hover:bg-white/10 transition-colors"
+                  aria-label="How to add a worker (opens docs in new tab)"
+                >
+                  How to add a worker
+                </a>
+              </div>
+            ) : (
+              <div
+                className="grid grid-cols-1 md:grid-cols-2 gap-2"
+                role="list"
+                aria-label="Cluster workers"
+              >
+                {clusterWorkers.map((w) => {
+                  const status = workerStatus(w);
+                  const backends = w.backends ?? [];
+                  const capabilities = w.capabilities ?? [];
+                  return (
+                    <div
+                      key={w.name}
+                      role="listitem"
+                      className="p-2.5 rounded-lg bg-white/[0.02] border border-white/5"
+                    >
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="text-[11px] font-semibold text-shell-text truncate">
+                            {w.name}
+                          </span>
+                          <span className="text-[10px] text-shell-text-tertiary">
+                            {"\u00b7"} {workerShortIp(w)}
+                          </span>
+                        </div>
+                        <span
+                          className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold border ${STATUS_PILL_CLASS[status]}`}
+                          aria-label={`Status: ${STATUS_LABEL[status]}`}
+                        >
+                          {STATUS_LABEL[status]}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-shell-text-tertiary truncate">
+                        {workerHardwareSummary(w)}
+                      </div>
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        {backends.length === 0 ? (
+                          <span className="text-[9px] text-shell-text-tertiary italic">
+                            No backends loaded
+                          </span>
+                        ) : (
+                          backends.map((b, i) => (
+                            <span
+                              key={`${w.name}-b-${i}`}
+                              className="text-[9px] px-1.5 py-0.5 rounded-full bg-sky-500/15 text-sky-200 font-medium"
+                              title={b.type ?? b.name ?? ""}
+                            >
+                              {b.name ?? b.type ?? "backend"}
+                            </span>
+                          ))
+                        )}
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {capabilities.length === 0 ? (
+                          <span className="text-[9px] text-shell-text-tertiary italic">
+                            No capabilities yet
+                          </span>
+                        ) : (
+                          capabilities.map((c) => (
+                            <span
+                              key={`${w.name}-c-${c}`}
+                              className="text-[9px] px-1.5 py-0.5 rounded-full bg-violet-500/15 text-violet-200 font-medium"
+                            >
+                              {c}
+                            </span>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Resource scheduler */}
         {schedulerStats && (
