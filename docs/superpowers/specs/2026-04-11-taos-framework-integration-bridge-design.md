@@ -1420,6 +1420,50 @@ The framework adapter design is **done** when:
   uses what's there, never re-installs on top, and only adds new
   things in its own corner of the disk.
 
+- **Network model placement (Phase 1.5).** Today, deploying an agent
+  that needs a model which isn't present on the chosen worker fails
+  at scheduling time. The Models app and deploy wizard will start
+  showing models from every node in the cluster (controller + all
+  workers + cloud providers) as a single catalog, tagged with the
+  host that holds each copy. Once that read-side aggregation is in,
+  the write side is: "copy the model from a node that has it to the
+  node that needs it, on demand, when the user deploys."
+
+  Transport options, in priority order:
+
+  1. **BitTorrent / peer-to-peer**, as the default. The same
+     mirror-policy.md flow TAOS already uses for Rockchip artifacts
+     (SHA256-verified) generalises cleanly — every node that has a
+     copy of a model seeds it, the destination node joins the swarm
+     and pulls from all available peers. This matters when nodes
+     are WAN-remote (home server → friend's box, or a small office
+     mesh) because a single HTTP pull from one holder bottlenecks
+     on that holder's upstream. A swarm scales with the number of
+     nodes that already have the model.
+  2. **Plain HTTP range-GET** as LAN fallback, for the common case
+     where there's exactly one holder and one requester on the same
+     subnet. No swarm overhead, no tracker, just `curl -C -` with
+     SHA256 verification at the end.
+  3. **Out-of-band sneakernet / manual copy** as the "I already have
+     this model on a USB drive" escape hatch — the user points the
+     worker at a local path and TAOS hashes + registers it.
+
+  Constraints:
+
+  - Every model transfer is SHA256-verified against the source
+    node's manifest before the destination marks it available.
+    No silent corruption, no "it downloaded but won't load."
+  - Transfers are visible in the Cluster app as first-class jobs
+    with progress, ETA, source/destination nodes, and a cancel
+    button. The user should never wonder "why is my deploy hanging."
+  - The worker reports free disk before accepting a transfer; the
+    scheduler refuses placement on a node that can't fit the model
+    plus headroom for the actual inference workload.
+  - No automatic background replication. Transfers happen on
+    deploy, explicitly, per user action. We are not building a
+    distributed filesystem; we're building on-demand model
+    placement.
+
 ## Open questions for after approval
 
 - **Bridge service language.** Python for Phase 1. Rust as a candidate
