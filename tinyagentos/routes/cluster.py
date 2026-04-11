@@ -21,6 +21,9 @@ class WorkerRegister(BaseModel):
     models: list[str] = []
     capabilities: list[str] = []
     platform: str = ""
+    # KV quant support advertised at registration time.  Defaults to ["fp16"]
+    # so legacy workers that don't send this field still get a sensible value.
+    kv_cache_quant_support: list[str] = ["fp16"]
 
 
 class HeartbeatBody(BaseModel):
@@ -31,6 +34,11 @@ class HeartbeatBody(BaseModel):
     # worker agents that only report load + models still validate.
     backends: list[dict] | None = None
     capabilities: list[str] | None = None
+    # KV quant support, forwarded from the worker's detect_kv_quant_support()
+    # result.  None means the heartbeat came from an old worker agent that
+    # doesn't know about this field; the controller leaves the existing value
+    # unchanged rather than overwriting with a default.
+    kv_cache_quant_support: list[str] | None = None
 
 
 class RouteRequest(BaseModel):
@@ -93,6 +101,7 @@ async def register_worker(request: Request, body: WorkerRegister):
         models=body.models,
         capabilities=body.capabilities,
         platform=body.platform,
+        kv_cache_quant_support=body.kv_cache_quant_support,
     )
     await cluster.register_worker(info)
     return {"status": "registered", "name": body.name}
@@ -107,6 +116,7 @@ async def worker_heartbeat(request: Request, body: HeartbeatBody):
         models=body.models,
         backends=body.backends,
         capabilities=body.capabilities,
+        kv_cache_quant_support=body.kv_cache_quant_support,
     )
     if not ok:
         return JSONResponse({"error": "Worker not registered"}, status_code=404)
@@ -133,6 +143,22 @@ async def list_capabilities(request: Request):
         for cap in w.capabilities:
             caps.setdefault(cap, []).append(w.name)
     return caps
+
+
+@router.get("/api/cluster/kv-quant-options")
+async def kv_quant_options(request: Request):
+    """Return the set-union of KV cache quant types across all online workers.
+
+    The deploy wizard fetches this to decide whether to show a KV quant
+    dropdown.  When only ["fp16"] is returned, the wizard shows nothing — no
+    dead toggle, no greyed-out control.  As soon as any online worker
+    advertises a second type the dropdown materialises automatically.
+
+    Response shape: {"options": ["fp16", "turboquant-k3v2", ...]}
+    """
+    cluster = request.app.state.cluster_manager
+    options = cluster.kv_quant_union()
+    return {"options": options}
 
 
 @router.get("/api/cluster/backends")

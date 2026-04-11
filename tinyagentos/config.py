@@ -92,10 +92,10 @@ def _default_on_worker_failure(agent: dict) -> str:
 
 
 def normalize_agent(agent: dict) -> dict:
-    """Apply defaults for fields added in the worker-failure-handling update.
+    """Apply defaults for fields added in successive updates.
 
-    Safe to call on old config dicts that predate these fields.  Mutates
-    and returns the same dict so callers can do::
+    Safe to call on old config dicts that predate any of these fields.
+    Mutates and returns the same dict so callers can do::
 
         normalize_agent(agent_dict)
 
@@ -109,6 +109,18 @@ def normalize_agent(agent: dict) -> dict:
         agent["on_worker_failure"] = _default_on_worker_failure(agent)
     if "paused" not in agent:
         agent["paused"] = False
+    # KV cache quantization mode for this agent's inference calls.  Defaults
+    # to "fp16" so old configs and new configs with no explicit preference
+    # behave identically.  The value is intentionally a free-form string —
+    # the worker capability probe is the source of truth for valid values, not
+    # a hardcoded allowlist here.
+    #
+    # TODO: thread this field through to the inference call path once the
+    # first backend with real KV quant support lands.  The call site is in
+    # tinyagentos/clients/ (or wherever the per-agent LLM client is
+    # constructed).  Track in #144.
+    if "kv_cache_quant" not in agent:
+        agent["kv_cache_quant"] = "fp16"
     return agent
 
 def save_config(config: AppConfig, path: Path) -> None:

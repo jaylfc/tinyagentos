@@ -73,6 +73,21 @@ class ClusterManager:
                 level="info",
             )
 
+    def kv_quant_union(self) -> list[str]:
+        """Return the set-union of KV cache quant types across all online workers.
+
+        Always includes "fp16" as the baseline.  If every online worker only
+        supports fp16 the result is ["fp16"].  The deploy wizard uses this to
+        decide whether to show the KV quant dropdown at all — if the list has
+        only one entry the control must not be rendered.
+        """
+        types: set[str] = {"fp16"}
+        for w in self._workers.values():
+            if w.status != "online":
+                continue
+            types.update(w.kv_cache_quant_support or ["fp16"])
+        return sorted(types)
+
     def heartbeat(
         self,
         name: str,
@@ -80,6 +95,7 @@ class ClusterManager:
         models: list[str] | None = None,
         backends: list[dict] | None = None,
         capabilities: list[str] | None = None,
+        kv_cache_quant_support: list[str] | None = None,
     ) -> bool:
         """Accept a worker heartbeat.
 
@@ -109,6 +125,8 @@ class ClusterManager:
             worker.models = flat_models
         if capabilities is not None:
             worker.capabilities = list(capabilities)
+        if kv_cache_quant_support is not None:
+            worker.kv_cache_quant_support = list(kv_cache_quant_support)
         return True
 
     def unregister_worker(self, name: str) -> bool:

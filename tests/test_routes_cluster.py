@@ -102,6 +102,98 @@ async def test_capabilities_api(client):
 
 
 @pytest.mark.asyncio
+async def test_worker_registration_includes_kv_quant(client):
+    body = {
+        "name": "quant-worker",
+        "url": "http://10.0.0.9:9000",
+        "kv_cache_quant_support": ["fp16", "turboquant-k3v2"],
+    }
+    resp = await client.post("/api/cluster/workers", json=body)
+    assert resp.status_code == 200
+
+    resp = await client.get("/api/cluster/workers")
+    workers = resp.json()
+    assert len(workers) == 1
+    assert workers[0]["kv_cache_quant_support"] == ["fp16", "turboquant-k3v2"]
+
+
+@pytest.mark.asyncio
+async def test_worker_registration_kv_quant_defaults_fp16(client):
+    """A worker that doesn't send kv_cache_quant_support gets ["fp16"] by default."""
+    body = {
+        "name": "legacy-worker",
+        "url": "http://10.0.0.8:9000",
+        # no kv_cache_quant_support field
+    }
+    resp = await client.post("/api/cluster/workers", json=body)
+    assert resp.status_code == 200
+
+    resp = await client.get("/api/cluster/workers")
+    workers = resp.json()
+    assert workers[0]["kv_cache_quant_support"] == ["fp16"]
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_updates_kv_quant(client):
+    await client.post("/api/cluster/workers", json={
+        "name": "kv-worker",
+        "url": "http://10.0.0.7:9000",
+        "kv_cache_quant_support": ["fp16"],
+    })
+
+    resp = await client.post("/api/cluster/heartbeat", json={
+        "name": "kv-worker",
+        "load": 0.1,
+        "kv_cache_quant_support": ["fp16", "turboquant-k3v2"],
+    })
+    assert resp.status_code == 200
+
+    resp = await client.get("/api/cluster/workers")
+    w = resp.json()[0]
+    assert "turboquant-k3v2" in w["kv_cache_quant_support"]
+
+
+@pytest.mark.asyncio
+async def test_kv_quant_options_empty_cluster(client):
+    resp = await client.get("/api/cluster/kv-quant-options")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "options" in data
+    assert data["options"] == ["fp16"]
+
+
+@pytest.mark.asyncio
+async def test_kv_quant_options_all_fp16(client):
+    for i in range(2):
+        await client.post("/api/cluster/workers", json={
+            "name": f"w{i}",
+            "url": f"http://10.0.1.{i}:9000",
+            "kv_cache_quant_support": ["fp16"],
+        })
+    resp = await client.get("/api/cluster/kv-quant-options")
+    data = resp.json()
+    assert data["options"] == ["fp16"]
+
+
+@pytest.mark.asyncio
+async def test_kv_quant_options_mixed_cluster(client):
+    await client.post("/api/cluster/workers", json={
+        "name": "plain",
+        "url": "http://10.0.2.1:9000",
+        "kv_cache_quant_support": ["fp16"],
+    })
+    await client.post("/api/cluster/workers", json={
+        "name": "turboquant",
+        "url": "http://10.0.2.2:9000",
+        "kv_cache_quant_support": ["fp16", "turboquant-k3v2"],
+    })
+    resp = await client.get("/api/cluster/kv-quant-options")
+    data = resp.json()
+    assert "fp16" in data["options"]
+    assert "turboquant-k3v2" in data["options"]
+
+
+@pytest.mark.asyncio
 async def test_cluster_page_shows_workers(client):
     await client.post("/api/cluster/workers", json={
         "name": "dashboard-worker", "url": "http://10.0.0.5:9000",

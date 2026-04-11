@@ -51,6 +51,7 @@ class WorkerAgent:
                 models = await self._probe_models(client, backend_type, base_url)
                 if models is None:
                     continue  # backend not running here
+                kv_quant = await self._probe_kv_quant(client, backend_type, base_url)
                 backends.append({
                     "name": f"{backend_type}@{base_url}",
                     "type": backend_type,
@@ -58,8 +59,58 @@ class WorkerAgent:
                     "capabilities": sorted(BACKEND_CAPABILITIES.get(backend_type, set())),
                     "models": models,
                     "status": "ok",
+                    # Per-backend KV quant support, used by the worker to build
+                    # its cluster-level kv_cache_quant_support advertisement.
+                    "kv_quant_support": kv_quant,
                 })
         return backends
+
+    async def _probe_kv_quant(
+        self, client: httpx.AsyncClient, backend_type: str, base_url: str
+    ) -> list[str]:
+        """Return the KV cache quantization types available on a backend.
+
+        The probe is best-effort: any network error or unexpected response
+        silently returns ["fp16"] so the cluster still gets a usable default.
+        Image-generation backends (sd-cpp, rknn-sd) return an empty list
+        because KV quant is not applicable to diffusion pipelines.
+
+        When a backend (e.g. a future vLLM build with TurboQuant merged) starts
+        reporting additional types, they appear here and flow up to the cluster-
+        wide union without any other code changes.
+
+        TODO: once vLLM upstream ships kv_cache_dtype support, replace the
+        static ["fp16"] stub below with a live probe of GET /v1/info or a
+        dedicated endpoint that the TurboQuant fork exposes.  Track in #144.
+        """
+        try:
+            if backend_type in ("sd-cpp", "rknn-sd"):
+                # Image-gen backends — KV quant is not applicable.
+                return []
+            if backend_type == "vllm":
+                # vLLM exposes kv_cache_dtype in its model config.  Upstream
+                # does not yet have a stable endpoint for enumerating supported
+                # types; the TurboQuant fork will add one when it lands.  For
+                # now we return ["fp16"] as the safe default.  When the
+                # /v1/kv-quant-options or equivalent endpoint lands, replace
+                # this block with a live GET and parse the response.
+                return ["fp16"]
+            if backend_type == "ollama":
+                # Ollama wraps llama.cpp and does not yet expose KV quant
+                # options externally.  Inherits whatever llama.cpp ships.
+                return ["fp16"]
+            if backend_type == "llama-cpp":
+                # llama.cpp has its own Q-type scheme; TurboQuant-style KV
+                # quantization has not landed upstream as of 2026-04.
+                return ["fp16"]
+            if backend_type in ("rkllama", "rknn-sd"):
+                # rknn-toolkit does not expose KV cache quantization at the
+                # Python API level.  Return the safe default.
+                return ["fp16"]
+            # Unknown backend type — default safe.
+            return ["fp16"]
+        except Exception:
+            return ["fp16"]
 
     async def _probe_models(
         self, client: httpx.AsyncClient, backend_type: str, base_url: str
@@ -105,6 +156,23 @@ class WorkerAgent:
             ]
         except Exception:
             return None
+
+    def detect_kv_quant_support(self, backends: list[dict]) -> list[str]:
+        """Union of KV cache quant types across all detected backends.
+
+        Image-gen backends return [] (not applicable) and are skipped.  All
+        LLM-capable backends contribute at minimum ["fp16"].  The result is
+        sorted for stable serialisation.
+        """
+        quant_types: set[str] = set()
+        for b in backends:
+            per_backend = b.get("kv_quant_support")
+            if per_backend is not None:
+                quant_types.update(per_backend)
+        # Always include fp16 as the baseline — a worker with no LLM backends
+        # at all still defaults to fp16 for protocol compatibility.
+        quant_types.add("fp16")
+        return sorted(quant_types)
 
     def get_container_runtime(self) -> str | None:
         """Detect available container runtime (docker or podman). Returns None if neither found."""
@@ -164,6 +232,7 @@ class WorkerAgent:
         hw = detect_hardware()
         backends = await self.detect_backends()
         caps = self.detect_capabilities(backends)
+        kv_quant = self.detect_kv_quant_support(backends)
 
         # Find the actual backend URL to use (first discovered)
         worker_url = backends[0]["url"] if backends else self.get_worker_url()
@@ -176,6 +245,7 @@ class WorkerAgent:
             "capabilities": caps,
             "platform": platform.system().lower(),
             "models": [],
+            "kv_cache_quant_support": kv_quant,
         }
 
         try:
@@ -206,6 +276,7 @@ class WorkerAgent:
             load = psutil.cpu_percent() / 100.0
             backends = await self.detect_backends()
             caps = self.detect_capabilities(backends)
+            kv_quant = self.detect_kv_quant_support(backends)
             async with httpx.AsyncClient(timeout=5) as client:
                 resp = await client.post(
                     f"{self.controller_url}/api/cluster/heartbeat",
@@ -214,6 +285,7 @@ class WorkerAgent:
                         "load": load,
                         "backends": backends,
                         "capabilities": caps,
+                        "kv_cache_quant_support": kv_quant,
                     },
                 )
                 return resp.status_code

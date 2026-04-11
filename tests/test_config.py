@@ -179,6 +179,83 @@ class TestWorkerFailureDefaults:
         normalize_agent(agent)
         assert agent == first
 
+class TestKvCacheQuantField:
+    def test_old_config_gets_kv_quant_default(self, tmp_path):
+        """Old config without kv_cache_quant loads with default 'fp16'."""
+        old_config = {
+            "server": {"host": "0.0.0.0", "port": 6969},
+            "backends": [],
+            "qmd": {"url": "http://localhost:7832"},
+            "agents": [{"name": "a", "host": "h", "color": "#abc"}],
+            "metrics": {"poll_interval": 30, "retention_days": 30},
+        }
+        p = tmp_path / "config.yaml"
+        p.write_text(yaml.dump(old_config))
+        config = load_config(p)
+        assert config.agents[0]["kv_cache_quant"] == "fp16"
+
+    def test_explicit_value_preserved(self, tmp_path):
+        cfg_data = {
+            "server": {"host": "0.0.0.0", "port": 6969},
+            "backends": [],
+            "qmd": {"url": "http://localhost:7832"},
+            "agents": [{
+                "name": "a",
+                "host": "h",
+                "color": "#abc",
+                "kv_cache_quant": "turboquant-k3v2",
+            }],
+            "metrics": {"poll_interval": 30, "retention_days": 30},
+        }
+        p = tmp_path / "config.yaml"
+        p.write_text(yaml.dump(cfg_data))
+        config = load_config(p)
+        assert config.agents[0]["kv_cache_quant"] == "turboquant-k3v2"
+
+    def test_roundtrip(self, tmp_path):
+        p = tmp_path / "config.yaml"
+        config = AppConfig(
+            agents=[{
+                "name": "kv-agent",
+                "host": "10.0.0.1",
+                "color": "#fff",
+                "kv_cache_quant": "turboquant-k3v2",
+            }],
+            config_path=p,
+        )
+        save_config(config, p)
+        reloaded = load_config(p)
+        assert reloaded.agents[0]["kv_cache_quant"] == "turboquant-k3v2"
+
+    def test_normalize_agent_idempotent_with_kv_quant(self):
+        agent = {"name": "x", "host": "h", "color": "#fff", "kv_cache_quant": "fp16"}
+        normalize_agent(agent)
+        first = dict(agent)
+        normalize_agent(agent)
+        assert agent == first
+
+    def test_any_string_accepted_no_validation(self, tmp_path):
+        """validate_config does not restrict kv_cache_quant to a fixed list."""
+        cfg_data = {
+            "server": {"host": "0.0.0.0", "port": 6969},
+            "backends": [],
+            "qmd": {"url": "http://localhost:7832"},
+            "agents": [{
+                "name": "future-agent",
+                "host": "10.0.0.1",
+                "color": "#fff",
+                "kv_cache_quant": "some-future-scheme-v99",
+            }],
+            "metrics": {"poll_interval": 30, "retention_days": 30},
+        }
+        p = tmp_path / "config.yaml"
+        p.write_text(yaml.dump(cfg_data))
+        config = load_config(p)
+        errors = validate_config(config)
+        # No error for an unknown KV quant value — worker probe is source of truth.
+        assert not any("kv_cache_quant" in e for e in errors)
+
+
     def test_paused_field_defaults_to_false(self, tmp_path):
         old_config = {
             "server": {"host": "0.0.0.0", "port": 6969},
