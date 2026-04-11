@@ -21,6 +21,7 @@ from tinyagentos.scheduler.types import (
 from tinyagentos.scheduler.backend_catalog import BackendCatalog, BackendEntry
 from tinyagentos.scheduler.resource import Resource
 from tinyagentos.scheduler.scheduler import Scheduler
+from tinyagentos.scheduler.score_cache import ScoreCache
 from tinyagentos.scheduler.task_scheduler import TaskScheduler
 
 __all__ = [
@@ -33,6 +34,7 @@ __all__ = [
     "ResourceRef",
     "ResourceSignature",
     "Scheduler",
+    "ScoreCache",
     "Task",
     "TaskRecord",
     "TaskScheduler",

@@ -25,7 +25,7 @@ from tinyagentos.notifications import NotificationStore
 from tinyagentos.qmd_client import QmdClient
 from tinyagentos.backend_adapters import check_backend_health
 from tinyagentos.benchmark import BenchmarkStore
-from tinyagentos.scheduler import BackendCatalog, TaskScheduler
+from tinyagentos.scheduler import BackendCatalog, ScoreCache, TaskScheduler
 from tinyagentos.scheduler.discovery import build_scheduler as build_resource_scheduler
 from tinyagentos.relationships import RelationshipManager
 from tinyagentos.secrets import SecretsStore
@@ -83,6 +83,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     channel_store = ChannelStore(data_dir / "channels.db")
     scheduler = TaskScheduler(data_dir / "scheduler.db")
     benchmark_store = BenchmarkStore(data_dir / "benchmarks.db")
+    score_cache = ScoreCache(benchmark_store, poll_interval_seconds=15.0)
 
     async def _probe_backend(backend: dict) -> dict:
         return await check_backend_health(http_client, backend)
@@ -184,6 +185,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.installed_apps = installed_apps
         app.state.skills = skills
         app.state.benchmark_store = benchmark_store
+        app.state.score_cache = score_cache
         # Optionally start LiteLLM proxy (non-fatal if not installed)
         try:
             await llm_proxy.start(config.backends)
@@ -205,11 +207,23 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
             logger.exception("backend catalog failed to start — routes will fall back to static config")
         app.state.backend_catalog = backend_catalog
 
+        # Start the score cache — bridges the async benchmark store to the
+        # scheduler's sync admission path via a 15s polling loop.
+        try:
+            await score_cache.start()
+        except Exception:
+            logger.exception("score cache failed to start — scheduler will route by tier only")
+
         # Build the resource scheduler from hardware profile + live catalog.
         # Phase 1: local resources only (NPU + CPU), capability-based routing
         # with fallback and priority. Cluster-aware dispatch is Phase 3.
         try:
-            resource_scheduler = build_resource_scheduler(hardware_profile, backend_catalog)
+            resource_scheduler = build_resource_scheduler(
+                hardware_profile,
+                backend_catalog,
+                benchmark_store=benchmark_store,
+                score_cache=score_cache,
+            )
             app.state.resource_scheduler = resource_scheduler
             logger.info(
                 "resource scheduler ready: %s",
@@ -233,6 +247,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         adapter_manager.stop_all()
         for c in list(getattr(app.state, "channel_hub_connectors", {}).values()):
             await c.stop()
+        await score_cache.stop()
         await backend_catalog.stop()
         await cluster_manager.stop()
         llm_proxy.stop()

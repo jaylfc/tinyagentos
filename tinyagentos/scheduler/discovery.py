@@ -16,6 +16,7 @@ from typing import Optional
 from tinyagentos.scheduler.backend_catalog import BackendCatalog
 from tinyagentos.scheduler.resource import Resource, Tier
 from tinyagentos.scheduler.scheduler import Scheduler
+from tinyagentos.scheduler.score_cache import ScoreCache
 from tinyagentos.scheduler.types import ResourceSignature
 
 
@@ -91,6 +92,7 @@ def build_scheduler(
     hardware_profile,
     catalog: BackendCatalog,
     benchmark_store=None,
+    score_cache: ScoreCache | None = None,
 ) -> Scheduler:
     """Instantiate a Scheduler and register the resources the live catalog
     currently supports.
@@ -103,28 +105,18 @@ def build_scheduler(
     scheduler = Scheduler()
 
     def _make_score_lookup(resource_name: str):
-        """Return a score_lookup callable bound to this resource name.
+        """Return a sync score_lookup callable for this resource name.
 
-        Pulls the latest benchmark row for (worker_id=<resource_name>,
-        capability) from the benchmark store if one is wired up.
-        Returns None if there's no store or no record for that pairing
-        yet. Scheduler falls back to tier-only routing in that case.
+        Reads from the ScoreCache if one is wired up — the cache is
+        populated by a background polling task that pulls latest rows
+        from the benchmark store every ~15s, keeping the scheduler's
+        admission path sync-friendly without losing real data.
         """
-        if benchmark_store is None:
+        if score_cache is None:
             return None
 
         def _lookup(capability: str, model):
-            import asyncio
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                return None
-            # Schedule a lookup — but this is sync from the scheduler's
-            # admission path. We sidestep by reading the most recent
-            # cached value. Phase 2: add an in-memory LRU so this is truly
-            # O(1) and async-free. For Phase 1 we only read if called
-            # from an already-async context via create_task.
-            return None  # Phase 2: actual async read from benchmark_store
+            return score_cache.score(resource_name, capability)
 
         return _lookup
 
