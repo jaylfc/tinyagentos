@@ -64,12 +64,24 @@ Framework-agnostic skill system with 7 default skills — memory_search, file_re
 Combine ANY device into one AI compute mesh — desktops, laptops, SBCs, even phones and tablets. A gaming PC handles large models, a Mac runs MLX inference, a Pi handles embeddings, an old Android phone contributes from a drawer. Cross-platform worker apps connect from the system tray (Windows, macOS, Linux) or via Termux (Android).
 
 ```bash
-# Desktop — system tray worker app
+# Linux / macOS — one-line worker install (auto-detects headless,
+# installs as a system service when run with sudo or as a user
+# service otherwise; works on a fresh Debian install or your existing box)
+curl -fsSL https://raw.githubusercontent.com/jaylfc/tinyagentos/master/scripts/install-worker.sh | sudo bash -s -- http://your-server:6969
+
+# Desktop — system tray worker app (interactive, with GUI tray icon)
 tinyagentos-worker http://your-server:6969
 
 # Android — one-line Termux setup
 curl -sL https://raw.githubusercontent.com/jaylfc/tinyagentos/master/tinyagentos/worker/android_setup.sh | bash
 ```
+
+**Sudo and freshness.** The Linux/macOS worker installer is designed to run on **either a fresh Debian install or your existing system** — no clean slate required. It installs cleanly on Debian, Ubuntu, Fedora, Arch, Alpine, and macOS.
+
+- **Run with `sudo`** (the recommended path) and the worker is installed as a **system-level systemd unit** at `/etc/systemd/system/tinyagentos-worker.service`. The service runs as your user (via `User=` in the unit), survives logout, auto-starts at boot, and survives container / SBC reboots without an active login session.
+- **Run without sudo** and the script falls back to a **user-mode systemd unit** under `~/.config/systemd/user/`. Linger is enabled automatically so the user manager keeps the worker running across logouts. This path is for environments where sudo is genuinely unavailable (corporate machines, shared hosts).
+
+A truly clean Debian install is the smoothest experience because nothing else is competing for ports or sysfs paths, but the script is hardened against common existing-system gotchas: it detects headless environments and skips the desktop tray, it gracefully handles unreadable `/sys/kernel/debug` paths on hosts that mount debugfs but restrict it, and it scopes its writes to `~/.local/share/tinyagentos-worker/` plus the systemd unit.
 
 ### Backend-Driven Discovery (Core Principle)
 The source of truth for "what can I run right now?" is the live state of
@@ -266,6 +278,82 @@ Worker Apps (Windows / macOS / Linux)
 ## Resource Overhead
 
 Platform overhead: **~345 MB RAM** (without models or agents)
+
+## What the install creates on your box
+
+Full transparency on every file, service, user, and port the installers touch. Nothing is hidden behind a vendored binary; everything is plain Python, plain systemd, plain shell.
+
+### Controller install (`scripts/install-server.sh`)
+
+| Where | What |
+|---|---|
+| `/etc/systemd/system/tinyagentos.service` | Main controller systemd unit. Runs uvicorn on port 6969. |
+| `/etc/systemd/system/qmd.service` | Shared model provider (embed / rerank / query expansion) on port 7832. Backed by rkllama on RK3588 boards or local node-llama-cpp elsewhere. |
+| `/etc/systemd/system/tinyagentos-sdcpp.service` | (RK3588 only) CPU image generation backend. |
+| `/etc/systemd/system/tinyagentos-rknn-sd.service` | (RK3588 only) NPU image generation backend. |
+| `/home/<user>/tinyagentos/` | The repo checkout. All code, all configs. |
+| `/home/<user>/tinyagentos/.venv/` | Python virtualenv. All Python deps live here, never `pip install` to system Python. |
+| `/home/<user>/tinyagentos/data/` | All persistent state. **One directory to back up.** Contains: agent state YAMLs, agent memory SQLite indexes, agent workspaces, secrets DB, scheduler history, channel credentials, downloaded models, torrent settings, telemetry opt-in flag. |
+| `/home/<user>/.cache/qmd/index.sqlite` | User memory index — the qmd-managed knowledge base for your personal notes. Per-agent indexes live separately under `data/agent-memory/{name}/index.sqlite`. |
+| Ports listened on | **6969** (controller HTTP API + web UI), **7832** (qmd model + index service), **4000** (LiteLLM proxy, localhost only by default) |
+| OS packages added | python3 + venv + pip, git, curl, ca-certificates, libtorrent-rasterbar (for the model torrent mesh), nginx (only if you ask the installer to set up a reverse proxy) |
+| User accounts created | None. Everything runs as the user who ran the installer. |
+
+### Worker install (`scripts/install-worker.sh`)
+
+| Where | What |
+|---|---|
+| `/etc/systemd/system/tinyagentos-worker.service` | Worker systemd unit (when run with sudo). Connects to the controller URL you passed and registers this machine as a cluster node. Runs as your user via `User=`, not root. |
+| `~/.config/systemd/user/tinyagentos-worker.service` | Same unit as above, but in user-mode (when run without sudo). Linger is enabled automatically. |
+| `~/.local/share/tinyagentos-worker/` | Worker repo checkout. ~150 MB on disk after install. Self-contained venv inside. |
+| `~/.local/share/tinyagentos-worker/.venv/` | Python venv with worker-only deps: httpx, pydantic, psutil, fastapi, uvicorn, pyyaml, pillow, libtorrent. **Does NOT install controller-side deps** (no aiosqlite, no LiteLLM, no scheduler engine). |
+| Ports listened on | None. Workers are pure outbound — they connect TO the controller. |
+| OS packages added | python3, venv, pip, git, curl, ca-certificates, libtorrent (Debian/Ubuntu only — Arch/Fedora/Alpine equivalents on those distros). |
+| User accounts created | None. The worker runs as the user who ran the installer. |
+
+### Verify what's installed
+
+```bash
+# Controller side
+systemctl status tinyagentos qmd
+ls /etc/systemd/system/tinyagentos*.service /etc/systemd/system/qmd.service
+ls ~/tinyagentos/data/
+
+# Worker side (after running install-worker.sh)
+systemctl status tinyagentos-worker
+ls ~/.local/share/tinyagentos-worker/
+```
+
+### Uninstall
+
+```bash
+# Controller
+sudo systemctl disable --now tinyagentos qmd tinyagentos-sdcpp tinyagentos-rknn-sd
+sudo rm /etc/systemd/system/tinyagentos*.service /etc/systemd/system/qmd.service
+sudo systemctl daemon-reload
+# Repo + data are still at ~/tinyagentos — delete with: rm -rf ~/tinyagentos
+
+# Worker
+scripts/uninstall-worker.sh
+# Or manually:
+sudo systemctl disable --now tinyagentos-worker
+sudo rm /etc/systemd/system/tinyagentos-worker.service
+sudo systemctl daemon-reload
+rm -rf ~/.local/share/tinyagentos-worker
+```
+
+### Upgrading a long-running install
+
+```bash
+cd ~/.local/share/tinyagentos-worker  # or ~/tinyagentos for the controller
+git pull
+# Clear stale Python bytecode after upgrades (git pull preserves source mtimes
+# which can confuse Python's .pyc cache invalidation on some setups)
+find . -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
+sudo systemctl restart tinyagentos-worker  # or tinyagentos for the controller
+```
+
+The bytecode cleanup line is belt-and-braces — Python's mtime-based invalidation usually works, but on long-running boxes that have survived many upgrades it occasionally doesn't, and a stale `.pyc` is easy to mistake for a code bug.
 
 ## Service Management
 
