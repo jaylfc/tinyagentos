@@ -1314,6 +1314,38 @@ The framework adapter design is **done** when:
   Scheduler widget shows local-only — the two will merge once Phase
   2 lands.
 
+- **Remote backend installation from the controller UI.** The Phase 1
+  worker installer (`install-worker.sh`) installs only the worker
+  daemon. The worker auto-detects existing backends (Ollama, llama-cpp,
+  vLLM, rkllama, etc.) on common ports and reports them — so a fresh
+  worker on a box that already runs the user's Ollama install picks
+  it up unchanged. What's missing: a "Add backend" flow in the
+  Cluster app that lets the user opt into installing a backend on a
+  worker that doesn't have one.
+
+  Constraints when this lands:
+
+  1. **Detect first, install only on explicit consent.** No backend
+     installs without a user click in the Cluster app.
+  2. **TAOS-installed backends live in their own namespace** under
+     `~/.local/share/tinyagentos-worker/backends/{backend}/`. Models
+     under `~/.local/share/tinyagentos-worker/models/`. Never `/opt`,
+     `/usr`, or any system path.
+  3. **TAOS-installed backends listen on TAOS-specific ports** that
+     don't collide with the user's existing instances of the same
+     backend (Ollama default 11434 → TAOS 21434, llama.cpp default
+     8080 → TAOS 18080, etc).
+  4. **Removing a TAOS-installed backend deletes only the namespaced
+     dir**, never user-installed binaries / models / configs.
+  5. **Existing user backends are first-class citizens** — the worker
+     reports them the same way it reports TAOS-installed ones, and
+     the controller routes to them like any other backend.
+
+  This is the safety story for "user installs the worker daemon on
+  their existing gaming rig that already has Ollama running" — TAOS
+  uses what's there, never re-installs on top, and only adds new
+  things in its own corner of the disk.
+
 ## Open questions for after approval
 
 - **Bridge service language.** Python for Phase 1. Rust as a candidate

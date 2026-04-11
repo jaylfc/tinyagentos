@@ -144,7 +144,13 @@ detect_and_advise_accelerators() {
                 # which is approximate.
                 local nv_driver_branch=""
                 if [[ -r /proc/driver/nvidia/version ]]; then
-                    nv_driver_branch="$(grep -oP 'NVRM version:[^0-9]*\K[0-9]+' /proc/driver/nvidia/version 2>/dev/null | head -1)"
+                    # Match the dotted version like "580.126.18" anywhere
+                    # in the line and grab the major (branch) component.
+                    # The previous [^0-9]* pattern matched "86" out of
+                    # "x86_64" which always appears before the real
+                    # version on the NVRM line. The dotted-version
+                    # anchor is unambiguous.
+                    nv_driver_branch="$(grep -oP '\b\d+(?=\.\d+\.\d+)' /proc/driver/nvidia/version 2>/dev/null | head -1)"
                 fi
                 if command -v apt-get >/dev/null 2>&1 && [[ -n "$nv_driver_branch" ]]; then
                     log "installing nvidia-utils-$nv_driver_branch (matches loaded driver branch — safe userspace only)"

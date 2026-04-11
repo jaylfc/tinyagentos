@@ -62,6 +62,9 @@ interface LoadedModel {
   size_mb?: number | null;
   vram_mb?: number | null;
   ram_mb?: number | null;
+  /** Worker that hosts this model. "controller" for the local TAOS host,
+   *  worker name for cluster-attached workers. */
+  host?: string;
 }
 
 interface SchedulerResource {
@@ -194,6 +197,44 @@ export function DashboardApp({ windowId: _windowId }: { windowId: string }) {
     const interval = setInterval(fetchCluster, 10_000);
     return () => clearInterval(interval);
   }, [fetchCluster]);
+
+  // Union the controller's locally loaded models with whatever the
+  // cluster workers report in their heartbeats. Each entry is tagged
+  // with `host` so the widget can show "on fedora-lxc-test" / "on
+  // controller". A worker can host multiple models per backend.
+  const mergedLoadedModels: LoadedModel[] = [
+    ...loadedModels.map((m) => ({ ...m, host: m.host ?? "controller" })),
+    ...clusterWorkers.flatMap((w) => {
+      const out: LoadedModel[] = [];
+      for (const b of w.backends ?? []) {
+        const backendName = b.name ?? b.type ?? "backend";
+        for (const model of b.models ?? []) {
+          // Worker backend models can be plain strings or objects.
+          // Normalise both shapes.
+          if (typeof model === "string") {
+            out.push({
+              name: model,
+              backend: backendName,
+              purpose: "",
+              host: w.name,
+            });
+          } else if (model && typeof model === "object") {
+            const m = model as Record<string, unknown>;
+            out.push({
+              name: String(m["name"] ?? m["id"] ?? "model"),
+              backend: backendName,
+              purpose: String(m["purpose"] ?? m["capability"] ?? ""),
+              size_mb: typeof m["size_mb"] === "number" ? (m["size_mb"] as number) : null,
+              vram_mb: typeof m["vram_mb"] === "number" ? (m["vram_mb"] as number) : null,
+              ram_mb: typeof m["ram_mb"] === "number" ? (m["ram_mb"] as number) : null,
+              host: w.name,
+            });
+          }
+        }
+      }
+      return out;
+    }),
+  ];
 
   if (loading && !data) {
     return (
@@ -387,27 +428,38 @@ export function DashboardApp({ windowId: _windowId }: { windowId: string }) {
           </CardContent>
         </Card>
 
-        {/* Loaded models — shares the same 3-across row as Memory and Disk so
-            it fills the empty slot when no GPU is present, and pairs as a
-            half-width on md screens. */}
-        {loadedModels.length > 0 && (
-          <Card className="col-span-12 md:col-span-6 lg:col-span-4 p-4">
-            <CardContent className="p-0">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <Layers size={14} className="text-pink-400" />
-                  <h3 className="text-xs font-semibold text-shell-text">Loaded Models ({loadedModels.length})</h3>
-                </div>
+        {/* Loaded models — always rendered; contents are dynamic. Shares the
+            same 3-across row as Memory and Disk so it fills the empty slot
+            when no GPU is present, and pairs as a half-width on md screens. */}
+        <Card className="col-span-12 md:col-span-6 lg:col-span-4 p-4">
+          <CardContent className="p-0">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Layers size={14} className="text-pink-400" />
+                <h3 className="text-xs font-semibold text-shell-text">Loaded Models ({mergedLoadedModels.length})</h3>
               </div>
+            </div>
+            {mergedLoadedModels.length === 0 ? (
+              <p className="text-[11px] text-shell-text-tertiary italic">
+                No models currently loaded — backends report here when they hold a model in memory, on this host or any cluster worker.
+              </p>
+            ) : (
               <div className="space-y-1.5">
-                {loadedModels.map((m, i) => (
-                  <div key={i} className="flex items-center gap-2 p-2 rounded-lg bg-white/[0.02] border border-white/5">
+                {mergedLoadedModels.map((m, i) => (
+                  <div key={`${m.host ?? "controller"}-${m.name}-${i}`} className="flex items-center gap-2 p-2 rounded-lg bg-white/[0.02] border border-white/5">
                     <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
                     <div className="flex-1 min-w-0">
-                      <div className="text-[11px] font-medium text-shell-text truncate">{m.name}</div>
-                      <div className="flex items-center gap-2 text-[10px] text-shell-text-tertiary">
-                        <span>{m.purpose}</span>
-                        <span>·</span>
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-[11px] font-medium text-shell-text truncate">{m.name}</span>
+                        {m.host && m.host !== "controller" && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-teal-500/15 text-teal-200 font-semibold whitespace-nowrap">
+                            {m.host}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 text-[10px] text-shell-text-tertiary flex-wrap">
+                        {m.purpose && <span>{m.purpose}</span>}
+                        {m.purpose && <span>·</span>}
                         <span>{m.backend}</span>
                         {m.ram_mb != null && m.ram_mb > 0 && <><span>·</span><span>{formatMb(m.ram_mb)}</span></>}
                         {m.vram_mb != null && m.vram_mb > 0 && <><span>·</span><span className="text-blue-400">VRAM {formatMb(m.vram_mb)}</span></>}
@@ -416,9 +468,9 @@ export function DashboardApp({ windowId: _windowId }: { windowId: string }) {
                   </div>
                 ))}
               </div>
-            </CardContent>
-          </Card>
-        )}
+            )}
+          </CardContent>
+        </Card>
 
         {/* Cluster workers */}
         <Card className="col-span-12 p-4">
