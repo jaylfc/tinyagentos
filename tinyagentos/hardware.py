@@ -224,6 +224,29 @@ def _detect_npu() -> NpuInfo:
     return NpuInfo()
 
 
+def _detect_nvidia_via_proc() -> tuple[str, bool]:
+    """Read NVIDIA GPU info from /proc/driver/nvidia.
+
+    Used as a fallback when nvidia-smi isn't installed (containers,
+    minimal Debian, headless servers without the userspace utilities).
+    Returns (model_string, driver_present).
+    """
+    info_root = Path("/proc/driver/nvidia/gpus")
+    if not _path_exists_safe(info_root):
+        return "", False
+    try:
+        for gpu_dir in info_root.iterdir():
+            info_file = gpu_dir / "information"
+            if not _path_exists_safe(info_file):
+                continue
+            for line in info_file.read_text(errors="replace").splitlines():
+                if line.lower().startswith("model:"):
+                    return line.split(":", 1)[1].strip(), True
+        return "", True  # driver present but no model line found
+    except (PermissionError, OSError):
+        return "", False
+
+
 def _detect_gpu() -> GpuInfo:
     gpu = GpuInfo()
     # Apple Silicon — unified memory acts as VRAM, MLX-accelerated
@@ -242,6 +265,23 @@ def _detect_gpu() -> GpuInfo:
         gpu.cuda = False
         gpu.rocm = False
         return gpu
+
+    # Linux NVIDIA detection — preferred order:
+    # 1. /proc/driver/nvidia (kernel module + driver present, works in
+    #    containers without nvidia-smi userspace utilities)
+    # 2. lspci as fallback for hosts where /proc/driver/nvidia isn't
+    #    available (no driver loaded yet, or nouveau-only)
+    proc_model, proc_driver_present = _detect_nvidia_via_proc()
+    if proc_driver_present:
+        gpu.type = "nvidia"
+        gpu.model = proc_model or "NVIDIA GPU (unknown model)"
+        # Driver present implies CUDA + Vulkan are usable. We can't
+        # report VRAM without nvidia-smi or pynvml; the controller
+        # treats vram_mb=0 as 'unknown' rather than 'no GPU'.
+        gpu.cuda = True
+        gpu.vulkan = True
+        return gpu
+
     lspci = _run(["lspci"])
     if "NVIDIA" in lspci.upper():
         gpu.type = "nvidia"
@@ -249,10 +289,11 @@ def _detect_gpu() -> GpuInfo:
             if "NVIDIA" in line.upper() and ("VGA" in line or "3D" in line):
                 gpu.model = line.split(":")[-1].strip()
                 break
-        # Check CUDA
+        # No /proc/driver/nvidia means the kernel module isn't loaded,
+        # so cuda/vulkan are not actually available even though the
+        # device exists. Fall back to nvidia-smi for confirmation.
         gpu.cuda = shutil.which("nvidia-smi") is not None
-        # Check Vulkan
-        gpu.vulkan = gpu.cuda  # NVIDIA cards with drivers have Vulkan
+        gpu.vulkan = gpu.cuda
     elif "AMD" in lspci.upper() and "VGA" in lspci.upper():
         gpu.type = "amd"
         for line in lspci.split("\n"):
