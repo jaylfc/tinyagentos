@@ -122,6 +122,22 @@ async def list_capabilities(request: Request):
     return caps
 
 
+@router.get("/api/cluster/backends")
+async def cluster_backends(request: Request):
+    """Aggregate backend catalog across every online worker in the mesh.
+
+    Unions each worker's latest-heartbeat BackendCatalog into a single
+    cluster-wide view. This is the cluster sibling of /api/scheduler/backends
+    (which shows only the local controller's backends). Used by:
+
+    - Cluster page UI to show 'what the whole mesh can do right now'
+    - Scheduler Phase 2 cluster-aware dispatch to pick remote resources
+    - Model Browser's 'available on cluster' filter
+    """
+    cluster = request.app.state.cluster_manager
+    return cluster.aggregate_catalog()
+
+
 @router.post("/api/cluster/route")
 async def route_task(request: Request, body: RouteRequest):
     task_router = request.app.state.task_router

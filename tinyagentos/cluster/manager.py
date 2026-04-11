@@ -133,6 +133,80 @@ class ClusterManager:
         workers = self.get_workers_for_capability(capability)
         return workers[0] if workers else None
 
+    def aggregate_catalog(self) -> dict:
+        """Cluster-wide union of every online worker's live BackendCatalog.
+
+        Each online worker reports its own backends + models on every
+        heartbeat. This method joins them into a single view keyed on
+        ``f"{worker_name}:{backend_name}"`` so the Cluster page and the
+        cluster-aware scheduler dispatch (Phase 2) can see 'what the
+        entire mesh can do right now' without polling every worker
+        individually.
+
+        Offline workers are skipped entirely — their stale data is not
+        useful and could mislead routing. The in-process BackendCatalog
+        on the controller handles the local-host view; this method
+        handles the remote-worker view.
+
+        Returns:
+            A dict with:
+            - ``workers``: per-worker summary (name, status, capabilities,
+              backend count, model count)
+            - ``backends``: flat list of every remote backend entry with
+              its owning worker tagged
+            - ``capabilities``: set of capabilities present somewhere in
+              the mesh (union across workers)
+            - ``models``: flat list of every model loaded on any online
+              worker, tagged with its owning worker and backend
+        """
+        workers_summary = []
+        flat_backends: list[dict] = []
+        flat_models: list[dict] = []
+        all_capabilities: set[str] = set()
+
+        for worker in self._workers.values():
+            if worker.status != "online":
+                continue
+
+            worker_caps = set(worker.capabilities or [])
+            all_capabilities |= worker_caps
+
+            wbackends = worker.backends or []
+            for b in wbackends:
+                entry = {
+                    **b,
+                    "worker": worker.name,
+                    "worker_url": worker.url,
+                    "worker_platform": getattr(worker, "platform", ""),
+                }
+                flat_backends.append(entry)
+                for m in b.get("models") or []:
+                    flat_models.append({
+                        **m,
+                        "worker": worker.name,
+                        "worker_url": worker.url,
+                        "backend_name": b.get("name", ""),
+                        "backend_type": b.get("type", ""),
+                    })
+
+            workers_summary.append({
+                "name": worker.name,
+                "url": worker.url,
+                "platform": getattr(worker, "platform", ""),
+                "status": worker.status,
+                "load": worker.load,
+                "capabilities": sorted(worker_caps),
+                "backend_count": len(wbackends),
+                "model_count": sum(len(b.get("models") or []) for b in wbackends),
+            })
+
+        return {
+            "workers": workers_summary,
+            "backends": flat_backends,
+            "capabilities": sorted(all_capabilities),
+            "models": flat_models,
+        }
+
     async def _monitor_loop(self):
         """Monitor worker heartbeats, mark stale workers as offline."""
         while True:

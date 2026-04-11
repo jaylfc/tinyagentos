@@ -123,6 +123,92 @@ class TestClusterManager:
         await mgr.register_worker(_make_worker("gpu", capabilities=["chat"]))
         assert mgr.get_best_worker("tts") is None
 
+    async def test_aggregate_catalog_unions_workers(self):
+        """The cluster-wide aggregate view should union live backend
+        catalogs across every online worker."""
+        mgr = ClusterManager()
+
+        pi = WorkerInfo(
+            name="pi4",
+            url="http://pi:6970",
+            platform="linux-aarch64",
+            capabilities=["embedding", "llm-chat"],
+            backends=[
+                {
+                    "name": "llama-cpp@http://localhost:8000",
+                    "type": "llama-cpp",
+                    "url": "http://localhost:8000",
+                    "capabilities": ["embedding", "llm-chat"],
+                    "models": [{"name": "qwen2.5-1.5b", "size_mb": 1200}],
+                    "status": "ok",
+                },
+            ],
+        )
+        fedora = WorkerInfo(
+            name="fedora",
+            url="http://fedora:6970",
+            platform="linux-x86_64",
+            capabilities=["llm-chat", "image-generation"],
+            backends=[
+                {
+                    "name": "sd-cpp@http://localhost:7864",
+                    "type": "sd-cpp",
+                    "url": "http://localhost:7864",
+                    "capabilities": ["image-generation"],
+                    "models": [{"name": "sdxl-turbo", "size_mb": 6500}],
+                    "status": "ok",
+                },
+                {
+                    "name": "ollama@http://localhost:11434",
+                    "type": "ollama",
+                    "url": "http://localhost:11434",
+                    "capabilities": ["llm-chat"],
+                    "models": [{"name": "gemma-2-9b", "size_mb": 5500}],
+                    "status": "ok",
+                },
+            ],
+        )
+        await mgr.register_worker(pi)
+        await mgr.register_worker(fedora)
+
+        out = mgr.aggregate_catalog()
+        assert len(out["workers"]) == 2
+        assert len(out["backends"]) == 3
+        # Capabilities union
+        assert set(out["capabilities"]) == {"embedding", "llm-chat", "image-generation"}
+        # Every model is tagged with its owning worker
+        models_by_worker = {}
+        for m in out["models"]:
+            models_by_worker.setdefault(m["worker"], []).append(m["name"])
+        assert models_by_worker["pi4"] == ["qwen2.5-1.5b"]
+        assert sorted(models_by_worker["fedora"]) == ["gemma-2-9b", "sdxl-turbo"]
+
+    async def test_aggregate_catalog_skips_offline_workers(self):
+        """Offline workers are excluded — their stale data would mislead routing."""
+        mgr = ClusterManager()
+        online = _make_worker("online", capabilities=["chat"])
+        online.backends = [{"name": "b1", "type": "ollama", "url": "u", "capabilities": ["chat"], "models": [{"name": "m1"}]}]
+        offline = _make_worker("offline", capabilities=["chat"])
+        offline.backends = [{"name": "b2", "type": "ollama", "url": "u", "capabilities": ["chat"], "models": [{"name": "m2"}]}]
+        await mgr.register_worker(online)
+        await mgr.register_worker(offline)
+        offline.status = "offline"
+
+        out = mgr.aggregate_catalog()
+        assert [w["name"] for w in out["workers"]] == ["online"]
+        assert [m["name"] for m in out["models"]] == ["m1"]
+
+    async def test_aggregate_catalog_empty_cluster(self):
+        """An empty or fully-offline cluster returns empty lists, never errors."""
+        mgr = ClusterManager()
+        out = mgr.aggregate_catalog()
+        assert out == {
+            "workers": [],
+            "backends": [],
+            "capabilities": [],
+            "models": [],
+        }
+
 
 @pytest.mark.asyncio
 class TestTaskRouter:
