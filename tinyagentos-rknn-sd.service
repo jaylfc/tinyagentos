@@ -11,9 +11,9 @@ Type=simple
 User=jay
 WorkingDirectory=/home/jay/tinyagentos
 
-# Model dir and wrapper script path. The wrapper is darkbit1001's patched
-# rknnlcm.py (NHWC data_format on unet/vae_decoder) — do NOT swap for
-# happyme531's original which segfaults under librknnrt 2.3.2.
+# Default backend: ez_rknn_async (tp_mode=all on unet/vae_decoder).
+# To revert to rknn-toolkit-lite2 / darkbit1001's rknnlcm.py, add:
+#   Environment=RKNN_SD_LEGACY_WRAPPER=1
 Environment=RKNN_SD_MODEL_DIR=/home/jay/.local/share/tinyagentos/rknn-sd/model
 Environment=RKNN_SD_WRAPPER=/home/jay/.local/share/tinyagentos/rknn-sd/rknnlcm.py
 Environment=RKNN_SD_HOST=127.0.0.1
