@@ -127,7 +127,7 @@ export function App() {
         currentAppName={activeApp?.name ?? null}
         onBack={handleMobileBack}
       />
-      <div className="flex-1 relative overflow-hidden" style={{ paddingBottom: "calc(28px + env(safe-area-inset-bottom, 0px) / 2)" }}>
+      <div className="flex-1 relative overflow-hidden" style={{ paddingBottom: "calc(40px + env(safe-area-inset-bottom, 0px) * 0.35)" }}>
         {activeWindowId && activeWindow ? (
           <MobileApp appId={activeWindow.appId} windowId={activeWindowId} />
         ) : (

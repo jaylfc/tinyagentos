@@ -93,6 +93,20 @@ const EXT_ICONS: Record<string, typeof File> = {
   zip: FileArchive, tar: FileArchive, gz: FileArchive, bz2: FileArchive, "7z": FileArchive, rar: FileArchive,
 };
 
+const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"]);
+
+function isImage(name: string): boolean {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  return IMAGE_EXTS.has(ext);
+}
+
+function fileUrl(location: "workspace" | string, path: string): string {
+  const encoded = encodeURIComponent(path);
+  return location === "workspace"
+    ? `/api/workspace/files/${encoded}`
+    : `/api/shared-folders/${encodeURIComponent(location)}/files/${encoded}`;
+}
+
 function getFileIcon(name: string, isDir: boolean) {
   if (isDir) return Folder;
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
@@ -550,10 +564,32 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
                     className="flex flex-col items-center gap-2 p-3 text-center w-full rounded-xl"
                     aria-label={f.is_dir ? `Open folder ${f.name}` : `File ${f.name}`}
                   >
-                    <Icon
-                      size={36}
-                      className={f.is_dir ? "text-accent" : "text-shell-text-secondary"}
-                    />
+                    {!f.is_dir && isImage(f.name) ? (
+                      <div className="w-16 h-16 rounded-lg overflow-hidden bg-black/20 border border-white/[0.04] flex items-center justify-center">
+                        <img
+                          src={fileUrl(location, f.path || f.name)}
+                          alt={f.name}
+                          loading="lazy"
+                          decoding="async"
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            const target = e.currentTarget;
+                            target.style.display = "none";
+                            const fallback = target.nextElementSibling as HTMLElement | null;
+                            if (fallback) fallback.style.display = "block";
+                          }}
+                        />
+                        <Icon
+                          size={36}
+                          className="text-shell-text-secondary hidden"
+                        />
+                      </div>
+                    ) : (
+                      <Icon
+                        size={36}
+                        className={f.is_dir ? "text-accent" : "text-shell-text-secondary"}
+                      />
+                    )}
                     <span className="text-xs truncate w-full leading-tight" title={f.name}>
                       {f.name}
                     </span>
@@ -631,7 +667,20 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
                           className="flex items-center gap-2 min-w-0"
                           aria-label={f.is_dir ? `Open folder ${f.name}` : `File ${f.name}`}
                         >
-                          <Icon size={16} className={f.is_dir ? "text-accent shrink-0" : "text-shell-text-secondary shrink-0"} />
+                          {!f.is_dir && isImage(f.name) ? (
+                            <img
+                              src={fileUrl(location, f.path || f.name)}
+                              alt=""
+                              loading="lazy"
+                              decoding="async"
+                              className="w-6 h-6 rounded object-cover border border-white/[0.06] shrink-0"
+                              onError={(e) => {
+                                e.currentTarget.style.display = "none";
+                              }}
+                            />
+                          ) : (
+                            <Icon size={16} className={f.is_dir ? "text-accent shrink-0" : "text-shell-text-secondary shrink-0"} />
+                          )}
                           <span className="truncate">{f.name}</span>
                         </button>
                       </td>

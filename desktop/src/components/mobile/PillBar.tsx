@@ -51,9 +51,9 @@ export function PillBar({ onHome, onCardSwitcher, onBack }: Props) {
       className="fixed left-0 right-0 z-[9999] flex flex-col"
       style={{
         bottom: 0,
-        // 28px interactive content + HALF the iOS safe area (home indicator clearance)
-        height: "calc(28px + env(safe-area-inset-bottom, 0px) / 2)",
-        paddingBottom: "calc(env(safe-area-inset-bottom, 0px) / 2)",
+        // 40px interactive content + 35% of the iOS safe area (home indicator clearance)
+        height: "calc(40px + env(safe-area-inset-bottom, 0px) * 0.35)",
+        paddingBottom: "calc(env(safe-area-inset-bottom, 0px) * 0.35)",
         backgroundColor: "#14142a",
         borderTop: "1px solid rgba(255,255,255,0.06)",
         boxShadow: "0 40px 0 0 #14142a",
@@ -65,10 +65,10 @@ export function PillBar({ onHome, onCardSwitcher, onBack }: Props) {
         <div className="flex-1 flex justify-start">
           <button
             onClick={onBack}
-            className="flex items-center justify-center w-7 h-7 rounded-md active:bg-white/10 transition-colors"
+            className="flex items-center justify-center w-10 h-10 rounded-md active:bg-white/10 transition-colors"
             aria-label="Go back"
           >
-            <ChevronLeft size={16} className="text-white/60" />
+            <ChevronLeft size={22} className="text-white/60" />
           </button>
         </div>
 
@@ -99,10 +99,10 @@ export function PillBar({ onHome, onCardSwitcher, onBack }: Props) {
         <div className="flex-1 flex justify-end">
           <button
             onClick={toggleCentre}
-            className="relative flex items-center justify-center w-7 h-7 rounded-md active:bg-white/10 transition-colors"
+            className="relative flex items-center justify-center w-10 h-10 rounded-md active:bg-white/10 transition-colors"
             aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ""}`}
           >
-            <Bell size={16} className="text-white/60" />
+            <Bell size={22} className="text-white/60" />
             {unreadCount > 0 && (
               <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 bg-red-500 rounded-full" />
             )}

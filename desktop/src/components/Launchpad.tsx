@@ -56,7 +56,7 @@ export function Launchpad({ open, onClose, onOpenApp }: Props) {
       onClick={onClose}
       style={{
         paddingTop: "calc(env(safe-area-inset-top, 0px) + 16px)",
-        paddingBottom: "calc(28px + env(safe-area-inset-bottom, 0px) + 16px)",
+        paddingBottom: "calc(40px + env(safe-area-inset-bottom, 0px) * 0.35 + 16px)",
       }}
     >
       <div

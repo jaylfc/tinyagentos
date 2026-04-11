@@ -236,11 +236,17 @@ export function ModelBrowser({
 
   return (
     <div
-      className="fixed inset-0 z-[10003] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-[10003] flex items-center justify-center bg-black/60 backdrop-blur-sm"
       onClick={onClose}
+      style={{
+        paddingTop: "calc(env(safe-area-inset-top, 0px) + 16px)",
+        paddingBottom: "calc(40px + env(safe-area-inset-bottom, 0px) * 0.35 + 16px)",
+        paddingLeft: "16px",
+        paddingRight: "16px",
+      }}
     >
       <div
-        className="w-full max-w-4xl max-h-[85vh] flex flex-col rounded-2xl border border-white/10 overflow-hidden"
+        className="w-full max-w-4xl h-full max-h-full flex flex-col rounded-2xl border border-white/10 overflow-hidden"
         style={{ backgroundColor: "rgba(26, 27, 46, 0.98)" }}
         onClick={(e) => e.stopPropagation()}
       >
