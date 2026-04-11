@@ -128,8 +128,8 @@ export function CardSwitcher({ open, onClose, onSelectApp, onLaunchpad }: Props)
                       : undefined,
                   opacity: isFlying ? 0 : 1,
                 }}
-                onTouchStart={(e) => handleCardTouchStart(win.id, e.touches[0].clientY)}
-                onTouchMove={(e) => handleCardTouchMove(win.id, e.touches[0].clientY)}
+                onTouchStart={(e) => handleCardTouchStart(win.id, e.touches[0]?.clientY ?? 0)}
+                onTouchMove={(e) => handleCardTouchMove(win.id, e.touches[0]?.clientY ?? 0)}
                 onTouchEnd={() => handleCardTouchEnd(win.id)}
                 onClick={() => {
                   onSelectApp(win.id);

@@ -100,11 +100,11 @@ export function SystemStatsWidget() {
       if (cancelled) return;
       const cpu =
         Array.isArray(cpuSeries) && cpuSeries.length > 0
-          ? cpuSeries[cpuSeries.length - 1].value
+          ? cpuSeries[cpuSeries.length - 1]?.value ?? null
           : null;
       const ram =
         Array.isArray(ramSeries) && ramSeries.length > 0
-          ? ramSeries[ramSeries.length - 1].value
+          ? ramSeries[ramSeries.length - 1]?.value ?? null
           : null;
 
       if (cpu === null && ram === null) {

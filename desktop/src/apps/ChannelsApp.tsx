@@ -160,7 +160,7 @@ export function ChannelsApp({ windowId: _windowId }: { windowId: string }) {
             if (defs.length > 0) {
               setChannelTypes(defs);
               // Ensure selected type exists in new list
-              if (!defs.find((d) => d.id === formType)) {
+              if (!defs.find((d) => d.id === formType) && defs[0]) {
                 setFormType(defs[0].id);
                 setFormConfig({});
               }

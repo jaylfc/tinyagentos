@@ -16,7 +16,7 @@ export function PillBar({ onHome, onCardSwitcher, onBack }: Props) {
 
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     e.preventDefault();
-    startY.current = e.touches[0].clientY;
+    startY.current = e.touches[0]?.clientY ?? null;
     if (pillRef.current) {
       pillRef.current.style.transform = "scale(1.15)";
     }
@@ -33,7 +33,11 @@ export function PillBar({ onHome, onCardSwitcher, onBack }: Props) {
       }
       if (startY.current === null) return;
 
-      const endY = e.changedTouches[0].clientY;
+      const endY = e.changedTouches[0]?.clientY;
+      if (endY === undefined) {
+        startY.current = null;
+        return;
+      }
       const deltaY = endY - startY.current;
       startY.current = null;
 

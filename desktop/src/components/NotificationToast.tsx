@@ -48,7 +48,7 @@ export function NotificationToasts() {
   const active = notifications.filter((n) => !n.read).slice(0, 3);
 
   return (
-    <div className="fixed bottom-20 right-4 z-[10001] flex flex-col gap-2 pointer-events-auto">
+    <div className="fixed top-12 right-4 z-[10001] flex flex-col gap-2 pointer-events-auto">
       {active.map((n) => (
         <ToastItem key={n.id} notif={n} />
       ))}

@@ -197,6 +197,7 @@ export function ImagesApp({ windowId: _windowId }: { windowId: string }) {
     }
     if (!value) return;
     const [modelId, variantId] = value.split("::");
+    if (modelId === undefined || variantId === undefined) return;
     setSelectedModelId(modelId);
     setSelectedVariantId(variantId);
   };

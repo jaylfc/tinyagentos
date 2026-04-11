@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { ShoppingBag, Search, Download, Trash2, Check, Package, Loader2, Bot, Brain, Server, Plug, Wrench, Image, Music, Video, Globe, Home, Cpu, Gamepad2 } from "lucide-react";
+import { ShoppingBag, Search, Download, Trash2, Check, Package, Loader2, Bot, Brain, Server, Plug, Wrench, Image, Music, Video, Globe, Home, Cpu } from "lucide-react";
 import { Button, Card, CardContent, CardFooter, CardHeader, Input } from "@/components/ui";
 
 /* ------------------------------------------------------------------ */
