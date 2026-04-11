@@ -387,62 +387,11 @@ export function DashboardApp({ windowId: _windowId }: { windowId: string }) {
           </CardContent>
         </Card>
 
-        {/* Thermal */}
-        {thermal.length > 0 && (
-          <Card className="col-span-12 md:col-span-6 p-4">
-            <CardContent className="p-0">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <Thermometer size={14} className="text-red-400" />
-                  <h3 className="text-xs font-semibold text-shell-text">Thermal</h3>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px]">
-                {thermal.map((z) => {
-                  const hot = z.temp_c > 70;
-                  const warm = z.temp_c > 55;
-                  const colour = hot ? "text-red-400" : warm ? "text-amber-400" : "text-emerald-400";
-                  return (
-                    <div key={z.name} className="flex items-center justify-between">
-                      <span className="text-shell-text-tertiary truncate">{z.name}</span>
-                      <span className={`${colour} tabular-nums`}>{z.temp_c.toFixed(1)}°C</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Network */}
-        {network.length > 0 && (
-          <Card className="col-span-12 md:col-span-6 p-4">
-            <CardContent className="p-0">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <Network size={14} className="text-indigo-400" />
-                  <h3 className="text-xs font-semibold text-shell-text">Network</h3>
-                </div>
-              </div>
-              <div className="space-y-2">
-                {network.map((iface) => (
-                  <div key={iface.name} className="text-[11px]">
-                    <div className="flex justify-between">
-                      <span className="text-shell-text-secondary">{iface.name}</span>
-                      <span className="text-shell-text-tertiary tabular-nums">
-                        ↓ {formatBytes(iface.rx_bps)} · ↑ {formatBytes(iface.tx_bps)}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Loaded models */}
+        {/* Loaded models — shares the same 3-across row as Memory and Disk so
+            it fills the empty slot when no GPU is present, and pairs as a
+            half-width on md screens. */}
         {loadedModels.length > 0 && (
-          <Card className="col-span-12 p-4">
+          <Card className="col-span-12 md:col-span-6 lg:col-span-4 p-4">
             <CardContent className="p-0">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
@@ -450,7 +399,7 @@ export function DashboardApp({ windowId: _windowId }: { windowId: string }) {
                   <h3 className="text-xs font-semibold text-shell-text">Loaded Models ({loadedModels.length})</h3>
                 </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <div className="space-y-1.5">
                 {loadedModels.map((m, i) => (
                   <div key={i} className="flex items-center gap-2 p-2 rounded-lg bg-white/[0.02] border border-white/5">
                     <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
@@ -575,6 +524,60 @@ export function DashboardApp({ windowId: _windowId }: { windowId: string }) {
             )}
           </CardContent>
         </Card>
+
+        {/* Thermal */}
+        {thermal.length > 0 && (
+          <Card className="col-span-12 md:col-span-6 p-4">
+            <CardContent className="p-0">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Thermometer size={14} className="text-red-400" />
+                  <h3 className="text-xs font-semibold text-shell-text">Thermal</h3>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px]">
+                {thermal.map((z) => {
+                  const hot = z.temp_c > 70;
+                  const warm = z.temp_c > 55;
+                  const colour = hot ? "text-red-400" : warm ? "text-amber-400" : "text-emerald-400";
+                  return (
+                    <div key={z.name} className="flex items-center justify-between">
+                      <span className="text-shell-text-tertiary truncate">{z.name}</span>
+                      <span className={`${colour} tabular-nums`}>{z.temp_c.toFixed(1)}°C</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Network */}
+        {network.length > 0 && (
+          <Card className="col-span-12 md:col-span-6 p-4">
+            <CardContent className="p-0">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Network size={14} className="text-indigo-400" />
+                  <h3 className="text-xs font-semibold text-shell-text">Network</h3>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {network.map((iface) => (
+                  <div key={iface.name} className="text-[11px]">
+                    <div className="flex justify-between">
+                      <span className="text-shell-text-secondary">{iface.name}</span>
+                      <span className="text-shell-text-tertiary tabular-nums">
+                        ↓ {formatBytes(iface.rx_bps)} · ↑ {formatBytes(iface.tx_bps)}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
 
         {/* Resource scheduler */}
         {schedulerStats && (

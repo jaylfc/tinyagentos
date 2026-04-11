@@ -181,13 +181,18 @@ class WorkerAgent:
             logger.error(f"Failed to register: {e}")
             return False
 
-    async def heartbeat(self) -> bool:
+    async def heartbeat(self) -> int:
         """Send heartbeat to controller with live backend catalog.
 
         Backend-driven: the heartbeat carries a fresh probe of every
         detected backend, not a cached snapshot. This lets the controller
         aggregate per-worker catalogs into a cluster-wide view that
         reflects what's actually loaded right now across the mesh.
+
+        Returns the HTTP status code from the controller, or 0 on
+        connection failure / timeout. The caller uses this to detect
+        the 404 case (controller restarted and forgot about us) and
+        trigger a re-registration.
         """
         try:
             load = psutil.cpu_percent() / 100.0
@@ -203,22 +208,44 @@ class WorkerAgent:
                         "capabilities": caps,
                     },
                 )
-                return resp.status_code == 200
+                return resp.status_code
         except Exception:
-            return False
+            return 0
 
     async def run(self):
-        """Main worker loop — register then heartbeat."""
-        self._running = True
-        # Register
-        while self._running and not self._registered:
-            if await self.register():
-                break
-            await asyncio.sleep(5)
+        """Main worker loop — register, heartbeat, re-register on loss.
 
-        # Heartbeat loop
+        The controller's in-memory cluster registry is wiped on every
+        controller restart. When that happens our heartbeats start
+        coming back as 404 'Worker not registered'. Treat that as a
+        signal to re-register and resume — without it, every controller
+        restart leaves the cluster view empty until the worker is
+        manually restarted.
+        """
+        self._running = True
         while self._running:
-            await self.heartbeat()
+            # Register if we aren't (yet, or any more).
+            if not self._registered:
+                if await self.register():
+                    logger.info(f"worker '{self.name}' registered with {self.controller_url}")
+                else:
+                    await asyncio.sleep(5)
+                    continue
+
+            status = await self.heartbeat()
+            if status == 404:
+                # Controller has forgotten about us (restart, manual
+                # deregister, etc). Drop our registered state and the
+                # next loop iteration will re-register.
+                logger.warning(
+                    f"controller returned 404 on heartbeat — re-registering '{self.name}'"
+                )
+                self._registered = False
+            elif status == 0:
+                # Network / DNS / controller-down. Don't drop the
+                # registered flag yet; the controller may still know
+                # us when it comes back. Just retry on next tick.
+                pass
             await asyncio.sleep(5)
 
     def stop(self):
