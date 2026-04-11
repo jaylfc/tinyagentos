@@ -69,16 +69,18 @@ async def embed_files(request: Request):
     if missing:
         return JSONResponse({"error": f"Files not found: {', '.join(missing)}"}, status_code=404)
 
-    # Embed via the shared host QMD serve process (systemd unit qmd.service).
-    # See docs/design/framework-agnostic-runtime.md — one QMD for every
-    # agent on the box, no per-agent provider lookup.
-    #
-    # NOTE: this path computes an embedding but does not yet persist it
-    # to the agent's SQLite. The previous implementation called a
-    # non-existent /api/embed endpoint on per-agent QMDs and silently
-    # failed, so import has never actually persisted vectors. Wiring
-    # persistence through to QmdDatabase is tracked separately.
-    qmd_client = request.app.state.qmd_client
+    # Persist each file into the agent's per-agent index via the shared
+    # qmd serve POST /ingest endpoint. The dbPath we pass is the same
+    # one the deployer bind-mounts into the agent container at /memory,
+    # so the agent and its container see identical state.
+    # See docs/design/framework-agnostic-runtime.md.
+    http_client = request.app.state.http_client
+    qmd_base = request.app.state.qmd_client.base_url
+    agent_db = (
+        Path(request.app.state.agent_memory_dir) / agent_name / "index.sqlite"
+    )
+    agent_db.parent.mkdir(parents=True, exist_ok=True)
+
     embedded_files = []
     all_embedded = True
 
@@ -88,11 +90,22 @@ async def embed_files(request: Request):
         file_embedded = False
 
         try:
-            await qmd_client.embed(text)
+            resp = await http_client.post(
+                f"{qmd_base}/ingest",
+                json={
+                    "body": text,
+                    "path": fname,
+                    "title": fname,
+                    "collection": "imports",
+                    "dbPath": str(agent_db),
+                },
+                timeout=120,
+            )
+            resp.raise_for_status()
             file_embedded = True
         except Exception as exc:
             logger.warning(
-                "QMD embed failed for agent %s file %s: %s",
+                "QMD ingest failed for agent %s file %s: %s",
                 agent_name, fname, exc,
             )
             all_embedded = False

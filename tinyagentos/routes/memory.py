@@ -1,20 +1,25 @@
-"""Memory routes — keyword and semantic search over per-agent stores.
+"""Memory routes — per-agent and user memory over the shared qmd serve.
 
-Every memory operation goes through the single host ``qmd.service``
-systemd unit on :7832. That process exposes ``/search`` and ``/vsearch``
-in addition to the model primitives (``/embed``, ``/rerank``,
-``/expand``), so TinyAgentOS never needs to open a SQLite DB from
-Python or know which embedder / dimension is in use.
+Every memory operation is an HTTP call to the host ``qmd.service``
+process on :7832. That process exposes ``/search``, ``/vsearch``,
+``/browse``, ``/collections``, ``/ingest``, and ``/delete-chunk`` and
+each call accepts an optional ``dbPath`` that selects which SQLite
+file to operate on. TinyAgentOS resolves the ``dbPath`` based on the
+calling scope:
 
-Previous revisions fell back to opening per-agent SQLite files via
-``agent_db.get_agent_db``, which required the sqlite-vec extension and
-was the source of the dim-mismatch and extension-loading pain. The new
-flow is pure HTTP: embed, rerank, and search all land on one address.
-See ``docs/design/framework-agnostic-runtime.md``.
+- ``agent=foo``  → ``data/agent-memory/foo/index.sqlite``
+- no agent       → the default user index (``~/.cache/qmd/index.sqlite``,
+  served when ``dbPath`` is omitted)
+
+This is the load-bearing piece of per-agent memory isolation — each
+agent reads and writes its own index, so Agent A cannot see Agent B's
+memory and Agent A's deletions cannot trample anyone else's data. See
+``docs/design/framework-agnostic-runtime.md``.
 """
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -33,6 +38,28 @@ class SearchRequest(BaseModel):
     agent: str | None = None
     collection: str | None = None
     limit: int = 20
+
+
+def _qmd_base(request: Request) -> str:
+    """URL of the shared host qmd serve process."""
+    return request.app.state.qmd_client.base_url
+
+
+def _agent_db_path(request: Request, agent: str | None) -> str | None:
+    """Resolve the SQLite path for an agent's memory index.
+
+    Returns ``None`` for the user/default scope so the qmd request
+    omits ``dbPath`` and the qmd serve process falls back to its
+    default index. Per-agent paths are computed deterministically
+    from ``app.state.agent_memory_dir`` so they always match what the
+    deployer bind-mounts into the agent's container at ``/memory``.
+    """
+    if not agent:
+        return None
+    base: Path = request.app.state.agent_memory_dir
+    target = base / agent / "index.sqlite"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    return str(target)
 
 
 @router.get("/memory", response_class=HTMLResponse)
@@ -58,6 +85,9 @@ async def memory_browse(
     params: dict = {"limit": limit, "offset": offset}
     if collection:
         params["collection"] = collection
+    db_path = _agent_db_path(request, agent)
+    if db_path:
+        params["dbPath"] = db_path
     try:
         resp = await http_client.get(f"{_qmd_base(request)}/browse", params=params, timeout=30)
         resp.raise_for_status()
@@ -72,26 +102,16 @@ async def memory_browse(
         return JSONResponse({"chunks": [], "error": str(e)}, status_code=502)
 
 
-def _keyword_search_agent(agent_dict: dict, query: str,
-                          collection: str | None = None, limit: int = 20) -> list[dict]:
-    db = get_agent_db(agent_dict)
-    if not db:
-        return []
-    return db.keyword_search(query, collection=collection, limit=limit)
-
-
-def _qmd_base(request: Request) -> str:
-    """URL of the shared host qmd serve process."""
-    return request.app.state.qmd_client.base_url
-
-
 async def _qmd_search(request: Request, query: str,
-                      collection: str | None, limit: int) -> list[dict]:
+                      collection: str | None, limit: int,
+                      db_path: str | None) -> list[dict]:
     """Keyword (BM25) search via qmd serve GET /search."""
     http_client = request.app.state.http_client
     params: dict = {"q": query, "limit": limit}
     if collection:
         params["collection"] = collection
+    if db_path:
+        params["dbPath"] = db_path
     resp = await http_client.get(f"{_qmd_base(request)}/search", params=params, timeout=30)
     resp.raise_for_status()
     data = resp.json()
@@ -99,14 +119,20 @@ async def _qmd_search(request: Request, query: str,
 
 
 async def _qmd_vsearch(request: Request, query: str,
-                       collection: str | None, limit: int) -> list[dict]:
-    """Semantic (vector) search via qmd serve /vsearch. The query is
-    embedded inside the qmd serve process using whichever backend that
-    process is configured with (rkllama on NPU in our deployment)."""
+                       collection: str | None, limit: int,
+                       db_path: str | None) -> list[dict]:
+    """Semantic (vector) search via qmd serve POST /vsearch.
+
+    The query is embedded inside the qmd serve process using whichever
+    backend that process is configured with (rkllama on NPU in our
+    deployment).
+    """
     http_client = request.app.state.http_client
     payload: dict = {"query": query, "limit": limit}
     if collection:
         payload["collection"] = collection
+    if db_path:
+        payload["dbPath"] = db_path
     resp = await http_client.post(f"{_qmd_base(request)}/vsearch", json=payload, timeout=60)
     resp.raise_for_status()
     data = resp.json()
@@ -115,20 +141,23 @@ async def _qmd_vsearch(request: Request, query: str,
 
 @router.post("/api/memory/search")
 async def memory_search(request: Request, body: SearchRequest):
-    """Search agent memory using keyword or semantic search."""
-    config = request.app.state.config
+    """Search memory using keyword or semantic search.
 
+    If ``agent`` is set, searches that agent's per-agent index. Without
+    an ``agent``, searches the default (user) index. Cross-agent search
+    is intentionally not supported here — agents do not share memory.
+    Aggregating across agents is a separate concern that belongs in a
+    future ``/api/memory/all`` endpoint, gated by user permission.
+    """
+    db_path = _agent_db_path(request, body.agent)
     search_fn = _qmd_vsearch if body.mode == "semantic" else _qmd_search
 
     try:
-        results = await search_fn(request, body.query, body.collection, body.limit)
+        results = await search_fn(request, body.query, body.collection, body.limit, db_path)
     except Exception as exc:
         logger.warning("qmd %s failed: %s", body.mode, exc)
         return JSONResponse({"results": [], "error": str(exc)}, status_code=502)
 
-    # Optional per-agent tagging for UI display. Filtering by agent is
-    # not yet supported at the qmd serve level — every agent shares the
-    # same index until per-agent dbPath routing is wired through.
     if body.agent:
         for r in results:
             r["agent"] = body.agent
@@ -137,17 +166,14 @@ async def memory_search(request: Request, body: SearchRequest):
 
 @router.get("/api/memory/collections/{agent_name}")
 async def memory_collections(request: Request, agent_name: str):
-    """List memory collections via qmd serve GET /collections.
-
-    The agent_name path parameter is accepted for API compatibility but
-    currently ignored — the shared qmd.service points at a single
-    index. Per-agent collection filtering is a follow-up once the
-    upstream qmd serve grows per-request dbPath routing.
-    """
-    _ = agent_name
+    """List memory collections for an agent via qmd serve GET /collections."""
     http_client = request.app.state.http_client
+    params: dict = {}
+    db_path = _agent_db_path(request, agent_name)
+    if db_path:
+        params["dbPath"] = db_path
     try:
-        resp = await http_client.get(f"{_qmd_base(request)}/collections", timeout=30)
+        resp = await http_client.get(f"{_qmd_base(request)}/collections", params=params, timeout=30)
         resp.raise_for_status()
         return resp.json()
     except Exception as e:
@@ -157,18 +183,22 @@ async def memory_collections(request: Request, agent_name: str):
 
 @router.delete("/api/memory/chunk/{content_hash}")
 async def memory_delete_chunk(request: Request, content_hash: str, agent: str | None = None):
-    """Delete a specific memory chunk by content hash.
+    """Delete a chunk by hash via qmd serve POST /delete-chunk.
 
-    qmd serve does not yet expose a deletion endpoint — this route
-    returns 501 until upstream qmd-server grows one. Tracking under
-    the framework-agnostic runtime follow-ups.
+    Routes to the per-agent index when ``agent`` is set, otherwise to
+    the default user index.
     """
-    _ = content_hash, agent
-    return JSONResponse(
-        {
-            "status": "error",
-            "message": "Chunk deletion is not yet exposed by qmd serve — "
-                       "pending an upstream endpoint.",
-        },
-        status_code=501,
-    )
+    http_client = request.app.state.http_client
+    payload: dict = {"hash": content_hash}
+    db_path = _agent_db_path(request, agent)
+    if db_path:
+        payload["dbPath"] = db_path
+    try:
+        resp = await http_client.post(
+            f"{_qmd_base(request)}/delete-chunk", json=payload, timeout=30,
+        )
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as e:
+        logger.warning("qmd /delete-chunk failed: %s", e)
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=502)

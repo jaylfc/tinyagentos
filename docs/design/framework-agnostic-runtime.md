@@ -74,38 +74,62 @@ Audit as of **2026-04-11**. Pass = aligned with rule. Fail = needs migration.
 | Secrets | SQLite on host (`data/secrets.db`), agents fetch via API on demand | **Pass** |
 | Workspace files | `/data/agent-workspaces/{name}` mounted into Docker containers at `/workspace` | **Pass (Docker only)** |
 | Agent memory dir | `/data/agent-memory/{name}` mounted into Docker containers at `/memory` | **Pass (Docker only)** |
-| **QMD embedding service** | **Runs inside each agent container as systemd on port 7832** | **FAIL** |
-| **LXC container mounts** | **Not implemented — LXC backend launches bare** | **FAIL** |
-| **Skills executor workspace** | **Hardcoded to `/tmp/agent-workspace` (ephemeral)** | **FAIL** |
-| Container upgrade / framework swap | Not documented, not tested | **Gap** |
+| QMD embedding + index service | Single host `qmd.service` systemd unit on :7832 routing per-tenant via `dbPath` | **Pass** |
+| Per-agent memory isolation | `data/agent-memory/{name}/index.sqlite` mounted at `/memory`, addressed by dbPath | **Pass** |
+| LiteLLM `/v1/embeddings` | Auto-discovers ollama-compatible backends, exposes `taos-embedding-default` alias | **Pass** |
+| LXC container mounts | LXC backend now attaches `/workspace` and `/memory` via incus disk devices | **Pass** |
+| Skills executor workspace | Resolved per-agent from `app.state.agent_workspaces_dir` | **Pass** |
+| Container upgrade / framework swap | Runbooks in `docs/runbooks/`, automated test pending | **Gap** |
 
 ## Migration — what changes
 
 ### 1. Move QMD out of the container
 
-One QMD process runs on the host, managed by the same controller that manages
-LiteLLM. It exposes an OpenAI-compatible `POST /v1/embeddings` endpoint on
-`localhost:8000` (or wherever).
+One QMD process runs on the host, managed by systemd as ``qmd.service``.
+It exposes the model-side primitives (``/embed``, ``/embed-batch``,
+``/rerank``, ``/expand``, ``/tokenize``) plus the index-side endpoints
+(``/search``, ``/vsearch``, ``/browse``, ``/collections``, ``/status``,
+``/ingest``, ``/delete-chunk``).
 
-Every agent container gets a new injected env var:
+**Per-tenant routing.** Every index endpoint accepts an optional
+``dbPath`` (query param for GET, body field for POST) that selects
+which SQLite file to operate on. One serve process can host many
+tenant indexes — TinyAgentOS uses this to give every agent its own
+memory file at ``data/agent-memory/{name}/index.sqlite`` while
+keeping the user's personal index (``~/.cache/qmd/index.sqlite``) as
+the default. Stores are opened lazily on first use and cached for
+the process lifetime.
+
+The user's index and each agent's index are fully isolated: Agent A
+cannot search, browse, or delete from Agent B's memory, and the
+user's memory is invisible to agents unless they have an explicit
+``can_read_user_memory`` grant. This is the load-bearing piece of
+per-agent privacy and the reason ingestion, search, browse,
+collection listing, and chunk deletion all thread the calling
+``agent`` through ``_agent_db_path`` in
+``tinyagentos/routes/memory.py``.
+
+LiteLLM also exposes an OpenAI-compatible ``/v1/embeddings`` endpoint
+that routes to the same backends, so frameworks consuming the OpenAI
+embeddings API work unchanged. Every agent container gets:
 
 ```
-TAOS_EMBEDDING_URL=http://host.docker.internal:8000/v1/embeddings
+OPENAI_BASE_URL=http://host.docker.internal:4000/v1
+TAOS_EMBEDDING_URL=http://host.docker.internal:4000/v1/embeddings
+TAOS_EMBEDDING_MODEL=taos-embedding-default
 ```
 
-Frameworks that consume the OpenAI embeddings API (most of them, via LiteLLM)
-work unchanged. Frameworks that want a native embedder use a thin shim that
-calls this endpoint.
+Frameworks that want a native embedder shim against
+``TAOS_EMBEDDING_URL``; everything else just sees an OpenAI endpoint
+and Just Works.
 
-Per-agent QMD SQLite DBs stay on the host (they already do — `~/.cache/qmd/…`).
-The only thing moving is the Python process that loads the model.
-
-This removes the `npm install qmd-something` step from `deployer.py:91-98` and
-the systemd unit generation at `deployer.py:16-30`. The deployer gets smaller,
+This removes the ``npm install qmd`` step from ``deployer.py`` and
+the per-container systemd unit generation. The deployer gets smaller,
 not larger.
 
-**Unblocks:** #29 (memory retrieval through scheduler), #30 (LLM chat through
-scheduler — already mostly wired, this makes the embedding half possible).
+**Unblocks:** #29 (memory retrieval through scheduler), #30 (LLM chat
+through scheduler — already mostly wired, this makes the embedding
+half possible).
 
 ### 2. Close the LXC mount gap
 

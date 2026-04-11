@@ -41,14 +41,19 @@ class TestImportDataRoutes:
             files={"file": ("embed_field_test.txt", io.BytesIO(content), "text/plain")},
         )
 
-        # Force qmd_client.embed to raise so we can verify the failure
-        # path reports embedded: False. In the happy path the request
-        # would round-trip to the host qmd.service.
-        async def _raise(*_a, **_kw):
+        # Force qmd serve POST /ingest to raise so we can verify the
+        # failure path reports embedded: False. In the happy path the
+        # route round-trips to the host qmd.service /ingest endpoint
+        # and persists the chunk into the per-agent SQLite under
+        # data/agent-memory/{agent_name}/index.sqlite.
+        from unittest.mock import AsyncMock, MagicMock
+        app = client._transport.app
+        mock_http = MagicMock()
+        async def _post(*_a, **_kw):
             raise RuntimeError("qmd unreachable")
-        monkeypatch.setattr(
-            client._transport.app.state.qmd_client, "embed", _raise,
-        )
+        mock_http.post = AsyncMock(side_effect=_post)
+        mock_http.aclose = AsyncMock(return_value=None)
+        monkeypatch.setattr(app.state, "http_client", mock_http)
 
         resp = await client.post("/api/import/embed", json={
             "agent_name": "test-agent",
@@ -57,7 +62,7 @@ class TestImportDataRoutes:
         assert resp.status_code == 200
         data = resp.json()
         assert "embedded" in data
-        # qmd_client.embed raised → no file got embedded
+        # Ingest call raised → no file got embedded
         assert data["embedded"] is False
         assert len(data["files"]) == 1
         assert "embedded" in data["files"][0]
