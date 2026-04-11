@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import shutil
 from pathlib import Path
 
 from fastapi import APIRouter, Request, UploadFile, File
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -74,17 +75,18 @@ async def user_workspace_page(request: Request):
     })
 
 
-@router.get("/api/workspace/files")
-async def api_list_files(request: Request, path: str = ""):
-    """List files and directories in the user workspace, optionally in a subdirectory."""
-    workspace = _get_workspace_root(request)
+def _list_dir(workspace: Path, path: str) -> list[dict] | tuple[int, dict]:
+    """Shared listing logic used by the one-shot GET and the SSE watcher.
 
+    Returns the entries list on success, or ``(status_code, error_dict)``
+    on validation failure so the caller can build the right response.
+    """
     if path:
         target = _resolve_safe(workspace, path)
         if target is None:
-            return JSONResponse({"error": "Invalid path"}, status_code=400)
+            return (400, {"error": "Invalid path"})
         if not target.exists() or not target.is_dir():
-            return JSONResponse({"error": "Directory not found"}, status_code=404)
+            return (404, {"error": "Directory not found"})
     else:
         target = workspace
 
@@ -99,8 +101,72 @@ async def api_list_files(request: Request, path: str = ""):
             "size": stat.st_size if item.is_file() else 0,
             "modified": stat.st_mtime,
         })
-
     return entries
+
+
+def _dir_signature(entries: list[dict]) -> str:
+    """Stable hash-friendly string of a listing. Changes iff a file
+    appears, disappears, or has its size / mtime modified."""
+    parts = [f"{e['name']}:{int(e['modified'])}:{e['size']}" for e in entries]
+    return "|".join(parts)
+
+
+@router.get("/api/workspace/files")
+async def api_list_files(request: Request, path: str = ""):
+    """List files and directories in the user workspace, optionally in a subdirectory."""
+    workspace = _get_workspace_root(request)
+    result = _list_dir(workspace, path)
+    if isinstance(result, tuple):
+        status, body = result
+        return JSONResponse(body, status_code=status)
+    return result
+
+
+@router.get("/api/workspace/files/watch")
+async def api_watch_files(request: Request, path: str = "", interval: float = 1.0):
+    """Server-sent events stream of directory contents — emits an event
+    whenever the listing changes.
+
+    Clients subscribe with an EventSource and patch their local state on
+    each event. Uses stdlib polling (os.scandir via pathlib) at
+    ``interval`` seconds — not inotify because we want zero new runtime
+    dependencies and workspace directories are small enough (<1000 files)
+    that polling is cheap. The SSE connection self-terminates if the
+    client disconnects (FastAPI closes the underlying asyncio task)."""
+    workspace = _get_workspace_root(request)
+    interval = max(0.25, min(interval, 10.0))
+
+    async def event_stream():
+        # Send an immediate snapshot so the client's list is populated
+        # before the first change fires.
+        last_signature: str | None = None
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                result = _list_dir(workspace, path)
+                if isinstance(result, tuple):
+                    status, body = result
+                    yield f"event: error\ndata: {json.dumps(body)}\n\n"
+                    break
+                entries = result
+                signature = _dir_signature(entries)
+                if signature != last_signature:
+                    last_signature = signature
+                    yield f"data: {json.dumps(entries)}\n\n"
+                await asyncio.sleep(interval)
+        except asyncio.CancelledError:
+            # Client disconnected, clean exit
+            raise
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post("/api/workspace/files/upload")

@@ -190,6 +190,42 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
     fetchFiles(currentPath);
   }, [currentPath, fetchFiles]);
 
+  // Live updates — SSE stream patches the file list in place when
+  // anything changes in the current workspace directory. Only active
+  // for the workspace location (shared folders would need their own
+  // watch endpoint). Closes automatically when the effect tears down
+  // on path / location change or unmount.
+  useEffect(() => {
+    if (location !== "workspace") return;
+    const qs = currentPath ? `?path=${encodeURIComponent(currentPath)}` : "";
+    const url = `/api/workspace/files/watch${qs}`;
+    let eventSource: EventSource | null = null;
+    try {
+      eventSource = new EventSource(url);
+    } catch {
+      return;
+    }
+    const es = eventSource;
+    es.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (Array.isArray(data)) {
+          setFiles(data);
+        }
+      } catch {
+        // Ignore malformed events — the next one will come through
+      }
+    };
+    es.onerror = () => {
+      // Silently let the browser retry. EventSource auto-reconnects
+      // on transient errors; we only explicitly close on effect
+      // teardown below.
+    };
+    return () => {
+      es.close();
+    };
+  }, [currentPath, location]);
+
   useEffect(() => {
     apiFetch<SharedFolder[]>("/api/shared-folders")
       .then((d) => setSharedFolders(Array.isArray(d) ? d : []))

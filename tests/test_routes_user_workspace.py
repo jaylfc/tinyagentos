@@ -107,6 +107,43 @@ class TestUserWorkspaceRoutes:
         resp = await client.get("/api/workspace/files?path=../../etc")
         assert resp.status_code == 400
 
+    def test_dir_signature_changes_on_modification(self):
+        """Signature helper drives the SSE watch change-detection loop.
+        Unit-tested directly — the full SSE stream endpoint is tested
+        via the frontend EventSource path in production (ASGI test
+        clients don't handle infinite-body streams cleanly)."""
+        from tinyagentos.routes.user_workspace import _dir_signature
+        assert _dir_signature([]) == ""
+        a = [{"name": "a.txt", "modified": 100.0, "size": 5}]
+        b = [{"name": "a.txt", "modified": 200.0, "size": 5}]
+        c = [{"name": "a.txt", "modified": 100.0, "size": 10}]
+        d = [{"name": "a.txt", "modified": 100.0, "size": 5}, {"name": "b.txt", "modified": 100.0, "size": 0}]
+        assert _dir_signature(a) != _dir_signature(b)  # mtime change
+        assert _dir_signature(a) != _dir_signature(c)  # size change
+        assert _dir_signature(a) != _dir_signature(d)  # new file
+        assert _dir_signature(a) == _dir_signature(a)  # stable
+
+    def test_list_dir_helper_roundtrip(self, tmp_path):
+        """_list_dir returns the shape the watch endpoint streams."""
+        from tinyagentos.routes.user_workspace import _list_dir
+        (tmp_path / "a.txt").write_bytes(b"hello")
+        (tmp_path / "sub").mkdir()
+        entries = _list_dir(tmp_path, "")
+        assert isinstance(entries, list)
+        names = {e["name"] for e in entries}
+        assert names == {"a.txt", "sub"}
+        # Ordering: dirs before files, alphabetical within each group
+        assert entries[0]["name"] == "sub"
+        assert entries[1]["name"] == "a.txt"
+
+    def test_list_dir_rejects_traversal(self, tmp_path):
+        """Attempting to escape the workspace root returns an error tuple."""
+        from tinyagentos.routes.user_workspace import _list_dir
+        result = _list_dir(tmp_path, "../../etc")
+        assert isinstance(result, tuple)
+        assert result[0] == 400
+        assert "error" in result[1]
+
     @pytest.mark.asyncio
     async def test_storage_stats(self, client):
         """GET /api/workspace/stats returns total_files and total_size."""
