@@ -449,6 +449,7 @@ The benchmark harness is at `scripts/spikes/ez-rknn-async/`. Set `RKNN_SD_LEGACY
 - [docs/design/framework-agnostic-runtime.md](docs/design/framework-agnostic-runtime.md) — containers hold code, hosts hold state (load-bearing architectural rule)
 - [docs/superpowers/specs/2026-04-11-taos-framework-integration-bridge-design.md](docs/superpowers/specs/2026-04-11-taos-framework-integration-bridge-design.md) — TAOS Framework Integration Bridge design (OpenClaw → Hermes → OpenClaw round-trip, not yet implemented)
 - [docs/mirror-policy.md](docs/mirror-policy.md) — binary mirror governance: what is mirrored, SHA256 verification, self-hosting guide
+- [platform/README.md](platform/README.md) — provisioning for the tinyagentos.com public website, docs site, and bittorrent tracker. This is infrastructure for the project's hosted presence, not part of the TinyAgentOS product itself. See also [platform/DEPLOYMENT.md](platform/DEPLOYMENT.md) for the runbook.
 
 ## Development
 
