@@ -19,6 +19,7 @@ Run:
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import importlib.util
 import io
@@ -104,29 +105,65 @@ class GenerateRequest(BaseModel):
 app = FastAPI(title="RKNN Stable Diffusion", version="0.1.0")
 _pipe = None
 _load_error: Optional[str] = None
+_pipe_lock = asyncio.Lock()  # serialise lazy loads on the first concurrent request
 
 
-@app.on_event("startup")
-async def _startup():
+def _ensure_pipeline_sync():
+    """Build the RKNN pipeline if it isn't loaded yet. Safe to call
+    repeatedly; idempotent. Called from /generate's lazy-load path.
+    The previous startup hook eagerly built the pipeline at boot,
+    pinning ~5.5 GB of RAM permanently even when the user wasn't
+    generating any images. Lazy loading frees the NPU memory budget
+    for chat models / TTS / etc when image gen is idle. Sequential
+    eviction is the next piece (Phase 1.5)."""
     global _pipe, _load_error
+    if _pipe is not None:
+        return
     try:
         start = time.time()
         module = _load_wrapper_module()
         _pipe = _build_pipeline(module)
-        logger.info(f"Pipeline ready in {time.time() - start:.1f}s")
+        logger.info(f"Pipeline lazy-loaded in {time.time() - start:.1f}s")
     except Exception as exc:
         _load_error = str(exc)
         logger.exception("Failed to load RKNN pipeline")
+        raise
+
+
+async def _ensure_pipeline():
+    if _pipe is not None:
+        return
+    async with _pipe_lock:
+        if _pipe is not None:
+            return
+        # The actual model load is sync + heavy; offload to a worker
+        # thread so we don't block the event loop while ~5 GB of
+        # weights stream into NPU memory.
+        await asyncio.get_running_loop().run_in_executor(None, _ensure_pipeline_sync)
+
+
+@app.on_event("startup")
+async def _startup():
+    # Intentionally empty: the pipeline is now lazy-loaded on the first
+    # /generate request. Old behaviour was to build the full pipeline
+    # here, which pinned ~5.5 GB of RAM at boot for users who never
+    # actually used image gen.
+    logger.info("rknn_sd_server up — pipeline will lazy-load on first /generate request")
 
 
 @app.get("/health")
 async def health():
-    if _pipe is None:
-        return JSONResponse(
-            {"status": "error", "error": _load_error or "pipeline not loaded"},
-            status_code=503,
-        )
-    return {"status": "ok", "model": "lcm-dreamshaper-v7-rknn", "backend": "rknn2"}
+    # Health is independent of pipeline state — the server is alive
+    # even before the first lazy load. The 'pipeline_loaded' field
+    # tells callers whether the next /generate will pay the load
+    # latency or hit a warm pipeline.
+    return {
+        "status": "ok",
+        "model": "lcm-dreamshaper-v7-rknn",
+        "backend": "rknn2",
+        "pipeline_loaded": _pipe is not None,
+        "load_error": _load_error,
+    }
 
 
 @app.get("/v1/models")
@@ -146,8 +183,13 @@ async def list_models():
 
 @app.post("/v1/images/generations")
 async def generate(body: GenerateRequest):
-    if _pipe is None:
-        raise HTTPException(503, _load_error or "pipeline not loaded")
+    # Lazy load on first call. The build is offloaded to a worker
+    # thread inside _ensure_pipeline so it doesn't block the event
+    # loop while ~5 GB of weights stream in.
+    try:
+        await _ensure_pipeline()
+    except Exception as exc:
+        raise HTTPException(503, _load_error or f"pipeline failed to load: {exc}")
     if body.n != 1:
         raise HTTPException(400, "n > 1 not supported on this backend")
 
