@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Search, Trash2, User } from "lucide-react";
+import { ChevronLeft, Plus, Search, Trash2, User } from "lucide-react";
 import { Button, Input, Textarea, Label } from "@/components/ui";
 
 interface Contact {
@@ -73,10 +73,22 @@ export function ContactsApp({ windowId: _windowId }: { windowId: string }) {
     setEditing(null);
   }
 
+  const isMobile = typeof window !== "undefined" && window.innerWidth < 640;
+  const showDetailOnly = isMobile && (editing !== null || selectedId !== null);
+  const showListOnly = isMobile && !showDetailOnly;
+
   return (
     <div className="flex h-full bg-shell-bg-deep text-shell-text select-none">
       {/* Sidebar */}
-      <div className="w-56 shrink-0 flex flex-col border-r border-white/5">
+      <div
+        className={
+          isMobile
+            ? showListOnly
+              ? "w-full flex flex-col"
+              : "hidden"
+            : "w-56 shrink-0 flex flex-col border-r border-white/5"
+        }
+      >
         {/* Search + Add */}
         <div className="p-3 flex gap-2">
           <div className="relative flex-1">
@@ -139,7 +151,32 @@ export function ContactsApp({ windowId: _windowId }: { windowId: string }) {
       </div>
 
       {/* Detail panel */}
-      <div className="flex-1 flex flex-col overflow-y-auto">
+      <div
+        className={
+          isMobile
+            ? showDetailOnly
+              ? "w-full flex flex-col overflow-y-auto"
+              : "hidden"
+            : "flex-1 flex flex-col overflow-y-auto"
+        }
+      >
+        {isMobile && showDetailOnly && (
+          <div className="px-3 py-2 border-b border-white/5 shrink-0">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setEditing(null);
+                setSelectedId(null);
+              }}
+              aria-label="Back to contacts"
+              className="h-7"
+            >
+              <ChevronLeft size={14} />
+              Contacts
+            </Button>
+          </div>
+        )}
         {editing ? (
           <div className="p-6 flex flex-col gap-4 max-w-md">
             <h2 className="text-lg font-semibold">

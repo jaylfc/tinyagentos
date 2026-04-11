@@ -14,16 +14,32 @@ export function NotificationCentre() {
 
   if (!centreOpen) return null;
 
+  const isMobile = typeof window !== "undefined" && window.innerWidth < 640;
+
   return (
     <>
       <div className="fixed inset-0 z-[10000]" onClick={closeCentre} />
       <div
-        className="fixed top-10 right-2 z-[10001] w-80 max-h-[70vh] rounded-xl border border-white/10 overflow-hidden flex flex-col"
-        style={{
-          backgroundColor: "rgba(26, 27, 46, 0.97)",
-          backdropFilter: "blur(20px)",
-          boxShadow: "0 12px 48px rgba(0,0,0,0.5)",
-        }}
+        className={
+          isMobile
+            ? "fixed left-2 right-2 z-[10001] rounded-xl border border-white/10 overflow-hidden flex flex-col"
+            : "fixed top-10 right-2 z-[10001] w-80 max-h-[70vh] rounded-xl border border-white/10 overflow-hidden flex flex-col"
+        }
+        style={
+          isMobile
+            ? {
+                backgroundColor: "rgba(26, 27, 46, 0.97)",
+                backdropFilter: "blur(20px)",
+                boxShadow: "0 12px 48px rgba(0,0,0,0.5)",
+                top: "calc(env(safe-area-inset-top, 0px) + 52px)",
+                bottom: "calc(40px + env(safe-area-inset-bottom, 0px) * 0.35 + 16px)",
+              }
+            : {
+                backgroundColor: "rgba(26, 27, 46, 0.97)",
+                backdropFilter: "blur(20px)",
+                boxShadow: "0 12px 48px rgba(0,0,0,0.5)",
+              }
+        }
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
