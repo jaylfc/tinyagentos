@@ -79,7 +79,7 @@ class TestImagesGenerate:
         assert data["filename"].endswith("_42.png")
 
         # Verify file was saved
-        images_dir = images_app.state.config.config_path.parent / "images"
+        images_dir = images_app.state.config_path.parent / "workspace" / "images" / "generated"
         saved_files = list(images_dir.glob("*.png"))
         assert len(saved_files) == 1
         assert saved_files[0].read_bytes() == b"fake-png-data"
@@ -140,8 +140,8 @@ class TestImagesList:
         assert data["images"] == []
 
     async def test_list_with_images(self, images_app, images_client):
-        images_dir = images_app.state.config.config_path.parent / "images"
-        images_dir.mkdir(exist_ok=True)
+        images_dir = images_app.state.config_path.parent / "workspace" / "images" / "generated"
+        images_dir.mkdir(parents=True, exist_ok=True)
         # Create a fake image + metadata
         (images_dir / "1234_42.png").write_bytes(b"fake-png")
         (images_dir / "1234_42.json").write_text(json.dumps({
@@ -164,8 +164,8 @@ class TestImagesDelete:
         assert resp.status_code == 404
 
     async def test_delete_image(self, images_app, images_client):
-        images_dir = images_app.state.config.config_path.parent / "images"
-        images_dir.mkdir(exist_ok=True)
+        images_dir = images_app.state.config_path.parent / "workspace" / "images" / "generated"
+        images_dir.mkdir(parents=True, exist_ok=True)
         (images_dir / "1234_42.png").write_bytes(b"fake-png")
         (images_dir / "1234_42.json").write_text('{"prompt": "test"}')
 

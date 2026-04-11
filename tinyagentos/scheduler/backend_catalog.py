@@ -1,0 +1,260 @@
+"""Backend catalog — live view of what every backend has loaded and can serve.
+
+This is the load-bearing "backend-driven discovery" mechanism. Every other
+subsystem (Images routing, Models API, scheduler admission, agent skill
+execution) reads from this catalog instead of scanning the filesystem or
+trusting a config file.
+
+The catalog is populated by periodic polling of registered backend adapters
+plus event-driven refresh on specific triggers (backend restart, model
+download complete, etc.). Data is cached in-memory with freshness timestamps;
+stale entries are marked but not immediately removed so the UI can show
+"reconnecting" instead of silently hiding things.
+
+See docs/design/resource-scheduler.md §Backend-driven discovery.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import time
+from dataclasses import dataclass, field
+from typing import Any, Awaitable, Callable, Optional
+
+logger = logging.getLogger(__name__)
+
+# Mapping from backend type → set of capabilities that type provides.
+# A backend is just a running service; its type tells us what it can do.
+# This is the ONE static lookup in the whole system — everything else is
+# live probing.
+BACKEND_CAPABILITIES: dict[str, set[str]] = {
+    "rkllama": {"llm-chat", "embedding", "reranking"},
+    "ollama": {"llm-chat", "embedding"},
+    "llama-cpp": {"llm-chat", "embedding"},
+    "vllm": {"llm-chat"},
+    "exo": {"llm-chat"},
+    "mlx": {"llm-chat"},
+    "openai": {"llm-chat", "embedding"},
+    "anthropic": {"llm-chat"},
+    "sd-cpp": {"image-generation"},
+    "rknn-sd": {"image-generation"},
+}
+
+
+@dataclass
+class BackendEntry:
+    """One backend as seen by the catalog right now."""
+    name: str
+    type: str
+    url: str
+    status: str                         # "ok" | "error" | "stale"
+    capabilities: set[str]              # derived from type + live probe
+    models: list[dict]                  # live list from the backend's API
+    priority: int                       # user-set routing priority
+    last_healthy: Optional[float] = None
+    last_probed: float = field(default_factory=time.time)
+    error: Optional[str] = None
+
+    def has_model(self, model_id: str) -> bool:
+        """Fuzzy match against advertised model names — handles prefix/suffix
+        variation like ``dreamshaper-8-lcm`` vs ``dreamshaper-8-lcm-iq4_nl``.
+        """
+        if not self.models:
+            return False
+        needle = model_id.lower()
+        for m in self.models:
+            name = (m.get("name") or m.get("id") or "").lower()
+            if not name:
+                continue
+            if name == needle or name.startswith(needle) or needle.startswith(name):
+                return True
+        return False
+
+    def to_dict(self) -> dict:
+        return {
+            "name": self.name,
+            "type": self.type,
+            "url": self.url,
+            "status": self.status,
+            "capabilities": sorted(self.capabilities),
+            "models": self.models,
+            "priority": self.priority,
+            "last_healthy": self.last_healthy,
+            "last_probed": self.last_probed,
+            "error": self.error,
+        }
+
+
+class BackendCatalog:
+    """Periodically polls backend adapters and caches the live state.
+
+    Usage:
+        catalog = BackendCatalog(backends, probe_fn, interval=30)
+        await catalog.start()
+        # later...
+        entries = catalog.backends_with_capability("image-generation")
+        await catalog.stop()
+
+    The ``probe_fn`` is a coroutine that takes a backend dict
+    ``{name, type, url, priority, ...}`` and returns a dict shaped like the
+    adapters in ``tinyagentos/backend_adapters.py``:
+    ``{status, response_ms, models}``.
+    """
+
+    def __init__(
+        self,
+        backends: list[dict],
+        probe_fn: Callable[[dict], Awaitable[dict]],
+        interval_seconds: float = 30.0,
+        stale_after_seconds: float = 120.0,
+    ):
+        self._backends_config = list(backends)
+        self._probe_fn = probe_fn
+        self._interval = interval_seconds
+        self._stale_after = stale_after_seconds
+        self._entries: dict[str, BackendEntry] = {}
+        self._task: Optional[asyncio.Task] = None
+        self._lock = asyncio.Lock()
+        self._initial_probe_done = asyncio.Event()
+
+    async def start(self) -> None:
+        """Kick off the background polling task and wait for the first pass."""
+        if self._task is not None:
+            return
+        self._task = asyncio.create_task(self._poll_loop(), name="backend-catalog-poll")
+        await asyncio.wait_for(self._initial_probe_done.wait(), timeout=15.0)
+
+    async def stop(self) -> None:
+        if self._task is not None:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+            self._task = None
+
+    async def refresh(self) -> None:
+        """Force a single probe pass immediately — used after a backend change."""
+        async with self._lock:
+            await self._probe_all()
+
+    def backends(self) -> list[BackendEntry]:
+        """Snapshot of all known backends."""
+        return list(self._entries.values())
+
+    def backends_with_capability(self, capability: str) -> list[BackendEntry]:
+        """All healthy backends advertising ``capability``, ordered by priority."""
+        matches = [
+            e for e in self._entries.values()
+            if e.status == "ok" and capability in e.capabilities
+        ]
+        matches.sort(key=lambda e: e.priority)
+        return matches
+
+    def find_backend_for_model(
+        self, capability: str, model_id: Optional[str] = None
+    ) -> Optional[BackendEntry]:
+        """Best healthy backend for the given capability (+ optional model).
+
+        If ``model_id`` is supplied and ANY healthy backend has it loaded,
+        prefer that backend. Otherwise return the highest-priority healthy
+        backend offering the capability (may need to load the model on first
+        call).
+        """
+        candidates = self.backends_with_capability(capability)
+        if not candidates:
+            return None
+        if model_id:
+            exact = [b for b in candidates if b.has_model(model_id)]
+            if exact:
+                return exact[0]
+        return candidates[0]
+
+    def all_models(self, capability: Optional[str] = None) -> list[dict]:
+        """Flat list of all loaded models across all backends. Used to join
+        against the on-disk catalog for the "downloaded" marker in /api/models.
+        """
+        out: list[dict] = []
+        for entry in self._entries.values():
+            if entry.status != "ok":
+                continue
+            if capability and capability not in entry.capabilities:
+                continue
+            for m in entry.models:
+                out.append({
+                    **m,
+                    "backend": entry.name,
+                    "backend_type": entry.type,
+                })
+        return out
+
+    def _capabilities_for_type(self, backend_type: str) -> set[str]:
+        return set(BACKEND_CAPABILITIES.get(backend_type, set()))
+
+    async def _poll_loop(self) -> None:
+        try:
+            while True:
+                try:
+                    async with self._lock:
+                        await self._probe_all()
+                except Exception:
+                    logger.exception("backend catalog probe failed")
+                if not self._initial_probe_done.is_set():
+                    self._initial_probe_done.set()
+                await asyncio.sleep(self._interval)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("backend catalog poll loop crashed")
+            raise
+
+    async def _probe_all(self) -> None:
+        now = time.time()
+        results = await asyncio.gather(
+            *[self._probe_one(b) for b in self._backends_config],
+            return_exceptions=True,
+        )
+        for backend, result in zip(self._backends_config, results):
+            name = backend["name"]
+            if isinstance(result, Exception):
+                self._mark_error(name, backend, str(result), now)
+                continue
+            if result.get("status") == "ok":
+                self._entries[name] = BackendEntry(
+                    name=name,
+                    type=backend["type"],
+                    url=backend["url"],
+                    status="ok",
+                    capabilities=self._capabilities_for_type(backend["type"]),
+                    models=result.get("models", []),
+                    priority=backend.get("priority", 99),
+                    last_healthy=now,
+                    last_probed=now,
+                    error=None,
+                )
+            else:
+                self._mark_error(name, backend, result.get("error"), now)
+
+    def _mark_error(self, name: str, backend: dict, err: Optional[str], now: float) -> None:
+        existing = self._entries.get(name)
+        last_healthy = existing.last_healthy if existing else None
+        # stale grace period — we keep the last-known models around so the UI
+        # can say "reconnecting" instead of silently clearing the dropdown
+        status = "error"
+        if last_healthy and (now - last_healthy) < self._stale_after:
+            status = "stale"
+        self._entries[name] = BackendEntry(
+            name=name,
+            type=backend["type"],
+            url=backend["url"],
+            status=status,
+            capabilities=self._capabilities_for_type(backend["type"]),
+            models=existing.models if existing else [],
+            priority=backend.get("priority", 99),
+            last_healthy=last_healthy,
+            last_probed=now,
+            error=err,
+        )
+
+    async def _probe_one(self, backend: dict) -> dict:
+        return await self._probe_fn(backend)
