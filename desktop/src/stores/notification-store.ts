@@ -10,6 +10,8 @@ export interface Notification {
   action?: string;      // URL or app ID to open on click
   read: boolean;
   timestamp: number;
+  /** Extra typed payload for structured notifications like agent.paused. */
+  meta?: Record<string, string>;
 }
 
 interface NotificationStore {

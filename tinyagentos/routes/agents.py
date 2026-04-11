@@ -159,6 +159,9 @@ class DeployAgentRequest(BaseModel):
     # None means "controller decides" (and for worker-hosted models the
     # controller will route to wherever the model already lives).
     target_worker: str | None = None
+    # Worker failure policy fields (added in worker-failure-handling).
+    on_worker_failure: str = "pause"
+    fallback_models: list[str] = []
 
 
 @router.post("/api/agents/deploy")
@@ -297,13 +300,17 @@ async def deploy_agent_endpoint(request: Request, body: DeployAgentRequest):
     # through the shared host qmd.service, addressed by agent name and
     # the bind-mounted per-agent SQLite at /memory. See
     # docs/design/framework-agnostic-runtime.md.
-    config.agents.append({
+    from tinyagentos.config import normalize_agent
+    new_agent = normalize_agent({
         "name": body.name,
         "host": "",
         "color": body.color,
         "status": "deploying",
         "can_read_user_memory": body.can_read_user_memory,
+        "on_worker_failure": body.on_worker_failure,
+        "fallback_models": [m for m in body.fallback_models if m],
     })
+    config.agents.append(new_agent)
     await save_config_locked(config, config.config_path)
 
     # Record deploy task

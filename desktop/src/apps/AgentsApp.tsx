@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Bot, Plus, Trash2, ScrollText, Play, Server, X, ChevronRight, ChevronLeft, Check, Wrench, MessageSquare, Download } from "lucide-react";
+import { Bot, Plus, Trash2, ScrollText, Play, Server, X, ChevronRight, ChevronLeft, Check, Wrench, MessageSquare, Download, PauseCircle, RotateCcw } from "lucide-react";
 import { AgentSkillsPanel } from "./AgentSkillsPanel";
 import { AgentMessagesPanel } from "./AgentMessagesPanel";
 import {
@@ -31,6 +31,9 @@ interface Agent {
   status: "running" | "stopped" | "error" | "deploying";
   vectors: number;
   framework?: string;
+  paused?: boolean;
+  on_worker_failure?: "pause" | "fallback" | "escalate-immediately";
+  fallback_models?: string[];
 }
 
 interface Framework {
@@ -74,12 +77,14 @@ function AgentRow({
   onViewSkills,
   onViewMessages,
   onDelete,
+  onResume,
 }: {
   agent: Agent;
   onViewLogs: (name: string) => void;
   onViewSkills: (name: string) => void;
   onViewMessages: (name: string) => void;
   onDelete: (name: string) => void;
+  onResume: (name: string) => void;
 }) {
   return (
     <Card className="flex items-center gap-4 px-4 py-3 hover:bg-shell-surface/50 transition-colors">
@@ -90,6 +95,15 @@ function AgentRow({
           aria-label={`Color: ${agent.color}`}
         />
         <span className="font-medium text-sm truncate">{agent.name}</span>
+        {agent.paused && (
+          <span
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/20 text-amber-400 border border-amber-500/20"
+            title="This agent is paused due to a worker failure"
+          >
+            <PauseCircle size={10} aria-hidden="true" />
+            paused
+          </span>
+        )}
       </div>
       <div className="flex items-center gap-1.5 text-sm text-shell-text-secondary min-w-0">
         <Server size={13} className="text-shell-text-tertiary" />
@@ -97,6 +111,7 @@ function AgentRow({
       </div>
       <span
         className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium capitalize ${STATUS_STYLES[agent.status] ?? STATUS_STYLES.stopped}`}
+        aria-label={`Status: ${agent.status}`}
       >
         {agent.status}
       </span>
@@ -104,6 +119,18 @@ function AgentRow({
         {agent.vectors.toLocaleString()}
       </span>
       <div className="flex items-center gap-1">
+        {agent.paused && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 hover:bg-emerald-500/15 hover:text-emerald-400 text-amber-400"
+            onClick={() => onResume(agent.name)}
+            aria-label={`Resume ${agent.name}`}
+            title="Resume agent"
+          >
+            <RotateCcw size={15} />
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="icon"
@@ -310,6 +337,10 @@ function DeployWizard({
   // Step 5 — Permissions
   const [canReadUserMemory, setCanReadUserMemory] = useState(false);
 
+  // Step 5b — Worker failure policy
+  const [onWorkerFailure, setOnWorkerFailure] = useState<"pause" | "fallback" | "escalate-immediately">("pause");
+  const [fallbackModels, setFallbackModels] = useState<string[]>([]);
+
   const [deploying, setDeploying] = useState(false);
 
   const [deployError, setDeployError] = useState<string | null>(null);
@@ -452,14 +483,24 @@ function DeployWizard({
       setMemory("512");
       setCpus("1");
       setCanReadUserMemory(false);
+      setOnWorkerFailure("pause");
+      setFallbackModels([]);
       setDeploying(false);
       setDeployError(null);
     }
   }, [open]);
 
+  // Derive default policy heuristic: if fallback models are configured use
+  // "fallback", otherwise "pause".
+  useEffect(() => {
+    if (fallbackModels.length > 0 && onWorkerFailure === "pause") {
+      setOnWorkerFailure("fallback");
+    }
+  }, [fallbackModels, onWorkerFailure]);
+
   if (!open) return null;
 
-  const STEPS = ["Name & Color", "Framework", "Model", "Resources", "Permissions", "Review"];
+  const STEPS = ["Name & Color", "Framework", "Model", "Resources", "Permissions", "Failure Policy", "Review"];
 
   const canNext = () => {
     if (step === 0) return name.trim().length > 0;
@@ -467,6 +508,9 @@ function DeployWizard({
     if (step === 2) return selectedModel.length > 0;
     return true;
   };
+
+  const totalSteps = STEPS.length;
+  const reviewStep = totalSteps - 1;
 
   async function handleDeploy() {
     setDeploying(true);
@@ -485,6 +529,8 @@ function DeployWizard({
           memory_limit: memoryLimit,
           cpu_limit: parseInt(cpus),
           can_read_user_memory: canReadUserMemory,
+          on_worker_failure: onWorkerFailure,
+          fallback_models: fallbackModels,
         }),
       });
       if (!res.ok) {
@@ -810,8 +856,81 @@ function DeployWizard({
             </div>
           )}
 
-          {/* Step 5: Review */}
+          {/* Step 5: Failure Policy */}
           {step === 5 && (
+            <div className="space-y-4">
+              <span className="block text-xs text-shell-text-secondary mb-2">Worker Failure Policy</span>
+              <div>
+                <Label htmlFor="agent-failure-policy" className="mb-1.5 block">
+                  On worker failure
+                </Label>
+                <select
+                  id="agent-failure-policy"
+                  value={onWorkerFailure}
+                  onChange={(e) => setOnWorkerFailure(e.target.value as typeof onWorkerFailure)}
+                  className="flex h-9 w-full rounded-lg border border-white/10 bg-shell-bg-deep px-3 py-1 text-sm text-shell-text focus-visible:outline-none focus-visible:border-accent/40 focus-visible:ring-2 focus-visible:ring-accent/20 transition-colors"
+                  aria-describedby="agent-failure-policy-desc"
+                >
+                  <option value="pause">Pause (wait for human to intervene)</option>
+                  <option value="fallback">Fallback (try alternate models before pausing)</option>
+                  <option value="escalate-immediately">Escalate immediately (notify at first sign of trouble)</option>
+                </select>
+                <p id="agent-failure-policy-desc" className="mt-1 text-xs text-shell-text-tertiary">
+                  {onWorkerFailure === "pause" && "Retries briefly, then pauses and notifies you."}
+                  {onWorkerFailure === "fallback" && "Retries, falls back to alternate models, then pauses if all fail."}
+                  {onWorkerFailure === "escalate-immediately" && "Notifies you as soon as the first retry fails."}
+                </p>
+              </div>
+              <div>
+                <Label className="mb-1.5 block">
+                  Fallback models{" "}
+                  <span className="font-normal text-shell-text-tertiary">(optional, in priority order)</span>
+                </Label>
+                <div className="space-y-1.5">
+                  {fallbackModels.map((m, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <select
+                        value={m}
+                        onChange={(e) => {
+                          const updated = [...fallbackModels];
+                          updated[i] = e.target.value;
+                          setFallbackModels(updated);
+                        }}
+                        className="flex-1 h-8 rounded-lg border border-white/10 bg-shell-bg-deep px-2 text-sm text-shell-text"
+                        aria-label={`Fallback model ${i + 1}`}
+                      >
+                        <option value="">-- pick a model --</option>
+                        {models.filter((mo) => mo.id !== selectedModel).map((mo) => (
+                          <option key={mo.id} value={mo.id}>{mo.name}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => setFallbackModels(fallbackModels.filter((_, j) => j !== i))}
+                        className="text-shell-text-tertiary hover:text-red-400 transition-colors"
+                        aria-label={`Remove fallback model ${i + 1}`}
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ))}
+                  {modelsLoaded && models.length > 1 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setFallbackModels([...fallbackModels, ""])}
+                      className="w-full"
+                    >
+                      <Plus size={13} />
+                      Add fallback model
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Step 6: Review */}
+          {step === 6 && (
             <div className="space-y-3">
               <span className="block text-xs text-shell-text-secondary mb-2">Review Configuration</span>
               <div className="rounded-lg bg-shell-bg-deep border border-white/5 divide-y divide-white/5">
@@ -823,6 +942,8 @@ function DeployWizard({
                   ["Memory", `${memory} MB`],
                   ["CPUs", `${cpus} Core${cpus !== "1" ? "s" : ""}`],
                   ["User Memory", canReadUserMemory ? "Allowed (read-only)" : "Denied"],
+                  ["On failure", onWorkerFailure],
+                  ["Fallbacks", fallbackModels.filter(Boolean).join(", ") || "none"],
                 ].map(([label, value]) => (
                   <div key={label} className="flex items-center justify-between px-4 py-2.5">
                     <span className="text-xs text-shell-text-secondary">{label}</span>
@@ -860,7 +981,7 @@ function DeployWizard({
             {step === 0 ? "Cancel" : "Back"}
           </Button>
 
-          {step < 5 ? (
+          {step < reviewStep ? (
             <Button
               size="sm"
               onClick={() => setStep(step + 1)}
@@ -912,6 +1033,9 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
                 status: String(a.status ?? "stopped") as Agent["status"],
                 vectors: Number(a.vectors ?? 0),
                 framework: a.framework ? String(a.framework) : undefined,
+                paused: Boolean(a.paused),
+                on_worker_failure: (a.on_worker_failure as Agent["on_worker_failure"]) ?? "pause",
+                fallback_models: Array.isArray(a.fallback_models) ? (a.fallback_models as string[]) : [],
               }))
             );
             setLoading(false);
@@ -923,6 +1047,34 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
     setAgents([]);
     setLoading(false);
   }, []);
+
+  // Listen for agent-resumed events from the notification toast
+  useEffect(() => {
+    const handler = () => fetchAgents();
+    window.addEventListener("taos:agent-resumed", handler);
+    return () => window.removeEventListener("taos:agent-resumed", handler);
+  }, [fetchAgents]);
+
+  async function handleResume(name: string) {
+    try {
+      const res = await fetch(`/api/agents/${encodeURIComponent(name)}/resume`, {
+        method: "POST",
+        headers: { Accept: "application/json" },
+      });
+      if (!res.ok) {
+        let msg = `Resume failed (${res.status})`;
+        try {
+          const err = await res.json();
+          if (err?.error) msg = String(err.error);
+        } catch { /* ignore */ }
+        window.alert(msg);
+        return;
+      }
+      fetchAgents();
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "Network error");
+    }
+  }
 
   useEffect(() => {
     fetchAgents();
@@ -1015,6 +1167,7 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
                 onViewSkills={(name) => setDetail({ name, tab: "skills" })}
                 onViewMessages={(name) => setDetail({ name, tab: "messages" })}
                 onDelete={handleDelete}
+                onResume={handleResume}
               />
             ))}
           </div>
