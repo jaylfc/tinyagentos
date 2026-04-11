@@ -172,13 +172,30 @@ torrent; a 10-torrent seed session fits in ~200 MB.
 - Settings toggle: `Share downloaded models with other users`.
 
 ### Phase 2 — mirror + catalog tooling
-- opentracker on Jay's server.
+- **opentracker on tinyagentos.com**, co-located with the landing page and
+  seedbox. UDP on `tracker.tinyagentos.com:6969` plus HTTP
+  `tracker.tinyagentos.com/announce`. Single static binary, ~2 MB RAM, no
+  database — nginx fronts the HTTP announce, opentracker owns the UDP port
+  directly. DHT + LSD stay the primary peer-discovery path, so the tracker is
+  a bootstrap accelerator, not a single point of failure: if it goes down,
+  swarms keep working.
+- **Default announce list** baked into every magnet the catalog publisher
+  emits:
+  1. `udp://tracker.tinyagentos.com:6969/announce` (ours)
+  2. 1–2 well-known public backups (opentrackr, etc.) so we're not the only
+     announce URL a client has to reach.
 - Seedbox daemon — systemd unit wrapping libtorrent, auto-seeds the mirror's
-  `models/` directory.
+  `models/` directory. Lives on the same box as the tracker and the website.
 - `tinyagentos catalog publish <model>` CLI that generates torrents and
-  updates manifests in one command.
+  updates manifests in one command. Injects the default announce list +
+  web-seed URL automatically.
 - Batch-torrent the existing 97 manifests — anything with a permissive licence
   gets a magnet; the rest stay HTTP-only.
+- **Abuse-report plumbing** — a `tracker-abuse@tinyagentos.com` alias and a
+  small runbook for removing a torrent from the tracker + seedbox if a
+  licence review later flips. Only variants with
+  `license_allows_redistribution: true` are ever announced, so this should be
+  rare, but it needs to exist before the tracker goes public.
 
 ### Phase 3 — seeding polish
 - Seeding stats in the dashboard (`Sharing: 3 models, 12 peers, 47 MB
@@ -200,9 +217,11 @@ torrent; a 10-torrent seed session fits in ~200 MB.
 - **python-libtorrent availability on ARM64 / Pi?** Available via apt on
   Debian/Ubuntu; needs testing on Orange Pi Armbian. Fallback to HTTP if
   import fails.
-- **Should we ship a tracker as part of TinyAgentOS?** Probably not in the
-  MVP — running a tracker is an ops commitment. One central tracker at
-  tinyagentos.com is simpler.
+- **Should we ship a tracker as part of TinyAgentOS?** Decided: yes, one
+  central opentracker at `tracker.tinyagentos.com`, co-located with the
+  website and seedbox in Phase 2. Not shipped inside the OS itself — running
+  a tracker is an ops commitment that belongs on our infra, not every user's
+  box.
 - **Web seed vs magnet as primary?** Magnet with web-seed inside is the
   cleanest — one field, both transports, no branching logic.
 
