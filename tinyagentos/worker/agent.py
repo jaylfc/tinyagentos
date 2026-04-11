@@ -19,26 +19,84 @@ class WorkerAgent:
         self._registered = False
 
     async def detect_backends(self) -> list[dict]:
-        """Discover locally running inference backends."""
-        backends = []
-        checks = [
-            ("ollama", "http://localhost:11434", "/api/tags"),
-            ("rkllama", "http://localhost:8080", "/api/tags"),
-            ("llama-cpp", "http://localhost:8080", "/health"),
-            ("vllm", "http://localhost:8000", "/health"),
+        """Discover locally running inference backends via live probing.
+
+        Backend-driven: each candidate gets a live health check and, on
+        success, a live model list so the controller sees what's actually
+        loaded right now. Filename conventions and static capability
+        declarations are not the source of truth anywhere.
+        """
+        from tinyagentos.scheduler.backend_catalog import BACKEND_CAPABILITIES
+
+        candidates = [
+            ("rkllama", "http://localhost:8080"),
+            ("ollama", "http://localhost:11434"),
+            ("llama-cpp", "http://localhost:8000"),
+            ("vllm", "http://localhost:8000"),
+            ("sd-cpp", "http://localhost:7864"),
+            ("rknn-sd", "http://localhost:7863"),
         ]
+
+        backends = []
         async with httpx.AsyncClient(timeout=3) as client:
-            for backend_type, base_url, health_path in checks:
-                try:
-                    resp = await client.get(base_url + health_path)
-                    if resp.status_code == 200:
-                        backends.append({
-                            "type": backend_type,
-                            "url": base_url,
-                        })
-                except Exception:
-                    pass
+            for backend_type, base_url in candidates:
+                models = await self._probe_models(client, backend_type, base_url)
+                if models is None:
+                    continue  # backend not running here
+                backends.append({
+                    "name": f"{backend_type}@{base_url}",
+                    "type": backend_type,
+                    "url": base_url,
+                    "capabilities": sorted(BACKEND_CAPABILITIES.get(backend_type, set())),
+                    "models": models,
+                    "status": "ok",
+                })
         return backends
+
+    async def _probe_models(
+        self, client: httpx.AsyncClient, backend_type: str, base_url: str
+    ) -> list[dict] | None:
+        """Ask a backend what models it has loaded. Returns None if the
+        backend isn't reachable (not running on this host)."""
+        try:
+            if backend_type in ("rkllama", "ollama"):
+                resp = await client.get(f"{base_url}/api/tags")
+                if resp.status_code != 200:
+                    return None
+                data = resp.json()
+                return [
+                    {
+                        "name": m.get("model") or m.get("name", ""),
+                        "size_mb": (m.get("size") or 0) // 1_000_000,
+                    }
+                    for m in data.get("models", [])
+                ]
+            if backend_type == "sd-cpp":
+                resp = await client.get(f"{base_url}/sdapi/v1/sd-models")
+                if resp.status_code != 200:
+                    return None
+                return [
+                    {"name": m.get("title") or m.get("model_name") or "", "size_mb": 0}
+                    for m in (resp.json() if isinstance(resp.json(), list) else [])
+                ]
+            if backend_type == "rknn-sd":
+                resp = await client.get(f"{base_url}/health")
+                if resp.status_code != 200:
+                    return None
+                data = resp.json()
+                name = data.get("model") or ""
+                return [{"name": name, "size_mb": 0}] if name else []
+            # llama-cpp / vllm — OpenAI compat /v1/models
+            resp = await client.get(f"{base_url}/v1/models")
+            if resp.status_code != 200:
+                return None
+            data = resp.json()
+            return [
+                {"name": m.get("id", ""), "size_mb": 0}
+                for m in data.get("data", [])
+            ]
+        except Exception:
+            return None
 
     def get_container_runtime(self) -> str | None:
         """Detect available container runtime (docker or podman). Returns None if neither found."""
@@ -54,15 +112,16 @@ class WorkerAgent:
         return self.get_container_runtime() is not None
 
     def detect_capabilities(self, backends: list[dict]) -> list[str]:
-        """Determine capabilities from detected backends."""
-        caps = set()
+        """Union of capabilities across all detected backends.
+
+        Backend-driven: each backend contributes its own advertised
+        capability set (from BACKEND_CAPABILITIES by type, derived from
+        the live probe above). Streaming is added if a container runtime
+        is present.
+        """
+        caps: set[str] = set()
         for b in backends:
-            if b["type"] in ("ollama", "rkllama", "llama-cpp", "vllm"):
-                caps.update(["chat", "embed"])
-            if b["type"] in ("rkllama", "ollama"):
-                caps.add("image-generation")
-            if b["type"] in ("rkllama",):
-                caps.add("rerank")
+            caps.update(b.get("capabilities") or [])
         if self.supports_streaming():
             caps.add("app-streaming")
         return sorted(caps)
@@ -113,13 +172,26 @@ class WorkerAgent:
             return False
 
     async def heartbeat(self) -> bool:
-        """Send heartbeat to controller."""
+        """Send heartbeat to controller with live backend catalog.
+
+        Backend-driven: the heartbeat carries a fresh probe of every
+        detected backend, not a cached snapshot. This lets the controller
+        aggregate per-worker catalogs into a cluster-wide view that
+        reflects what's actually loaded right now across the mesh.
+        """
         try:
             load = psutil.cpu_percent() / 100.0
+            backends = await self.detect_backends()
+            caps = self.detect_capabilities(backends)
             async with httpx.AsyncClient(timeout=5) as client:
                 resp = await client.post(
                     f"{self.controller_url}/api/cluster/heartbeat",
-                    json={"name": self.name, "load": load},
+                    json={
+                        "name": self.name,
+                        "load": load,
+                        "backends": backends,
+                        "capabilities": caps,
+                    },
                 )
                 return resp.status_code == 200
         except Exception:
