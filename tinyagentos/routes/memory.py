@@ -20,7 +20,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
-from tinyagentos.agent_db import find_agent, get_agent_db, get_agent_summaries
+from tinyagentos.agent_db import get_agent_summaries
 
 logger = logging.getLogger(__name__)
 
@@ -48,24 +48,28 @@ async def memory_page(request: Request):
 @router.get("/api/memory/browse")
 async def memory_browse(
     request: Request,
-    agent: str,
+    agent: str | None = None,
     collection: str | None = None,
     limit: int = 20,
     offset: int = 0,
 ):
-    """Browse an agent's memory chunks, paginated, most recent first."""
-    config = request.app.state.config
-    agent_dict = find_agent(config, agent)
-    if not agent_dict:
-        return JSONResponse({"chunks": [], "error": f"Agent '{agent}' not found"})
-    db = get_agent_db(agent_dict)
-    if not db:
-        return JSONResponse({"chunks": [], "error": f"Database missing for agent '{agent}'"})
+    """Browse memory chunks via qmd serve GET /browse."""
+    http_client = request.app.state.http_client
+    params: dict = {"limit": limit, "offset": offset}
+    if collection:
+        params["collection"] = collection
     try:
-        chunks = db.browse(collection=collection, limit=limit, offset=offset)
+        resp = await http_client.get(f"{_qmd_base(request)}/browse", params=params, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        chunks = data.get("chunks", [])
+        if agent:
+            for c in chunks:
+                c["agent"] = agent
         return {"chunks": chunks}
     except Exception as e:
-        return JSONResponse({"chunks": [], "error": str(e)})
+        logger.warning("qmd /browse failed: %s", e)
+        return JSONResponse({"chunks": [], "error": str(e)}, status_code=502)
 
 
 def _keyword_search_agent(agent_dict: dict, query: str,
@@ -83,12 +87,12 @@ def _qmd_base(request: Request) -> str:
 
 async def _qmd_search(request: Request, query: str,
                       collection: str | None, limit: int) -> list[dict]:
-    """Keyword (BM25) search via qmd serve /search."""
+    """Keyword (BM25) search via qmd serve GET /search."""
     http_client = request.app.state.http_client
-    payload: dict = {"query": query, "limit": limit}
+    params: dict = {"q": query, "limit": limit}
     if collection:
-        payload["collection"] = collection
-    resp = await http_client.post(f"{_qmd_base(request)}/search", json=payload, timeout=30)
+        params["collection"] = collection
+    resp = await http_client.get(f"{_qmd_base(request)}/search", params=params, timeout=30)
     resp.raise_for_status()
     data = resp.json()
     return data.get("results", [])
@@ -133,29 +137,38 @@ async def memory_search(request: Request, body: SearchRequest):
 
 @router.get("/api/memory/collections/{agent_name}")
 async def memory_collections(request: Request, agent_name: str):
-    """List memory collections for an agent."""
-    config = request.app.state.config
-    agent_dict = find_agent(config, agent_name)
-    if not agent_dict:
+    """List memory collections via qmd serve GET /collections.
+
+    The agent_name path parameter is accepted for API compatibility but
+    currently ignored — the shared qmd.service points at a single
+    index. Per-agent collection filtering is a follow-up once the
+    upstream qmd serve grows per-request dbPath routing.
+    """
+    _ = agent_name
+    http_client = request.app.state.http_client
+    try:
+        resp = await http_client.get(f"{_qmd_base(request)}/collections", timeout=30)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as e:
+        logger.warning("qmd /collections failed: %s", e)
         return JSONResponse([], status_code=200)
-    db = get_agent_db(agent_dict)
-    if not db:
-        return JSONResponse([], status_code=200)
-    return db.collections()
 
 
 @router.delete("/api/memory/chunk/{content_hash}")
-async def memory_delete_chunk(request: Request, content_hash: str, agent: str):
-    """Delete a specific memory chunk by content hash."""
-    config = request.app.state.config
-    agent_dict = find_agent(config, agent)
-    if not agent_dict:
-        return JSONResponse({"status": "error", "message": "Agent not found"}, status_code=404)
-    db = get_agent_db(agent_dict)
-    if not db:
-        return JSONResponse({"status": "error", "message": "Database missing"}, status_code=404)
-    try:
-        db.delete_chunk(content_hash)
-        return {"status": "deleted"}
-    except Exception as e:
-        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+async def memory_delete_chunk(request: Request, content_hash: str, agent: str | None = None):
+    """Delete a specific memory chunk by content hash.
+
+    qmd serve does not yet expose a deletion endpoint — this route
+    returns 501 until upstream qmd-server grows one. Tracking under
+    the framework-agnostic runtime follow-ups.
+    """
+    _ = content_hash, agent
+    return JSONResponse(
+        {
+            "status": "error",
+            "message": "Chunk deletion is not yet exposed by qmd serve — "
+                       "pending an upstream endpoint.",
+        },
+        status_code=501,
+    )
