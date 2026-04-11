@@ -24,6 +24,7 @@ from tinyagentos.metrics import MetricsStore
 from tinyagentos.notifications import NotificationStore
 from tinyagentos.qmd_client import QmdClient
 from tinyagentos.backend_adapters import check_backend_health
+from tinyagentos.benchmark import BenchmarkStore
 from tinyagentos.scheduler import BackendCatalog, TaskScheduler
 from tinyagentos.scheduler.discovery import build_scheduler as build_resource_scheduler
 from tinyagentos.relationships import RelationshipManager
@@ -81,6 +82,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     relationship_mgr = RelationshipManager(data_dir / "relationships.db")
     channel_store = ChannelStore(data_dir / "channels.db")
     scheduler = TaskScheduler(data_dir / "scheduler.db")
+    benchmark_store = BenchmarkStore(data_dir / "benchmarks.db")
 
     async def _probe_backend(backend: dict) -> dict:
         return await check_backend_health(http_client, backend)
@@ -140,6 +142,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         await user_memory.init()
         await installed_apps.init()
         await skills.init()
+        await benchmark_store.init()
         app.state.config = config
         app.state.config_path = config_path
         app.state.models_dir = data_dir / "models"
@@ -180,6 +183,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.user_memory = user_memory
         app.state.installed_apps = installed_apps
         app.state.skills = skills
+        app.state.benchmark_store = benchmark_store
         # Optionally start LiteLLM proxy (non-fatal if not installed)
         try:
             await llm_proxy.start(config.backends)
@@ -233,6 +237,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         await cluster_manager.stop()
         llm_proxy.stop()
         await monitor.stop()
+        await benchmark_store.close()
         await skills.close()
         await installed_apps.close()
         await user_memory.close()
@@ -372,6 +377,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     from tinyagentos.routes.scheduler import router as scheduler_router
     app.include_router(scheduler_router)
+
+    from tinyagentos.routes.benchmarks import router as benchmarks_router
+    app.include_router(benchmarks_router)
 
     from tinyagentos.routes.video import router as video_router
     app.include_router(video_router)
