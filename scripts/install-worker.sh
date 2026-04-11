@@ -98,6 +98,127 @@ case "$os_name" in
     *) die "unsupported OS: $os_name" ;;
 esac
 
+# --- accelerator detection (advisory only — never auto-installs drivers) ----
+#
+# We never apt/dnf/pacman a GPU driver: most boxes don't have an
+# accelerator at all (Apple Silicon, Intel iGPU, ARM SBCs), and the
+# ones that do typically already have the right driver from the OS
+# vendor. Touching the kernel-module + DKMS stack on someone else's
+# box without consent is rude.
+#
+# What we do instead: detect what's physically present, then surface
+# clear advice if the hardware is on the bus but the driver isn't
+# loaded so the worker can use it. The user runs the install command
+# themselves.
+
+detect_and_advise_accelerators() {
+    [[ "$os_name" != "Linux" ]] && return 0  # macOS detection lives elsewhere
+
+    local found_any=0
+
+    # ── NVIDIA ───────────────────────────────────────────────────────
+    local nv_devices=0 nv_driver=0 nv_userspace=0
+    [[ -e /dev/nvidia0 ]] && nv_devices=1
+    [[ -d /proc/driver/nvidia ]] && nv_driver=1
+    command -v nvidia-smi >/dev/null 2>&1 && nv_userspace=1
+
+    local nv_on_bus=0
+    if command -v lspci >/dev/null 2>&1; then
+        if lspci 2>/dev/null | grep -qi "NVIDIA Corporation"; then
+            nv_on_bus=1
+        fi
+    fi
+
+    if (( nv_devices || nv_driver || nv_on_bus )); then
+        found_any=1
+        if (( nv_driver && nv_devices )); then
+            log "nvidia: kernel module loaded + device nodes present (CUDA / Vulkan available)"
+            if (( ! nv_userspace )); then
+                warn "nvidia-smi is not installed — VRAM size will report as unknown to the controller"
+                warn "  optional: install nvidia-utils-XXX matching your driver version"
+            fi
+        elif (( nv_on_bus )); then
+            warn "NVIDIA GPU detected on the PCIe bus but the kernel module is not loaded"
+            warn "  the worker will not be able to use it until the driver is installed"
+            if command -v apt-get >/dev/null 2>&1; then
+                warn "  Debian / Ubuntu: sudo apt install nvidia-driver firmware-misc-nonfree && sudo reboot"
+            elif command -v dnf >/dev/null 2>&1; then
+                warn "  Fedora: enable RPM Fusion, then sudo dnf install akmod-nvidia xorg-x11-drv-nvidia-cuda && sudo reboot"
+            elif command -v pacman >/dev/null 2>&1; then
+                warn "  Arch: sudo pacman -S nvidia nvidia-utils && sudo reboot"
+            else
+                warn "  see your distro's NVIDIA driver documentation"
+            fi
+        fi
+    fi
+
+    # ── AMD ROCm / AMDGPU ───────────────────────────────────────────
+    local amd_on_bus=0 amd_drm=0 amd_rocm=0
+    if command -v lspci >/dev/null 2>&1; then
+        if lspci 2>/dev/null | grep -qi "AMD/ATI" | head -1 >/dev/null \
+           || lspci 2>/dev/null | grep -E "VGA|3D" | grep -qi "Advanced Micro Devices"; then
+            amd_on_bus=1
+        fi
+    fi
+    [[ -e /dev/kfd ]] && amd_drm=1
+    [[ -d /opt/rocm ]] && amd_rocm=1
+
+    if (( amd_on_bus || amd_drm )); then
+        found_any=1
+        if (( amd_rocm && amd_drm )); then
+            log "amdgpu: kfd device + ROCm runtime present (HIP / Vulkan available)"
+        elif (( amd_drm && ! amd_rocm )); then
+            warn "AMD GPU detected with kfd device but ROCm is not installed"
+            warn "  the worker will fall back to CPU until ROCm is set up"
+            if command -v apt-get >/dev/null 2>&1; then
+                warn "  Debian / Ubuntu: see https://rocm.docs.amd.com/projects/install-on-linux/en/latest/"
+            elif command -v dnf >/dev/null 2>&1; then
+                warn "  Fedora: sudo dnf install rocm-hip rocm-opencl"
+            elif command -v pacman >/dev/null 2>&1; then
+                warn "  Arch: sudo pacman -S rocm-hip-runtime rocm-opencl-runtime"
+            fi
+        elif (( amd_on_bus && ! amd_drm )); then
+            warn "AMD GPU on the PCIe bus but the amdgpu kernel module is not loaded"
+            warn "  ensure the amdgpu driver is enabled in your kernel and reboot"
+        fi
+    fi
+
+    # ── Intel Arc / iGPU (Vulkan via Mesa) ──────────────────────────
+    local intel_gpu=0
+    if command -v lspci >/dev/null 2>&1; then
+        if lspci 2>/dev/null | grep -E "VGA|3D" | grep -qi "Intel Corporation"; then
+            intel_gpu=1
+        fi
+    fi
+    if (( intel_gpu )); then
+        found_any=1
+        if [[ -d /sys/class/drm/card0 ]] || [[ -d /sys/class/drm/card1 ]]; then
+            log "intel gpu: present (Vulkan via Mesa, no separate driver install needed on most distros)"
+        else
+            warn "Intel GPU detected on the PCIe bus but no DRM device — install mesa-vulkan-drivers"
+        fi
+    fi
+
+    # ── Rockchip RKNPU ──────────────────────────────────────────────
+    if [[ -e /dev/rknpu ]] || [[ -d /sys/class/devfreq/fdab0000.npu ]]; then
+        found_any=1
+        if command -v rkllama >/dev/null 2>&1; then
+            log "rknpu: device present + rkllama backend installed"
+        else
+            warn "Rockchip NPU detected but rkllama is not installed"
+            warn "  worker will run without NPU acceleration until you install rkllama"
+            warn "  see: https://github.com/notpunchnox/rkllama"
+        fi
+    fi
+
+    # ── Apple Silicon (handled in macOS path) ───────────────────────
+    if (( ! found_any )); then
+        log "no discrete accelerator detected — worker will run on CPU"
+    fi
+}
+
+detect_and_advise_accelerators
+
 # --- clone / update the repo ---------------------------------------------
 
 if [[ ! -d "$INSTALL_DIR/.git" ]]; then
