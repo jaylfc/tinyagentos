@@ -1,13 +1,13 @@
 """Backend catalog — live view of what every backend has loaded and can serve.
 
-This is the load-bearing "backend-driven discovery" mechanism. Every other
-subsystem (Images routing, Models API, scheduler admission, agent skill
-execution) reads from this catalog instead of scanning the filesystem or
-trusting a config file.
+The backend-driven discovery mechanism: subsystems that need to answer
+"what's available right now?" (Images routing, Models API, scheduler
+admission, agent skills) read from this catalog instead of scanning the
+filesystem or trusting a config file.
 
 The catalog is populated by periodic polling of registered backend adapters
 plus event-driven refresh on specific triggers (backend restart, model
-download complete, etc.). Data is cached in-memory with freshness timestamps;
+download complete). Data is cached in-memory with freshness timestamps;
 stale entries are marked but not immediately removed so the UI can show
 "reconnecting" instead of silently hiding things.
 
@@ -24,9 +24,10 @@ from typing import Any, Awaitable, Callable, Optional
 logger = logging.getLogger(__name__)
 
 # Mapping from backend type → set of capabilities that type provides.
-# A backend is just a running service; its type tells us what it can do.
-# This is the ONE static lookup in the whole system — everything else is
-# live probing.
+# This is a static lookup because the type is a protocol contract, not a
+# runtime property: an ollama-compatible server speaks /api/tags and does
+# chat + embed by definition. Which *models* it has loaded is still a
+# live probe via the adapter.
 BACKEND_CAPABILITIES: dict[str, set[str]] = {
     "rkllama": {"llm-chat", "embedding", "reranking"},
     "ollama": {"llm-chat", "embedding"},

@@ -1,10 +1,15 @@
 """Resource — one physical accelerator (or CPU pool) that runs Tasks.
 
-A Resource is an async singleton with a concurrency semaphore, a signature
-declaring its platform/runtime/version, and a set of capabilities derived
-from the backends currently pointing at it. It does NOT own a queue in
-Phase 1 — the Scheduler calls ``Resource.run(task)`` directly with the
-semaphore providing mutual exclusion.
+A Resource wraps a concurrency semaphore, a signature declaring its
+platform / runtime / version, and a live view of the capabilities it
+can serve (derived from the backends currently pointing at it). One
+instance per physical device: ``npu-rk3588``, ``cpu-inference``,
+``gpu-cuda-0``, ``gpu-cuda-1``, etc.
+
+Resources do not own task queues in Phase 1 — the Scheduler calls
+``Resource.run(task)`` directly and the semaphore provides mutual
+exclusion. Per-resource queueing with aging moves into Phase 2 when
+multi-tier priority sharing is added.
 """
 from __future__ import annotations
 

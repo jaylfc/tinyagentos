@@ -35,13 +35,12 @@ CPU_POTENTIAL_CAPABILITIES: set[str] = {
     "vision",
 }
 
-# The RK3588 NPU can in principle run every inference capability —
-# happyme531 and others have published RKNN ports of whisper, OpenVoice,
-# MeloTTS, F5-TTS, Bert-VITS2, Kokoro TTS, Florence-2, segment-anything,
-# OmniParser, TangoFlux, VoxCPM, as well as the obvious LLM / embedding
-# / rerank / image-gen surface via rkllama and rknn-sd. The potential
-# set matches the CPU's universal set; ``capabilities`` (the live view)
-# is still filtered to what's actually loaded on a backend right now.
+# Every capability the RK3588 NPU can run given a suitable RKNN-exported
+# model. Community ports exist for the full inference surface (LLMs and
+# embeddings via rkllama, image-gen via rknn-sd, plus whisper / TTS /
+# vision models on HuggingFace). The potential set matches the CPU's;
+# ``capabilities`` (the live view) is still filtered to what's actually
+# loaded on a backend right now.
 NPU_RK3588_POTENTIAL_CAPABILITIES: set[str] = {
     "llm-chat",
     "embedding",

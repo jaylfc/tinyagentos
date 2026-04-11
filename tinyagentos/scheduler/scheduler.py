@@ -1,11 +1,14 @@
 """Scheduler — dispatcher across registered Resources.
 
-Phase 1 is deliberately simple: tasks are routed synchronously in the order
-of their preferred_resources list, the first resource that passes admission
-runs it, and we record everything to a bounded history for the Activity app.
+Phase 1 is deliberately minimal: tasks are routed synchronously in the
+order of their preferred_resources list, the first resource that passes
+admission runs it, and every dispatch is recorded to a bounded history
+for the Activity app.
 
-No aging, no priority queue sharing across resources, no mid-task preemption,
-no max_wait_ms enforcement — all Phase 2.
+Priority-queue sharing across resources, task aging, mid-task preemption,
+and max_wait_ms enforcement are Phase 2 work and intentionally absent
+here — adding them before the single-resource path is proven would mask
+the simpler bugs.
 """
 from __future__ import annotations
 
@@ -70,12 +73,10 @@ class Scheduler:
     async def submit(self, task: Task) -> object:
         """Dispatch a task to the first admitted preferred resource.
 
-        If ``task.preferred_resources`` is empty OR the caller does not
-        care about order, the scheduler picks the best-fit resource by
-        (admission passes, lowest tier, best benchmark score). This
-        gives sensible smart routing out of the box: GPU > NPU > CPU,
-        with benchmark scores breaking ties within a tier once the
-        benchmark store has data.
+        If ``task.preferred_resources`` is empty, the scheduler auto-routes
+        by ``(lowest tier, best benchmark score)`` — GPU before NPU before
+        CPU, with benchmark scores breaking ties within a tier once the
+        benchmark store has data for the (resource, capability) pair.
 
         Raises :class:`NoResourceAvailableError` if no resource can run it.
         """
