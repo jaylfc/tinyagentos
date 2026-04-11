@@ -6,6 +6,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
+from tinyagentos.cluster.capabilities import potential_capabilities as _potential_capabilities
 from tinyagentos.cluster.optimiser import ClusterOptimiser
 from tinyagentos.cluster.worker_protocol import WorkerInfo
 
@@ -63,8 +64,20 @@ async def cluster_page(request: Request):
 @router.get("/api/cluster/workers")
 async def list_workers(request: Request):
     cluster = request.app.state.cluster_manager
+    registry = getattr(request.app.state, "registry", None)
     workers = cluster.get_workers()
-    return [asdict(w) for w in workers]
+    result = []
+    for w in workers:
+        d = asdict(w)
+        if registry is not None:
+            tier_id, pot_caps = _potential_capabilities(w.hardware, registry)
+            d["tier_id"] = tier_id
+            d["potential_capabilities"] = pot_caps
+            # Keep WorkerInfo fields in sync too so in-memory state is consistent
+            w.tier_id = tier_id
+            w.potential_capabilities = pot_caps
+        result.append(d)
+    return result
 
 
 @router.post("/api/cluster/workers")

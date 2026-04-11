@@ -20,3 +20,5 @@ class WorkerInfo:
     registered_at: float = 0
     load: float = 0.0                 # 0-1 utilization estimate
     platform: str = ""                # linux | windows | macos
+    tier_id: str = ""                 # catalog hardware tier, e.g. "x86-cuda-12gb"
+    potential_capabilities: list[str] = field(default_factory=list)  # derived from catalog + tier

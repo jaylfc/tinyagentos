@@ -511,6 +511,10 @@ export function DashboardApp({ windowId: _windowId }: { windowId: string }) {
                   const status = workerStatus(w);
                   const backends = w.backends ?? [];
                   const capabilities = w.capabilities ?? [];
+                  const activeSet = new Set(capabilities);
+                  const latentCaps = w.tier_id
+                    ? (w.potential_capabilities ?? []).filter((c) => !activeSet.has(c))
+                    : [];
                   return (
                     <div
                       key={w.name}
@@ -525,6 +529,14 @@ export function DashboardApp({ windowId: _windowId }: { windowId: string }) {
                           <span className="text-[10px] text-shell-text-tertiary">
                             {"\u00b7"} {workerShortIp(w)}
                           </span>
+                          {w.tier_id && (
+                            <span
+                              className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/[0.05] border border-white/10 text-shell-text-tertiary font-mono"
+                              aria-label={`Hardware tier: ${w.tier_id}`}
+                            >
+                              {w.tier_id}
+                            </span>
+                          )}
                         </div>
                         <span
                           className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold border ${STATUS_PILL_CLASS[status]}`}
@@ -554,19 +566,32 @@ export function DashboardApp({ windowId: _windowId }: { windowId: string }) {
                         )}
                       </div>
                       <div className="mt-1 flex flex-wrap gap-1">
-                        {capabilities.length === 0 ? (
+                        {capabilities.length === 0 && latentCaps.length === 0 ? (
                           <span className="text-[9px] text-shell-text-tertiary italic">
                             No capabilities yet
                           </span>
                         ) : (
-                          capabilities.map((c) => (
-                            <span
-                              key={`${w.name}-c-${c}`}
-                              className="text-[9px] px-1.5 py-0.5 rounded-full bg-violet-500/15 text-violet-200 font-medium"
-                            >
-                              {c}
-                            </span>
-                          ))
+                          <>
+                            {capabilities.map((c) => (
+                              <span
+                                key={`${w.name}-c-${c}`}
+                                className="text-[9px] px-1.5 py-0.5 rounded-full bg-violet-500/15 text-violet-200 font-medium"
+                                aria-label={`Current capability: ${c}`}
+                              >
+                                {c}
+                              </span>
+                            ))}
+                            {latentCaps.map((c) => (
+                              <span
+                                key={`${w.name}-p-${c}`}
+                                className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/[0.03] border border-white/10 text-shell-text-tertiary font-medium"
+                                aria-label={`Potential capability: ${c}`}
+                                title="Hardware can support this — install a model with this capability to enable it"
+                              >
+                                {c}
+                              </span>
+                            ))}
+                          </>
                         )}
                       </div>
                     </div>

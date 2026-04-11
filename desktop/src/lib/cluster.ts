@@ -80,6 +80,13 @@ export interface ClusterWorker {
   registered_at?: number;
   load?: number;
   platform?: string;
+  /** Catalog hardware tier id, e.g. "x86-cuda-12gb". Present on workers that
+   *  have connected to a controller running TAOS v2+. */
+  tier_id?: string;
+  /** Capabilities the hardware could support if the right models were installed.
+   *  Derived from the catalog manifests on the controller — never duplicates
+   *  entries that are already in `capabilities`. */
+  potential_capabilities?: string[];
 }
 
 export type WorkerStatus = "online" | "stale" | "offline" | "unknown";

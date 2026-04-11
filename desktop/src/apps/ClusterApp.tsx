@@ -47,6 +47,10 @@ function WorkerListCard({
   const status = workerStatus(worker);
   const backends = worker.backends ?? [];
   const capabilities = worker.capabilities ?? [];
+  const activeSet = new Set(capabilities);
+  const latentCaps = worker.tier_id
+    ? (worker.potential_capabilities ?? []).filter((c) => !activeSet.has(c))
+    : [];
   return (
     <button
       type="button"
@@ -90,10 +94,29 @@ function WorkerListCard({
           <span
             key={`${worker.name}-lc-${c}`}
             className="text-[9px] px-1.5 py-0.5 rounded-full bg-violet-500/15 text-violet-200 font-medium"
+            aria-label={`Current capability: ${c}`}
           >
             {c}
           </span>
         ))}
+        {latentCaps.slice(0, 3).map((c) => (
+          <span
+            key={`${worker.name}-lp-${c}`}
+            className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/[0.03] border border-white/10 text-shell-text-tertiary font-medium"
+            aria-label={`Potential capability: ${c}`}
+            title="Hardware can support this — install a model with this capability to enable it"
+          >
+            {c}
+          </span>
+        ))}
+        {latentCaps.length > 3 && (
+          <span
+            className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/[0.03] border border-white/10 text-shell-text-tertiary font-medium"
+            aria-label={`${latentCaps.length - 3} more potential capabilities`}
+          >
+            +{latentCaps.length - 3} more
+          </span>
+        )}
       </div>
     </button>
   );
@@ -154,6 +177,10 @@ function WorkerDetail({
   const backends = worker.backends ?? [];
   const capabilities = worker.capabilities ?? [];
   const models = worker.models ?? [];
+  const activeSet = new Set(capabilities);
+  const latentCaps = worker.tier_id
+    ? (worker.potential_capabilities ?? []).filter((c) => !activeSet.has(c))
+    : [];
 
   const copy = useCallback(async (kind: "name" | "url", value: string) => {
     try {
@@ -177,9 +204,17 @@ function WorkerDetail({
       {/* Header */}
       <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-white/5 shrink-0">
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h2 className="text-sm font-semibold text-shell-text truncate">{worker.name}</h2>
             <StatusPill status={status} />
+            {worker.tier_id && (
+              <span
+                className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/[0.05] border border-white/10 text-shell-text-tertiary font-mono"
+                aria-label={`Hardware tier: ${worker.tier_id}`}
+              >
+                {worker.tier_id}
+              </span>
+            )}
           </div>
           <p className="text-[11px] text-shell-text-tertiary mt-0.5 truncate">
             {worker.url}
@@ -355,19 +390,51 @@ function WorkerDetail({
         </Section>
 
         {/* Capabilities */}
-        <Section title={`Capabilities (${capabilities.length})`} icon={<Zap size={14} className="text-violet-400" />}>
-          {capabilities.length === 0 ? (
+        <Section
+          title={`Capabilities (${capabilities.length} active${latentCaps.length > 0 ? ` · ${latentCaps.length} potential` : ""})`}
+          icon={<Zap size={14} className="text-violet-400" />}
+        >
+          {capabilities.length === 0 && latentCaps.length === 0 ? (
             <p className="text-[11px] text-shell-text-tertiary italic">No capabilities reported</p>
           ) : (
-            <div className="flex flex-wrap gap-1">
-              {capabilities.map((c) => (
-                <span
-                  key={`detail-cap-${c}`}
-                  className="text-[10px] px-2 py-0.5 rounded-full bg-violet-500/15 text-violet-200 font-medium"
-                >
-                  {c}
-                </span>
-              ))}
+            <div className="space-y-2.5">
+              {capabilities.length > 0 && (
+                <div>
+                  <p className="text-[10px] uppercase tracking-wide text-shell-text-tertiary mb-1.5">
+                    Active capabilities
+                  </p>
+                  <div className="flex flex-wrap gap-1">
+                    {capabilities.map((c) => (
+                      <span
+                        key={`detail-cap-${c}`}
+                        className="text-[10px] px-2 py-0.5 rounded-full bg-violet-500/15 text-violet-200 font-medium"
+                        aria-label={`Current capability: ${c}`}
+                      >
+                        {c}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {latentCaps.length > 0 && (
+                <div>
+                  <p className="text-[10px] uppercase tracking-wide text-shell-text-tertiary mb-1.5">
+                    Hardware can support
+                  </p>
+                  <div className="flex flex-wrap gap-1">
+                    {latentCaps.map((c) => (
+                      <span
+                        key={`detail-pot-${c}`}
+                        className="text-[10px] px-2 py-0.5 rounded-full bg-white/[0.03] border border-white/10 text-shell-text-tertiary font-medium"
+                        aria-label={`Potential capability: ${c}`}
+                        title="Hardware can support this — install a model with this capability to enable it"
+                      >
+                        {c}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </Section>
