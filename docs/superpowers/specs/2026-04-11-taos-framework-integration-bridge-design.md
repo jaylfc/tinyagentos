@@ -1303,6 +1303,16 @@ The framework adapter design is **done** when:
   framework init` scaffolder)
 - Mid-conversation framework swap
 - Per-agent rate limiting and budgets surfaced in the UI
+- **Cluster-wide scheduler aggregation.** The Phase 1 scheduler is
+  single-host: BackendCatalog probes only the controller's local
+  backends, and the Activity widget shows local resources only.
+  Phase 2 cluster dispatch routes inference tasks to remote workers,
+  the BackendCatalog absorbs each worker's heartbeat-reported
+  catalog into a federated view, and the Scheduler widget aggregates
+  slots / load / latency across every registered worker. Today the
+  Cluster widget shows worker hardware (CPU, RAM, GPU, NPU) and the
+  Scheduler widget shows local-only — the two will merge once Phase
+  2 lands.
 
 ## Open questions for after approval
 
