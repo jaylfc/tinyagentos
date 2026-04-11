@@ -1327,8 +1327,28 @@ The framework adapter design is **done** when:
   2. **Per-resource model registry** in the scheduler tracks what's
      resident on each accelerator (NPU, GPU, CPU), how recently each
      was used, how much memory each occupies.
-  3. **Idle eviction** after a configurable per-resource timeout
-     (NPU default 60 s, GPU 300 s, CPU never).
+  3. **Idle eviction** after a configurable per-model-class TTL.
+     Suggested defaults — overridable per model in the catalog
+     manifest, and overridable per agent via user pinning:
+
+     | Model class                | Default TTL |
+     |----------------------------|-------------|
+     | Image gen (SD/Flux/etc.)   | 5 min       |
+     | STT (Whisper)              | 2 min       |
+     | TTS                        | 2 min       |
+     | Embedding                  | 30 sec      |
+     | Reranker                   | 15 sec      |
+     | Query expansion            | 15 sec      |
+     | Chat (small ≤4B)           | 10 min      |
+     | Chat (large ≥7B)           | 30 min      |
+     | Reasoning                  | 30 min      |
+
+     Rationale: image gen is bursty so 5 minutes captures a typical
+     session without holding the 5 GB after the user moves on.
+     Embedding / reranker / query-expansion are tiny (~1 s reload)
+     and called constantly during ingest then idle for hours, so
+     short TTLs are basically free. Large chat models reload slowly
+     (~20 s) so a generous 30 min TTL keeps conversation flow snappy.
   4. **LRU eviction under capacity pressure** when a new request needs
      more memory than the resource has free.
   5. **Cluster-aware cache locality** — when routing in cluster mode
