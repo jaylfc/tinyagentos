@@ -1,4 +1,4 @@
-# DEPLOYMENT — tinyagentos.com platform LXC
+# DEPLOYMENT, tinyagentos.com platform LXC
 
 Step-by-step runbook for provisioning the platform LXC and bringing up the
 public-facing tinyagentos.com website, docs, and opentracker.
@@ -271,7 +271,7 @@ pct destroy <CTID>
 
 Then re-run `install-lxc.sh` with the same or a new CTID.
 
-DNS records can stay in place across a rollback — the IP address should not
+DNS records can stay in place across a rollback, the IP address should not
 change if you use a static assignment.
 
 ---
@@ -286,8 +286,8 @@ Once the above is confirmed working, these are the natural next steps:
 | #91 | Build MkDocs site and deploy: `cd platform/site/docs && mkdocs build && rsync ...` |
 | #92 | Verify opentracker IPv6 announce endpoint and UDP announce (see issue #92 acceptance criteria) |
 | #92 | Add AAAA DNS records for IPv6 |
-| — | Set up `restic` backup job for Postgres and `/var/www` |
-| — | Raise DNS TTL to 3600 after confirming everything works |
-| — | Configure fail2ban email alerts (optional; requires mail setup) |
-| — | Add Grafana panel showing opentracker announces/minute (deferred from #92) |
-| — | Integrate Headscale: TUN pass-through is already enabled in the LXC config |
+|  | Set up `restic` backup job for Postgres and `/var/www` |
+|  | Raise DNS TTL to 3600 after confirming everything works |
+|  | Configure fail2ban email alerts (optional; requires mail setup) |
+|  | Add Grafana panel showing opentracker announces/minute (deferred from #92) |
+|  | Integrate Headscale: TUN pass-through is already enabled in the LXC config |

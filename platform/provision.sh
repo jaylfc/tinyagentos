@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# platform/provision.sh — inside-the-LXC provisioner for tinyagentos.com
+# platform/provision.sh, inside-the-LXC provisioner for tinyagentos.com
 #
 # Runs once on first boot via install-lxc.sh. Safe to re-run: if the
 # sentinel file /var/lib/tinyagentos-platform/provisioned exists the script
@@ -27,7 +27,7 @@ success() { printf '\033[1;32m[provision]\033[0m %s\n' "$*"; }
 SENTINEL="/var/lib/tinyagentos-platform/provisioned"
 
 if [[ -f "$SENTINEL" ]]; then
-    log "sentinel found at $SENTINEL — already provisioned, exiting"
+    log "sentinel found at $SENTINEL, already provisioned, exiting"
     exit 0
 fi
 
@@ -151,7 +151,7 @@ log "configuring fail2ban"
 systemctl enable --now fail2ban
 # The default Debian config already ships the sshd jail; just confirm it's active
 if ! fail2ban-client status sshd >/dev/null 2>&1; then
-    warn "fail2ban sshd jail not immediately visible — may need a moment to initialise"
+    warn "fail2ban sshd jail not immediately visible, may need a moment to initialise"
 fi
 
 # --------------------------------------------------------------------------
@@ -169,7 +169,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
 OT_BUILD_DIR="/opt/opentracker-build"
 mkdir -p "$OT_BUILD_DIR"
 
-# libowfat — opentracker bundles a vendored copy but we can also use
+# libowfat, opentracker bundles a vendored copy but we can also use
 # the system one; checkout the opentracker source alongside it.
 if [[ ! -d "$OT_BUILD_DIR/opentracker" ]]; then
     log "cloning opentracker"
@@ -203,7 +203,7 @@ log "building opentracker"
 )
 
 if [[ ! -f "$OT_BUILD_DIR/opentracker/opentracker" ]]; then
-    die "opentracker binary not found after build — check build output above"
+    die "opentracker binary not found after build, check build output above"
 fi
 
 install -m 0755 "$OT_BUILD_DIR/opentracker/opentracker" /usr/local/bin/opentracker
@@ -214,7 +214,7 @@ if ! id opentracker >/dev/null 2>&1; then
     useradd --system --no-create-home --shell /usr/sbin/nologin opentracker
 fi
 
-# systemd unit — binds to 127.0.0.1:6969; Caddy proxies tracker.tinyagentos.com
+# systemd unit, binds to 127.0.0.1:6969; Caddy proxies tracker.tinyagentos.com
 cat > /etc/systemd/system/opentracker.service <<'EOF'
 [Unit]
 Description=opentracker BitTorrent tracker
@@ -269,7 +269,7 @@ if [[ -f "$PLATFORM_DIR/Caddyfile" ]]; then
     log "installing Caddyfile"
     cp "$PLATFORM_DIR/Caddyfile" /etc/caddy/Caddyfile
 else
-    warn "no Caddyfile found at $PLATFORM_DIR/Caddyfile — leaving the default"
+    warn "no Caddyfile found at $PLATFORM_DIR/Caddyfile, leaving the default"
 fi
 
 # --------------------------------------------------------------------------
@@ -331,14 +331,14 @@ systemctl is-active --quiet opentracker || { warn "opentracker is not active"; t
 if pg_isready -U tinyagentos -d tinyagentos -q 2>/dev/null; then
     log "  psql: tinyagentos user + db ok"
 else
-    warn "  psql: cannot connect as tinyagentos — check /var/log/postgresql/"
+    warn "  psql: cannot connect as tinyagentos, check /var/log/postgresql/"
     test_fail=1
 fi
 
 if [[ -e /dev/net/tun ]]; then
     log "  /dev/net/tun: present"
 else
-    warn "  /dev/net/tun: missing — TUN pass-through may not be configured"
+    warn "  /dev/net/tun: missing, TUN pass-through may not be configured"
 fi
 
 # --------------------------------------------------------------------------
@@ -364,7 +364,7 @@ if [[ $test_fail -eq 0 ]]; then
     success "    curl -I https://tracker.tinyagentos.com"
     success ""
 else
-    warn "one or more smoke tests failed — review output above before proceeding"
+    warn "one or more smoke tests failed, review output above before proceeding"
     warn "sentinel NOT written; re-run this script after fixing the issues"
     exit 1
 fi

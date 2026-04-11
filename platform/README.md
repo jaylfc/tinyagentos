@@ -1,7 +1,7 @@
 # platform/
 
 Infrastructure for the **tinyagentos.com** public website. This is not the
-TinyAgentOS product itself — it's the scripts, config, and static assets that
+TinyAgentOS product itself, it's the scripts, config, and static assets that
 bring up the Proxmox LXC container that serves the landing page, docs site,
 and BitTorrent tracker.
 
@@ -15,7 +15,7 @@ platform/
 ├── DEPLOYMENT.md        # Step-by-step runbook for tomorrow's setup session
 ├── README.md            # this file
 └── site/
-    ├── public/          # Landing page (tinyagentos.com) — static HTML/CSS
+    ├── public/          # Landing page (tinyagentos.com), static HTML/CSS
     │   ├── index.html
     │   ├── style.css
     │   ├── favicon.svg

@@ -1,4 +1,4 @@
-# platform/Caddyfile — TinyAgentOS platform LXC
+# platform/Caddyfile, TinyAgentOS platform LXC
 #
 # DNS records you must create before Caddy can issue TLS certificates.
 # All four records should point to the platform LXC IP address.
@@ -17,10 +17,10 @@
 # DNS propagates. No manual certbot step is required.
 #
 # Future subdomains (uncomment when the relevant phase lands):
-#   # app.tinyagentos.com        — phase 2: hosted TAOS controller UI
-#   # desktop.tinyagentos.com    — phase 2: web desktop gateway
-#   # community.tinyagentos.com  — phase 3: community forum
-#   # mail.tinyagentos.com       — phase 3: managed email service
+#   # app.tinyagentos.com       , phase 2: hosted TAOS controller UI
+#   # desktop.tinyagentos.com   , phase 2: web desktop gateway
+#   # community.tinyagentos.com , phase 3: community forum
+#   # mail.tinyagentos.com      , phase 3: managed email service
 
 {
     # Global options
@@ -86,7 +86,7 @@ tinyagentos.com {
     }
 }
 
-# Docs site — built by CI and deployed to this directory
+# Docs site, built by CI and deployed to this directory
 docs.tinyagentos.com {
     import secure_headers
     import access_log
@@ -104,7 +104,7 @@ docs.tinyagentos.com {
     }
 }
 
-# BitTorrent tracker — proxied to opentracker on 127.0.0.1:6969
+# BitTorrent tracker, proxied to opentracker on 127.0.0.1:6969
 tracker.tinyagentos.com {
     import secure_headers
     import access_log
@@ -113,7 +113,7 @@ tracker.tinyagentos.com {
 }
 
 # --------------------------------------------------------------------------
-# Future subdomains — leave these commented until the phase lands
+# Future subdomains, leave these commented until the phase lands
 # --------------------------------------------------------------------------
 
 # app.tinyagentos.com {

@@ -1,6 +1,6 @@
-/* TinyAgentOS — landing page
+/* TinyAgentOS, landing page
    Aesthetic: editorial monospace + warm industrial
-   System font stack — no web font requests, no build step */
+   System font stack, no web font requests, no build step */
 
 /* ------------------------------------------------------------------ */
 /* Custom properties                                                    */
@@ -123,7 +123,7 @@ p { max-width: 68ch; }
 }
 
 /* ------------------------------------------------------------------ */
-/* Ruled lines — the signature visual motif                            */
+/* Ruled lines, the signature visual motif                            */
 /* ------------------------------------------------------------------ */
 
 .rule {
@@ -405,7 +405,7 @@ p { max-width: 68ch; }
 }
 
 /* ------------------------------------------------------------------ */
-/* For who — bullet list                                               */
+/* For who, bullet list                                               */
 /* ------------------------------------------------------------------ */
 
 .for-who__list {
@@ -579,7 +579,7 @@ p { max-width: 68ch; }
 }
 
 /* ------------------------------------------------------------------ */
-/* Get started — three steps                                            */
+/* Get started, three steps                                            */
 /* ------------------------------------------------------------------ */
 
 .get-started-steps {
@@ -717,7 +717,7 @@ p { max-width: 68ch; }
 .site-footer__right a:hover { color: var(--accent); }
 
 /* ------------------------------------------------------------------ */
-/* Responsive — 768px breakpoint                                        */
+/* Responsive, 768px breakpoint                                        */
 /* ------------------------------------------------------------------ */
 
 @media (min-width: 768px) {

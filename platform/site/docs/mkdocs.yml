@@ -22,7 +22,7 @@ repo_url: https://github.com/jaylfc/tinyagentos
 repo_name: jaylfc/tinyagentos
 edit_uri: edit/master/docs/
 
-# Path relative to platform/site/docs/ — resolves to the repo root's docs/
+# Path relative to platform/site/docs/, resolves to the repo root's docs/
 docs_dir: ../../../docs
 
 # Output directory (relative to mkdocs.yml)
@@ -63,7 +63,7 @@ extra:
       link: https://github.com/jaylfc/tinyagentos
       name: jaylfc/tinyagentos on GitHub
 
-copyright: "TinyAgentOS — AGPL-3.0. Built by jaylfc and contributors."
+copyright: "TinyAgentOS, AGPL-3.0. Built by jaylfc and contributors."
 
 markdown_extensions:
   - admonition

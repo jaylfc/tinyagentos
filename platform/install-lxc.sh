@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# platform/install-lxc.sh — Proxmox LXC provisioner for tinyagentos.com
+# platform/install-lxc.sh, Proxmox LXC provisioner for tinyagentos.com
 #
 # Creates a Debian 12 unprivileged LXC container with the configuration
 # required to host tinyagentos.com services, then runs provision.sh inside
@@ -13,13 +13,13 @@
 # Environment overrides:
 #     CTID            container ID (default: next free ID from pvesh)
 #     CT_IP           static IP in CIDR notation, e.g. 192.168.1.50/24
-#                     (default: dhcp — Proxmox assigns from your DHCP server)
+#                     (default: dhcp, Proxmox assigns from your DHCP server)
 #     CT_GW           gateway IP (required when CT_IP is set; ignored for dhcp)
 #     CT_BRIDGE       Proxmox bridge to attach (default: vmbr0)
 #     CT_STORAGE      storage pool for rootfs (default: local-lvm)
 #     CT_TEMPLATE     full path to the Debian 12 template (default: see below)
 #     CT_DISK_DATA    size in GB for the separate data disk at /var/mail
-#                     (default: 0 — skip the data disk; set to e.g. 500 to add one)
+#                     (default: 0, skip the data disk; set to e.g. 500 to add one)
 #     PROVISION_SCRIPT path to provision.sh inside the Proxmox host filesystem
 #                     (default: same directory as this script)
 #
@@ -45,7 +45,7 @@ success() { printf '\033[1;32m[install-lxc]\033[0m %s\n' "$*"; }
 [[ "$(id -u)" -eq 0 ]] || die "must run as root on the Proxmox host"
 
 for cmd in pct pvesh pveam; do
-    command -v "$cmd" >/dev/null 2>&1 || die "$cmd not found — this script must run on a Proxmox host"
+    command -v "$cmd" >/dev/null 2>&1 || die "$cmd not found, this script must run on a Proxmox host"
 done
 
 # --------------------------------------------------------------------------
@@ -134,7 +134,7 @@ CT_CONF="/etc/pve/lxc/${CTID}.conf"
 log "adding TUN device entries to $CT_CONF"
 cat >> "$CT_CONF" <<'EOF'
 
-# TUN device pass-through — required for Headscale / WireGuard mesh
+# TUN device pass-through, required for Headscale / WireGuard mesh
 lxc.cgroup2.devices.allow: c 10:200 rwm
 lxc.mount.entry: /dev/net/tun dev/net/tun none bind,create=file
 EOF
@@ -166,7 +166,7 @@ for i in $(seq 1 60); do
 done
 
 if [[ $net_up -eq 0 ]]; then
-    warn "network not confirmed after 60 s — check the container's IP and routing"
+    warn "network not confirmed after 60 s, check the container's IP and routing"
     warn "  pct exec $CTID -- ip a"
     warn "  pct exec $CTID -- ip r"
     die "aborting: provision.sh needs internet access to install packages"
