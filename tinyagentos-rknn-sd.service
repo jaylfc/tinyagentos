@@ -1,0 +1,41 @@
+[Unit]
+Description=TinyAgentOS RKNN Stable Diffusion server (RK3588 NPU)
+After=network.target
+Wants=network.target
+# Want to start after tinyagentos.service so the main app registers the
+# backend in BackendCatalog as soon as this comes up, not before.
+After=tinyagentos.service
+
+[Service]
+Type=simple
+User=jay
+WorkingDirectory=/home/jay/tinyagentos
+
+# Model dir and wrapper script path. The wrapper is darkbit1001's patched
+# rknnlcm.py (NHWC data_format on unet/vae_decoder) — do NOT swap for
+# happyme531's original which segfaults under librknnrt 2.3.2.
+Environment=RKNN_SD_MODEL_DIR=/home/jay/.local/share/tinyagentos/rknn-sd/model
+Environment=RKNN_SD_WRAPPER=/home/jay/.local/share/tinyagentos/rknn-sd/rknnlcm.py
+Environment=RKNN_SD_HOST=127.0.0.1
+Environment=RKNN_SD_PORT=7863
+Environment=PYTHONPATH=/home/jay/tinyagentos
+Environment=PYTHONUNBUFFERED=1
+
+# The wrapper loads 2.3 GB of RKNN weights onto the NPU at startup,
+# which takes ~20s on the RK3588. Give systemd time before it assumes
+# the unit is dead.
+TimeoutStartSec=90
+
+ExecStart=/usr/local/bin/python3.12 -m tinyagentos.services.rknn_sd_server
+
+Restart=always
+RestartSec=5
+StandardOutput=append:/home/jay/tinyagentos/data/rknn-sd-server.log
+StandardError=inherit
+
+# The UNet alone is 1.8 GB and the full pipeline peaks around 5.6 GB
+# during inference. Leave some headroom.
+MemoryMax=7G
+
+[Install]
+WantedBy=multi-user.target
