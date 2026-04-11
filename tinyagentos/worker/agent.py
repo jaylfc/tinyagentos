@@ -115,13 +115,23 @@ class WorkerAgent:
         """Union of capabilities across all detected backends.
 
         Backend-driven: each backend contributes its own advertised
-        capability set (from BACKEND_CAPABILITIES by type, derived from
-        the live probe above). Streaming is added if a container runtime
-        is present.
+        capability set. Modern detect_backends() attaches the live set
+        from BACKEND_CAPABILITIES on probe; a caller passing a legacy
+        shape (only ``type`` on each dict) still works because we fall
+        back to BACKEND_CAPABILITIES by type. Streaming is added if a
+        container runtime is present.
         """
+        from tinyagentos.scheduler.backend_catalog import BACKEND_CAPABILITIES
+
         caps: set[str] = set()
         for b in backends:
-            caps.update(b.get("capabilities") or [])
+            declared = b.get("capabilities")
+            if declared:
+                caps.update(declared)
+                continue
+            btype = b.get("type")
+            if btype:
+                caps.update(BACKEND_CAPABILITIES.get(btype, set()))
         if self.supports_streaming():
             caps.add("app-streaming")
         return sorted(caps)

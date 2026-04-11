@@ -20,36 +20,69 @@ class TestDetectCapabilities:
     def test_ollama_backend(self):
         agent = WorkerAgent("http://localhost:6969")
         backends = [{"type": "ollama", "url": "http://localhost:11434"}]
-        caps = agent.detect_capabilities(backends)
-        assert "chat" in caps
-        assert "embed" in caps
-        assert "image-generation" in caps
+        with patch("shutil.which", return_value=None):
+            caps = agent.detect_capabilities(backends)
+        assert "llm-chat" in caps
+        assert "embedding" in caps
+        # Ollama only advertises llm-chat + embedding in BACKEND_CAPABILITIES
+        assert "image-generation" not in caps
 
     def test_rkllama_backend(self):
         agent = WorkerAgent("http://localhost:6969")
         backends = [{"type": "rkllama", "url": "http://localhost:8080"}]
-        caps = agent.detect_capabilities(backends)
-        assert "chat" in caps
-        assert "embed" in caps
-        assert "image-generation" in caps
-        assert "rerank" in caps
+        with patch("shutil.which", return_value=None):
+            caps = agent.detect_capabilities(backends)
+        assert "llm-chat" in caps
+        assert "embedding" in caps
+        assert "reranking" in caps
 
     def test_llama_cpp_backend(self):
         agent = WorkerAgent("http://localhost:6969")
         backends = [{"type": "llama-cpp", "url": "http://localhost:8080"}]
-        caps = agent.detect_capabilities(backends)
-        assert "chat" in caps
-        assert "embed" in caps
+        with patch("shutil.which", return_value=None):
+            caps = agent.detect_capabilities(backends)
+        assert "llm-chat" in caps
+        assert "embedding" in caps
         assert "image-generation" not in caps
-        assert "rerank" not in caps
+        assert "reranking" not in caps
 
     def test_vllm_backend(self):
         agent = WorkerAgent("http://localhost:6969")
         backends = [{"type": "vllm", "url": "http://localhost:8000"}]
-        caps = agent.detect_capabilities(backends)
-        assert "chat" in caps
-        assert "embed" in caps
+        with patch("shutil.which", return_value=None):
+            caps = agent.detect_capabilities(backends)
+        assert "llm-chat" in caps
         assert "image-generation" not in caps
+
+    def test_sd_cpp_backend(self):
+        """A sd-cpp backend advertises image-generation only."""
+        agent = WorkerAgent("http://localhost:6969")
+        backends = [{"type": "sd-cpp", "url": "http://localhost:7864"}]
+        with patch("shutil.which", return_value=None):
+            caps = agent.detect_capabilities(backends)
+        assert "image-generation" in caps
+        assert "llm-chat" not in caps
+
+    def test_rknn_sd_backend(self):
+        """An rknn-sd backend advertises image-generation only."""
+        agent = WorkerAgent("http://localhost:6969")
+        backends = [{"type": "rknn-sd", "url": "http://localhost:7863"}]
+        with patch("shutil.which", return_value=None):
+            caps = agent.detect_capabilities(backends)
+        assert "image-generation" in caps
+        assert "embedding" not in caps
+
+    def test_respects_preattached_capabilities(self):
+        """If the caller attaches a per-backend capabilities field (modern
+        detect_backends shape from live probing), detect_capabilities uses
+        it verbatim without consulting BACKEND_CAPABILITIES."""
+        agent = WorkerAgent("http://localhost:6969")
+        backends = [
+            {"type": "rkllama", "url": "http://x", "capabilities": ["embedding"]},
+        ]
+        with patch("shutil.which", return_value=None):
+            caps = agent.detect_capabilities(backends)
+        assert caps == ["embedding"]
 
     def test_multiple_backends_deduplicates(self):
         agent = WorkerAgent("http://localhost:6969")
@@ -57,15 +90,17 @@ class TestDetectCapabilities:
             {"type": "ollama", "url": "http://localhost:11434"},
             {"type": "rkllama", "url": "http://localhost:8080"},
         ]
-        caps = agent.detect_capabilities(backends)
+        with patch("shutil.which", return_value=None):
+            caps = agent.detect_capabilities(backends)
         # Should be sorted and deduplicated
         assert caps == sorted(set(caps))
-        assert "rerank" in caps
+        assert "reranking" in caps
 
     def test_capabilities_are_sorted(self):
         agent = WorkerAgent("http://localhost:6969")
         backends = [{"type": "rkllama", "url": "http://localhost:8080"}]
-        caps = agent.detect_capabilities(backends)
+        with patch("shutil.which", return_value=None):
+            caps = agent.detect_capabilities(backends)
         assert caps == sorted(caps)
 
 
