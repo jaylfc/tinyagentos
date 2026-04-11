@@ -278,6 +278,32 @@ sudo systemctl restart tinyagentos
 sudo systemctl status tinyagentos
 ```
 
+On RK3588 boards with NPU image generation enabled, the CPU and NPU image backends ship as additional units at `tinyagentos-sdcpp.service` and `tinyagentos-rknn-sd.service`. Both are started and enabled by the install script.
+
+## RK3588 NPU Image Generation — Runtime Version Pin
+
+**If you're running image generation on the Rockchip NPU, `/usr/lib/librknnrt.so` must be version 2.3.0.** The LCM Dreamshaper UNet RKNN file was compiled with `rknn-toolkit2 2.3.0` (2024-11-07) and segfaults at the first UNet inference step under `librknnrt 2.3.2` (2025-04-09) due to tightened tensor-layout validation in the newer runtime. The data-format fix (NHWC on unet + vae_decoder) is necessary but not sufficient; the runtime also needs to match.
+
+The install script pulls the correct version from darkbit1001's model repo. If you install manually, use:
+
+```bash
+curl -fL -o ~/.local/share/tinyagentos/rknn-sd/librknnrt.so \
+  https://huggingface.co/darkbit1001/Stable-Diffusion-1.5-LCM-ONNX-RKNN2/resolve/main/librknnrt.so
+sudo cp ~/.local/share/tinyagentos/rknn-sd/librknnrt.so /usr/lib/librknnrt.so
+sudo ldconfig
+```
+
+Verify:
+
+```bash
+strings /usr/lib/librknnrt.so | grep "librknnrt version"
+# librknnrt version: 2.3.0 (c949ad889d@2024-11-07T11:35:33)
+```
+
+**rkllama compatibility**: rkllama works fine on `librknnrt 2.3.0` — there's no regression vs. 2.3.2 for LLM / embedding / rerank workloads. The version pin is specifically about the pre-compiled LCM Dreamshaper UNet, not a general runtime downgrade.
+
+**Rollback**: if you ever need to restore the newer runtime (losing NPU SD), `sudo cp /home/$USER/rkllama/src/rkllama/lib/librknnrt.so /usr/lib/librknnrt.so && sudo ldconfig`.
+
 ## Design Docs
 
 - [docs/design/desktop-shell.md](docs/design/desktop-shell.md) — full desktop shell spec
