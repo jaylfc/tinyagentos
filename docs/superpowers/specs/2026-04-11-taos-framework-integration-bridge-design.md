@@ -1388,6 +1388,145 @@ The framework adapter design is **done** when:
   enough to land before Phase 2 cluster dispatch. Tracked separately
   as a Phase 1.5 milestone.
 
+- **Core-aware resource model for the NPU scheduler (Phase 1.5
+  extension).** The sequential-loading design above models each
+  accelerator as a single-dimension budget: memory in, memory out.
+  That holds for CUDA and ROCm GPUs where one process owns the whole
+  device and memory is the only scarce resource. It does not hold
+  for the RK3588 NPU, which has three physical compute cores that
+  can host different models in parallel.
+
+  The 2026-04-11 `ez_rknn_async` spike on an Orange Pi 5 Plus
+  (`scripts/spikes/ez-rknn-async/`) measured two independent wins
+  the single-dimension model cannot express:
+
+  1. A solo model pinned with `tp_mode='all'` uses all three NPU
+     cores tensor-parallel and runs ~20% faster than the default
+     single-core path. On the LCM Dreamshaper unet, warm latency
+     drops from 5.66 s to 4.49 s per call. For a full four-step
+     LCM generation this cuts ~4.7 s off a ~33 s wall time.
+  2. Two sessions pinned to different cores (`tp_mode='0'` and
+     `tp_mode='1'`) run in parallel threads with 1.78x speedup
+     (89% of linear scaling). Two concurrent image generations
+     cost roughly the same as one.
+
+  Neither is expressible if the scheduler only tracks "MB free /
+  MB used" on the NPU. Both become trivial if it tracks cores too.
+
+  The extension is additive, not a rewrite of the sequential loading
+  design. All of the TTL / LRU / user-pinned behaviour above still
+  applies. The scheduler gains one new concept:
+
+  ### Per-backend resource shape
+
+  Each backend adapter declares its own resource shape. The scheduler
+  is backend-agnostic and consults the adapter rather than hardcoding
+  dimensions.
+
+  | Backend               | Resource shape                      |
+  |-----------------------|-------------------------------------|
+  | rkllama / rknn (RK3588) | `{ memory_mb, cores: [0, 1, 2] }` |
+  | llama.cpp (CUDA)      | `{ vram_mb, gpu_ids: [0, 1] }`      |
+  | vllm (CUDA)           | `{ vram_mb, gpu_ids: [0, 1] }`      |
+  | llama.cpp (CPU)       | `{ ram_mb }`                        |
+  | ollama                | `{ vram_mb }` or `{ ram_mb }`       |
+
+  A resident model records the subset of each resource it holds:
+
+  ```
+  LoadedModel(
+      model_id,
+      backend,
+      memory_mb_used,
+      resource_holds: dict[str, Any],  # {"cores": [0,1,2]} on NPU
+      tp_mode: str,                    # "all" | "0,1" | "0" | ...
+      loaded_at, last_used_at,
+      priority, pinned,
+  )
+  ```
+
+  ### Load decision with core pressure
+
+  When a new request arrives for a model that is not resident, the
+  scheduler's decision expands from one to two questions:
+
+  1. *Memory pressure?* (unchanged) — evict LRU until there's enough
+     headroom, or reject if the request model is too big to fit even
+     with everything evicted.
+  2. *Resource-hold pressure?* (new) — does the target backend have
+     the cores/GPUs/slots this load wants? If yes, pick them and load.
+     If no, choose between:
+     - **Wait** for a resident model to idle-evict naturally (bounded
+       by a configurable `max_wait_ms`, default 500 ms)
+     - **Shrink-reload** a lower-priority resident to a smaller mask
+       (e.g. SD on `all` → SD on `0,1` to free core 2). Costs one
+       reload of the shrinkee. Picked when the shrinkee's reload cost
+       is cheaper than the alternative.
+     - **Evict-reload** a lower-priority resident entirely (e.g. drop
+       an idle STT model to free its core). Same as memory-pressure
+       eviction but keyed on resource holds.
+     - **Reject** with a 503 if nothing of lower priority is resident
+       and waiting would exceed `max_wait_ms`.
+
+  ### Default load policies
+
+  For the RK3588 NPU specifically, the scheduler defaults to:
+
+  | Scenario                      | tp_mode chosen |
+  |-------------------------------|----------------|
+  | Only model resident           | `all` (3 cores) |
+  | Two models resident           | `0,1` + `2`    |
+  | Three models resident         | `0` + `1` + `2` |
+  | Four or more models           | cannot happen — scheduler evicts down to three first |
+
+  The chosen `tp_mode` is baked into the InferenceSession at load
+  time. Changing a resident model's mask means evict + reload —
+  there is no runtime mutation path. This makes the decision policy
+  important but also keeps the state machine simple.
+
+  ### Backends that don't report cores
+
+  CUDA and CPU backends see no change. Their resource shape stays
+  `{ vram_mb }` or `{ ram_mb }`, the scheduler's second-question
+  check degenerates to "is there a GPU/core slot free" and returns
+  true whenever any device is loadable. The RK3588 NPU is the only
+  backend in Phase 1.5 with a non-trivial parallel-core story. We
+  revisit this when multi-GPU desktop hosts become a primary
+  deployment target (Phase 2+).
+
+  ### Priority hints from the user
+
+  Each agent declares a deployment priority (`always_resident`,
+  `interactive`, `background`). The scheduler uses priority to pick
+  the victim under pressure:
+
+  - `always_resident` — pinned, never shrunk or evicted. Default
+    mask is `all` for solo, or `1-core` if forced to co-resident.
+  - `interactive` — default class for user-facing agents. Preferred
+    to keep resident but shrinkable when something higher-priority
+    wants cores.
+  - `background` — ingest, indexing, batch jobs. Shrunk and evicted
+    first.
+
+  ### Fallback if ez_rknn_async breaks
+
+  If the `ez_rknn_async` backend ever fails on a user's install (RKNN
+  driver mismatch, memory layout bug, whatever), the scheduler falls
+  back to the legacy rknn-toolkit-lite2 path automatically, with the
+  core-aware policy collapsed to a single-core allocator. The user
+  loses the 20% / 1.78x wins but keeps a working SD server. A
+  `runtime` field on the backend status (exposed at
+  `/health` → `runtime: "ez_rknn_async" | "rknn-toolkit-lite2"`)
+  lets the Cluster widget show which path each worker is on, so the
+  user can spot the regression rather than just experiencing "SD got
+  slower today".
+
+  This extension is RK3588-specific for now. The scheduler interface
+  is backend-agnostic, so any future backend that exposes similar
+  multi-core topology (e.g. the SambaNova or Intel AI PU backends
+  we might add later) plugs in by declaring its own resource shape
+  without any scheduler-core changes.
+
 - **Remote backend installation from the controller UI.** The Phase 1
   worker installer (`install-worker.sh`) installs only the worker
   daemon. The worker auto-detects existing backends (Ollama, llama-cpp,
