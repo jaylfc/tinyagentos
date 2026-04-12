@@ -288,6 +288,32 @@ All functions return null / empty fallbacks on network error (matching knowledge
 
 ---
 
+## Browsing History
+
+Lightweight history of threads viewed in the app, even if not saved to the Knowledge Base. Enables "I saw a post yesterday but forgot to save it" recovery.
+
+**Storage:** SQLite table `reddit_history` in `data/reddit-history.db`:
+```
+reddit_history:
+  url: text PRIMARY KEY
+  title: text
+  author: text
+  subreddit: text
+  score: integer
+  thumbnail: text (nullable)
+  viewed_at: real
+```
+
+NOT a KnowledgeItem — no ingest, no embedding, no monitoring. Just a breadcrumb trail.
+
+**Sidebar:** "History" section showing recently viewed threads, newest first. Each entry has title, subreddit, time viewed. Click to re-open the thread. "Save to Library" button to promote to a full KnowledgeItem.
+
+**Retention:** Default 30 days. "Clear history" button. Configurable retention period (future, in Settings).
+
+**Recording:** Every time a thread is opened in the detail view, an entry is upserted into the history table (updates viewed_at if already exists).
+
+---
+
 ## Out of Scope for This Build Step
 
 - Video/image/gallery post media download (show link only)

@@ -243,6 +243,32 @@ saveToLibrary(url: string): Promise<{ id: string; status: string } | null>
 
 ---
 
+## Browsing History
+
+Lightweight history of tweets/threads viewed in the app, even if not saved to the Knowledge Base. Enables quick recovery of content you browsed but didn't save.
+
+**Storage:** SQLite table `x_history` in `data/x-history.db`:
+```
+x_history:
+  url: text PRIMARY KEY
+  tweet_id: text
+  author: text
+  handle: text
+  text_preview: text (first 200 chars)
+  likes: integer
+  viewed_at: real
+```
+
+NOT a KnowledgeItem — no ingest, no embedding. Just a breadcrumb.
+
+**Sidebar:** "History" section showing recently viewed tweets/threads, newest first. Click to re-open. "Save to Library" button to promote to a full KnowledgeItem.
+
+**Retention:** Default 30 days. "Clear history" button.
+
+**Recording:** Every time a tweet/thread is opened in the detail view, upsert into history table.
+
+---
+
 ## Dependencies
 
 - Agent Browsers app (#176) — required for cookie auth
