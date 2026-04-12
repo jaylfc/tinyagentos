@@ -7,7 +7,7 @@ import {
   workersToAggregated,
   HOST_BADGE_CLASS,
 } from "@/lib/models";
-import { availableKvQuantTypes } from "@/lib/cluster";
+import { availableKvQuantOptions, type KvQuantOptions } from "@/lib/cluster";
 import { useProcessStore } from "@/stores/process-store";
 import { getApp } from "@/registry/app-registry";
 import {
@@ -35,7 +35,9 @@ interface Agent {
   paused?: boolean;
   on_worker_failure?: "pause" | "fallback" | "escalate-immediately";
   fallback_models?: string[];
-  kv_cache_quant?: string;
+  kv_cache_quant_k?: string;
+  kv_cache_quant_v?: string;
+  kv_cache_quant_boundary_layers?: number;
 }
 
 interface Framework {
@@ -343,10 +345,18 @@ function DeployWizard({
   const [onWorkerFailure, setOnWorkerFailure] = useState<"pause" | "fallback" | "escalate-immediately">("pause");
   const [fallbackModels, setFallbackModels] = useState<string[]>([]);
 
-  // KV cache quantization — only visible when the cluster advertises more
-  // than one supported type.  Fetched once when the wizard opens.
-  const [kvQuantOptions, setKvQuantOptions] = useState<string[]>(["fp16"]);
-  const [kvCacheQuant, setKvCacheQuant] = useState<string>("fp16");
+  // KV cache quantization — split K / V / boundary controls.  Visible only
+  // when the cluster advertises more than fp16 for the respective axis.
+  // Fetched once when the wizard opens from /api/cluster/kv-quant-options.
+  const [kvQuantOptions, setKvQuantOptions] = useState<KvQuantOptions>({
+    k: ["fp16"],
+    v: ["fp16"],
+    boundary: false,
+    flat: ["fp16"],
+  });
+  const [kvCacheQuantK, setKvCacheQuantK] = useState<string>("fp16");
+  const [kvCacheQuantV, setKvCacheQuantV] = useState<string>("fp16");
+  const [kvCacheQuantBoundaryLayers, setKvCacheQuantBoundaryLayers] = useState<number>(0);
 
   const [deploying, setDeploying] = useState(false);
 
@@ -380,9 +390,9 @@ function DeployWizard({
         }
       } catch { /* leave frameworks empty, wizard will show nothing selectable */ }
     })();
-    // Fetch cluster-wide KV quant options.  The dropdown only renders if
-    // the cluster reports more than one supported type, so this is a no-op
-    // today and silently stays invisible.
+    // Fetch cluster-wide KV quant options.  The K/V/boundary controls only
+    // render when the cluster reports more than fp16 for the relevant axis,
+    // so this is a no-op on single-worker fp16-only clusters.
     (async () => {
       try {
         const res = await fetch("/api/cluster/kv-quant-options", {
@@ -391,14 +401,31 @@ function DeployWizard({
         const ct = res.headers.get("content-type") ?? "";
         if (res.ok && ct.includes("application/json")) {
           const data = await res.json();
-          if (Array.isArray(data?.options) && data.options.length > 0) {
-            setKvQuantOptions(data.options as string[]);
-          }
+          // Accept the new K/V/boundary shape.  Fall back to the legacy
+          // flat "options" field if the controller hasn't upgraded yet.
+          const k: string[] = Array.isArray(data?.k) && data.k.length > 0
+            ? data.k
+            : Array.isArray(data?.options) && data.options.length > 0
+              ? data.options
+              : ["fp16"];
+          const v: string[] = Array.isArray(data?.v) && data.v.length > 0
+            ? data.v
+            : Array.isArray(data?.options) && data.options.length > 0
+              ? data.options
+              : ["fp16"];
+          const boundary = Boolean(data?.boundary_layer_protect);
+          const flatSet = new Set([...k, ...v]);
+          setKvQuantOptions({
+            k,
+            v,
+            boundary,
+            flat: Array.from(flatSet).sort(),
+          });
         }
       } catch {
-        // Fall back to computing from the workers fetch we already do below.
-        // If that also fails we stay on the ["fp16"] default and no dropdown
-        // is shown.
+        // Fall back to computing from the workers fetch below.
+        // If that also fails we stay on the fp16-only default and no
+        // controls are shown.
       }
     })();
 
@@ -446,13 +473,12 @@ function DeployWizard({
           });
         }
         // Fall back: if the dedicated kv-quant-options fetch above already
-        // found more than one option, leave it.  Otherwise compute from the
-        // workers we just fetched so we get the same answer without a second
+        // found K or V options beyond fp16, leave those results.  Otherwise
+        // compute from the workers we just fetched so we avoid a second
         // round-trip.
         setKvQuantOptions((prev) => {
-          if (prev.length > 1) return prev;
-          const computed = availableKvQuantTypes(workers);
-          return computed.length > 0 ? computed : ["fp16"];
+          if (prev.k.length > 1 || prev.v.length > 1 || prev.boundary) return prev;
+          return availableKvQuantOptions(workers);
         });
       } catch { /* ignore */ }
 
@@ -523,8 +549,10 @@ function DeployWizard({
       setCanReadUserMemory(false);
       setOnWorkerFailure("pause");
       setFallbackModels([]);
-      setKvQuantOptions(["fp16"]);
-      setKvCacheQuant("fp16");
+      setKvQuantOptions({ k: ["fp16"], v: ["fp16"], boundary: false, flat: ["fp16"] });
+      setKvCacheQuantK("fp16");
+      setKvCacheQuantV("fp16");
+      setKvCacheQuantBoundaryLayers(0);
       setDeploying(false);
       setDeployError(null);
     }
@@ -571,7 +599,9 @@ function DeployWizard({
           can_read_user_memory: canReadUserMemory,
           on_worker_failure: onWorkerFailure,
           fallback_models: fallbackModels,
-          kv_cache_quant: kvCacheQuant,
+          kv_cache_quant_k: kvCacheQuantK,
+          kv_cache_quant_v: kvCacheQuantV,
+          kv_cache_quant_boundary_layers: kvCacheQuantBoundaryLayers,
         }),
       });
       if (!res.ok) {
@@ -967,29 +997,78 @@ function DeployWizard({
                   )}
                 </div>
               </div>
-              {/* KV cache quant — only shown when at least one cluster worker
-                  advertises a type beyond fp16.  If the cluster only has fp16
-                  support this block is completely absent from the DOM. */}
-              {kvQuantOptions.length > 1 && (
-                <div>
-                  <Label htmlFor="agent-kv-quant" className="mb-1.5 block">
-                    KV cache quantization
-                  </Label>
-                  <select
-                    id="agent-kv-quant"
-                    value={kvCacheQuant}
-                    onChange={(e) => setKvCacheQuant(e.target.value)}
-                    className="flex h-9 w-full rounded-lg border border-white/10 bg-shell-bg-deep px-3 py-1 text-sm text-shell-text focus-visible:outline-none focus-visible:border-accent/40 focus-visible:ring-2 focus-visible:ring-accent/20 transition-colors"
-                    aria-describedby="agent-kv-quant-desc"
-                  >
-                    {kvQuantOptions.map((opt) => (
-                      <option key={opt} value={opt}>{opt}</option>
-                    ))}
-                  </select>
-                  <p id="agent-kv-quant-desc" className="mt-1 text-xs text-shell-text-tertiary">
-                    Quantization applied to the KV cache during inference. fp16 is the default.
-                    Additional options appear only when a cluster worker supports them.
-                  </p>
+              {/* KV cache quant — split K / V / boundary controls.
+                  Each sub-control is only rendered when its axis has more than
+                  the fp16 baseline. If the cluster has no TurboQuant-capable
+                  workers, this whole section is absent from the DOM. */}
+              {(kvQuantOptions.k.length > 1 || kvQuantOptions.v.length > 1 || kvQuantOptions.boundary) && (
+                <div className="space-y-3">
+                  {kvQuantOptions.k.length > 1 && (
+                    <div>
+                      <Label htmlFor="agent-kv-quant-k" className="mb-1.5 block">
+                        K cache bits
+                      </Label>
+                      <select
+                        id="agent-kv-quant-k"
+                        value={kvCacheQuantK}
+                        onChange={(e) => setKvCacheQuantK(e.target.value)}
+                        className="flex h-9 w-full rounded-lg border border-white/10 bg-shell-bg-deep px-3 py-1 text-sm text-shell-text focus-visible:outline-none focus-visible:border-accent/40 focus-visible:ring-2 focus-visible:ring-accent/20 transition-colors"
+                        aria-describedby="agent-kv-quant-k-desc"
+                      >
+                        {kvQuantOptions.k.map((opt) => (
+                          <option key={opt} value={opt}>{opt}</option>
+                        ))}
+                      </select>
+                      <p id="agent-kv-quant-k-desc" className="mt-1 text-xs text-shell-text-tertiary">
+                        Quantization for the key cache (-ctk). fp16 is the default.
+                      </p>
+                    </div>
+                  )}
+                  {kvQuantOptions.v.length > 1 && (
+                    <div>
+                      <Label htmlFor="agent-kv-quant-v" className="mb-1.5 block">
+                        V cache bits
+                      </Label>
+                      <select
+                        id="agent-kv-quant-v"
+                        value={kvCacheQuantV}
+                        onChange={(e) => setKvCacheQuantV(e.target.value)}
+                        className="flex h-9 w-full rounded-lg border border-white/10 bg-shell-bg-deep px-3 py-1 text-sm text-shell-text focus-visible:outline-none focus-visible:border-accent/40 focus-visible:ring-2 focus-visible:ring-accent/20 transition-colors"
+                        aria-describedby="agent-kv-quant-v-desc"
+                      >
+                        {kvQuantOptions.v.map((opt) => (
+                          <option key={opt} value={opt}>{opt}</option>
+                        ))}
+                      </select>
+                      <p id="agent-kv-quant-v-desc" className="mt-1 text-xs text-shell-text-tertiary">
+                        Quantization for the value cache (-ctv). fp16 is the default.
+                      </p>
+                    </div>
+                  )}
+                  {kvQuantOptions.boundary && (
+                    <div>
+                      <Label htmlFor="agent-kv-boundary-layers" className="mb-1.5 block">
+                        Boundary layers
+                      </Label>
+                      <input
+                        id="agent-kv-boundary-layers"
+                        type="number"
+                        min={0}
+                        max={4}
+                        step={1}
+                        value={kvCacheQuantBoundaryLayers}
+                        onChange={(e) => {
+                          const v = Math.max(0, Math.min(4, parseInt(e.target.value, 10) || 0));
+                          setKvCacheQuantBoundaryLayers(v);
+                        }}
+                        className="flex h-9 w-full rounded-lg border border-white/10 bg-shell-bg-deep px-3 py-1 text-sm text-shell-text focus-visible:outline-none focus-visible:border-accent/40 focus-visible:ring-2 focus-visible:ring-accent/20 transition-colors"
+                        aria-describedby="agent-kv-boundary-layers-desc"
+                      />
+                      <p id="agent-kv-boundary-layers-desc" className="mt-1 text-xs text-shell-text-tertiary">
+                        Number of leading transformer layers kept in fp16 regardless of KV quant setting. Range 0-4.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1010,10 +1089,12 @@ function DeployWizard({
                   ["User Memory", canReadUserMemory ? "Allowed (read-only)" : "Denied"],
                   ["On failure", onWorkerFailure],
                   ["Fallbacks", fallbackModels.filter(Boolean).join(", ") || "none"],
-                  // Only include KV quant in the review when the cluster
-                  // actually offers a choice — avoids surfacing an fp16-only
-                  // entry that would confuse users who never saw the dropdown.
-                  ...(kvQuantOptions.length > 1 ? [["KV quant", kvCacheQuant]] : []),
+                  // Only include KV quant rows in the review when the cluster
+                  // actually offered a choice — avoids surfacing fp16-only
+                  // entries that would confuse users who never saw the controls.
+                  ...(kvQuantOptions.k.length > 1 ? [["K cache bits", kvCacheQuantK]] : []),
+                  ...(kvQuantOptions.v.length > 1 ? [["V cache bits", kvCacheQuantV]] : []),
+                  ...(kvQuantOptions.boundary ? [["Boundary layers", String(kvCacheQuantBoundaryLayers)]] : []),
                 ].map(([label, value]) => (
                   <div key={label} className="flex items-center justify-between px-4 py-2.5">
                     <span className="text-xs text-shell-text-secondary">{label}</span>
@@ -1106,7 +1187,9 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
                 paused: Boolean(a.paused),
                 on_worker_failure: (a.on_worker_failure as Agent["on_worker_failure"]) ?? "pause",
                 fallback_models: Array.isArray(a.fallback_models) ? (a.fallback_models as string[]) : [],
-                kv_cache_quant: a.kv_cache_quant ? String(a.kv_cache_quant) : "fp16",
+                kv_cache_quant_k: a.kv_cache_quant_k ? String(a.kv_cache_quant_k) : (a.kv_cache_quant ? String(a.kv_cache_quant) : "fp16"),
+                kv_cache_quant_v: a.kv_cache_quant_v ? String(a.kv_cache_quant_v) : (a.kv_cache_quant ? String(a.kv_cache_quant) : "fp16"),
+                kv_cache_quant_boundary_layers: typeof a.kv_cache_quant_boundary_layers === "number" ? a.kv_cache_quant_boundary_layers : 0,
               }))
             );
             setLoading(false);

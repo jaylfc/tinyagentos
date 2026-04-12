@@ -89,8 +89,19 @@ export interface ClusterWorker {
   potential_capabilities?: string[];
   /** KV cache quantization types this worker can serve.  Absent on workers
    *  running old agent code; treat missing as ["fp16"].  A worker running a
-   *  TurboQuant-capable backend will list additional entries here. */
+   *  TurboQuant-capable backend will list additional entries here.
+   *  @deprecated Prefer kv_cache_quant_k_support / kv_cache_quant_v_support
+   *  for workers that have upgraded to the split K/V model. */
   kv_cache_quant_support?: string[];
+  /** Valid -ctk values this worker can serve (split K cache quant types).
+   *  Absent on older workers; fall back to kv_cache_quant_support. */
+  kv_cache_quant_k_support?: string[];
+  /** Valid -ctv values this worker can serve (split V cache quant types).
+   *  Absent on older workers; fall back to kv_cache_quant_support. */
+  kv_cache_quant_v_support?: string[];
+  /** True when the worker supports the boundary-layer-protect feature that
+   *  keeps the first N transformer layers in fp16 regardless of KV quant. */
+  kv_cache_quant_boundary_layer_protect?: boolean;
 }
 
 export type WorkerStatus = "online" | "stale" | "offline" | "unknown";
@@ -239,6 +250,61 @@ export function availableKvQuantTypes(workers: ClusterWorker[]): string[] {
     }
   }
   return Array.from(types).sort();
+}
+
+export interface KvQuantOptions {
+  /** Union of all online workers' valid -ctk values; always at least ["fp16"]. */
+  k: string[];
+  /** Union of all online workers' valid -ctv values; always at least ["fp16"]. */
+  v: string[];
+  /** True if any online worker supports the boundary-layer-protect feature. */
+  boundary: boolean;
+  /** Legacy flat union for back-compat; union of k + v deduplicated. */
+  flat: string[];
+}
+
+/**
+ * Compute cluster-wide KV quant options from online workers.
+ *
+ * Workers that advertise kv_cache_quant_k_support / kv_cache_quant_v_support
+ * are handled natively.  Older workers that only have kv_cache_quant_support
+ * have that list applied to both K and V for back-compat.
+ *
+ * The deploy wizard uses the k / v / boundary fields to decide which controls
+ * to render.  A dropdown is shown only when its list has more than one entry
+ * (i.e. something beyond just "fp16" is available).
+ */
+export function availableKvQuantOptions(workers: ClusterWorker[]): KvQuantOptions {
+  const kSet = new Set<string>(["fp16"]);
+  const vSet = new Set<string>(["fp16"]);
+  let boundary = false;
+
+  for (const w of workers) {
+    if (w.kv_cache_quant_k_support) {
+      for (const t of w.kv_cache_quant_k_support) kSet.add(t);
+    } else if (w.kv_cache_quant_support) {
+      // Legacy worker: apply flat list to both K and V
+      for (const t of w.kv_cache_quant_support) {
+        kSet.add(t);
+        vSet.add(t);
+      }
+    }
+
+    if (w.kv_cache_quant_v_support) {
+      for (const t of w.kv_cache_quant_v_support) vSet.add(t);
+    }
+
+    if (w.kv_cache_quant_boundary_layer_protect) {
+      boundary = true;
+    }
+  }
+
+  const k = Array.from(kSet).sort();
+  const v = Array.from(vSet).sort();
+  const flatSet = new Set([...k, ...v]);
+  const flat = Array.from(flatSet).sort();
+
+  return { k, v, boundary, flat };
 }
 
 /** Format a unix-seconds timestamp as a short relative string like "3s ago" / "2m ago". */
