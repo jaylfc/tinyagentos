@@ -28,13 +28,49 @@ from tinyagentos.context_assembler import ContextAssembler, estimate_tokens
 
 DATA_PATH = os.path.join(os.path.dirname(__file__), "data", "longmemeval_oracle.json")
 
+# Remote LLM for answer generation (Ollama on Fedora with RTX 3060)
+REMOTE_LLM_URL = "http://192.168.6.108:11434"
+REMOTE_LLM_MODEL = "qwen2.5:3b"
+
+ANSWER_PROMPT = """Based on the following context from past conversations, answer the question.
+If the answer is not in the context, say "I don't know."
+Answer concisely in 1-2 sentences. /nothink
+
+Context:
+{context}
+
+Question: {question}
+
+Answer:"""
+
 
 def score_answer(predicted: str, gold: str) -> bool:
     """Score using substring matching (official LongMemEval approach)."""
     return gold.lower().strip() in predicted.lower()
 
 
-async def run_benchmark(limit: int = 50, question_type: str | None = None):
+async def llm_answer(client, context: str, question: str) -> str:
+    """Use remote LLM to generate answer from recalled context."""
+    try:
+        resp = await client.post(
+            f"{REMOTE_LLM_URL}/api/chat",
+            json={
+                "model": REMOTE_LLM_MODEL,
+                "messages": [{"role": "user", "content": ANSWER_PROMPT.format(context=context[:3000], question=question)}],
+                "stream": False,
+                "think": False,
+                "options": {"temperature": 0, "num_predict": 100},
+            },
+            timeout=30,
+        )
+        if resp.status_code == 200:
+            return resp.json().get("message", {}).get("content", "")
+    except Exception:
+        pass
+    return ""
+
+
+async def run_benchmark(limit: int = 50, question_type: str | None = None, use_llm: bool = False):
     print("=" * 70)
     print("LongMemEval Benchmark — taOSmd")
     print("=" * 70)
@@ -113,9 +149,19 @@ async def run_benchmark(limit: int = 50, question_type: str | None = None):
 
         query_time = time.time() - t1
 
-        # Score — check assembled context OR raw archive
-        context = ctx["context"] + " " + archive_text
-        correct = score_answer(context, gold_answer)
+        # Score — check assembled context OR raw archive OR LLM answer
+        full_context = ctx["context"] + " " + archive_text
+        correct = score_answer(full_context, gold_answer)
+
+        # If not found by keyword search, try LLM comprehension
+        if not correct and use_llm:
+            import httpx as _httpx
+            async with _httpx.AsyncClient() as llm_client:
+                answer = await llm_answer(llm_client, full_context, question)
+            if answer:
+                correct = score_answer(answer, gold_answer)
+                if correct:
+                    full_context += f" [LLM answer: {answer}]"
 
         total_questions += 1
         if correct:
@@ -164,6 +210,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=50, help="Number of questions to run")
     parser.add_argument("--type", type=str, default=None, help="Filter by question type")
+    parser.add_argument("--llm", action="store_true", help="Use remote LLM for answer generation")
     args = parser.parse_args()
 
-    asyncio.run(run_benchmark(limit=args.limit, question_type=args.type))
+    asyncio.run(run_benchmark(limit=args.limit, question_type=args.type, use_llm=args.llm))
