@@ -76,7 +76,7 @@ const MOCK_APPS: CatalogApp[] = [
   { id: "n8n", name: "n8n", type: "service", version: "latest", description: "Workflow automation platform", installed: false, compat: "green" },
 
   // Streaming Apps
-  { id: "code-server", name: "Code Server", type: "streaming-app", version: "latest", description: "VS Code in the browser", installed: false, compat: "green" },
+  { id: "code-server-kasm", name: "Code Server (Streamed)", type: "streaming-app", version: "latest", description: "VS Code in the browser via KasmVNC", installed: false, compat: "green" },
   { id: "blender", name: "Blender", type: "streaming-app", version: "latest", description: "3D creation suite streamed via KasmVNC", installed: false, compat: "yellow" },
   { id: "libreoffice", name: "LibreOffice", type: "streaming-app", version: "latest", description: "Full office suite streamed via KasmVNC", installed: false, compat: "green" },
 
@@ -87,6 +87,21 @@ const MOCK_APPS: CatalogApp[] = [
   // Audio
   { id: "kokoro-tts", name: "Kokoro TTS", type: "voice", version: "latest", description: "High-quality text-to-speech", installed: false, compat: "green" },
   { id: "whisper-stt", name: "Whisper STT", type: "voice", version: "latest", description: "OpenAI Whisper speech-to-text", installed: false, compat: "green" },
+
+  // Video
+  { id: "animatediff", name: "AnimateDiff", type: "video-gen", version: "latest", description: "AI video generation from text and images", installed: false, compat: "yellow" },
+
+  // Dev Tools
+  { id: "code-server", name: "Code Server", type: "dev-tool", version: "latest", description: "VS Code in the browser — remote development environment", installed: false, compat: "green" },
+  { id: "jupyter-lab", name: "JupyterLab", type: "dev-tool", version: "latest", description: "Interactive notebooks for data science and experimentation", installed: false, compat: "green" },
+
+  // Home & Monitor
+  { id: "home-assistant", name: "Home Assistant", type: "home", version: "latest", description: "Open-source home automation platform", installed: false, compat: "green" },
+  { id: "uptime-kuma", name: "Uptime Kuma", type: "monitoring", version: "latest", description: "Self-hosted monitoring tool — track uptime for services and APIs", installed: false, compat: "green" },
+
+  // Infrastructure
+  { id: "tailscale", name: "Tailscale", type: "infrastructure", version: "latest", description: "Zero-config mesh VPN for secure networking between devices", installed: false, compat: "green" },
+  { id: "caddy", name: "Caddy", type: "infrastructure", version: "latest", description: "Automatic HTTPS reverse proxy and web server", installed: false, compat: "green" },
 ];
 
 /* ------------------------------------------------------------------ */
