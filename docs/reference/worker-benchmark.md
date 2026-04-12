@@ -101,13 +101,22 @@ When a new metric becomes worth measuring:
 Never add a metric that requires downloading a specific model. Always
 use whatever the worker has loaded.
 
-## KV quant columns
+## KV quant fields in the results schema
 
-The KV quant fields were added after the split K/V refactor (#189).
-Legacy benchmark results saved before the split had only
-`kv_cache_quant`; the migration fills K and V with the legacy value
-and sets `boundary_layers=0`. Anything newer carries the split fields
-natively.
+The benchmark `SuiteResult.details` dict carries the KV quant
+configuration that was active during the run, under these keys:
+
+| Key | Type | Example |
+|---|---|---|
+| `kv_cache_quant_k` | string | `"q8_0"` |
+| `kv_cache_quant_v` | string | `"turbo3"` |
+| `kv_cache_quant_boundary_layers` | integer | `0` |
+
+Any caller reading benchmark results should default missing keys to
+`fp16`, `fp16`, `0` respectively — legacy runs recorded before the
+split (#189) do not have them. The runner writes the fields
+automatically from the backend's advertised config at run time; there
+is no code path that records a benchmark without them.
 
 Tracked in #223.
 
