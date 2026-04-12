@@ -149,6 +149,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     from tinyagentos.agent_browsers import AgentBrowsersManager
     agent_browsers = AgentBrowsersManager(db_path=data_dir / "agent-browsers.db", mock=True)
 
+    from tinyagentos.browsing_history import BrowsingHistoryStore
+    browsing_history = BrowsingHistoryStore(db_path=data_dir / "browsing-history.db")
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         await metrics_store.init()
@@ -178,6 +181,8 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         await knowledge_monitor.start()
         await agent_browsers.init()
         app.state.agent_browsers = agent_browsers
+        await browsing_history.init()
+        app.state.browsing_history = browsing_history
         await benchmark_store.init()
         await scheduler_history_store.init()
         app.state.config = config
@@ -320,6 +325,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         await knowledge_monitor.stop()
         await knowledge_store.close()
         await agent_browsers.close()
+        await browsing_history.close()
         await installed_apps.close()
         await user_memory.close()
         await desktop_settings.close()
@@ -562,6 +568,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     from tinyagentos.routes.x import router as x_router
     app.include_router(x_router)
+
+    from tinyagentos.routes.browsing_history import router as browsing_history_router
+    app.include_router(browsing_history_router)
 
     # Lobby demo (internal only — not included in public builds)
     try:

@@ -161,11 +161,12 @@ async def test_download_item_with_no_source_url_returns_400():
     }
     app = _build_test_app(item=item_no_url)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
-        resp = await c.post(
-            "/api/youtube/download",
-            json={"item_id": "yt-item-nurl", "quality": "720"},
-        )
+    with patch("tinyagentos.routes.youtube.asyncio.create_task", MagicMock()):
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            resp = await c.post(
+                "/api/youtube/download",
+                json={"item_id": "yt-item-nurl", "quality": "720"},
+            )
     assert resp.status_code == 400
     assert "error" in resp.json()
 

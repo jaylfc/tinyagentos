@@ -278,6 +278,12 @@ log "installing controller python deps into .venv (pip install -e .)"
 ./.venv/bin/pip install --quiet --upgrade pip
 ./.venv/bin/pip install --quiet -e .
 
+# yt-dlp is needed for YouTube and X content ingestion (runs as subprocess)
+if ! command -v yt-dlp &>/dev/null; then
+    log "installing yt-dlp for YouTube/X content ingestion"
+    ./.venv/bin/pip install --quiet yt-dlp || log "WARN: yt-dlp install failed — YouTube ingest will not work"
+fi
+
 log "verifying controller import"
 if ! ./.venv/bin/python -c "import tinyagentos.app; tinyagentos.app.create_app()" 2>/dev/null; then
     # Run again without redirecting stderr so the error is visible
