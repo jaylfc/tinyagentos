@@ -152,6 +152,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     from tinyagentos.browsing_history import BrowsingHistoryStore
     browsing_history = BrowsingHistoryStore(db_path=data_dir / "browsing-history.db")
 
+    from tinyagentos.temporal_knowledge_graph import TemporalKnowledgeGraph
+    knowledge_graph = TemporalKnowledgeGraph(db_path=data_dir / "knowledge-graph.db")
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         await metrics_store.init()
@@ -183,6 +186,8 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.agent_browsers = agent_browsers
         await browsing_history.init()
         app.state.browsing_history = browsing_history
+        await knowledge_graph.init()
+        app.state.knowledge_graph = knowledge_graph
         await benchmark_store.init()
         await scheduler_history_store.init()
         app.state.config = config
@@ -326,6 +331,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         await knowledge_store.close()
         await agent_browsers.close()
         await browsing_history.close()
+        await knowledge_graph.close()
         await installed_apps.close()
         await user_memory.close()
         await desktop_settings.close()
@@ -571,6 +577,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     from tinyagentos.routes.browsing_history import router as browsing_history_router
     app.include_router(browsing_history_router)
+
+    from tinyagentos.routes.knowledge_graph import router as kg_router
+    app.include_router(kg_router)
 
     # Lobby demo (internal only — not included in public builds)
     try:
