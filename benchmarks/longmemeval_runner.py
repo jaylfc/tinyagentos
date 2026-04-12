@@ -98,12 +98,18 @@ async def run_benchmark(limit: int = 50, question_type: str | None = None):
             max_total_tokens=2000,
         )
 
-        # Also do a direct archive text search (raw verbatim — the MemPalace approach)
-        archive_results = await archive.query(search=gold_answer[:30], limit=5)
-        archive_text = " ".join(
-            e.get("data_json", "")
-            for e in archive_results
-        )
+        # Also do FTS search over raw archive (the MemPalace approach — verbatim recall)
+        # Search for key words from the question AND the answer
+        search_terms = question.split()[:5]  # First 5 words of question
+        archive_text = ""
+        for term in search_terms:
+            if len(term) > 3:  # Skip short words
+                try:
+                    fts_results = await archive.search_fts(term, limit=3)
+                    for r in fts_results:
+                        archive_text += " " + r.get("data_json", "") + " " + r.get("summary", "")
+                except Exception:
+                    pass
 
         query_time = time.time() - t1
 

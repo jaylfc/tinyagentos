@@ -67,6 +67,13 @@ CREATE TABLE IF NOT EXISTS archive_settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+CREATE VIRTUAL TABLE IF NOT EXISTS archive_fts USING fts5(
+    summary,
+    content,
+    content_rowid='id',
+    tokenize='porter unicode61'
+);
 """
 
 
@@ -185,8 +192,49 @@ class ArchiveStore:
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (ts, event_type, agent_name, app_id, summary, file_path, line_count, json.dumps(data, default=str)),
         )
+
+        # Index in FTS for full-text search
+        row_id = cursor.lastrowid
+        # Build searchable content from data fields
+        content_parts = [summary]
+        for key in ("content", "text", "msg", "query", "tool", "result", "error"):
+            val = data.get(key)
+            if val and isinstance(val, str):
+                content_parts.append(val)
+        content_text = " ".join(content_parts)
+        if content_text.strip():
+            self._conn.execute(
+                "INSERT INTO archive_fts (rowid, summary, content) VALUES (?, ?, ?)",
+                (row_id, summary, content_text),
+            )
+
         self._conn.commit()
-        return cursor.lastrowid
+        return row_id
+
+    # ------------------------------------------------------------------
+    # Full-text search
+    # ------------------------------------------------------------------
+
+    async def search_fts(self, query: str, limit: int = 20) -> list[dict]:
+        """Full-text search across all archived content using FTS5.
+
+        This is the key method for LongMemEval-style recall — it searches
+        the raw verbatim text, not just extracted triples.
+        """
+        try:
+            rows = self._conn.execute(
+                """SELECT a.*, highlight(archive_fts, 1, '<b>', '</b>') as highlight
+                   FROM archive_fts f
+                   JOIN archive_index a ON a.id = f.rowid
+                   WHERE archive_fts MATCH ?
+                   ORDER BY rank
+                   LIMIT ?""",
+                (query, limit),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        except Exception:
+            # Fallback to LIKE search if FTS query syntax fails
+            return await self.query(search=query, limit=limit)
 
     # ------------------------------------------------------------------
     # Querying
