@@ -44,9 +44,50 @@ Question: {question}
 Answer:"""
 
 
-def score_answer(predicted: str, gold: str) -> bool:
-    """Score using substring matching (official LongMemEval approach)."""
+def score_answer_substring(predicted: str, gold: str) -> bool:
+    """Score using substring matching (fast, lower bound)."""
     return gold.lower().strip() in predicted.lower()
+
+
+async def score_answer_llm(client, predicted: str, gold: str, question: str) -> bool:
+    """Score using LLM-as-judge (official LongMemEval approach)."""
+    prompt = f"""You are a strict answer evaluator. Determine if the predicted answer contains the same factual information as the reference answer.
+
+Rules:
+- "I don't know" or similar non-answers are ALWAYS incorrect
+- The predicted answer must contain the key facts from the reference answer
+- Paraphrasing is fine, but the core information must match
+- If the predicted answer is vague or generic while the reference is specific, that is INCORRECT
+
+Reply with exactly one word: CORRECT or INCORRECT
+
+Question: {question}
+Reference answer: {gold}
+Predicted answer: {predicted}
+
+Verdict:"""
+    try:
+        resp = await client.post(
+            f"{REMOTE_LLM_URL}/api/chat",
+            json={
+                "model": REMOTE_LLM_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+                "options": {"temperature": 0, "num_predict": 10},
+            },
+            timeout=15,
+        )
+        if resp.status_code == 200:
+            judgment = resp.json().get("message", {}).get("content", "").strip().upper()
+            return "CORRECT" in judgment
+    except Exception:
+        pass
+    return False
+
+
+def score_answer(predicted: str, gold: str) -> bool:
+    """Fast substring check (used when LLM judge not available)."""
+    return score_answer_substring(predicted, gold)
 
 
 async def llm_answer(client, context: str, question: str) -> str:
@@ -90,6 +131,12 @@ async def run_benchmark(limit: int = 50, question_type: str | None = None, use_l
     total_correct = 0
     total_questions = 0
     total_time = 0
+
+    # Create LLM client if needed
+    llm_client = None
+    if use_llm:
+        import httpx as _httpx
+        llm_client = _httpx.AsyncClient(timeout=30)
 
     for i, item in enumerate(dataset):
         qtype = item["question_type"]
@@ -149,19 +196,24 @@ async def run_benchmark(limit: int = 50, question_type: str | None = None, use_l
 
         query_time = time.time() - t1
 
-        # Score — check assembled context OR raw archive OR LLM answer
+        # Score
         full_context = ctx["context"] + " " + archive_text
-        correct = score_answer(full_context, gold_answer)
 
-        # If not found by keyword search, try LLM comprehension
-        if not correct and use_llm:
-            import httpx as _httpx
-            async with _httpx.AsyncClient() as llm_client:
-                answer = await llm_answer(llm_client, full_context, question)
+        if use_llm and llm_client is not None:
+            # Step 1: LLM generates answer from recalled context
+            answer = await llm_answer(llm_client, full_context, question)
+            # Step 2: LLM judges whether answer matches gold (official eval method)
             if answer:
-                correct = score_answer(answer, gold_answer)
-                if correct:
-                    full_context += f" [LLM answer: {answer}]"
+                correct = await score_answer_llm(llm_client, answer, gold_answer, question)
+            else:
+                correct = False
+            # Debug: show what the LLM produced
+            if i < 3:  # First 3 questions only
+                print(f"      LLM answer: {(answer or 'NONE')[:100]}")
+                print(f"      Gold: {gold_answer[:100]}")
+                print(f"      Correct: {correct}")
+        else:
+            correct = score_answer_substring(full_context, gold_answer)
 
         total_questions += 1
         if correct:
@@ -202,6 +254,9 @@ async def run_benchmark(limit: int = 50, question_type: str | None = None, use_l
     print(f"    GPT-4o (full context):        ~70%")
     print(f"    taOSmd (Pi NPU, no cloud):    {overall:.1f}%")
     print(f"{'='*70}")
+
+    if llm_client:
+        await llm_client.aclose()
 
     return overall
 
