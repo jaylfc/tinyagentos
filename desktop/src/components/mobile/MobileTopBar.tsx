@@ -11,8 +11,7 @@ export function MobileTopBar({ currentAppName, onBack }: Props) {
   const unreadCount = useNotificationStore((s) => s.notifications.filter((n) => !n.read).length);
   const toggleCentre = useNotificationStore((s) => s.toggleCentre);
 
-  // No bar when on home screen — let iOS status bar stand alone
-  if (!currentAppName) return null;
+  const isHome = !currentAppName;
 
   return (
     <div
@@ -29,20 +28,26 @@ export function MobileTopBar({ currentAppName, onBack }: Props) {
         className="flex items-center px-1"
         style={{ height: 44 }}
       >
-        {/* Back button — iOS style */}
-        <button
-          onClick={onBack}
-          className="flex items-center gap-0 px-2 py-2 text-accent active:opacity-60 transition-opacity min-w-[60px]"
-          aria-label="Go back to home"
-        >
-          <ChevronLeft size={20} strokeWidth={2.5} />
-          <span className="text-[15px]">Back</span>
-        </button>
+        {/* Left — back button (in app) or logo (home) */}
+        {isHome ? (
+          <div className="flex items-center gap-2 px-2 min-w-[60px]">
+            <img src="/static/taos-logo.png" alt="taOS" className="h-4 w-auto" />
+          </div>
+        ) : (
+          <button
+            onClick={onBack}
+            className="flex items-center gap-0 px-2 py-2 text-accent active:opacity-60 transition-opacity min-w-[60px]"
+            aria-label="Go back to home"
+          >
+            <ChevronLeft size={20} strokeWidth={2.5} />
+            <span className="text-[15px]">Back</span>
+          </button>
+        )}
 
-        {/* Centre — app name */}
+        {/* Centre — app name or taOS */}
         <div className="flex-1 text-center">
           <span className="text-[17px] font-semibold text-shell-text">
-            {currentAppName}
+            {isHome ? "taOS" : currentAppName}
           </span>
         </div>
 

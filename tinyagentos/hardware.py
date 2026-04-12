@@ -405,15 +405,34 @@ def _detect_gpu() -> GpuInfo:
         gpu.rocm = Path("/opt/rocm").exists()
         gpu.vulkan = gpu.rocm
     else:
-        # Check for integrated Mali (ARM)
-        drm_path = Path("/sys/class/drm")
-        if drm_path.exists():
-            for card in drm_path.glob("card*/device/driver"):
-                driver = card.resolve().name if card.exists() else ""
-                if "mali" in driver.lower() or "panfrost" in driver.lower():
+        # Check for integrated Mali (ARM) — multiple detection paths
+        mali_found = False
+        # Path 1: /sys/class/misc/mali0 (proprietary Mali driver)
+        if Path("/sys/class/misc/mali0").exists():
+            mali_found = True
+            # Try to get the specific Mali variant from device tree
+            compat_path = Path("/proc/device-tree/gpu@fb000000/compatible")
+            if compat_path.exists():
+                compat = compat_path.read_text(errors="replace").strip().strip("\x00")
+                # e.g. "arm,mali-bifrost" → "Mali-Bifrost"
+                if "mali" in compat.lower():
+                    variant = compat.split(",")[-1].replace("mali-", "Mali-").replace("mali", "Mali")
                     gpu.type = "mali"
-                    gpu.model = "Mali (integrated)"
-                    break
+                    gpu.model = f"{variant} (integrated)"
+            if not gpu.model:
+                gpu.type = "mali"
+                gpu.model = "Mali (integrated)"
+        # Path 2: /sys/class/drm/card*/device/driver contains mali or panfrost
+        if not mali_found:
+            drm_path = Path("/sys/class/drm")
+            if drm_path.exists():
+                for card in drm_path.glob("card*/device/driver"):
+                    driver = card.resolve().name if card.exists() else ""
+                    if "mali" in driver.lower() or "panfrost" in driver.lower():
+                        gpu.type = "mali"
+                        gpu.model = "Mali (integrated)"
+                        mali_found = True
+                        break
     # Check Vulkan availability
     if not gpu.vulkan and shutil.which("vulkaninfo"):
         result = _run(["vulkaninfo", "--summary"])
@@ -437,9 +456,13 @@ def _detect_disk() -> DiskInfo:
     for line in lsblk.split("\n"):
         parts = line.split()
         if len(parts) >= 2:
+            name = parts[0]
+            # Skip virtual/non-disk devices
+            if any(name.startswith(skip) for skip in ("zram", "loop", "mtdblock", "ram")):
+                continue
             rota = parts[1] if len(parts) > 1 else "1"
             tran = parts[2] if len(parts) > 2 else ""
-            if "nvme" in tran:
+            if "nvme" in tran or "nvme" in name:
                 dtype = "nvme"
                 break
             elif "mmc" in parts[0]:
