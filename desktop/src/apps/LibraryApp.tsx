@@ -475,6 +475,7 @@ export function LibraryApp({ windowId: _windowId }: { windowId: string }) {
                 fetchRules();
                 setCategoryManagerOpen(true);
               }}
+              aria-label="Manage categories"
             >
               + Manage
             </Button>
