@@ -138,11 +138,9 @@ def get_npu_per_core() -> list[dict] | None:
     Requires root (debugfs). Returns list of {core, load_percent} or None.
     """
     path = Path("/sys/kernel/debug/rknpu/load")
-    if not path.exists():
-        return None
     try:
         text = path.read_text()
-    except (OSError, PermissionError):
+    except (OSError, PermissionError, FileNotFoundError):
         return None
     cores: list[dict] = []
     for match in _NPU_CORE_RE.finditer(text):
@@ -156,11 +154,10 @@ def get_npu_frequency() -> int | None:
         Path("/sys/class/devfreq/fdab0000.npu/cur_freq"),
         Path("/sys/kernel/debug/rknpu/freq"),
     ):
-        if path.exists():
-            try:
-                return int(path.read_text().strip())
-            except (OSError, ValueError):
-                pass
+        try:
+            return int(path.read_text().strip())
+        except (OSError, PermissionError, FileNotFoundError, ValueError):
+            pass
     return None
 
 
@@ -238,30 +235,28 @@ def get_gpu_load() -> dict | None:
     # mainline panthor: /sys/class/devfreq/fb000000.gpu/load
     # format: "120@800000000" (util@freq_hz)
     panthor = Path("/sys/class/devfreq/fb000000.gpu/load")
-    if panthor.exists():
-        try:
-            text = panthor.read_text().strip()
-            if "@" in text:
-                util, freq = text.split("@", 1)
-                return {"load_percent": int(util), "freq_hz": int(freq)}
-        except (OSError, ValueError):
-            pass
+    try:
+        text = panthor.read_text().strip()
+        if "@" in text:
+            util, freq = text.split("@", 1)
+            return {"load_percent": int(util), "freq_hz": int(freq)}
+    except (OSError, PermissionError, FileNotFoundError, ValueError):
+        pass
 
     # mali blob (debugfs, root)
     mali = Path("/sys/kernel/debug/mali0/dvfs_utilization")
-    if mali.exists():
-        try:
-            text = mali.read_text()
-            busy_match = re.search(r"busy_time:\s*(\d+)", text)
-            idle_match = re.search(r"idle_time:\s*(\d+)", text)
-            if busy_match and idle_match:
-                busy = int(busy_match.group(1))
-                idle = int(idle_match.group(1))
-                total = busy + idle
-                if total > 0:
-                    return {"load_percent": round(100 * busy / total), "freq_hz": None}
-        except (OSError, ValueError):
-            pass
+    try:
+        text = mali.read_text()
+        busy_match = re.search(r"busy_time:\s*(\d+)", text)
+        idle_match = re.search(r"idle_time:\s*(\d+)", text)
+        if busy_match and idle_match:
+            busy = int(busy_match.group(1))
+            idle = int(idle_match.group(1))
+            total = busy + idle
+            if total > 0:
+                return {"load_percent": round(100 * busy / total), "freq_hz": None}
+    except (OSError, PermissionError, FileNotFoundError, ValueError):
+        pass
 
     return None
 
