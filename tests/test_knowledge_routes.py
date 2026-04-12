@@ -310,3 +310,30 @@ async def test_delete_subscription(knowledge_client):
 
     list_resp = await knowledge_client.get("/api/knowledge/subscriptions?agent_name=dev-agent")
     assert list_resp.json()["subscriptions"] == []
+
+
+# ------------------------------------------------------------------
+# Task 8: lifespan smoke tests
+# ------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_knowledge_store_in_app_state(knowledge_client):
+    """Verify knowledge_store is accessible on app state after startup."""
+    # The client fixture initialises the store — just verify the list endpoint works
+    resp = await knowledge_client.get("/api/knowledge/items")
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_ingest_pipeline_in_app_state(knowledge_client):
+    """Verify ingest_pipeline is accessible and returns a valid item id."""
+    resp = await knowledge_client.post("/api/knowledge/ingest", json={
+        "url": "https://example.com/smoke-test",
+        "title": "Smoke Test",
+        "text": "Smoke test content.",
+        "categories": [],
+        "source": "smoke",
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["id"]) == 36  # UUID length
