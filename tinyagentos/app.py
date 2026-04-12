@@ -51,6 +51,10 @@ from tinyagentos.desktop_settings import DesktopSettingsStore
 from tinyagentos.user_memory import UserMemoryStore
 from tinyagentos.installed_apps import InstalledAppsStore
 from tinyagentos.skills import SkillStore
+from tinyagentos.knowledge_store import KnowledgeStore
+from tinyagentos.knowledge_ingest import IngestPipeline
+from tinyagentos.knowledge_categories import CategoryEngine
+from tinyagentos.knowledge_monitor import MonitorService
 
 PROJECT_DIR = Path(__file__).parent.parent
 
@@ -124,6 +128,24 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     user_memory = UserMemoryStore(data_dir / "user_memory.db")
     installed_apps = InstalledAppsStore(data_dir / "installed_apps.db")
     skills = SkillStore(data_dir / "skills.db")
+    knowledge_store = KnowledgeStore(
+        data_dir / "knowledge.db",
+        media_dir=data_dir / "knowledge-media",
+    )
+    knowledge_category_engine = CategoryEngine(
+        store=knowledge_store,
+        http_client=http_client,
+        llm_url=config.backends[0].get("url", "") if config.backends else "",
+    )
+    knowledge_ingest = IngestPipeline(
+        store=knowledge_store,
+        http_client=http_client,
+        notifications=notif_store,
+        category_engine=knowledge_category_engine,
+        qmd_base_url=config.qmd.get("url", "http://localhost:7832"),
+        llm_base_url=config.backends[0].get("url", "") if config.backends else "",
+    )
+    knowledge_monitor = MonitorService(store=knowledge_store, http_client=http_client)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -147,6 +169,11 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         await user_memory.init()
         await installed_apps.init()
         await skills.init()
+        await knowledge_store.init()
+        app.state.knowledge_store = knowledge_store
+        app.state.ingest_pipeline = knowledge_ingest
+        app.state.knowledge_monitor = knowledge_monitor
+        await knowledge_monitor.start()
         await benchmark_store.init()
         await scheduler_history_store.init()
         app.state.config = config
@@ -286,6 +313,8 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         await scheduler_history_store.close()
         await benchmark_store.close()
         await skills.close()
+        await knowledge_monitor.stop()
+        await knowledge_store.close()
         await installed_apps.close()
         await user_memory.close()
         await desktop_settings.close()
@@ -362,6 +391,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     app.state.user_memory = user_memory
     app.state.installed_apps = installed_apps
     app.state.skills = skills
+    app.state.knowledge_store = knowledge_store
+    app.state.ingest_pipeline = knowledge_ingest
+    app.state.knowledge_monitor = knowledge_monitor
 
     # Detect and set container runtime (eager, so tests work without lifespan)
     try:
@@ -513,6 +545,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     from tinyagentos.routes.frameworks import router as frameworks_router
     app.include_router(frameworks_router)
+
+    from tinyagentos.routes.knowledge import router as knowledge_router
+    app.include_router(knowledge_router)
 
     # Lobby demo (internal only — not included in public builds)
     try:
