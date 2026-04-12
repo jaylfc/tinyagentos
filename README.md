@@ -1,6 +1,10 @@
-# TinyAgentOS
+<p align="center">
+  <img src="static/taos-logo.png" alt="taOS" width="400">
+</p>
 
-> **⚠️ Early Development.** This project is under active development and has not been tested on clean hardware yet. Do not install in production. Star/watch the repo to follow progress.
+# taOS
+
+> **TinyAgentOS** &nbsp;|&nbsp; **⚠️ Early Development.** This project is under active development and has not been tested on clean hardware yet. Do not install in production. Star/watch the repo to follow progress.
 
 Self-hosted AI agent platform that runs on whatever hardware you have. An old laptop, a Raspberry Pi, a gaming PC, an SBC gathering dust, or all of them at once. TinyAgentOS turns your spare hardware into a distributed AI compute cluster.
 
