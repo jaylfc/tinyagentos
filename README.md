@@ -451,7 +451,7 @@ Measured KV cache self-memory on Qwen3.5-9B-Q4_K_M at 131K native context on a F
 
 At native 131K context, turbo2/turbo2 lets Qwen3.5-9B fit in ~6.6 GB instead of ~10 GB, bringing full-context runs within reach of 8 GB consumer GPUs that could not touch it under f16. Symmetric configs are a quality landmine on Qwen2.5 family specifically (PPL goes astronomical without boundary layer protection). The deploy wizard exposes separate `K bits`, `V bits`, and `boundary layers` knobs when the worker reports a backend that supports them. Default is always `f16 / f16 / 0` unless the user explicitly opts in or the per-model manifest recommends otherwise.
 
-The llama.cpp CUDA build is currently blocked by glibc 2.42 adding `noexcept` to math functions that conflict with CUDA's headers, tracked as a follow-up. The CPU build is production-ready and the config surface is fully plumbed through the cluster and deploy wizard.
+The llama.cpp CUDA build works on Debian 12 (glibc 2.36) and older distributions. On Fedora 43 and other distros shipping glibc 2.42+, CUDA 12.8 and 12.9 headers conflict with the libc `noexcept` declarations — the workaround is to build inside a Debian 12 LXC, documented in `docs/deploy/fedora-lxc-setup.md`. GPU benchmarks on a 12 GB RTX 3060 reach 786K context with the most aggressive config. The CPU build is production-ready and the config surface is fully plumbed through the cluster and deploy wizard.
 
 ## Known Limitations
 
