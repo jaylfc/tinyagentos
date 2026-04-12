@@ -72,12 +72,14 @@ When a browser container is running, periodic screenshots via Chrome DevTools Pr
 
 ### Interactive noVNC (on demand)
 
-Click "Connect" on a running browser to launch an interactive session:
+Click "Connect" on a running browser to open an interactive session as a standard taOS window:
 - Container runs a VNC server + noVNC websocket proxy
-- taOS proxies the noVNC websocket connection
-- Renders in an iframe within the detail panel
-- User can click, type, browse — full browser interaction
-- "Disconnect" stops the VNC proxy (container keeps running)
+- taOS opens a new window (using the standard Window component) with the noVNC stream in an iframe
+- The window appears in the dock like any other app: "Browser - {profile_name}"
+- User can resize, minimize, maximize, and manage it like any other taOS window
+- Full browser interaction — click, type, browse, log into sites
+- Closing the window disconnects the VNC stream but the container keeps running
+- Multiple browser windows can be open simultaneously (one per profile)
 
 ---
 
