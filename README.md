@@ -475,9 +475,11 @@ TinyAgentOS integrates [exo](https://github.com/exo-explore/exo) for running mod
 | NVIDIA GPU (Linux) | In development, CPU fallback available |
 | AMD GPU (Linux) | In development |
 | x86 CPU (Linux/macOS) | CPU inference |
-| ARM64 / Rockchip | Not yet supported upstream |
+| ARM64 / Rockchip | Not supported (use TAOS scheduler instead) |
 
-**Install:** exo requires a source build (Python 3.13+, uv, Rust, Node.js). There is no pip package. On machines where exo is installed and running, the TAOS worker detects it automatically on the next heartbeat.
+**ARM/Rockchip note:** exo requires partial layer loading to split models across devices. The RKLLM SDK compiles models as monoliths so layer sharding is not possible today (tracked at airockchip/rknn-llm#489). RK3588 workers participate in the TAOS cluster via our own task-parallel scheduler instead -- handling embeddings, reranking, small chat models, and image generation on dedicated NPU cores. Exo is for Mac and GPU users who want to pool VRAM for large models.
+
+**Install:** exo requires a source build (Python 3.13+, uv, Rust, Node.js). There is no pip package. On machines where exo is installed and running, the TAOS worker detects it automatically on the next heartbeat. The controller can also trigger remote installation via `POST /api/cluster/workers/{name}/deploy` with `{"command": "install-exo"}`.
 
 ```bash
 git clone https://github.com/exo-explore/exo.git
@@ -485,7 +487,7 @@ cd exo && uv sync --all-packages && just build-dashboard
 uv run exo
 ```
 
-**Current status:** Experimental. Best suited for home labs and enthusiast clusters. Single-request latency has overhead vs running on one device, but multi-request throughput scales nearly linearly as devices are added. See `app-catalog/services/exo/manifest.yaml` for the catalog entry and `docs/research/beads-exo-integration.md` for the integration research.
+**Current status:** Experimental. Best suited for home labs and enthusiast clusters with Mac or GPU hardware. Single-request latency has overhead vs running on one device, but multi-request throughput scales nearly linearly as devices are added. See `app-catalog/services/exo/manifest.yaml` for the catalog entry and `docs/research/beads-exo-integration.md` for the integration research.
 
 ## Known Limitations
 
