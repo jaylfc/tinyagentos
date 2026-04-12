@@ -50,16 +50,20 @@ class VectorMemory:
         self,
         db_path: str | Path = "data/vector-memory.db",
         qmd_url: str = "http://localhost:7832",
-        embed_mode: str = "qmd",  # "qmd" or "local"
+        embed_mode: str = "qmd",  # "qmd", "local", or "onnx"
         local_model: str = "all-MiniLM-L6-v2",
+        onnx_path: str = "",
     ):
         self._db_path = str(db_path)
         self._qmd_url = qmd_url
         self._embed_mode = embed_mode
         self._local_model_name = local_model
+        self._onnx_path = onnx_path
         self._conn: sqlite3.Connection | None = None
         self._http = None
         self._local_model = None
+        self._onnx_session = None
+        self._onnx_tokenizer = None
 
     async def init(self, http_client=None) -> None:
         Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
@@ -78,6 +82,20 @@ class VectorMemory:
             except ImportError:
                 logger.warning("sentence-transformers not installed, falling back to QMD")
                 self._embed_mode = "qmd"
+        elif self._embed_mode == "onnx":
+            try:
+                import onnxruntime as ort
+                from transformers import AutoTokenizer
+                model_dir = self._onnx_path or "models/minilm-onnx"
+                self._onnx_session = ort.InferenceSession(
+                    f"{model_dir}/model.onnx",
+                    providers=["CPUExecutionProvider"],
+                )
+                self._onnx_tokenizer = AutoTokenizer.from_pretrained(model_dir)
+                logger.info("Loaded ONNX embedding model from %s", model_dir)
+            except Exception as e:
+                logger.warning("ONNX model failed to load: %s, falling back to QMD", e)
+                self._embed_mode = "qmd"
 
     async def close(self) -> None:
         if self._conn:
@@ -86,9 +104,47 @@ class VectorMemory:
 
     async def embed(self, text: str) -> list[float]:
         """Get embedding vector."""
+        if self._embed_mode == "onnx" and self._onnx_session is not None:
+            return self._embed_onnx(text)
         if self._embed_mode == "local" and self._local_model is not None:
             return self._embed_local(text)
         return await self._embed_qmd(text)
+
+    def _embed_onnx(self, text: str) -> list[float]:
+        """Embed using ONNX Runtime (fast CPU inference, no PyTorch)."""
+        import numpy as np
+        try:
+            inputs = self._onnx_tokenizer(text[:512], return_tensors="np", padding=True, truncation=True)
+            feed = {
+                "input_ids": inputs["input_ids"].astype(np.int64),
+                "attention_mask": inputs["attention_mask"].astype(np.int64),
+            }
+            # Add token_type_ids if the model expects it
+            if any(inp.name == "token_type_ids" for inp in self._onnx_session.get_inputs()):
+                feed["token_type_ids"] = np.zeros_like(inputs["input_ids"], dtype=np.int64)
+
+            outputs = self._onnx_session.run(None, feed)
+
+            # Check if model provides sentence_embedding directly
+            output_names = [o.name for o in self._onnx_session.get_outputs()]
+            if "sentence_embedding" in output_names:
+                idx = output_names.index("sentence_embedding")
+                emb = outputs[idx][0]  # (384,)
+            else:
+                # Manual mean pooling
+                token_embeddings = outputs[0]
+                mask = inputs["attention_mask"][..., np.newaxis].astype(np.float32)
+                pooled = (token_embeddings * mask).sum(axis=1) / mask.sum(axis=1)
+                emb = pooled[0]
+
+            # Normalize
+            norm = np.linalg.norm(emb)
+            if norm > 0:
+                emb = emb / norm
+            return emb.tolist()
+        except Exception as e:
+            logger.debug("ONNX embedding failed: %s", e)
+            return []
 
     def _embed_local(self, text: str) -> list[float]:
         """Embed using local sentence-transformers model (CPU)."""
