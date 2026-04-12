@@ -31,7 +31,7 @@ desktop/tests/
 Registered in `app-registry.ts` as:
 - `id: "reddit"`
 - `name: "Reddit"`
-- `icon: "message-circle"`
+- `icon: "scroll-text"`
 - `category: "platform"`
 - `launchpadOrder: 14`
 - `singleton: true`
