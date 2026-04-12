@@ -55,7 +55,7 @@ def test_floor_at_24_hours():
 
 
 def test_stop_after_idle_threshold():
-    """After stop_after_days of no change the interval is set to None (stop polling)."""
+    """stop_after_days no longer stops polling — interval is clamped, never None."""
     new_interval = compute_next_interval(
         current_interval=86400 * 29,
         decay_rate=2.0,
@@ -63,8 +63,37 @@ def test_stop_after_idle_threshold():
         base_frequency=3600,
         stop_after_days=30,
     )
-    # After one more decay step interval would be 86400*29*2 which exceeds stop_after_days*86400
-    assert new_interval is None
+    # Sub-daily source (base_frequency < 86400) caps at 24h; never returns None
+    assert new_interval is not None
+    assert new_interval > 0
+    assert new_interval == 86400
+
+
+def test_decay_floors_at_30_days():
+    """Decay should never push interval beyond 30 days (2592000 seconds)."""
+    new_interval = compute_next_interval(
+        current_interval=2000000,
+        decay_rate=2.0,
+        changed=False,
+        base_frequency=86400,
+        stop_after_days=0,
+    )
+    assert new_interval is not None
+    assert new_interval <= 2592000, f"Interval {new_interval} exceeds 30-day floor"
+
+
+def test_decay_does_not_stop_automatically():
+    """Items should never stop polling — interval stays at floor, never becomes 0."""
+    new_interval = compute_next_interval(
+        current_interval=2592000,
+        decay_rate=2.0,
+        changed=False,
+        base_frequency=86400,
+        stop_after_days=14,
+    )
+    assert new_interval is not None, "Interval should not be None (stopped)"
+    assert new_interval > 0, "Interval should not be zero (stopped)"
+    assert new_interval == 2592000, "Interval should stay at 30-day floor"
 
 
 def test_pinned_item_uses_base_frequency():

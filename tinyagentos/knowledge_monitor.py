@@ -13,7 +13,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _POLL_LOOP_INTERVAL = 60  # seconds between poll-loop ticks
-_MAX_DAILY_INTERVAL = 86400  # 24 hours — polling floor
+_MAX_DAILY_INTERVAL = 86400  # 24 hours — polling floor for sub-daily sources
+DECAY_FLOOR = 2592000  # 30 days in seconds — absolute minimum polling frequency
 
 
 def compute_next_interval(
@@ -23,12 +24,14 @@ def compute_next_interval(
     base_frequency: int,
     stop_after_days: int,
     pinned: bool = False,
-) -> int | None:
+) -> int:
     """Compute the next polling interval after a poll.
 
+    Decay floors at 30 days (DECAY_FLOOR). Items never stop polling automatically;
+    only manual user action can disable monitoring.
+
     Returns:
-        int: new interval in seconds
-        None: item should stop being monitored (idle threshold exceeded)
+        int: new interval in seconds (always > 0)
     """
     if pinned:
         return base_frequency
@@ -38,9 +41,8 @@ def compute_next_interval(
 
     new_interval = int(current_interval * decay_rate)
 
-    # Check if we've exceeded the stop threshold
-    if stop_after_days > 0 and new_interval > stop_after_days * _MAX_DAILY_INTERVAL:
-        return None
+    # Clamp to 30-day floor — never stop automatically regardless of stop_after_days
+    new_interval = min(new_interval, DECAY_FLOOR)
 
     # Cap at 24 hours only for sources whose base frequency is below 24 hours.
     # Sources already at 24-hour frequency (article, youtube) can decay beyond it.
@@ -149,10 +151,7 @@ class MonitorService:
 
         monitor["last_poll"] = time.time()
         monitor["last_hash"] = content_hash
-        if next_interval is None:
-            monitor["current_interval"] = 0  # stop polling
-        else:
-            monitor["current_interval"] = next_interval
+        monitor["current_interval"] = next_interval
 
         await self._store.update_item(item_id, monitor=monitor)
 
