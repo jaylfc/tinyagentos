@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from tinyagentos.cluster.capabilities import potential_capabilities as _potential_capabilities
@@ -58,20 +58,6 @@ class MoveRequest(BaseModel):
     item: str
     from_worker: str | None = None
     to_worker: str
-
-
-@router.get("/cluster", response_class=HTMLResponse)
-async def cluster_page(request: Request):
-    templates = request.app.state.templates
-    cluster = request.app.state.cluster_manager
-    workers = cluster.get_workers()
-    # Collect all capabilities across workers
-    all_caps = sorted({cap for w in workers for cap in w.capabilities if w.status == "online"})
-    return templates.TemplateResponse(request, "cluster.html", {
-        "active_page": "cluster",
-        "workers": workers,
-        "capabilities": all_caps,
-    })
 
 
 @router.get("/api/cluster/workers")

@@ -69,19 +69,6 @@ async def models_client(models_app):
 
 
 @pytest.mark.asyncio
-class TestModelsPage:
-    async def test_models_page_returns_html(self, models_client):
-        resp = await models_client.get("/models")
-        assert resp.status_code == 200
-        assert "text/html" in resp.headers["content-type"]
-        assert "Model Manager" in resp.text
-
-    async def test_models_page_has_active_nav(self, models_client):
-        resp = await models_client.get("/models")
-        assert 'class="active"' in resp.text
-
-
-@pytest.mark.asyncio
 class TestModelsAPI:
     async def test_list_models(self, models_client):
         resp = await models_client.get("/api/models")

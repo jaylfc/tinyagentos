@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import shutil
 import time
-from dataclasses import asdict
 
 import psutil
 from fastapi import APIRouter, Request
@@ -11,7 +10,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from tinyagentos.agent_db import get_agent_summaries
 from tinyagentos.backend_adapters import check_backend_health
-from tinyagentos.first_boot import is_first_boot, mark_setup_complete
+from tinyagentos.first_boot import mark_setup_complete
 
 router = APIRouter()
 
@@ -20,31 +19,6 @@ router = APIRouter()
 async def root_redirect(request: Request):
     """Root URL serves the desktop shell directly (skip first-boot setup)."""
     return RedirectResponse(url="/desktop", status_code=303)
-
-
-@router.get("/legacy", response_class=HTMLResponse)
-async def dashboard_page(request: Request):
-    """Legacy htmx dashboard (accessible while migration is in progress)."""
-    templates = request.app.state.templates
-    return templates.TemplateResponse(request, "dashboard.html", {"active_page": "dashboard"})
-
-
-@router.get("/offline", response_class=HTMLResponse)
-async def offline_page(request: Request):
-    templates = request.app.state.templates
-    return templates.TemplateResponse(request, "offline.html", {"active_page": "offline"})
-
-
-@router.get("/setup", response_class=HTMLResponse)
-async def setup_page(request: Request):
-    templates = request.app.state.templates
-    hardware = request.app.state.hardware_profile
-    hw_data = asdict(hardware)
-    hw_data["profile_id"] = hardware.profile_id
-    return templates.TemplateResponse(request, "setup.html", {
-        "active_page": "setup",
-        "hardware": hardware,
-    })
 
 
 @router.post("/setup/complete")
@@ -238,78 +212,6 @@ async def api_backends(request: Request):
     }
 
 
-@router.get("/api/partials/kpi-cards", response_class=HTMLResponse)
-async def kpi_cards(request: Request):
-    """HTMX partial: KPI cards with agent, vector, and latency stats."""
-    config = request.app.state.config
-    templates = request.app.state.templates
-
-    summaries = get_agent_summaries(config)
-    agents_online = sum(1 for s in summaries if s["status"] == "ok")
-    total_vectors = sum(s["vectors"] for s in summaries)
-
-    http_client = request.app.state.http_client
-    response_times = []
-    for backend in config.backends:
-        result = await check_backend_health(http_client, backend)
-        if result["status"] == "ok":
-            response_times.append(result["response_ms"])
-    avg_response_ms = int(sum(response_times) / len(response_times)) if response_times else None
-
-    qmd_health = await request.app.state.qmd_client.health()
-    qmd_latency_ms = qmd_health.get("response_ms") if qmd_health.get("status") != "error" else None
-
-    return templates.TemplateResponse(request, "partials/kpi_cards.html", {
-        "agents_online": agents_online,
-        "agents_total": len(summaries),
-        "total_vectors": total_vectors,
-        "avg_response_ms": avg_response_ms,
-        "qmd_latency_ms": qmd_latency_ms,
-    })
-
-
-@router.get("/api/partials/backend-status", response_class=HTMLResponse)
-async def backend_status(request: Request):
-    """HTMX partial: backend status table sorted by priority."""
-    config = request.app.state.config
-    http_client = request.app.state.http_client
-    templates = request.app.state.templates
-    backends = []
-    for backend in config.backends:
-        result = await check_backend_health(http_client, backend)
-        backends.append(result)
-    backends.sort(key=lambda b: b.get("priority", 99))
-    return templates.TemplateResponse(request, "partials/backend_status.html", {"backends": backends})
-
-
-@router.get("/api/partials/agent-summary", response_class=HTMLResponse)
-async def agent_summary(request: Request):
-    """HTMX partial: agent summary list."""
-    config = request.app.state.config
-    templates = request.app.state.templates
-    return templates.TemplateResponse(request, "partials/agent_summary.html", {
-        "agents": get_agent_summaries(config),
-    })
-
-
-@router.get("/api/partials/quick-actions", response_class=HTMLResponse)
-async def quick_actions(request: Request):
-    """HTMX partial: quick action buttons for the dashboard."""
-    templates = request.app.state.templates
-    return templates.TemplateResponse(request, "partials/quick_actions.html", {})
-
-
-@router.get("/api/partials/activity-feed", response_class=HTMLResponse)
-async def activity_feed(request: Request):
-    """HTMX partial: recent activity timeline."""
-    notif_store = request.app.state.notifications
-    templates = request.app.state.templates
-    events = await notif_store.list(limit=15)
-    return templates.TemplateResponse(request, "partials/activity_feed.html", {
-        "events": events,
-    })
-
-
 @router.get("/api/dashboard/activity")
 async def dashboard_activity(request: Request, limit: int = 15):
     """Recent platform activity as JSON."""
@@ -377,13 +279,6 @@ async def _check_docker() -> dict:
         return {"status": "unavailable", "detail": "docker not installed"}
     except Exception as e:
         return {"status": "error", "detail": str(e)}
-
-
-@router.get("/health-check", response_class=HTMLResponse)
-async def health_check_page(request: Request):
-    """Health debug page -- shows connectivity status of all services."""
-    templates = request.app.state.templates
-    return templates.TemplateResponse(request, "health_check.html", {"active_page": "health-check"})
 
 
 @router.get("/api/health-check")

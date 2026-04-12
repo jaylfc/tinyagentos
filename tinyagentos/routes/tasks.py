@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -25,17 +25,6 @@ class TaskUpdate(BaseModel):
 
 class PresetApply(BaseModel):
     agent_name: str
-
-
-@router.get("/tasks", response_class=HTMLResponse)
-async def tasks_page(request: Request):
-    templates = request.app.state.templates
-    config = request.app.state.config
-    agents = [a["name"] for a in config.agents]
-    return templates.TemplateResponse(request, "tasks.html", {
-        "active_page": "tasks",
-        "agents": agents,
-    })
 
 
 @router.get("/api/tasks")

@@ -28,11 +28,6 @@ class TestProviderAPI:
         resp = await client.delete("/api/providers/to-delete")
         assert resp.status_code == 200
 
-    async def test_providers_page_renders(self, client):
-        resp = await client.get("/providers")
-        assert resp.status_code == 200
-        assert "Provider" in resp.text
-
     async def test_add_duplicate_provider(self, client):
         await client.post("/api/providers", json={
             "name": "dup-test", "type": "ollama",

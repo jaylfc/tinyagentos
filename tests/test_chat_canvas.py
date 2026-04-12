@@ -92,25 +92,6 @@ async def test_generate_canvas_api(client):
 
 
 @pytest.mark.asyncio
-async def test_canvas_page(client):
-    create_resp = await client.post("/api/canvas/generate", json={
-        "title": "Page Test",
-        "content": "## Hello World",
-    })
-    canvas_id = create_resp.json()["canvas_id"]
-    resp = await client.get(f"/canvas/{canvas_id}")
-    assert resp.status_code == 200
-    assert "text/html" in resp.headers.get("content-type", "")
-
-
-@pytest.mark.asyncio
-async def test_canvas_page_not_found(client):
-    resp = await client.get("/canvas/nonexistent")
-    assert resp.status_code == 404
-    assert resp.json()["error"] == "Canvas not found"
-
-
-@pytest.mark.asyncio
 async def test_update_canvas_api(client):
     create_resp = await client.post("/api/canvas/generate", json={
         "title": "Update Test",

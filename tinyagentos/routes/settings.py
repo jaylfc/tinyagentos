@@ -7,7 +7,7 @@ from pathlib import Path
 
 import yaml
 from fastapi import APIRouter, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from tinyagentos.config import AppConfig, save_config_locked, validate_config
 
@@ -92,40 +92,6 @@ def _get_storage_stats(app) -> list[dict]:
     })
 
     return items
-
-
-@router.get("/settings", response_class=HTMLResponse)
-@router.get("/config", response_class=HTMLResponse)
-async def settings_page(request: Request):
-    config = request.app.state.config
-    templates = request.app.state.templates
-    config_yaml = yaml.dump(config.to_dict(), default_flow_style=False, sort_keys=False)
-    config_path = request.app.state.config_path
-    last_saved = None
-    if config_path.exists():
-        mtime = config_path.stat().st_mtime
-        last_saved = datetime.datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
-
-    hardware = request.app.state.hardware_profile
-    storage = _get_storage_stats(request.app)
-
-    platform_settings = {
-        "catalog_repo": "",
-        "poll_interval": config.metrics.get("poll_interval", 30),
-        "retention_days": config.metrics.get("retention_days", 30),
-    }
-
-    webhooks = config.webhooks if hasattr(config, "webhooks") else []
-
-    return templates.TemplateResponse(request, "settings.html", {
-        "active_page": "settings",
-        "config_yaml": config_yaml,
-        "last_saved": last_saved,
-        "hardware": hardware,
-        "storage": storage,
-        "platform_settings": platform_settings,
-        "webhooks": webhooks,
-    })
 
 
 @router.get("/api/config")

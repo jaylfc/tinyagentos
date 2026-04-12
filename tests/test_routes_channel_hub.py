@@ -3,12 +3,6 @@ import pytest
 
 class TestChannelHubRoutes:
     @pytest.mark.asyncio
-    async def test_channel_hub_page(self, client):
-        resp = await client.get("/channel-hub")
-        assert resp.status_code == 200
-        assert b"Channel Hub" in resp.content
-
-    @pytest.mark.asyncio
     async def test_hub_status(self, client):
         resp = await client.get("/api/channel-hub/status")
         assert resp.status_code == 200

@@ -7,7 +7,7 @@ import shutil
 from pathlib import Path
 
 from fastapi import APIRouter, Request, UploadFile, File
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -65,14 +65,6 @@ def _resolve_safe(workspace: Path, subpath: str) -> Path | None:
 
 class MkdirRequest(BaseModel):
     path: str
-
-
-@router.get("/workspace", response_class=HTMLResponse)
-async def user_workspace_page(request: Request):
-    templates = request.app.state.templates
-    return templates.TemplateResponse(request, "user_workspace.html", {
-        "active_page": "workspace",
-    })
 
 
 def _list_dir(workspace: Path, path: str) -> list[dict] | tuple[int, dict]:

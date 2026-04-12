@@ -7,7 +7,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, File, Request, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -414,19 +414,6 @@ async def create_canvas(request: Request):
     }
 
 
-@router.get("/canvas/{canvas_id}", response_class=HTMLResponse)
-async def canvas_page(request: Request, canvas_id: str):
-    """Serve the canvas page (iframe-friendly)."""
-    canvas_store = request.app.state.canvas_store
-    canvas = await canvas_store.get(canvas_id)
-    if not canvas:
-        return JSONResponse({"error": "Canvas not found"}, status_code=404)
-    templates = request.app.state.templates
-    return templates.TemplateResponse(request, "canvas.html", {
-        "canvas": canvas,
-    })
-
-
 @router.post("/api/canvas/{canvas_id}/update")
 async def update_canvas(request: Request, canvas_id: str):
     """Update canvas content (requires edit_token)."""
@@ -489,38 +476,3 @@ async def canvas_ws(websocket: WebSocket, canvas_id: str):
         hub.leave(websocket, canvas_channel)
 
 
-# ── Chat page ─────────────────────────────────────────────────────────────────
-
-@router.get("/chat", response_class=HTMLResponse)
-async def chat_page(request: Request):
-    templates = request.app.state.templates
-    return templates.TemplateResponse(request, "chat.html", {"active_page": "chat"})
-
-
-@router.get("/chat/{channel_id}", response_class=HTMLResponse)
-async def chat_channel_page(request: Request, channel_id: str):
-    templates = request.app.state.templates
-    ch_store = request.app.state.chat_channels
-    channel = await ch_store.get_channel(channel_id)
-    return templates.TemplateResponse(request, "chat.html", {
-        "active_page": "chat",
-        "channel": channel,
-        "channel_id": channel_id,
-    })
-
-
-@router.get("/chat/{channel_id}/canvas/{canvas_id}", response_class=HTMLResponse)
-async def chat_canvas_view(request: Request, channel_id: str, canvas_id: str):
-    """Split view: canvas on left, chat on right."""
-    templates = request.app.state.templates
-    ch_store = request.app.state.chat_channels
-    canvas_store = request.app.state.canvas_store
-    channel = await ch_store.get_channel(channel_id)
-    canvas = await canvas_store.get(canvas_id)
-    return templates.TemplateResponse(request, "chat_canvas_split.html", {
-        "active_page": "chat",
-        "channel": channel,
-        "channel_id": channel_id,
-        "canvas": canvas,
-        "canvas_id": canvas_id,
-    })

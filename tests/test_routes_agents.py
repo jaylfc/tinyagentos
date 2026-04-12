@@ -5,11 +5,6 @@ from tinyagentos.cluster.worker_protocol import WorkerInfo
 
 @pytest.mark.asyncio
 class TestAgentsPage:
-    async def test_agents_page_returns_html(self, client):
-        resp = await client.get("/agents")
-        assert resp.status_code == 200
-        assert "Agents" in resp.text
-
     async def test_list_agents_api(self, client):
         resp = await client.get("/api/agents")
         assert resp.status_code == 200

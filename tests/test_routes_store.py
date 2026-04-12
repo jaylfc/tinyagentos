@@ -103,31 +103,3 @@ class TestStoreInstallAPI:
         assert resp.status_code == 404
 
 
-@pytest.mark.asyncio
-class TestStoreUI:
-    async def test_store_page_has_search_and_filters(self, store_client):
-        resp = await store_client.get("/store")
-        assert resp.status_code == 200
-        html = resp.text
-        assert 'id="store-search"' in html
-        assert "Agents" in html
-        assert "Models" in html
-        assert "Sync Catalog" in html
-
-    async def test_app_grid_partial_returns_html(self, store_client):
-        resp = await store_client.get("/api/partials/app-grid")
-        assert resp.status_code == 200
-        assert "SmolAgents" in resp.text
-        assert "Test Model" in resp.text
-
-    async def test_app_grid_partial_filter_by_type(self, store_client):
-        resp = await store_client.get("/api/partials/app-grid?type=model")
-        assert resp.status_code == 200
-        assert "Test Model" in resp.text
-        assert "SmolAgents" not in resp.text
-
-    async def test_app_grid_partial_search(self, store_client):
-        resp = await store_client.get("/api/partials/app-grid?q=code-based")
-        assert resp.status_code == 200
-        assert "SmolAgents" in resp.text
-        assert "Test Model" not in resp.text

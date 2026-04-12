@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import JSONResponse
 
 from tinyagentos.agent_templates import (
     list_templates, get_template, CATEGORIES, EXTERNAL_SOURCES,
@@ -9,14 +9,6 @@ from tinyagentos.agent_templates import (
 )
 
 router = APIRouter()
-
-
-@router.get("/templates", response_class=HTMLResponse)
-async def templates_page(request: Request):
-    templates_engine = request.app.state.templates
-    return templates_engine.TemplateResponse(request, "templates.html", {
-        "active_page": "templates",
-    })
 
 
 @router.get("/api/templates/stats")

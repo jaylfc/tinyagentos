@@ -94,15 +94,6 @@ class TestChannelTypes:
 # --- Route tests ---
 
 @pytest.mark.asyncio
-async def test_channels_page_renders(client):
-    resp = await client.get("/channels")
-    assert resp.status_code == 200
-    assert "Communication Channels" in resp.text
-    assert "Easy Setup" in resp.text
-    assert "Advanced" in resp.text
-
-
-@pytest.mark.asyncio
 async def test_api_channel_types(client):
     resp = await client.get("/api/channels/types")
     assert resp.status_code == 200

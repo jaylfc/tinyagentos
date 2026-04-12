@@ -10,7 +10,7 @@ from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from tinyagentos.scheduler import (
@@ -142,14 +142,6 @@ def _list_images(images_dir: Path) -> list[dict]:
         })
     results.sort(key=lambda x: x["filename"], reverse=True)
     return results
-
-
-@router.get("/images", response_class=HTMLResponse)
-async def images_page(request: Request):
-    templates = request.app.state.templates
-    return templates.TemplateResponse(request, "images.html", {
-        "active_page": "images",
-    })
 
 
 async def _call_image_backend(

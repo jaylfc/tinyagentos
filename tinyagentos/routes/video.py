@@ -8,7 +8,7 @@ from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -79,14 +79,6 @@ def _list_videos(videos_dir: Path) -> list[dict]:
             })
     results.sort(key=lambda x: x["filename"], reverse=True)
     return results
-
-
-@router.get("/video", response_class=HTMLResponse)
-async def video_page(request: Request):
-    templates = request.app.state.templates
-    return templates.TemplateResponse(request, "video.html", {
-        "active_page": "video",
-    })
 
 
 @router.post("/api/video/generate")

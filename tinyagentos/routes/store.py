@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import asdict
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from tinyagentos.installers.base import get_installer
@@ -54,33 +54,6 @@ def _build_app_items(registry, profile_id: str, type_filter: str | None = None, 
                 compat = "degraded"
         items.append({"manifest": a, "installed": a.id in installed_ids, "compat": compat})
     return items
-
-
-@router.get("/store", response_class=HTMLResponse)
-async def store_page(request: Request):
-    templates = request.app.state.templates
-    registry = request.app.state.registry
-    profile_id = request.app.state.hardware_profile.profile_id
-    installation = getattr(request.app.state, "installation_state", None)
-    items = _build_app_items(registry, profile_id, installation=installation)
-    installed_apps = [i for i in items if i["installed"]]
-    return templates.TemplateResponse(request, "store.html", {
-        "active_page": "store",
-        "apps": items,
-        "installed_apps": installed_apps,
-    })
-
-
-@router.get("/api/partials/app-grid", response_class=HTMLResponse)
-async def app_grid_partial(request: Request, type: str | None = None, q: str | None = None):
-    templates = request.app.state.templates
-    registry = request.app.state.registry
-    profile_id = request.app.state.hardware_profile.profile_id
-    installation = getattr(request.app.state, "installation_state", None)
-    items = _build_app_items(registry, profile_id, type_filter=type, query=q, installation=installation)
-    return templates.TemplateResponse(request, "partials/app_grid.html", {
-        "apps": items,
-    })
 
 
 @router.get("/api/store/catalog")

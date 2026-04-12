@@ -407,9 +407,3 @@ class TestSearchEndpoints:
         )
         assert resp.status_code == 400
 
-    async def test_models_page_has_search(self, search_client):
-        resp = await search_client.get("/models")
-        assert resp.status_code == 200
-        assert "Browse Models" in resp.text
-        assert "model-search" in resp.text
-        assert "search-results" in resp.text

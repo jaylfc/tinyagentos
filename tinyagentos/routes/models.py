@@ -7,7 +7,7 @@ from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from tinyagentos.model_sources import (
@@ -194,14 +194,6 @@ def _model_to_dict(
     }
 
 
-@router.get("/models", response_class=HTMLResponse)
-async def models_page(request: Request):
-    templates = request.app.state.templates
-    return templates.TemplateResponse(request, "models.html", {
-        "active_page": "models",
-    })
-
-
 @router.get("/api/models")
 async def list_models(request: Request):
     """List all available models with download status and compatibility.
@@ -346,15 +338,7 @@ def _search_catalog(registry, query: str, hardware_profile) -> list[dict]:
 
 
 def _render_search_results(request: Request, results: list[dict], source: str):
-    """Render search results as HTML partial or JSON based on Accept header."""
-    accept = request.headers.get("accept", "")
-    if "text/html" in accept:
-        templates = request.app.state.templates
-        return templates.TemplateResponse(
-            request,
-            "partials/model_search_results.html",
-            {"results": results, "source": source},
-        )
+    """Return search results as JSON."""
     return {"results": results, "source": source, "count": len(results)}
 
 

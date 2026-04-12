@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from tinyagentos.channels import CHANNEL_TYPES
@@ -21,22 +21,6 @@ class AddChannelRequest(BaseModel):
 
 class ToggleRequest(BaseModel):
     enabled: bool
-
-
-@router.get("/channels", response_class=HTMLResponse)
-async def channels_page(request: Request):
-    templates = request.app.state.templates
-    config = request.app.state.config
-    agents = [a["name"] for a in config.agents]
-    easy = {k: v for k, v in CHANNEL_TYPES.items() if v["difficulty"] == "easy"}
-    advanced = {k: v for k, v in CHANNEL_TYPES.items() if v["difficulty"] == "advanced"}
-    return templates.TemplateResponse(request, "channels.html", {
-        "active_page": "channels",
-        "agents": agents,
-        "easy_channels": easy,
-        "advanced_channels": advanced,
-        "channel_types": CHANNEL_TYPES,
-    })
 
 
 @router.get("/api/channels")

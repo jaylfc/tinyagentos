@@ -57,12 +57,6 @@ class TestAgentTemplates:
 
 class TestTemplateRoutes:
     @pytest.mark.asyncio
-    async def test_templates_page(self, client):
-        resp = await client.get("/templates")
-        assert resp.status_code == 200
-        assert b"Agent Templates" in resp.content
-
-    @pytest.mark.asyncio
     async def test_list_templates_api(self, client):
         resp = await client.get("/api/templates?limit=50")
         assert resp.status_code == 200

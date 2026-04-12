@@ -256,9 +256,3 @@ async def test_move_api_offline_worker(client):
     assert resp.status_code == 200
 
 
-@pytest.mark.asyncio
-async def test_cluster_page_shows_optimise_section(client):
-    resp = await client.get("/cluster")
-    assert resp.status_code == 200
-    assert "Auto-Optimise" in resp.text
-    assert "Optimise Cluster" in resp.text

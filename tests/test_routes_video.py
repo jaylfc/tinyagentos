@@ -32,28 +32,6 @@ async def video_client(video_app):
 
 
 @pytest.mark.asyncio
-class TestVideoPage:
-    async def test_video_page_returns_html(self, video_client):
-        resp = await video_client.get("/video")
-        assert resp.status_code == 200
-        assert "text/html" in resp.headers["content-type"]
-        assert "Video Generation" in resp.text
-
-    async def test_video_page_has_active_nav(self, video_client):
-        resp = await video_client.get("/video")
-        assert 'class="active"' in resp.text
-
-    async def test_video_page_has_generate_form(self, video_client):
-        resp = await video_client.get("/video")
-        assert "video-generate-form" in resp.text
-        assert "wan2.1-1.3b" in resp.text
-
-    async def test_video_page_has_nav_link(self, video_client):
-        resp = await video_client.get("/video")
-        assert 'href="/video"' in resp.text
-
-
-@pytest.mark.asyncio
 class TestVideoGenerate:
     async def test_generate_no_backend_returns_503(self, tmp_data_dir):
         """If no video backend is configured, return 503."""

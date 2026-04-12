@@ -3,11 +3,6 @@ import pytest
 
 @pytest.mark.asyncio
 class TestRelationshipsRoutes:
-    async def test_relationships_page(self, client):
-        resp = await client.get("/relationships")
-        assert resp.status_code == 200
-        assert "Relationships" in resp.text
-
     async def test_list_groups_empty(self, client):
         resp = await client.get("/api/relationships/groups")
         assert resp.status_code == 200

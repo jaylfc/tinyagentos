@@ -10,7 +10,6 @@ logger = logging.getLogger(__name__)
 from fastapi import FastAPI
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 
 from tinyagentos.auth import AuthManager
 from tinyagentos.backend_fallback import BackendFallback
@@ -427,12 +426,6 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     app.mount("/data/workspace", StaticFiles(directory=str(workspace_dir)), name="workspace")
 
     # Desktop SPA assets are served by the desktop route handler (routes/desktop.py)
-
-    # Templates
-    templates_dir = Path(__file__).parent / "templates"
-    templates = Jinja2Templates(directory=str(templates_dir))
-    templates.env.globals["cap"] = cap_checker
-    app.state.templates = templates
 
     # Import and include routers
     from tinyagentos.routes.auth import router as auth_router

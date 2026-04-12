@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -31,14 +31,6 @@ class MemberAdd(BaseModel):
 class PermissionSet(BaseModel):
     from_agent: str
     to_agent: str
-
-
-@router.get("/relationships", response_class=HTMLResponse)
-async def relationships_page(request: Request):
-    templates = request.app.state.templates
-    return templates.TemplateResponse(request, "relationships.html", {
-        "active_page": "relationships",
-    })
 
 
 # --- Groups ---

@@ -12,18 +12,12 @@ class TestHealthEndpoint:
 
 @pytest.mark.asyncio
 class TestDashboardPage:
-    async def test_dashboard_returns_html(self, client):
+    async def test_root_redirects_to_desktop(self, client):
         # Root redirects to /desktop (the new desktop shell)
         resp = await client.get("/", follow_redirects=True)
         assert resp.status_code == 200
         assert "text/html" in resp.headers["content-type"]
         assert "taOS" in resp.text
-
-    async def test_legacy_dashboard_still_available(self, client):
-        # Old htmx dashboard is still accessible at /legacy
-        resp = await client.get("/legacy")
-        assert resp.status_code == 200
-        assert "text/html" in resp.headers["content-type"]
 
     async def test_backends_api(self, client):
         resp = await client.get("/api/backends")
@@ -53,24 +47,6 @@ class TestClusterSummary:
         assert "total_ram_gb" in data
         assert "total_vram_gb" in data
         assert data["workers"] == 0
-
-
-class TestOfflinePage:
-    @pytest.mark.asyncio
-    async def test_offline_page(self, client):
-        resp = await client.get("/offline")
-        assert resp.status_code == 200
-        assert b"Offline" in resp.content
-
-
-class TestQuickActions:
-    @pytest.mark.asyncio
-    async def test_quick_actions_partial(self, client):
-        resp = await client.get("/api/partials/quick-actions")
-        assert resp.status_code == 200
-        assert b"Deploy Agent" in resp.content
-        assert b"Install App" in resp.content
-        assert b"Download Model" in resp.content
 
 
 class TestActivityFeed:

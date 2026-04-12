@@ -3,12 +3,6 @@ import pytest
 
 class TestSharedFoldersRoutes:
     @pytest.mark.asyncio
-    async def test_shared_folders_page(self, client):
-        resp = await client.get("/shared-folders")
-        assert resp.status_code == 200
-        assert b"Shared Folders" in resp.content
-
-    @pytest.mark.asyncio
     async def test_create_folder(self, client):
         resp = await client.post("/api/shared-folders", json={
             "name": "team-docs",

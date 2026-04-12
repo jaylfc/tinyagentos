@@ -456,16 +456,6 @@ class TestChannelHubAPINew:
         assert data["agent_name"] == "chat-agent"
 
     @pytest.mark.asyncio
-    async def test_webchat_page_renders(self, client):
-        resp = await client.get("/chat/my-agent")
-        assert resp.status_code == 200
-        text = resp.text
-        assert "my-agent" in text
-        assert "Chat" in text
-        # Check ARIA labels
-        assert 'aria-label="Chat interface"' in text or 'aria-label="Chat messages"' in text
-
-    @pytest.mark.asyncio
     async def test_disconnect_webchat(self, client):
         # Connect first
         await client.post("/api/channel-hub/connect", json={

@@ -49,11 +49,6 @@ def _stub_http(client_with_qmd, responses: dict[str, dict]):
 
 @pytest.mark.asyncio
 class TestMemoryPage:
-    async def test_memory_page_returns_html(self, client_with_qmd):
-        resp = await client_with_qmd.get("/memory")
-        assert resp.status_code == 200
-        assert "Memory" in resp.text
-
     async def test_browse_returns_chunks(self, client_with_qmd):
         _stub_http(client_with_qmd, {
             "/browse": {"chunks": [{"hash": "a"}, {"hash": "b"}, {"hash": "c"}], "total": 3},

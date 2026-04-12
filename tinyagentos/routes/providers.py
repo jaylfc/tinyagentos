@@ -1,6 +1,6 @@
 from __future__ import annotations
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from tinyagentos.backend_adapters import get_adapter
 from tinyagentos.config import save_config_locked, VALID_BACKEND_TYPES
@@ -18,17 +18,6 @@ class ProviderCreate(BaseModel):
 class ProviderTest(BaseModel):
     type: str
     url: str
-
-@router.get("/providers", response_class=HTMLResponse)
-async def providers_page(request: Request):
-    """Provider management page."""
-    templates = request.app.state.templates
-    config = request.app.state.config
-    return templates.TemplateResponse(request, "providers.html", {
-        "active_page": "settings",
-        "backends": config.backends,
-        "valid_types": sorted(VALID_BACKEND_TYPES),
-    })
 
 @router.get("/api/providers")
 async def list_providers(request: Request):

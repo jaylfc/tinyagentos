@@ -4,11 +4,6 @@ import pytest
 
 class TestImportDataRoutes:
     @pytest.mark.asyncio
-    async def test_import_page(self, client):
-        resp = await client.get("/import")
-        assert resp.status_code == 200
-
-    @pytest.mark.asyncio
     async def test_upload_text_file(self, client):
         file_content = b"This is a test document for import."
         resp = await client.post(

@@ -22,10 +22,8 @@ import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-
-from tinyagentos.agent_db import get_agent_summaries
 
 logger = logging.getLogger(__name__)
 
@@ -60,16 +58,6 @@ def _agent_db_path(request: Request, agent: str | None) -> str | None:
     target = base / agent / "index.sqlite"
     target.parent.mkdir(parents=True, exist_ok=True)
     return str(target)
-
-
-@router.get("/memory", response_class=HTMLResponse)
-async def memory_page(request: Request):
-    config = request.app.state.config
-    templates = request.app.state.templates
-    return templates.TemplateResponse(request, "memory.html", {
-        "active_page": "memory",
-        "agents": get_agent_summaries(config),
-    })
 
 
 @router.get("/api/memory/browse")

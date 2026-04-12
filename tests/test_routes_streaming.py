@@ -5,13 +5,6 @@ import pytest
 
 
 @pytest.mark.asyncio
-async def test_streaming_apps_page(client):
-    r = await client.get("/streaming")
-    assert r.status_code == 200
-    assert "App Streaming" in r.text
-
-
-@pytest.mark.asyncio
 async def test_list_streaming_apps(client):
     r = await client.get("/api/streaming-apps")
     assert r.status_code == 200

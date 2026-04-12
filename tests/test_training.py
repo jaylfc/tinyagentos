@@ -202,31 +202,3 @@ class TestTrainingAPI:
         assert jobs[0]["agent_name"] == "agent-a"
 
 
-@pytest.mark.asyncio
-class TestTrainingPage:
-    async def test_training_page_renders(self, training_client):
-        resp = await training_client.get("/training")
-        assert resp.status_code == 200
-        assert "text/html" in resp.headers["content-type"]
-        assert "Training" in resp.text
-        assert "Fine-Tuning" in resp.text
-
-    async def test_training_page_has_form(self, training_client):
-        resp = await training_client.get("/training")
-        assert "train-base-model" in resp.text
-        assert "Start Training" in resp.text
-
-    async def test_training_page_has_presets(self, training_client):
-        resp = await training_client.get("/training")
-        assert "Quick" in resp.text
-        assert "Balanced" in resp.text
-        assert "Thorough" in resp.text
-
-    async def test_training_page_has_retrain_section(self, training_client):
-        resp = await training_client.get("/training")
-        assert "Retrain Agent" in resp.text
-
-    async def test_training_page_locked_hint(self, training_client):
-        # Default test hardware has no GPU, so training should be locked
-        resp = await training_client.get("/training")
-        assert "locked" in resp.text.lower() or "disabled" in resp.text.lower()

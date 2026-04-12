@@ -3,12 +3,6 @@ import pytest
 
 class TestConversionRoutes:
     @pytest.mark.asyncio
-    async def test_conversions_page(self, client):
-        resp = await client.get("/conversions")
-        assert resp.status_code == 200
-        assert b"Model Conversion" in resp.content
-
-    @pytest.mark.asyncio
     async def test_list_conversion_jobs(self, client):
         resp = await client.get("/api/conversion/jobs")
         assert resp.status_code == 200

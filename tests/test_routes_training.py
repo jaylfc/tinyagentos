@@ -3,12 +3,6 @@ import pytest
 
 class TestTrainingRoutes:
     @pytest.mark.asyncio
-    async def test_training_page(self, client):
-        resp = await client.get("/training")
-        assert resp.status_code == 200
-        assert b"training" in resp.content.lower()
-
-    @pytest.mark.asyncio
     async def test_list_jobs_empty(self, client):
         resp = await client.get("/api/training/jobs")
         assert resp.status_code == 200

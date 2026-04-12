@@ -3,11 +3,6 @@ import pytest
 
 @pytest.mark.asyncio
 class TestTasksPage:
-    async def test_tasks_page_returns_html(self, client):
-        resp = await client.get("/tasks")
-        assert resp.status_code == 200
-        assert "Scheduled Tasks" in resp.text
-
     async def test_list_tasks_empty(self, client):
         resp = await client.get("/api/tasks")
         assert resp.status_code == 200

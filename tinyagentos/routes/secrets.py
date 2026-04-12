@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -22,14 +22,6 @@ class SecretUpdate(BaseModel):
     category: Optional[str] = None
     description: Optional[str] = None
     agents: Optional[list[str]] = None
-
-
-@router.get("/secrets", response_class=HTMLResponse)
-async def secrets_page(request: Request):
-    templates = request.app.state.templates
-    return templates.TemplateResponse(request, "secrets.html", {
-        "active_page": "secrets",
-    })
 
 
 @router.get("/api/secrets/categories")

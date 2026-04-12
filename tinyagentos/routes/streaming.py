@@ -3,37 +3,12 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-
-# ---------------------------------------------------------------------------
-# HTML pages
-# ---------------------------------------------------------------------------
-
-@router.get("/streaming", response_class=HTMLResponse)
-async def streaming_page(request: Request):
-    templates = request.app.state.templates
-    return templates.TemplateResponse(request, "streaming_apps.html", {
-        "active_page": "streaming",
-    })
-
-
-@router.get("/app/{session_id}", response_class=HTMLResponse)
-async def streaming_app_page(request: Request, session_id: str):
-    store = request.app.state.streaming_sessions
-    session = await store.get_session(session_id)
-    if session is None:
-        return HTMLResponse("Session not found", status_code=404)
-    await store.touch_activity(session_id)
-    templates = request.app.state.templates
-    return templates.TemplateResponse(request, "streaming_app.html", {
-        "session": session,
-    })
 
 
 # ---------------------------------------------------------------------------

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from tinyagentos.agent_db import find_agent, get_agent_summaries
@@ -27,15 +27,6 @@ class AgentUpdate(BaseModel):
     qmd_index: str | None = None
     color: str | None = None
     can_read_user_memory: bool | None = None
-
-
-@router.get("/agents", response_class=HTMLResponse)
-async def agents_page(request: Request):
-    config = request.app.state.config
-    templates = request.app.state.templates
-    return templates.TemplateResponse(request, "agents.html", {
-        "active_page": "agents", "agents": get_agent_summaries(config),
-    })
 
 
 @router.get("/api/agents")
@@ -431,17 +422,6 @@ async def restart_agent(request: Request, name: str):
     """Restart an agent's LXC container."""
     from tinyagentos.containers import restart_container
     return await restart_container(f"taos-agent-{name}")
-
-
-@router.get("/api/partials/agent-logs/{name}", response_class=HTMLResponse)
-async def agent_logs_partial(request: Request, name: str, lines: int = 100):
-    """Agent logs as HTML partial for htmx."""
-    from tinyagentos.containers import get_container_logs
-    logs = await get_container_logs(f"taos-agent-{name}", lines=lines)
-    templates = request.app.state.templates
-    return templates.TemplateResponse(request, "partials/agent_logs.html", {
-        "name": name, "logs": logs,
-    })
 
 
 @router.get("/api/agents/{name}/logs")

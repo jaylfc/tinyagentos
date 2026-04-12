@@ -3,11 +3,6 @@ import pytest
 
 @pytest.mark.asyncio
 class TestSecretsPage:
-    async def test_secrets_page_returns_html(self, client):
-        resp = await client.get("/secrets")
-        assert resp.status_code == 200
-        assert "Secrets" in resp.text
-
     async def test_list_secrets_empty(self, client):
         resp = await client.get("/api/secrets")
         assert resp.status_code == 200

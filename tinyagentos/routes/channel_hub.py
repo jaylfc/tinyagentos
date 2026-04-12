@@ -1,18 +1,9 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Request, WebSocket
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import JSONResponse
 
 router = APIRouter(tags=["channel-hub"])
-
-
-@router.get("/channel-hub", response_class=HTMLResponse)
-async def channel_hub_page(request: Request):
-    """Channel Hub management page."""
-    templates = request.app.state.templates
-    return templates.TemplateResponse(request, "channel_hub.html", {
-        "active_page": "channel-hub",
-    })
 
 
 @router.get("/api/channel-hub/status")
@@ -166,16 +157,6 @@ async def list_adapters(request: Request):
         })
 
     return {"adapters": adapters}
-
-
-@router.get("/chat/{agent_name}", response_class=HTMLResponse)
-async def webchat_page(request: Request, agent_name: str):
-    """Render the web chat interface for an agent."""
-    templates = request.app.state.templates
-    return templates.TemplateResponse(request, "webchat.html", {
-        "agent_name": agent_name,
-        "active_page": "channels",
-    })
 
 
 @router.websocket("/ws/chat/{agent_name}")

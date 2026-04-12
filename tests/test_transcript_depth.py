@@ -135,11 +135,3 @@ async def test_api_messages_with_depth_param(client):
     assert msg["reasoning"] == "I searched first"
 
 
-@pytest.mark.asyncio
-async def test_workspace_messages_depth_toggle(client):
-    resp = await client.get("/agents/test-agent/workspace/messages?depth=3")
-    assert resp.status_code == 200
-    assert "Transcript depth" in resp.text
-    assert "Responses" in resp.text
-    assert "+ Tools" in resp.text
-    assert "+ Reasoning" in resp.text

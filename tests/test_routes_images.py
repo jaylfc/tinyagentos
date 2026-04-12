@@ -36,19 +36,6 @@ async def images_client(images_app):
 
 
 @pytest.mark.asyncio
-class TestImagesPage:
-    async def test_images_page_returns_html(self, images_client):
-        resp = await images_client.get("/images")
-        assert resp.status_code == 200
-        assert "text/html" in resp.headers["content-type"]
-        assert "Image Generation" in resp.text
-
-    async def test_images_page_has_active_nav(self, images_client):
-        resp = await images_client.get("/images")
-        assert 'class="active"' in resp.text
-
-
-@pytest.mark.asyncio
 class TestImagesGenerate:
     async def test_generate_with_mocked_rkllama(self, images_app, images_client):
         fake_image = base64.b64encode(b"fake-png-data").decode()

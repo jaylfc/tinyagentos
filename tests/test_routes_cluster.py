@@ -5,13 +5,6 @@ import pytest
 
 
 @pytest.mark.asyncio
-async def test_cluster_page_renders(client):
-    resp = await client.get("/cluster")
-    assert resp.status_code == 200
-    assert "Compute Cluster" in resp.text
-
-
-@pytest.mark.asyncio
 async def test_worker_registration_api(client):
     body = {
         "name": "test-worker",
@@ -193,12 +186,3 @@ async def test_kv_quant_options_mixed_cluster(client):
     assert "turboquant-k3v2" in data["options"]
 
 
-@pytest.mark.asyncio
-async def test_cluster_page_shows_workers(client):
-    await client.post("/api/cluster/workers", json={
-        "name": "dashboard-worker", "url": "http://10.0.0.5:9000",
-        "capabilities": ["chat"], "platform": "linux",
-    })
-    resp = await client.get("/cluster")
-    assert resp.status_code == 200
-    assert "dashboard-worker" in resp.text

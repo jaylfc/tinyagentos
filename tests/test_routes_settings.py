@@ -3,12 +3,6 @@ import pytest
 
 class TestSettingsRoutes:
     @pytest.mark.asyncio
-    async def test_settings_page(self, client):
-        resp = await client.get("/settings")
-        assert resp.status_code == 200
-        assert b"Settings" in resp.content or b"settings" in resp.content
-
-    @pytest.mark.asyncio
     async def test_get_config(self, client):
         resp = await client.get("/api/config")
         assert resp.status_code == 200

@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
 
@@ -14,17 +14,6 @@ router = APIRouter()
 
 SUPPORTED_EXTENSIONS = {".txt", ".md", ".pdf", ".html", ".json", ".csv"}
 UPLOAD_DIR = Path(tempfile.gettempdir()) / "tinyagentos_imports"
-
-
-@router.get("/import", response_class=HTMLResponse)
-async def import_page(request: Request):
-    templates = request.app.state.templates
-    config = request.app.state.config
-    agents = [a["name"] for a in config.agents]
-    return templates.TemplateResponse(request, "import.html", {
-        "active_page": "import",
-        "agents": agents,
-    })
 
 
 @router.post("/api/import/upload")

@@ -5,12 +5,6 @@ import pytest
 
 @pytest.mark.asyncio
 class TestImportPage:
-    async def test_import_page_returns_html(self, client):
-        resp = await client.get("/import")
-        assert resp.status_code == 200
-        assert "Import Data" in resp.text
-        assert "Drop files here" in resp.text
-
     async def test_upload_text_file(self, client):
         content = b"Hello, this is test content for embedding."
         resp = await client.post(

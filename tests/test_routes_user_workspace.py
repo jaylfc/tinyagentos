@@ -6,13 +6,6 @@ import pytest
 class TestUserWorkspaceRoutes:
 
     @pytest.mark.asyncio
-    async def test_workspace_page_returns_200(self, client):
-        """GET /workspace returns an HTML page."""
-        resp = await client.get("/workspace")
-        assert resp.status_code == 200
-        assert "Workspace" in resp.text
-
-    @pytest.mark.asyncio
     async def test_list_files_empty(self, client):
         """Listing files in an empty workspace returns an empty list."""
         resp = await client.get("/api/workspace/files")

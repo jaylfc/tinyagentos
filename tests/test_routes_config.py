@@ -5,21 +5,6 @@ from tinyagentos.config import load_config
 
 @pytest.mark.asyncio
 class TestConfigPage:
-    async def test_settings_page_returns_html(self, client):
-        resp = await client.get("/settings")
-        assert resp.status_code == 200
-        assert "Settings" in resp.text
-        assert "System Information" in resp.text
-        assert "Storage Usage" in resp.text
-        assert "Platform Settings" in resp.text
-        assert "Advanced" in resp.text
-
-    async def test_config_page_redirects_or_renders(self, client):
-        """Legacy /config URL still works."""
-        resp = await client.get("/config")
-        assert resp.status_code == 200
-        assert "Settings" in resp.text
-
     async def test_get_config_api(self, client):
         resp = await client.get("/api/config")
         assert resp.status_code == 200
@@ -93,8 +78,3 @@ class TestConfigPage:
         assert config.metrics["poll_interval"] == 120
         assert config.metrics["retention_days"] == 14
 
-    async def test_settings_shows_hardware_info(self, client):
-        resp = await client.get("/settings")
-        assert resp.status_code == 200
-        assert "Profile:" in resp.text
-        assert "CPU" in resp.text

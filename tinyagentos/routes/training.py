@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -14,14 +14,6 @@ class CreateJobRequest(BaseModel):
     dataset_description: str = ""
     preset: str | None = None
     config: dict | None = None
-
-
-@router.get("/training", response_class=HTMLResponse)
-async def training_page(request: Request):
-    templates = request.app.state.templates
-    return templates.TemplateResponse(request, "training.html", {
-        "active_page": "training",
-    })
 
 
 @router.get("/api/training/jobs")

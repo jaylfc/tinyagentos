@@ -84,29 +84,6 @@ class TestAgentMessageStore:
 # --- Route tests ---
 
 @pytest.mark.asyncio
-async def test_workspace_page_renders(client):
-    resp = await client.get("/agents/test-agent/workspace")
-    assert resp.status_code == 200
-    assert "test-agent" in resp.text
-    assert "Workspace" in resp.text
-    assert "Messages" in resp.text
-    assert "Files" in resp.text
-
-
-@pytest.mark.asyncio
-async def test_workspace_page_404_for_unknown_agent(client):
-    resp = await client.get("/agents/nonexistent/workspace")
-    assert resp.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_workspace_messages_page_renders(client):
-    resp = await client.get("/agents/test-agent/workspace/messages")
-    assert resp.status_code == 200
-    assert "Messages" in resp.text
-
-
-@pytest.mark.asyncio
 async def test_api_agent_messages_empty(client):
     resp = await client.get("/api/agents/test-agent/messages")
     assert resp.status_code == 200
@@ -144,11 +121,6 @@ async def test_api_agent_files_empty(client):
 
 @pytest.mark.asyncio
 class TestWorkspaceMessagesView:
-    async def test_messages_conversation_page_renders(self, client):
-        resp = await client.get("/agents/test-agent/workspace/messages/other-agent")
-        assert resp.status_code == 200
-        assert "Messages" in resp.text
-
     async def test_contacts_endpoint_returns_partners(self, client):
         # Send a message first so there is a contact
         resp = await client.post("/api/agents/test-agent/messages", json={
@@ -168,11 +140,6 @@ class TestWorkspaceMessagesView:
         assert resp.status_code == 200
         assert resp.json() == []
 
-    async def test_depth_toggle(self, client):
-        resp = await client.get("/agents/test-agent/workspace/messages?depth=1")
-        assert resp.status_code == 200
-        assert "Responses" in resp.text
-
     async def test_messages_404_for_unknown_agent(self, client):
         resp = await client.get("/agents/nonexistent/workspace/messages")
         assert resp.status_code == 404
@@ -183,11 +150,6 @@ class TestWorkspaceMessagesView:
 
 @pytest.mark.asyncio
 class TestWorkspaceFilesView:
-    async def test_files_page_renders(self, client):
-        resp = await client.get("/agents/test-agent/workspace/files")
-        assert resp.status_code == 200
-        assert "Files" in resp.text
-
     async def test_workspace_files_list_empty_by_default(self, client):
         resp = await client.get("/api/agents/test-agent/workspace/files")
         assert resp.status_code == 200
