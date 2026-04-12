@@ -119,7 +119,7 @@ class Scheduler:
         """Dispatch a task to the first admitted preferred resource.
 
         If ``task.preferred_resources`` is empty, the scheduler auto-routes
-        by ``(lowest tier, best benchmark score)`` — GPU before NPU before
+        by ``(lowest tier, best benchmark score)``, GPU before NPU before
         CPU, with benchmark scores breaking ties within a tier once the
         benchmark store has data for the (resource, capability) pair.
 
@@ -160,7 +160,7 @@ class Scheduler:
             tried = []
             for resource in self._resources.values():
                 if task.capability.value not in resource.capabilities:
-                    # Not ready right now (backend-driven) — admission would
+                    # Not ready right now (backend-driven), admission would
                     # reject. Include in the tried list so the error is clear.
                     tried.append(
                         f"{resource.name}=capability '{task.capability.value}' not loaded"
@@ -179,7 +179,7 @@ class Scheduler:
                 tried.append(f"{ref_name}={reason}")
                 continue
 
-            # Found a home — run it
+            # Found a home, run it
             record.resource = resource.name
             record.status = TaskStatus.RUNNING
             record.started_at = time.time()
@@ -191,7 +191,7 @@ class Scheduler:
                 self._completed += 1
                 self._persist_terminal(record)
                 return result
-            except Exception as exc:  # noqa: BLE001 — propagate after recording
+            except Exception as exc:  # noqa: BLE001, propagate after recording
                 record.status = TaskStatus.ERROR
                 record.completed_at = time.time()
                 record.error = str(exc)
@@ -216,13 +216,13 @@ class Scheduler:
     def history(self, limit: int = 100) -> list[TaskRecord]:
         """Most recent in-memory task records, newest first.
 
-        Bounded by HISTORY_MAX — for older records use
+        Bounded by HISTORY_MAX, for older records use
         :meth:`history_since` which reads from the persistent store.
         """
         return list(self._history)[-limit:][::-1]
 
     async def history_since(self, timestamp: float, limit: int = 500) -> list[dict]:
-        """Persistent history query — returns dicts, newest first.
+        """Persistent history query, returns dicts, newest first.
 
         Reads from the :class:`HistoryStore` if one is wired up, empty
         list otherwise. Use ``history()`` for the in-memory hot path

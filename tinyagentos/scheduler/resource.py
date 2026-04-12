@@ -1,4 +1,4 @@
-"""Resource — one physical accelerator (or CPU pool) that runs Tasks.
+"""Resource, one physical accelerator (or CPU pool) that runs Tasks.
 
 A Resource wraps a concurrency semaphore, a signature declaring its
 platform / runtime / version, and a live view of the capabilities it
@@ -6,7 +6,7 @@ can serve (derived from the backends currently pointing at it). One
 instance per physical device: ``npu-rk3588``, ``cpu-inference``,
 ``gpu-cuda-0``, ``gpu-cuda-1``, etc.
 
-Resources do not own task queues in Phase 1 — the Scheduler calls
+Resources do not own task queues in Phase 1, the Scheduler calls
 ``Resource.run(task)`` directly and the semaphore provides mutual
 exclusion. Per-resource queueing with aging moves into Phase 2 when
 multi-tier priority sharing is added.
@@ -44,10 +44,10 @@ class Resource:
     """An accelerator or CPU pool. One instance per physical device.
 
     Args:
-        name: stable id — "npu-rk3588", "cpu-inference", "gpu-cuda-0", ...
+        name: stable id, "npu-rk3588", "cpu-inference", "gpu-cuda-0", ...
         signature: runtime identity for admission matching
         concurrency: how many Tasks can run in parallel
-        tier: static tier ranking (see Tier class) — lower is faster
+        tier: static tier ranking (see Tier class), lower is faster
         potential_capabilities: what this hardware class *could* run given
                                 a suitable backend, even if no backend for
                                 that capability is loaded right now. Used
@@ -57,7 +57,7 @@ class Resource:
                           resource can serve *right now*, derived from the
                           live backend catalog (backend-driven).
         backend_lookup: callable that returns the live backend URL for a
-                        given capability — used by payloads that need to
+                        given capability, used by payloads that need to
                         know where to POST the actual request
         score_lookup: optional callable that returns the latest benchmark
                       score for a (capability, model) pair. Scheduler uses
@@ -116,7 +116,7 @@ class Resource:
         """Latest benchmark score for this resource on the given capability.
 
         Returns None if no benchmark data exists yet, which is the common
-        case on first boot — the scheduler then falls back to tier-only
+        case on first boot, the scheduler then falls back to tier-only
         routing until benchmarks populate.
         """
         if self._score_lookup is None:

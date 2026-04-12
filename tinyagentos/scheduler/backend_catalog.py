@@ -1,4 +1,4 @@
-"""Backend catalog — live view of what every backend has loaded and can serve.
+"""Backend catalog, live view of what every backend has loaded and can serve.
 
 The backend-driven discovery mechanism: subsystems that need to answer
 "what's available right now?" (Images routing, Models API, scheduler
@@ -59,7 +59,7 @@ class BackendEntry:
     error: Optional[str] = None
 
     def has_model(self, model_id: str) -> bool:
-        """Fuzzy match against advertised model names — handles prefix/suffix
+        """Fuzzy match against advertised model names, handles prefix/suffix
         variation like ``dreamshaper-8-lcm`` vs ``dreamshaper-8-lcm-iq4_nl``.
         """
         if not self.models:
@@ -134,7 +134,7 @@ class BackendCatalog:
         # Subscribers called whenever the backend state meaningfully
         # changes (status flip or model set diff). Each subscriber is an
         # async callable taking no arguments. Failures are logged and
-        # isolated — one bad subscriber can't break the poll loop.
+        # isolated, one bad subscriber can't break the poll loop.
         self._subscribers: list[Callable[[], Awaitable[None]]] = []
         self._last_signature: str = ""
 
@@ -178,7 +178,7 @@ class BackendCatalog:
             self._task = None
 
     async def refresh(self) -> None:
-        """Force a single probe pass immediately — used after a backend change."""
+        """Force a single probe pass immediately, used after a backend change."""
         async with self._lock:
             await self._probe_all()
 
@@ -296,7 +296,7 @@ class BackendCatalog:
     def _mark_error(self, name: str, backend: dict, err: Optional[str], now: float) -> None:
         existing = self._entries.get(name)
         last_healthy = existing.last_healthy if existing else None
-        # stale grace period — we keep the last-known models around so the UI
+        # stale grace period, we keep the last-known models around so the UI
         # can say "reconnecting" instead of silently clearing the dropdown
         status = "error"
         if last_healthy and (now - last_healthy) < self._stale_after:

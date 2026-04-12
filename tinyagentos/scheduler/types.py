@@ -1,4 +1,4 @@
-"""Scheduler data types — Task, Resource signatures, priority, error classes."""
+"""Scheduler data types, Task, Resource signatures, priority, error classes."""
 from __future__ import annotations
 
 import enum
@@ -78,7 +78,7 @@ class Task:
 
     The payload is an async callable that takes the chosen Resource as its
     only argument and returns whatever the caller wants (dict, bytes, etc.).
-    The scheduler itself is opaque to the payload shape — it only sees Future.
+    The scheduler itself is opaque to the payload shape, it only sees Future.
     """
     capability: Capability
     payload: Callable[["Resource"], Awaitable[Any]]
@@ -94,7 +94,7 @@ class Task:
 
 @dataclass
 class TaskRecord:
-    """Observability record — what ran where, when, how long, with what outcome.
+    """Observability record, what ran where, when, how long, with what outcome.
 
     Bounded history kept in memory; surfaced via /api/scheduler/tasks for
     the Activity app.

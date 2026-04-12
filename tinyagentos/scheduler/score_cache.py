@@ -1,4 +1,4 @@
-"""Score cache — sync-friendly view of the async benchmark store.
+"""Score cache, sync-friendly view of the async benchmark store.
 
 The scheduler's admission path has to be synchronous (``Resource.can_admit``
 is called from within an async Task dispatch, but sync checks avoid
@@ -7,7 +7,7 @@ complex nesting and make tests readable). The benchmark store is async.
 This module bridges the gap: a tiny in-memory cache populated by a
 background polling task that reads the latest benchmark row per
 (worker, capability, model) tuple. ``Resource.score_for()`` gets a
-sync callable that reads from the cache — no awaits, no locks, fast.
+sync callable that reads from the cache, no awaits, no locks, fast.
 
 Resolution:
 - worker_id matches the Resource name on the local machine
@@ -16,7 +16,7 @@ Resolution:
 - When the same (capability, model) pair has rows from multiple workers
   the cache stores the best score per (resource, capability, model)
 
-Cache is updated every ~15 s. Stale entries are still returned — the
+Cache is updated every ~15 s. Stale entries are still returned, the
 scheduler prefers stale data to no data. Real freshness management is
 Phase 2.
 """
@@ -37,7 +37,7 @@ class ScoreCache:
     asks ``resource.score_for(capability)`` without knowing the model id
     (it's operating at the capability level). For resources that can serve
     the same capability with different models, we take the best recent
-    score across them — the scheduler picks the resource, the resource
+    score across them, the scheduler picks the resource, the resource
     picks the specific backend/model at execution time.
     """
 
@@ -123,7 +123,7 @@ class ScoreCache:
                     continue
                 key = (worker, cap)
                 # Keep the best-per-(resource, capability). For latency
-                # metrics this is wrong (lower is better) — Phase 2 adds
+                # metrics this is wrong (lower is better), Phase 2 adds
                 # metric-aware ranking. For Phase 1 we use raw value and
                 # trust throughput-style metrics dominate the default suite.
                 existing = new_cache.get(key)

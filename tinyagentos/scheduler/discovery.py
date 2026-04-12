@@ -22,7 +22,7 @@ from tinyagentos.scheduler.types import ResourceSignature
 
 
 # Every capability a CPU can run given the right backend. CPU is the
-# universal fallback — nothing is exclusive to GPU/NPU at the capability
+# universal fallback, nothing is exclusive to GPU/NPU at the capability
 # level, just faster on those devices. This set feeds the CPU resource's
 # ``potential_capabilities`` so the UI shows latent coverage even when no
 # CPU backend for that capability is currently loaded.
@@ -108,7 +108,7 @@ def build_scheduler(
     def _make_score_lookup(resource_name: str):
         """Return a sync score_lookup callable for this resource name.
 
-        Reads from the ScoreCache if one is wired up — the cache is
+        Reads from the ScoreCache if one is wired up, the cache is
         populated by a background polling task that pulls latest rows
         from the benchmark store every ~15s, keeping the scheduler's
         admission path sync-friendly without losing real data.
@@ -121,7 +121,7 @@ def build_scheduler(
 
         return _lookup
 
-    # NPU (RK3588) — only if a healthy rknn-sd or rkllama backend exists
+    # NPU (RK3588), only if a healthy rknn-sd or rkllama backend exists
     npu_backends = (
         catalog.backends_with_capability("image-generation")
         + catalog.backends_with_capability("embedding")
@@ -152,7 +152,7 @@ def build_scheduler(
             return None
 
         # RK3588 has 3 NPU cores and rknn-toolkit supports multi-context
-        # execution across them — rkllama already exploits this to hold
+        # execution across them, rkllama already exploits this to hold
         # qwen3-embedding, qwen3-reranker, and qmd-query-expansion
         # simultaneously. So the Resource's concurrency is 3, NOT 1.
         # The image-gen UNet is the one case that wants exclusive use
@@ -173,7 +173,7 @@ def build_scheduler(
             )
         )
 
-    # CPU inference — always register. Backend-driven: only advertises the
+    # CPU inference, always register. Backend-driven: only advertises the
     # capabilities that some CPU backend currently serves (sd-cpp, llama-cpp, etc.)
     cpu_signature = ResourceSignature(
         platform=f"cpu-{platform.machine()}",

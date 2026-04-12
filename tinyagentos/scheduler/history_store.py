@@ -6,7 +6,7 @@ is also persisted here so history survives restart and the Activity app
 can show windows beyond the 500-entry deque cap.
 
 Writes are fire-and-forget via ``asyncio.create_task`` so the scheduler's
-submit path stays sync-free — lost writes on a hard crash are acceptable
+submit path stays sync-free, lost writes on a hard crash are acceptable
 because the history is an observability aid, not a durable audit log.
 """
 from __future__ import annotations
@@ -76,7 +76,7 @@ class HistoryStore:
     async def record_terminal(self, record: TaskRecord) -> None:
         """Persist a terminal transition (complete / error / rejected).
 
-        Non-terminal states (queued / running) are not persisted — they're
+        Non-terminal states (queued / running) are not persisted, they're
         short-lived and only useful for the in-memory view. Only the final
         outcome makes the DB.
         """
