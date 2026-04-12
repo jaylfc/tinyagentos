@@ -39,13 +39,27 @@ def cosine_similarity(a: list[float], b: list[float]) -> float:
 
 
 class VectorMemory:
-    """SQLite-backed vector store with QMD NPU embeddings."""
+    """SQLite-backed vector store with pluggable embeddings.
 
-    def __init__(self, db_path: str | Path = "data/vector-memory.db", qmd_url: str = "http://localhost:7832"):
+    Supports:
+    - QMD NPU embeddings (Qwen3-Embed-0.6B on RK3588)
+    - sentence-transformers CPU embeddings (all-MiniLM-L6-v2 — same as MemPalace)
+    """
+
+    def __init__(
+        self,
+        db_path: str | Path = "data/vector-memory.db",
+        qmd_url: str = "http://localhost:7832",
+        embed_mode: str = "qmd",  # "qmd" or "local"
+        local_model: str = "all-MiniLM-L6-v2",
+    ):
         self._db_path = str(db_path)
         self._qmd_url = qmd_url
+        self._embed_mode = embed_mode
+        self._local_model_name = local_model
         self._conn: sqlite3.Connection | None = None
         self._http = None
+        self._local_model = None
 
     async def init(self, http_client=None) -> None:
         Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
@@ -55,25 +69,50 @@ class VectorMemory:
         self._conn.commit()
         self._http = http_client
 
+        # Load local embedding model if requested
+        if self._embed_mode == "local":
+            try:
+                from sentence_transformers import SentenceTransformer
+                self._local_model = SentenceTransformer(self._local_model_name)
+                logger.info("Loaded local embedding model: %s", self._local_model_name)
+            except ImportError:
+                logger.warning("sentence-transformers not installed, falling back to QMD")
+                self._embed_mode = "qmd"
+
     async def close(self) -> None:
         if self._conn:
             self._conn.close()
             self._conn = None
 
     async def embed(self, text: str) -> list[float]:
-        """Get embedding vector from QMD NPU."""
+        """Get embedding vector."""
+        if self._embed_mode == "local" and self._local_model is not None:
+            return self._embed_local(text)
+        return await self._embed_qmd(text)
+
+    def _embed_local(self, text: str) -> list[float]:
+        """Embed using local sentence-transformers model (CPU)."""
+        try:
+            emb = self._local_model.encode(text[:512], convert_to_numpy=True)
+            return emb.tolist()
+        except Exception as e:
+            logger.debug("Local embedding failed: %s", e)
+            return []
+
+    async def _embed_qmd(self, text: str) -> list[float]:
+        """Embed using QMD NPU."""
         if not self._http:
             return []
         try:
             resp = await self._http.post(
                 f"{self._qmd_url}/embed",
-                json={"text": text[:512]},  # Truncate to embedding model context
+                json={"text": text[:512]},
                 timeout=10,
             )
             if resp.status_code == 200:
                 return resp.json().get("embedding", [])
         except Exception as e:
-            logger.debug("Embedding failed: %s", e)
+            logger.debug("QMD embedding failed: %s", e)
         return []
 
     async def add(self, text: str, metadata: dict | None = None) -> int:
