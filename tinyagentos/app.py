@@ -147,6 +147,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     )
     knowledge_monitor = MonitorService(store=knowledge_store, http_client=http_client)
 
+    from tinyagentos.agent_browsers import AgentBrowsersManager
+    agent_browsers = AgentBrowsersManager(db_path=data_dir / "agent-browsers.db", mock=True)
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         await metrics_store.init()
@@ -174,6 +177,8 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.ingest_pipeline = knowledge_ingest
         app.state.knowledge_monitor = knowledge_monitor
         await knowledge_monitor.start()
+        await agent_browsers.init()
+        app.state.agent_browsers = agent_browsers
         await benchmark_store.init()
         await scheduler_history_store.init()
         app.state.config = config
@@ -315,6 +320,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         await skills.close()
         await knowledge_monitor.stop()
         await knowledge_store.close()
+        await agent_browsers.close()
         await installed_apps.close()
         await user_memory.close()
         await desktop_settings.close()
@@ -548,6 +554,15 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     from tinyagentos.routes.knowledge import router as knowledge_router
     app.include_router(knowledge_router)
+
+    from tinyagentos.routes.agent_browsers import router as agent_browsers_router
+    app.include_router(agent_browsers_router)
+
+    from tinyagentos.routes.reddit import router as reddit_router
+    app.include_router(reddit_router)
+
+    from tinyagentos.routes.github import router as github_router
+    app.include_router(github_router)
 
     # Lobby demo (internal only — not included in public builds)
     try:
