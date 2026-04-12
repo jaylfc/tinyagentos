@@ -82,7 +82,7 @@ export function App() {
     if (window.localStorage.getItem(WELCOME_FLAG)) return;
     useNotificationStore.getState().addNotification({
       source: "system",
-      title: "Welcome to TinyAgentOS",
+      title: "Welcome to taOS",
       body: "Click the bell to see notifications from your agents",
       level: "info",
     });

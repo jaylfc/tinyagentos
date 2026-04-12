@@ -25,7 +25,7 @@ export function TopBar({ onSearchOpen }: Props) {
     >
       <div className="flex items-center gap-2">
         <div className="w-4 h-4 rounded bg-accent" />
-        <span className="text-xs font-medium text-shell-text-secondary">TinyAgentOS</span>
+        <span className="text-xs font-medium text-shell-text-secondary">taOS</span>
       </div>
 
       <button

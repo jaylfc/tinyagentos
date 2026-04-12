@@ -1,6 +1,6 @@
 {
-    "name": "TinyAgentOS Chat",
-    "short_name": "TAOS Chat",
+    "name": "taOS Chat",
+    "short_name": "taOS Chat",
     "description": "Chat with your AI agents",
     "start_url": "/chat",
     "scope": "/chat",

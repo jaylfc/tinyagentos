@@ -84,7 +84,7 @@ export function LoginGate({ children }: Props) {
             >
               <Lock size={24} className="text-white" />
             </div>
-            <h1 className="text-lg font-semibold text-shell-text">TinyAgentOS</h1>
+            <h1 className="text-lg font-semibold text-shell-text">taOS</h1>
             <p className="text-xs text-shell-text-secondary">Enter your password to continue</p>
           </div>
 

@@ -651,7 +651,7 @@ function UpdatesSection() {
             <Settings size={20} />
           </div>
           <div>
-            <p className="text-sm font-medium">TinyAgentOS</p>
+            <p className="text-sm font-medium">taOS</p>
             <p className="text-xs text-shell-text-tertiary tabular-nums">v0.1.0-dev</p>
           </div>
         </div>
@@ -681,7 +681,7 @@ function UpdatesSection() {
 /* ------------------------------------------------------------------ */
 
 function AdvancedSection() {
-  const [config, setConfig] = useState("# TinyAgentOS Configuration\n# Edit YAML below\n\nserver:\n  port: 3000\n  host: 0.0.0.0\n\nagents:\n  max_concurrent: 5\n  default_model: qwen2.5-7b\n\nproviders:\n  - name: rkllama\n    url: http://localhost:8080\n");
+  const [config, setConfig] = useState("# taOS Configuration\n# Edit YAML below\n\nserver:\n  port: 3000\n  host: 0.0.0.0\n\nagents:\n  max_concurrent: 5\n  default_model: qwen2.5-7b\n\nproviders:\n  - name: rkllama\n    url: http://localhost:8080\n");
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

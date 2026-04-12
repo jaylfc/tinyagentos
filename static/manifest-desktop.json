@@ -1,6 +1,6 @@
 {
-  "name": "TinyAgentOS",
-  "short_name": "TinyAgentOS",
+  "name": "taOS",
+  "short_name": "taOS",
   "description": "Self-hosted AI agent platform",
   "start_url": "/desktop",
   "scope": "/",
