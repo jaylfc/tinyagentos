@@ -17,7 +17,7 @@ class TestDashboardPage:
         resp = await client.get("/", follow_redirects=True)
         assert resp.status_code == 200
         assert "text/html" in resp.headers["content-type"]
-        assert "TinyAgentOS" in resp.text
+        assert "taOS" in resp.text
 
     async def test_legacy_dashboard_still_available(self, client):
         # Old htmx dashboard is still accessible at /legacy
