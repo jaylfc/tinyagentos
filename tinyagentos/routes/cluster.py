@@ -251,3 +251,109 @@ async def move_model(request: Request, body: MoveRequest):
         to_worker.models.append(body.item)
 
     return {"status": "moved", "item": body.item, "to": body.to_worker}
+
+
+class DeployRequest(BaseModel):
+    command: str
+
+
+class WorkerRemoteRequest(BaseModel):
+    command: str
+    timeout: int = 30
+
+
+DEPLOY_COMMANDS = {
+    "install-ollama",
+    "install-exo",
+    "install-llama-cpp",
+    "install-llama-cpp --cuda",
+    "install-vllm",
+    "install-rknpu",
+    "update-worker",
+    "status",
+}
+
+REMOTE_EXEC_ALLOWLIST = [
+    "systemctl status",
+    "systemctl restart",
+    "journalctl -u",
+    "df -h",
+    "free -h",
+    "nvidia-smi",
+    "cat /proc/meminfo",
+    "uname -a",
+    "uptime",
+    "ip addr",
+    "pip list",
+    "pip install",
+    "apt-get update",
+    "apt-get install",
+    "dnf install",
+]
+
+
+@router.post("/api/cluster/workers/{name}/deploy")
+async def deploy_backend(request: Request, name: str, body: DeployRequest):
+    """Trigger a backend install on a remote worker.
+
+    The controller proxies this to the worker's deploy endpoint. The
+    worker runs taos-deploy-helper.sh via passwordless sudo. Only
+    commands in the fixed allowlist are accepted.
+    """
+    cluster = request.app.state.cluster_manager
+    worker = cluster.get_worker(name)
+    if not worker:
+        return JSONResponse({"error": f"Worker '{name}' not found"}, status_code=404)
+    if worker.status != "online":
+        return JSONResponse({"error": f"Worker '{name}' is not online"}, status_code=400)
+    if body.command not in DEPLOY_COMMANDS:
+        return JSONResponse(
+            {"error": f"Unknown command: {body.command}", "allowed": sorted(DEPLOY_COMMANDS)},
+            status_code=400,
+        )
+
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=620) as client:
+            resp = await client.post(
+                f"{worker.url}/api/worker/deploy",
+                json={"command": body.command},
+            )
+            return resp.json()
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=502)
+
+
+@router.post("/api/cluster/workers/{name}/remote")
+async def worker_remote_command(request: Request, name: str, body: WorkerRemoteRequest):
+    """Run an allowlisted command on a remote worker for debugging.
+
+    Used by the TAOS assistant/expert agent and the admin UI to
+    diagnose worker issues without SSH access. Commands must match
+    a prefix in the allowlist. The worker-side endpoint uses
+    create_subprocess_exec (no shell) with the command split into
+    argv to prevent injection.
+    """
+    cluster = request.app.state.cluster_manager
+    worker = cluster.get_worker(name)
+    if not worker:
+        return JSONResponse({"error": f"Worker '{name}' not found"}, status_code=404)
+    if worker.status != "online":
+        return JSONResponse({"error": f"Worker '{name}' is not online"}, status_code=400)
+
+    if not any(body.command.startswith(prefix) for prefix in REMOTE_EXEC_ALLOWLIST):
+        return JSONResponse(
+            {"error": "Command not in allowlist", "allowed_prefixes": REMOTE_EXEC_ALLOWLIST},
+            status_code=403,
+        )
+
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=body.timeout + 5) as client:
+            resp = await client.post(
+                f"{worker.url}/api/worker/remote",
+                json={"command": body.command, "timeout": body.timeout},
+            )
+            return resp.json()
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=502)

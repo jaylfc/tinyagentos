@@ -495,12 +495,45 @@ have_root_or_sudo() {
     return 1
 }
 
+install_deploy_helper() {
+    local sudo_cmd=""
+    if [[ "$(id -u)" != "0" ]]; then sudo_cmd="sudo"; fi
+
+    local helper_src="$INSTALL_DIR/tinyagentos/scripts/taos-deploy-helper.sh"
+    local helper_dst="/usr/local/bin/taos-deploy-helper"
+
+    if [[ -f "$helper_src" ]]; then
+        $sudo_cmd cp "$helper_src" "$helper_dst"
+        $sudo_cmd chmod 755 "$helper_dst"
+        log "installed $helper_dst"
+    else
+        warn "deploy helper not found at $helper_src — remote backend deployment will not work"
+        return
+    fi
+
+    # Sudoers drop-in: let the worker user run the deploy helper without a
+    # password. Only this one script is allowed — the worker cannot execute
+    # arbitrary commands as root.
+    local sudoers="/etc/sudoers.d/taos-worker"
+    $sudo_cmd tee "$sudoers" > /dev/null <<SUDOERS
+# TinyAgentOS worker — passwordless backend deployment
+# Allows the controller to install/update backends on this worker
+# without SSH or interactive password prompts.
+$USER ALL=(ALL) NOPASSWD: $helper_dst
+SUDOERS
+    $sudo_cmd chmod 440 "$sudoers"
+    log "sudoers drop-in installed at $sudoers — $USER can run $helper_dst without password"
+}
+
 install_linux_systemd_system() {
     local unit="/etc/systemd/system/tinyagentos-worker.service"
     local sudo_cmd=""
     if [[ "$(id -u)" != "0" ]]; then
         sudo_cmd="sudo"
     fi
+
+    # Deploy helper for remote backend management from the controller UI
+    install_deploy_helper
 
     $sudo_cmd tee "$unit" > /dev/null <<EOF
 [Unit]
