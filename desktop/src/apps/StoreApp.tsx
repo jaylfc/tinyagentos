@@ -90,6 +90,7 @@ const MOCK_APPS: CatalogApp[] = [
 
   // Video
   { id: "animatediff", name: "AnimateDiff", type: "video-gen", version: "latest", description: "AI video generation from text and images", installed: false, compat: "yellow" },
+  { id: "corridorkey", name: "CorridorKey", type: "video-gen", version: "latest", description: "AI video generation and editing toolkit", installed: false, compat: "yellow" },
 
   // Dev Tools
   { id: "code-server", name: "Code Server", type: "dev-tool", version: "latest", description: "VS Code in the browser — remote development environment", installed: false, compat: "green" },
