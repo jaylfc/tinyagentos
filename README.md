@@ -459,6 +459,34 @@ Symmetric configs (same type for K and V) are a quality landmine on Qwen2.5 fami
 
 The llama.cpp CUDA build works on Debian 12 (glibc 2.36) and older distributions. On Fedora 43 and other distros shipping glibc 2.42+, CUDA 12.8 and 12.9 headers conflict with the libc `noexcept` declarations -- the workaround is to build inside a Debian 12 LXC, documented in `docs/deploy/fedora-lxc-setup.md`. The CPU build is production-ready and the config surface is fully plumbed through the cluster and deploy wizard. Full benchmark details at `docs/benchmarks/turboquant-qwen35-9b.md`.
 
+## Exo Distributed Inference
+
+TinyAgentOS integrates [exo](https://github.com/exo-explore/exo) for running models that are too large for any single device. While the TAOS cluster routes different tasks to different workers (task parallelism), exo splits a single large model across multiple devices (pipeline parallelism). The two are complementary.
+
+**What exo enables:** Run 70B+ parameter models by pooling VRAM across multiple machines. A 70B model that needs ~40 GB can be split across a 12 GB desktop GPU + a 16 GB laptop + a 24 GB Mac, with exo handling the shard placement and inter-device communication automatically.
+
+**How it works with TAOS:** exo runs as a backend on participating workers, discovered automatically on port 52415. The TAOS worker probe detects it and advertises `llm-chat` capability. The deploy wizard can offer "Distributed (exo)" as a deployment option when a model exceeds any single worker's VRAM. Peer discovery is automatic via mDNS on the local network.
+
+**Supported hardware:**
+
+| Platform | Status |
+|---|---|
+| Apple Silicon (M1-M4) | Full GPU via MLX |
+| NVIDIA GPU (Linux) | In development, CPU fallback available |
+| AMD GPU (Linux) | In development |
+| x86 CPU (Linux/macOS) | CPU inference |
+| ARM64 / Rockchip | Not yet supported upstream |
+
+**Install:** exo requires a source build (Python 3.13+, uv, Rust, Node.js). There is no pip package. On machines where exo is installed and running, the TAOS worker detects it automatically on the next heartbeat.
+
+```bash
+git clone https://github.com/exo-explore/exo.git
+cd exo && uv sync --all-packages && just build-dashboard
+uv run exo
+```
+
+**Current status:** Experimental. Best suited for home labs and enthusiast clusters. Single-request latency has overhead vs running on one device, but multi-request throughput scales nearly linearly as devices are added. See `app-catalog/services/exo/manifest.yaml` for the catalog entry and `docs/research/beads-exo-integration.md` for the integration research.
+
 ## Known Limitations
 
 **Sequential model loading (deferred to Phase 1.5).** On shared RK3588 hardware, rkllama runs in lazy-load mode (no `--preload`), and the RKNN SD server lazy-loads its pipeline on the first /generate request. That already frees several GB of NPU memory when either is idle. The remaining work is a proper resource scheduler with per-model TTL eviction, LRU under pressure, and the core-aware resource model described in `docs/superpowers/specs/2026-04-11-taos-framework-integration-bridge-design.md` §Phase 1.5. Until that lands, two heavyweight models on the same board will still fight for NPU cores at load time.

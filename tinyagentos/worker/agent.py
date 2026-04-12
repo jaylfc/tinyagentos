@@ -43,6 +43,7 @@ class WorkerAgent:
             ("vllm", "http://localhost:18000"),           # TAOS-bundled vLLM (future)
             ("sd-cpp", "http://localhost:7864"),
             ("rknn-sd", "http://localhost:7863"),
+            ("exo", "http://localhost:52415"),           # exo distributed inference (default port)
         ]
 
         backends = []
