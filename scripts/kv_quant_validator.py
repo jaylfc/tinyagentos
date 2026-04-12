@@ -219,7 +219,12 @@ def parse_configs(configs_str: str) -> list[KVConfig]:
         entry = entry.strip()
         if not entry:
             continue
-        parts = dict(p.split("=", 1) for p in entry.split(",") if "=" in p)
+        parts = {
+            kk.strip(): vv.strip()
+            for p in entry.split(",")
+            if "=" in p
+            for kk, vv in [p.split("=", 1)]
+        }
         if "k" not in parts or "v" not in parts:
             raise ValueError(
                 f"Config entry '{entry}' must contain at least k=... and v=... fields."
