@@ -5,20 +5,99 @@ import { Desktop } from "@/components/Desktop";
 import { Dock } from "@/components/Dock";
 import { Launchpad } from "@/components/Launchpad";
 import { SearchPalette } from "@/components/SearchPalette";
-import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
+import { ShortcutProvider, useShortcut } from "@/hooks/use-shortcut-registry";
 import { useSessionPersistence } from "@/hooks/use-session-persistence";
 import { useDeviceMode } from "@/hooks/use-device-mode";
 import { useThemeStore } from "@/stores/theme-store";
 import { useProcessStore } from "@/stores/process-store";
+import { useDockStore } from "@/stores/dock-store";
 import { getAllApps, getApp } from "@/registry/app-registry";
 import { PillBar } from "@/components/mobile/PillBar";
 import { CardSwitcher } from "@/components/mobile/CardSwitcher";
 import { MobileTopBar } from "@/components/mobile/MobileTopBar";
 import { MobileApp } from "@/components/mobile/MobileApp";
 import { LoginGate } from "@/components/LoginGate";
+import { LoginScreen } from "@/components/LoginScreen";
 import { NotificationToasts } from "@/components/NotificationToast";
 import { NotificationCentre } from "@/components/NotificationCentre";
 import { useNotificationStore } from "@/stores/notification-store";
+
+interface SystemShortcutsProps {
+  toggleSearch: () => void;
+  toggleLaunchpad: () => void;
+}
+
+function SystemShortcuts({ toggleSearch, toggleLaunchpad }: SystemShortcutsProps) {
+  const windows = useProcessStore((s) => s.windows);
+  const closeWindow = useProcessStore((s) => s.closeWindow);
+  const minimizeWindow = useProcessStore((s) => s.minimizeWindow);
+  const maximizeWindow = useProcessStore((s) => s.maximizeWindow);
+  const focusWindow = useProcessStore((s) => s.focusWindow);
+  const openWindow = useProcessStore((s) => s.openWindow);
+  const pinned = useDockStore((s) => s.pinned);
+
+  const getFocusedId = useCallback(() => {
+    const sorted = [...windows]
+      .filter((w) => !w.minimized)
+      .sort((a, b) => b.zIndex - a.zIndex);
+    return sorted[0]?.id ?? null;
+  }, [windows]);
+
+  const closeFocused = useCallback(() => {
+    const id = getFocusedId();
+    if (id) closeWindow(id);
+  }, [getFocusedId, closeWindow]);
+
+  const minimizeFocused = useCallback(() => {
+    const id = getFocusedId();
+    if (id) minimizeWindow(id);
+  }, [getFocusedId, minimizeWindow]);
+
+  const maximizeFocused = useCallback(() => {
+    const id = getFocusedId();
+    if (id) maximizeWindow(id);
+  }, [getFocusedId, maximizeWindow]);
+
+  const cycleNext = useCallback(() => {
+    const visible = [...windows].filter((w) => !w.minimized).sort((a, b) => b.zIndex - a.zIndex);
+    if (visible.length < 2) return;
+    const next = visible[1]; if (next) focusWindow(next.id);
+  }, [windows, focusWindow]);
+
+  const cyclePrev = useCallback(() => {
+    const visible = [...windows].filter((w) => !w.minimized).sort((a, b) => a.zIndex - b.zIndex);
+    if (visible.length < 2) return;
+    const prev = visible[0]; if (prev) focusWindow(prev.id);
+  }, [windows, focusWindow]);
+
+  useShortcut("Ctrl+Space", toggleSearch, "Toggle search palette", "system");
+  useShortcut("Ctrl+l", toggleLaunchpad, "Toggle launchpad", "system");
+  useShortcut("Ctrl+w", closeFocused, "Close focused window", "system");
+  useShortcut("Ctrl+m", minimizeFocused, "Minimize focused window", "system");
+  useShortcut("Ctrl+f", maximizeFocused, "Maximize/restore focused window", "system");
+  useShortcut("Ctrl+Tab", cycleNext, "Cycle to next window", "system");
+  useShortcut("Ctrl+Shift+Tab", cyclePrev, "Cycle to previous window", "system");
+
+  // Ctrl+1 through Ctrl+9 — open/focus Nth pinned dock app
+  const openPinned = useCallback((n: number) => {
+    const appId = pinned[n];
+    if (!appId) return;
+    const app = getApp(appId);
+    if (app) openWindow(appId, app.defaultSize);
+  }, [pinned, openWindow]);
+
+  useShortcut("Ctrl+1", useCallback(() => openPinned(0), [openPinned]), "Open pinned app 1", "system");
+  useShortcut("Ctrl+2", useCallback(() => openPinned(1), [openPinned]), "Open pinned app 2", "system");
+  useShortcut("Ctrl+3", useCallback(() => openPinned(2), [openPinned]), "Open pinned app 3", "system");
+  useShortcut("Ctrl+4", useCallback(() => openPinned(3), [openPinned]), "Open pinned app 4", "system");
+  useShortcut("Ctrl+5", useCallback(() => openPinned(4), [openPinned]), "Open pinned app 5", "system");
+  useShortcut("Ctrl+6", useCallback(() => openPinned(5), [openPinned]), "Open pinned app 6", "system");
+  useShortcut("Ctrl+7", useCallback(() => openPinned(6), [openPinned]), "Open pinned app 7", "system");
+  useShortcut("Ctrl+8", useCallback(() => openPinned(7), [openPinned]), "Open pinned app 8", "system");
+  useShortcut("Ctrl+9", useCallback(() => openPinned(8), [openPinned]), "Open pinned app 9", "system");
+
+  return null;
+}
 
 const CATEGORY_GRADIENTS: Record<string, string> = {
   platform: "linear-gradient(135deg, rgba(102,126,234,0.25), rgba(118,75,162,0.15))",
@@ -36,6 +115,8 @@ function resolveIcon(iconName: string): icons.LucideIcon {
 }
 
 export function App() {
+  const [launched, setLaunched] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [launchpadOpen, setLaunchpadOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [cardSwitcherOpen, setCardSwitcherOpen] = useState(false);
@@ -66,11 +147,6 @@ export function App() {
     return () => window.removeEventListener("open-launchpad", handler);
   }, []);
 
-  useKeyboardShortcuts({
-    onSearch: toggleSearch,
-    onLaunchpad: toggleLaunchpad,
-  });
-
   useSessionPersistence();
 
   // Welcome notification — shown once per install, gated on a
@@ -87,6 +163,13 @@ export function App() {
       level: "info",
     });
     window.localStorage.setItem(WELCOME_FLAG, "1");
+  }, []);
+
+  // Track fullscreen state for the "Return to fullscreen" pill
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", handler);
+    return () => document.removeEventListener("fullscreenchange", handler);
   }, []);
 
   // Mobile handlers
@@ -108,25 +191,52 @@ export function App() {
 
   if (mode === "desktop") {
     return (
-      <LoginGate>
-        <div className="h-screen w-screen flex flex-col overflow-hidden bg-shell-bg text-shell-text">
-          <TopBar onSearchOpen={toggleSearch} />
-          <Desktop />
-          <Dock onLaunchpadOpen={toggleLaunchpad} />
-          <Launchpad open={launchpadOpen} onClose={() => setLaunchpadOpen(false)} onOpenApp={(wid) => setActiveWindowId(wid)} />
-          <SearchPalette open={searchOpen} onClose={() => setSearchOpen(false)} onOpenApp={(wid) => setActiveWindowId(wid)} />
-          <NotificationToasts />
-          <NotificationCentre />
-        </div>
-      </LoginGate>
+      <ShortcutProvider>
+        <SystemShortcuts toggleSearch={toggleSearch} toggleLaunchpad={toggleLaunchpad} />
+        <LoginGate>
+          {!launched && <LoginScreen onLaunch={() => setLaunched(true)} />}
+          {launched && !isFullscreen && (
+            <button
+              onClick={() => document.documentElement.requestFullscreen().catch(() => {})}
+              className="fixed top-2 left-1/2 -translate-x-1/2 z-[9998] px-4 py-1.5 rounded-full bg-accent/90 text-white text-xs font-medium shadow-lg hover:bg-accent transition-colors"
+              aria-label="Return to fullscreen"
+            >
+              Return to fullscreen
+            </button>
+          )}
+          <div className={`transition-all duration-500 ${launched ? "opacity-100 scale-100" : "opacity-0 scale-95"}`}>
+            <div className="h-screen w-screen flex flex-col overflow-hidden bg-shell-bg text-shell-text">
+              <TopBar onSearchOpen={toggleSearch} />
+              <Desktop />
+              <Dock onLaunchpadOpen={toggleLaunchpad} />
+              <Launchpad open={launchpadOpen} onClose={() => setLaunchpadOpen(false)} onOpenApp={(wid) => setActiveWindowId(wid)} />
+              <SearchPalette open={searchOpen} onClose={() => setSearchOpen(false)} onOpenApp={(wid) => setActiveWindowId(wid)} />
+              <NotificationToasts />
+              <NotificationCentre />
+            </div>
+          </div>
+        </LoginGate>
+      </ShortcutProvider>
     );
   }
 
   // Mobile/Tablet layout
   return (
-    <LoginGate>
+    <ShortcutProvider>
+      <SystemShortcuts toggleSearch={toggleSearch} toggleLaunchpad={toggleLaunchpad} />
+      <LoginGate>
+        {!launched && <LoginScreen onLaunch={() => setLaunched(true)} />}
+        {launched && !isFullscreen && (
+          <button
+            onClick={() => document.documentElement.requestFullscreen().catch(() => {})}
+            className="fixed top-2 left-1/2 -translate-x-1/2 z-[9998] px-4 py-1.5 rounded-full bg-accent/90 text-white text-xs font-medium shadow-lg hover:bg-accent transition-colors"
+            aria-label="Return to fullscreen"
+          >
+            Return to fullscreen
+          </button>
+        )}
     <div
-      className="h-screen w-screen flex flex-col overflow-hidden text-shell-text"
+      className={`h-screen w-screen flex flex-col overflow-hidden text-shell-text transition-all duration-500 ${launched ? "opacity-100 scale-100" : "opacity-0 scale-95"}`}
       style={{ background: wallpaperStyle }}
     >
       <MobileTopBar
@@ -195,6 +305,7 @@ export function App() {
       <NotificationToasts />
       <NotificationCentre />
     </div>
-    </LoginGate>
+      </LoginGate>
+    </ShortcutProvider>
   );
 }
