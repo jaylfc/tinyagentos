@@ -85,17 +85,17 @@ apps:
     name: Qwen 3 1.7B
     description: "Tiny chat — ideal for setup agent and low-power devices"
   - id: lcm-dreamshaper-v7
-    type: model
+    type: image-model
     version: 7.0.0
     name: LCM Dreamshaper V7
     description: "Fast image generation — 4-step LCM acceleration, 512x512 in seconds on RK3588 NPU"
   - id: sd-v1.5-lcm
-    type: model
+    type: image-model
     version: 1.5.0
     name: Stable Diffusion 1.5 LCM
     description: "Stable Diffusion 1.5 with Latent Consistency Model — fewer steps, faster generation"
   - id: sdxl-turbo
-    type: model
+    type: image-model
     version: 1.0.0
     name: SDXL Turbo
     description: "Real-time image generation — single-step SDXL distillation, fast on GPU"
@@ -333,161 +333,161 @@ apps:
 
   # --- Added: Audio / speech ---
   - id: whisper-tiny
-    type: model
+    type: voice
     version: 1.0.0
     name: Whisper Tiny (ggml)
     description: "39M Whisper — real-time on CPU"
   - id: whisper-base
-    type: model
+    type: voice
     version: 1.0.0
     name: Whisper Base (ggml)
     description: "74M Whisper — good quality/speed"
   - id: whisper-small
-    type: model
+    type: voice
     version: 1.0.0
     name: Whisper Small (ggml)
     description: "244M Whisper — multilingual"
   - id: whisper-medium
-    type: model
+    type: voice
     version: 1.0.0
     name: Whisper Medium (ggml)
     description: "769M Whisper — near-large quality"
   - id: whisper-large-v3
-    type: model
+    type: voice
     version: 3.0.0
     name: Whisper Large v3 (ggml)
     description: "1550M Whisper v3 — best quality"
   - id: whisper-large-v3-turbo
-    type: model
+    type: voice
     version: 3.0.0
     name: Whisper Large v3 Turbo (ggml)
     description: "Distilled Whisper Large — 8x faster"
   - id: kokoro-tts
-    type: model
+    type: voice
     version: 1.0.0
     name: Kokoro 82M TTS
     description: "Compact Apache 2.0 TTS — CPU-friendly"
   - id: piper-en-lessac
-    type: model
+    type: voice
     version: 1.0.0
     name: Piper TTS EN-US Lessac (Medium)
     description: "Fast CPU TTS voice — Piper Lessac"
   - id: parakeet-tdt-0.6b
-    type: model
+    type: voice
     version: 2.0.0
     name: NVIDIA Parakeet TDT 0.6B v2
     description: "600M ASR — tops Open ASR leaderboard"
 
   # --- Added: Image generation ---
   - id: dreamshaper-8-lcm
-    type: model
+    type: image-model
     version: 8.0
     name: Dreamshaper 8 LCM
     description: "Photorealistic LCM-distilled, 4-step generation"
   - id: flux-schnell-gguf
-    type: model
+    type: image-model
     version: 1.0
     name: Flux.1 Schnell (GGUF)
     description: "SOTA-quality images in 4 steps, Apache 2.0"
   - id: flux-schnell-unsloth
-    type: model
+    type: image-model
     version: 1.0.0
     name: Flux.1 Schnell (Unsloth GGUF)
     description: "Unsloth Flux Schnell GGUFs — wide quant coverage"
   - id: flux-dev-gguf
-    type: model
+    type: image-model
     version: 1.0.0
     name: Flux.1 Dev (GGUF)
     description: "Flux Dev GGUF — higher quality than Schnell"
   - id: sd3.5-large-turbo-gguf
-    type: model
+    type: image-model
     version: 3.5.0
     name: Stable Diffusion 3.5 Large Turbo (GGUF)
     description: "SD3.5 Large Turbo in GGUF — 4-step generation"
   - id: pixart-sigma-512
-    type: model
+    type: image-model
     version: 1.0
     name: PixArt-Σ 512
     description: "Efficient DiT model — 0.6B params, commercial-safe"
   - id: playground-v2.5
-    type: model
+    type: image-model
     version: 2.5.0
     name: Playground v2.5 1024px
     description: "Photorealistic SDXL-compatible aesthetic model"
   - id: kolors
-    type: model
+    type: image-model
     version: 1.0.0
     name: Kolors
     description: "Kuaishou bilingual (EN/ZH) text-to-image"
   - id: auraflow-v0.3
-    type: model
+    type: image-model
     version: 0.3.0
     name: AuraFlow v0.3
     description: "Fal's fully open flow-matching — Apache 2.0"
   - id: stable-cascade
-    type: model
+    type: image-model
     version: 1.0.0
     name: Stable Cascade
     description: "Stability 3-stage cascade — efficient high quality"
   - id: sdxl-lightning
-    type: model
+    type: image-model
     version: 1.0.0
     name: SDXL Lightning
     description: "ByteDance SDXL distillation — 2/4-step"
   - id: sdxs-512
-    type: model
+    type: image-model
     version: 0.9
     name: SDXS 512 (1-step)
     description: "Single-step generation — sub-second on x86 CPU"
 
   # --- Added: Image tools (background, upscale, face, controlnet) ---
   - id: rmbg-1.4
-    type: model
+    type: image-model
     version: 1.4.0
     name: RMBG 1.4 (Background Removal)
     description: "BRIA state-of-the-art background removal"
   - id: birefnet
-    type: model
+    type: image-model
     version: 1.0.0
     name: BiRefNet (Background Removal)
     description: "High-quality matting and segmentation"
   - id: real-esrgan-x4
-    type: model
+    type: image-model
     version: 1.0.0
     name: Real-ESRGAN x4
     description: "4x super-resolution upscaler"
   - id: 4x-ultrasharp
-    type: model
+    type: image-model
     version: 1.0.0
     name: 4x-UltraSharp
     description: "Community ESRGAN upscaler"
   - id: gfpgan-v1.4
-    type: model
+    type: image-model
     version: 1.4.0
     name: GFPGAN v1.4 (Face Restoration)
     description: "Tencent ARC face restoration"
   - id: codeformer
-    type: model
+    type: image-model
     version: 0.1.0
     name: CodeFormer (Face Restoration)
     description: "Robust face restoration with codebook lookup"
   - id: controlnet-canny
-    type: model
+    type: image-model
     version: 1.0.0
     name: ControlNet Canny (SD 1.5)
     description: "Canny edge ControlNet"
   - id: controlnet-depth
-    type: model
+    type: image-model
     version: 1.0.0
     name: ControlNet Depth (SD 1.5)
     description: "Depth-map ControlNet"
   - id: controlnet-openpose
-    type: model
+    type: image-model
     version: 1.0.0
     name: ControlNet OpenPose (SD 1.5)
     description: "Pose skeleton ControlNet"
   - id: controlnet-openpose-sdxl
-    type: model
+    type: image-model
     version: 1.0.0
     name: ControlNet OpenPose (SDXL)
     description: "Pose ControlNet for SDXL"
@@ -568,7 +568,7 @@ apps:
     name: Gitea
     description: "Self-hosted Git server with agent access"
   - id: code-server
-    type: service
+    type: dev-tool
     version: 4.96.0
     name: Code Server
     description: "VS Code in the browser — web IDE"
@@ -602,54 +602,54 @@ apps:
 
   # AI Image Generation
   - id: comfyui
-    type: service
+    type: image-gen
     version: 0.3.0
     name: ComfyUI
     description: "Node-based AI image generation — advanced Stable Diffusion workflows"
   - id: fooocus
-    type: service
+    type: image-gen
     version: 2.5.0
     name: Fooocus
     description: "Simple AI image generation — Midjourney-like UX, just works"
   - id: stable-diffusion-webui
-    type: service
+    type: image-gen
     version: 1.10.0
     name: Stable Diffusion Web UI
     description: "AUTOMATIC1111's popular image generation interface"
   - id: stable-diffusion-cpp
-    type: service
+    type: image-gen
     version: 0.2.0
     name: Stable Diffusion.cpp
     description: "Pure C/C++ image generation — runs on CPU including ARM"
   - id: fastsdcpu
-    type: service
+    type: image-gen
     version: 1.0.0
     name: FastSD CPU
     description: "Fast Stable Diffusion on CPU — optimized for ARM and devices without GPU"
   - id: rknn-stable-diffusion
-    type: service
+    type: image-gen
     version: 0.1.0
     name: RKNN Stable Diffusion
     description: "Image generation on Rockchip NPU — 512x512 in seconds on RK3588"
   - id: lcm-dreamshaper-rknn
-    type: service
+    type: image-gen
     version: 0.1.0
     name: LCM Dreamshaper (RKNN Rust)
     description: "Fast Rust-based text-to-image on RK3588 NPU — optimized LCM pipeline"
   - id: rk3588-sd-gpu
-    type: service
+    type: image-gen
     version: 0.1.0
     name: Stable Diffusion (Mali GPU)
     description: "SD on RK3588 Mali-G610 via MLC/TVM — GPU alternative to NPU path"
 
   # Home Automation & Monitoring
   - id: home-assistant
-    type: service
+    type: home
     version: stable
     name: Home Assistant
     description: "Home automation platform — agents can control smart home devices and automations"
   - id: uptime-kuma
-    type: service
+    type: monitoring
     version: 1.0.0
     name: Uptime Kuma
     description: "Self-hosted uptime monitoring — track agent and service availability with alerts"
@@ -680,12 +680,12 @@ apps:
 
   # Voice / Speech
   - id: whisper
-    type: service
+    type: voice
     version: latest
     name: Whisper ASR
     description: "Speech-to-text via OpenAI Whisper — agents can transcribe audio files and streams"
   - id: piper-tts
-    type: service
+    type: voice
     version: latest
     name: Piper TTS
     description: "Fast local text-to-speech via Wyoming Piper — agents can generate natural voice audio"
