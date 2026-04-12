@@ -8,7 +8,7 @@
 
 Self-hosted AI agent platform that runs on whatever hardware you have. An old laptop, a Raspberry Pi, a gaming PC, an SBC gathering dust, or all of them at once. TinyAgentOS turns your spare hardware into a distributed AI compute cluster.
 
-A full web desktop environment with 26 bundled apps, 87 catalog apps, 43 MCP plugins, 15 agent frameworks, a curated local model catalog of 97 manifests covering LLMs, vision, embeddings, audio, and image generation (including RK3588 NPU variants via c01zaut/happyme531), plus 167k+ searchable models from HuggingFace, agent deployment, training, image/video/audio generation, and full system monitoring, all from a single web dashboard. Supports Apple Silicon (MLX), NVIDIA, AMD, Rockchip NPU, Raspberry Pi, Android phones, and more.
+A full web desktop environment with 32 bundled apps, 87 catalog apps, 43 MCP plugins, 15 agent frameworks, a curated local model catalog of 97 manifests covering LLMs, vision, embeddings, audio, and image generation (including RK3588 NPU variants via c01zaut/happyme531), plus 167k+ searchable models from HuggingFace, agent deployment, training, image/video/audio generation, and full system monitoring, all from a single web dashboard. Supports Apple Silicon (MLX), NVIDIA, AMD, Rockchip NPU, Raspberry Pi, Android phones, and more.
 
 **Framework-agnostic by design.** TinyAgentOS owns everything that matters: your agent's memory, files, communication channels, model access, and configuration. The agent framework is just a replaceable execution engine. Switch from SmolAgents to LangChain to OpenClaw and your agent keeps its entire history, all its Telegram/Discord/Slack connections, its trained LoRA adapters, its files, and its API keys. No migration, no data loss, no reconfiguration. This is possible because TinyAgentOS manages the full agent lifecycle outside the framework.
 
@@ -36,7 +36,7 @@ Open `http://your-host:6969` (or `http://tinyagentos.local:6969` with mDNS). The
 
 ## Web Desktop Experience
 
-TinyAgentOS ships with a full browser-based desktop environment. Open it at `http://your-host:6969/` and you get a window manager, dock, launchpad, notifications, widgets, and 26 bundled apps, no native install required. On phones and tablets it automatically swaps to a Palm webOS-style card switcher with a pill-bar and iOS-style home grid, installable as a fullscreen PWA from the browser's "Add to Home Screen".
+TinyAgentOS ships with a full browser-based desktop environment. Open it at `http://your-host:6969/` and you get a window manager, dock, launchpad, notifications, widgets, and 32 bundled apps, no native install required. On phones and tablets it automatically swaps to a Palm webOS-style card switcher with a pill-bar and iOS-style home grid, installable as a fullscreen PWA from the browser's "Add to Home Screen".
 
 - **Window manager.** Float, snap zones, drag, resize, minimise, maximise, close
 - **Top bar.** Global search (Ctrl+Space), clock, notifications, widget toggle
@@ -53,7 +53,7 @@ TinyAgentOS ships with a full browser-based desktop environment. Open it at `htt
 - **Standalone Chat PWA**. Messages available as a dedicated installable app at `/chat-pwa`
 - **shadcn/ui primitives**. Button, Card, Input, Tabs, Switch, Toolbar
 
-### 26 Bundled Desktop Apps
+### 32 Bundled Desktop Apps
 
 **Platform apps (15):** Messages (WebSocket chat), Agents (deploy wizard + logs + skills), Store (43+ apps), Settings (multi-section with Memory capture toggles), Models, Memory (User + Agent sections), Channels, Secrets, Tasks, Import, Images, Dashboard, Files (real VFS with workspace + shared folders), Cluster (worker management + health), Providers (cloud LLM provider management, add/test/remove OpenAI, Anthropic, and compatible APIs).
 
@@ -66,7 +66,7 @@ The Activity app includes a Cluster overview panel showing live worker status an
 ## Key Features
 
 ### Web Desktop Shell
-Full browser-based desktop OS with window manager (float + snap), dock, launchpad, right-click context menu, wallpaper picker, notifications, widgets, and persistent sessions that follow you across devices. 26 bundled apps, platform tools, OS utilities, and games, plus an optional password login gate. See [Web Desktop Experience](#web-desktop-experience) above.
+Full browser-based desktop OS with window manager (float + snap), dock, launchpad, right-click context menu, wallpaper picker, notifications, widgets, and persistent sessions that follow you across devices. 32 bundled apps, platform tools, OS utilities, and games, plus an optional password login gate. See [Web Desktop Experience](#web-desktop-experience) above.
 
 ### Mobile & Tablet Mode
 Auto-detects touch devices and swaps the desktop for a Palm webOS-style card switcher with a bottom pill-bar (back, home, app switcher, notifications), iOS-style home grid with gradient-tinted icons, and a mobile top bar with "< Back" + centred app title. Installable as a fullscreen PWA on iOS and Android with safe-area support and native browser chrome hidden. A standalone Chat PWA is available at `/chat-pwa` and installs like a private Discord.
@@ -221,7 +221,7 @@ Search across agents, apps, messages, and files from a single endpoint. Finds an
 - **System Updates.** Pull latest from GitHub via Settings page
 - **Provider Management.** Add/test/remove inference providers with live connectivity checks. The Providers desktop app manages cloud LLM credentials; the model browser reflects configured providers automatically.
 
-## App Catalog (87 Catalog Apps + 26 Desktop Apps + 43 MCP Plugins)
+## App Catalog (87 Catalog Apps + 32 Desktop Apps + 43 MCP Plugins)
 
 | Category | Apps |
 |----------|------|
@@ -259,7 +259,7 @@ Search across agents, apps, messages, and files from a single endpoint. Finds an
 
 ```
 TinyAgentOS Controller (FastAPI + htmx + React Desktop Shell)
-├── Web Desktop Shell (window manager, dock, launchpad, widgets, 26 bundled apps)
+├── Web Desktop Shell (window manager, dock, launchpad, widgets, 32 bundled apps)
 ├── Mobile/Tablet Shell (card switcher, pill bar, iOS PWA)
 ├── Skills & Plugins Registry (7 default skills, 15 framework adapters)
 ├── User Memory (SQLite + FTS5, auto-capture, global search integration)
@@ -560,7 +560,7 @@ CI runs automatically on every push (Python 3.10-3.13 + security audit).
 - [x] Playwright E2E test scaffolding
 - [x] Message Hub, built-in chat with channels, threads, canvas, dual PWA
 - [x] Dual container runtime (LXC + Docker, auto-detected)
-- [x] Web desktop shell (window manager, dock, launchpad, widgets, 26 bundled apps)
+- [x] Web desktop shell (window manager, dock, launchpad, widgets, 32 bundled apps)
 - [x] Mobile/tablet responsive mode with iOS PWA support
 - [x] Persistent desktop sessions across devices (windows, dock, wallpaper)
 - [x] User memory system (personal QMD with FTS5 + auto-capture)
