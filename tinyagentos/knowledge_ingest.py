@@ -210,9 +210,55 @@ class IngestPipeline:
         """
         if source_type == "article":
             return await self._download_article(url, title, metadata)
-        # Placeholder for platform-specific downloaders (reddit, youtube, x, github)
-        # added in build steps 3-6. Return empty so the item is stored with
-        # status=ready and content="" until a platform adapter fills it.
+        if source_type == "reddit":
+            from tinyagentos.knowledge_fetchers.reddit import (
+                fetch_thread, flatten_to_text, extract_metadata,
+            )
+            post, comments = await fetch_thread(url, self._http_client)
+            content = flatten_to_text(post, comments)
+            new_meta = extract_metadata(post)
+            metadata.update(new_meta)
+            return content, post.title, post.author, metadata
+        if source_type == "youtube":
+            from tinyagentos.knowledge_fetchers.youtube import fetch
+            result = await fetch(url)
+            metadata.update(result.get("metadata", {}))
+            return (
+                result.get("content", ""),
+                result.get("title", title),
+                result.get("author", ""),
+                metadata,
+            )
+        if source_type == "github":
+            from tinyagentos.knowledge_fetchers.github import (
+                parse_github_url, fetch_repo, fetch_issue, fetch_releases, extract_metadata as gh_meta,
+            )
+            owner, repo, content_type, number = parse_github_url(url)
+            if content_type == "issue" or content_type == "pull":
+                data = await fetch_issue(owner, repo, number, None, self._http_client)
+                metadata.update(gh_meta(data, content_type))
+                body = data.get("body", "")
+                comments = "\n\n".join(c.get("body", "") for c in data.get("comments", []))
+                return f"{body}\n\n---\n\n{comments}", data.get("title", title), data.get("author", ""), metadata
+            elif content_type == "releases":
+                releases = await fetch_releases(owner, repo, None, self._http_client)
+                if releases:
+                    r = releases[0]
+                    metadata.update(gh_meta(r, "release"))
+                    return r.get("body", ""), r.get("name", title), r.get("author", ""), metadata
+            else:
+                data = await fetch_repo(owner, repo, None, self._http_client)
+                metadata.update(gh_meta(data, "repo"))
+                return data.get("readme_content", ""), data.get("name", title), f"{owner}", metadata
+        if source_type == "x":
+            from tinyagentos.knowledge_fetchers.x import (
+                fetch_tweet_ytdlp, stitch_thread_text, extract_metadata as x_meta,
+            )
+            tweet = await fetch_tweet_ytdlp(url)
+            if tweet:
+                metadata.update(x_meta(tweet))
+                return tweet.get("text", ""), title, tweet.get("author", ""), metadata
+            return "", title, "", metadata
         return "", title, "", metadata
 
     async def _download_article(
