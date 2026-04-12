@@ -195,7 +195,8 @@ class TestHeartbeat:
             with patch("tinyagentos.worker.agent.psutil.cpu_percent", return_value=42.0):
                 result = await agent.heartbeat()
 
-        assert result is True
+        # heartbeat() returns the int HTTP status code (or 0 on failure), see #166
+        assert result == 200
 
     async def test_heartbeat_failure(self):
         agent = WorkerAgent("http://controller:6969", name="test-worker")
@@ -210,7 +211,8 @@ class TestHeartbeat:
             with patch("tinyagentos.worker.agent.psutil.cpu_percent", return_value=0.0):
                 result = await agent.heartbeat()
 
-        assert result is False
+        # On transport error heartbeat() returns 0, not False
+        assert result == 0
 
 
 @pytest.mark.asyncio
