@@ -94,8 +94,9 @@ def test_extract_no_facts():
 @pytest.mark.asyncio
 async def test_process_conversation_stores_in_kg(graph):
     text = "Jay created taOS. taOS uses SQLite for storage."
-    triple_ids = await process_conversation_turn(text, "research-agent", graph)
-    assert len(triple_ids) >= 1
+    result = await process_conversation_turn(text, "research-agent", graph)
+    assert result["triples_created"] >= 1
+    assert result["method"] == "regex"
 
     # Verify facts are in the KG
     results = await graph.query_entity("Jay")
@@ -105,8 +106,8 @@ async def test_process_conversation_stores_in_kg(graph):
 @pytest.mark.asyncio
 async def test_process_conversation_with_agent_source(graph):
     text = "The research agent monitors Reddit daily."
-    triple_ids = await process_conversation_turn(text, "research-agent", graph, source="chat")
-    assert len(triple_ids) >= 0  # May or may not extract depending on patterns
+    result = await process_conversation_turn(text, "research-agent", graph, source="chat")
+    assert result["triples_created"] >= 0  # May or may not extract
 
     # Check the KG for any research agent facts
     results = await graph.query_entity("research agent")
@@ -115,11 +116,21 @@ async def test_process_conversation_with_agent_source(graph):
 
 @pytest.mark.asyncio
 async def test_process_empty_text(graph):
-    triple_ids = await process_conversation_turn("", None, graph)
-    assert triple_ids == []
+    result = await process_conversation_turn("", None, graph)
+    assert result["triples_created"] == 0
 
 
 @pytest.mark.asyncio
 async def test_process_no_facts_text(graph):
-    triple_ids = await process_conversation_turn("Hello! How are you?", None, graph)
-    assert triple_ids == []
+    result = await process_conversation_turn("Hello! How are you?", None, graph)
+    assert result["triples_created"] == 0
+
+
+@pytest.mark.asyncio
+async def test_process_returns_contradiction_count(graph):
+    # Add initial fact
+    await graph.add_triple("Jay", "works_on", "ProjectA")
+    # Process text that contradicts
+    text = "Jay works on ProjectB now."
+    result = await process_conversation_turn(text, None, graph)
+    assert result["contradictions_resolved"] >= 0  # May resolve if extracted

@@ -77,6 +77,16 @@ MIN_ENTITY_LEN = 2
 def _clean_entity(text: str) -> str | None:
     """Clean and validate an extracted entity name."""
     text = text.strip().strip(".,;:!?\"'()[]{}").strip()
+    # Truncate at conjunctions/relative pronouns (captures cleaner entities)
+    for stop in (" which ", " who ", " that ", " and ", " or ", " for the ", " rather ", " instead "):
+        idx = text.lower().find(stop)
+        if idx > 0:
+            text = text[:idx].strip()
+    # Strip trailing prepositions
+    for prep in (" on", " in", " at", " to", " of", " with", " from", " by"):
+        if text.lower().endswith(prep):
+            text = text[:len(text) - len(prep)].strip()
+    text = text.strip().strip(".,;:!?\"'()[]{}").strip()
     # Skip if too short or a stop word
     if len(text) < MIN_ENTITY_LEN:
         return None
@@ -136,19 +146,25 @@ def extract_facts_from_text(text: str) -> list[dict]:
 # LLM-based extraction (higher quality, optional)
 # ------------------------------------------------------------------
 
-EXTRACTION_PROMPT = """Extract structured facts from the following text. Return a JSON array of objects, each with "subject", "predicate", and "object" fields.
+EXTRACTION_PROMPT = """You are a fact extractor. Extract structured knowledge from the text below.
 
-Focus on:
-- Relationships between named entities (people, tools, projects, hardware)
-- Preferences and decisions
-- Technical facts (X uses Y, X runs on Y, X supports Y)
+For each fact, output a JSON object with:
+- "subject": the entity doing or being something (a person, tool, project, agent, hardware)
+- "predicate": the relationship (uses, created, prefers, runs_on, has, monitors, works_on, manages, supports, depends_on, is_a)
+- "object": what the subject relates to
+- "type": one of fact, preference, decision, event, discovery
 
-Skip generic statements. Only extract specific, factual claims.
+Rules:
+- Only extract claims that are clearly stated, not implied
+- Subject and object must be specific named entities, not pronouns (skip "it", "they", "this")
+- Keep subject and object short (1-5 words each)
+- One fact per relationship — "Jay uses Python and React" becomes TWO facts
+- Include temporal facts when mentioned ("moved to X", "switched from Y to Z")
 
 Text:
 {text}
 
-Return ONLY valid JSON array, no other text:"""
+Return ONLY a valid JSON array. No markdown, no explanation:"""
 
 
 async def extract_facts_with_llm(
@@ -196,23 +212,43 @@ async def process_conversation_turn(
     kg: TemporalKnowledgeGraph,
     archive: ArchiveStore | None = None,
     source: str = "conversation",
-) -> list[str]:
+    llm_url: str = "",
+    http_client=None,
+    use_llm: bool = True,
+) -> dict:
     """Extract facts from a conversation turn and store in the KG.
 
-    Returns list of triple IDs that were created.
+    Uses LLM extraction when available (higher quality), falls back to regex.
+    Checks for contradictions before storing (Mem0-style ADD/UPDATE logic).
+
+    Returns {facts_extracted, triples_created, contradictions_resolved, triple_ids, method}.
     """
-    facts = extract_facts_from_text(text)
+    # Choose extraction method: LLM first, regex fallback
+    method = "regex"
+    if use_llm and llm_url and http_client:
+        facts = await extract_facts_with_llm(text, llm_url, http_client)
+        if facts:
+            method = "llm"
+        else:
+            facts = extract_facts_from_text(text)
+    else:
+        facts = extract_facts_from_text(text)
+
     triple_ids = []
+    contradictions = 0
 
     for fact in facts:
         try:
-            tid = await kg.add_triple(
+            # Use contradiction-aware insertion for singular predicates
+            result = await kg.add_triple_with_contradiction_check(
                 subject=fact["subject"],
                 predicate=fact["predicate"],
                 obj=fact["object"],
                 source=f"{source}:{agent_name or 'user'}",
+                auto_resolve=True,
             )
-            triple_ids.append(tid)
+            triple_ids.append(result["triple_id"])
+            contradictions += result["contradictions_resolved"]
         except Exception as e:
             logger.debug("Failed to add triple: %s", e)
 
@@ -223,11 +259,19 @@ async def process_conversation_turn(
             data={
                 "facts_extracted": len(facts),
                 "triples_created": len(triple_ids),
+                "contradictions_resolved": contradictions,
+                "method": method,
                 "source": source,
                 "facts": facts,
             },
             agent_name=agent_name,
-            summary=f"Extracted {len(facts)} facts from {source}",
+            summary=f"Extracted {len(facts)} facts ({method}) from {source}, {contradictions} contradictions resolved",
         )
 
-    return triple_ids
+    return {
+        "facts_extracted": len(facts),
+        "triples_created": len(triple_ids),
+        "contradictions_resolved": contradictions,
+        "triple_ids": triple_ids,
+        "method": method,
+    }
