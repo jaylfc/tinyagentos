@@ -12,7 +12,7 @@ A full web desktop environment with 32 bundled apps, 87 catalog apps, 43 MCP plu
 
 **Framework-agnostic by design.** TinyAgentOS owns everything that matters: your agent's memory, files, communication channels, model access, and configuration. The agent framework is just a replaceable execution engine. Switch from SmolAgents to LangChain to OpenClaw and your agent keeps its entire history, all its Telegram/Discord/Slack connections, its trained LoRA adapters, its files, and its API keys. No migration, no data loss, no reconfiguration. This is possible because TinyAgentOS manages the full agent lifecycle outside the framework.
 
-**Offline-first memory system.** Every agent gets a persistent memory store (QMD) running inside its own container. Documents are chunked, embedded, and indexed locally using your own hardware (NPU, GPU, or CPU). Keyword search via FTS5, semantic vector search via sqlite-vec, and hybrid search combining both. Memory survives framework swaps, container restarts, and even full platform reinstalls (backup/restore). No cloud vector database, no API calls, no data leaving your network.
+**taOSmd — State-of-the-art memory system.** 99.0% Recall@5 on [LongMemEval-S](https://github.com/xiaowu0162/LongMemEval), beating MemPalace (96.6%) and SuperMemory (81.6%) — running entirely on a $100 Orange Pi with no cloud dependencies. The memory stack includes a temporal knowledge graph with validity windows and contradiction detection, hybrid semantic+keyword vector search, a zero-loss append-only archive, automatic fact extraction (regex real-time + LLM background), intent-aware retrieval routing, and multi-layer context assembly. Framework-agnostic by design — any agent framework can read/write through the HTTP API.
 
 ## Quick Start
 
