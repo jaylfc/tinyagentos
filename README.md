@@ -432,9 +432,22 @@ The benchmark harness is at `scripts/spikes/ez-rknn-async/`. Set `RKNN_SD_LEGACY
 
 ## TurboQuant KV cache compression
 
-TinyAgentOS supports **Google's TurboQuant** (ICLR 2026) KV cache quantization via TheTom/llama-cpp-turboquant on x86 workers. Unlike weight quantization, which compresses model files, TurboQuant compresses the per-request attention-time KV cache, the per-token memory that scales with context length. This is the piece that actually wall-clocks consumer hardware when context gets long.
+**768K context window on a single RTX 3060 (12 GB).** TinyAgentOS integrates Google's TurboQuant (ICLR 2026) KV cache quantization via TheTom/llama-cpp-turboquant. Unlike weight quantization, which compresses model files, TurboQuant compresses the per-request KV cache -- the per-token memory that scales with context length and is the actual bottleneck on consumer hardware.
 
-The correct default is **asymmetric** K and V quantization: keys need more bits than values because softmax amplifies key-side noise, while values are linearly combined. Empirically validated on Qwen3.5-9B-Q4_K_M on an RTX 3060 class box (NexusQuant llama.cpp#21591, Ziskind's "After This, 16GB Feels Different"). Config recommendations per hardware class:
+Measured on Qwen3.5-9B-Q4_K_M, single RTX 3060 12 GB, decode speed stable at 52-62 t/s across the entire range:
+
+| Context | KV f16/f16 | KV Q8/T3 | KV T3/T2 | KV T2/T2 |
+|---:|---:|---:|---:|---:|
+| 4K | 178 MB | 96 MB | 74 MB | 62 MB |
+| 32K | 1,074 MB | 422 MB | 243 MB | 211 MB |
+| 131K | 4,146 MB | 1,538 MB | 824 MB | 696 MB |
+| 262K | OOM | 2,998 MB | 1,598 MB | 1,342 MB |
+| 524K | OOM | OOM | 3,146 MB | 2,634 MB |
+| **786K** | OOM | OOM | OOM | **3,926 MB** |
+
+Without TurboQuant the same card tops out at ~131K. With T2/T2 it reaches **786,432 tokens (768K)** before running out of VRAM. That is a 6x capacity increase at the same decode speed.
+
+The correct default is **asymmetric** K and V quantization: keys need more bits than values because softmax amplifies key-side noise, while values are linearly combined (NexusQuant llama.cpp#21591, Ziskind's "After This, 16GB Feels Different"). Recommended configs:
 
 | Hardware | K type | V type | Boundary layer protect |
 |---|---|---|---|
@@ -442,16 +455,9 @@ The correct default is **asymmetric** K and V quantization: keys need more bits 
 | 12 GB VRAM / unified | q8_0 | turbo3 | 0 |
 | 16 GB+ VRAM | f16 | f16 | 0 (not needed) |
 
-Measured KV cache self-memory on Qwen3.5-9B-Q4_K_M at 131K native context on a Fedora 43 LXC with the CPU build of TheTom/llama-cpp-turboquant:
+Symmetric configs (same type for K and V) are a quality landmine on Qwen2.5 family specifically -- PPL goes astronomical without boundary layer protection. The deploy wizard exposes separate `K bits`, `V bits`, and `boundary layers` knobs when the worker reports a backend that supports them. Default is always `f16 / f16 / 0` unless the user explicitly opts in or the per-model manifest recommends otherwise.
 
-| Config | KV self (MiB) | Total host (MiB) | Compression vs f16 |
-|---|---|---|---|
-| f16 K + f16 V | 4146 | 10054 | 1.0x |
-| turbo2 K + turbo2 V | 696 | 6612 | **5.96x** |
-
-At native 131K context, turbo2/turbo2 lets Qwen3.5-9B fit in ~6.6 GB instead of ~10 GB, bringing full-context runs within reach of 8 GB consumer GPUs that could not touch it under f16. Symmetric configs are a quality landmine on Qwen2.5 family specifically (PPL goes astronomical without boundary layer protection). The deploy wizard exposes separate `K bits`, `V bits`, and `boundary layers` knobs when the worker reports a backend that supports them. Default is always `f16 / f16 / 0` unless the user explicitly opts in or the per-model manifest recommends otherwise.
-
-The llama.cpp CUDA build works on Debian 12 (glibc 2.36) and older distributions. On Fedora 43 and other distros shipping glibc 2.42+, CUDA 12.8 and 12.9 headers conflict with the libc `noexcept` declarations — the workaround is to build inside a Debian 12 LXC, documented in `docs/deploy/fedora-lxc-setup.md`. GPU benchmarks on a 12 GB RTX 3060 reach 786K context with the most aggressive config. The CPU build is production-ready and the config surface is fully plumbed through the cluster and deploy wizard.
+The llama.cpp CUDA build works on Debian 12 (glibc 2.36) and older distributions. On Fedora 43 and other distros shipping glibc 2.42+, CUDA 12.8 and 12.9 headers conflict with the libc `noexcept` declarations -- the workaround is to build inside a Debian 12 LXC, documented in `docs/deploy/fedora-lxc-setup.md`. The CPU build is production-ready and the config surface is fully plumbed through the cluster and deploy wizard. Full benchmark details at `docs/benchmarks/turboquant-qwen35-9b.md`.
 
 ## Known Limitations
 
