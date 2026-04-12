@@ -46,3 +46,5 @@ docs/superpowers/specs/2026-04-11-tinyagentos-cloud-platform-design.md
 .venv/
 data/agent-memory/
 data/agent-workspaces/
+benchmarks/data/longmemeval_s_cleaned.json
+benchmarks/data/*.json
