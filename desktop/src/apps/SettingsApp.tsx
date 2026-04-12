@@ -15,6 +15,9 @@ import {
   AlertCircle,
   ChevronLeft,
   Brain,
+  Keyboard,
+  Accessibility,
+  Monitor,
 } from "lucide-react";
 import {
   Button,
@@ -24,12 +27,13 @@ import {
   Switch,
   Textarea,
 } from "@/components/ui";
+import { useShortcuts } from "@/hooks/use-shortcut-registry";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
-type Section = "system" | "storage" | "providers" | "memory" | "backup" | "updates" | "advanced";
+type Section = "system" | "storage" | "providers" | "memory" | "backup" | "updates" | "advanced" | "shortcuts" | "accessibility" | "desktop";
 
 interface SectionDef {
   id: Section;
@@ -73,6 +77,9 @@ const SECTIONS: SectionDef[] = [
   { id: "backup", label: "Backup & Restore", icon: Download },
   { id: "updates", label: "Updates", icon: RefreshCw },
   { id: "advanced", label: "Advanced", icon: Code },
+  { id: "shortcuts", label: "Keyboard Shortcuts", icon: Keyboard },
+  { id: "accessibility", label: "Accessibility", icon: Accessibility },
+  { id: "desktop", label: "Desktop & Dock", icon: Monitor },
 ];
 
 const PLACEHOLDER_SYSTEM: SystemInfo = {
@@ -760,6 +767,245 @@ function AdvancedSection() {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Keyboard Shortcuts                                                 */
+/* ------------------------------------------------------------------ */
+
+function KeyboardShortcutsSection() {
+  const { getAll, keyboardLockActive } = useShortcuts();
+  const shortcuts = getAll();
+
+  return (
+    <section aria-label="Keyboard shortcuts">
+      <h2 className="text-lg font-semibold mb-1">Keyboard Shortcuts</h2>
+      <p className="text-sm text-shell-text-tertiary mb-5">View and manage keyboard shortcuts</p>
+
+      <div className="rounded-2xl bg-white/[0.04] border border-white/[0.06] overflow-x-auto backdrop-blur-sm">
+        <table className="w-full text-sm min-w-[360px]">
+          <thead>
+            <tr className="border-b border-white/[0.08]">
+              <th className="px-5 py-3 text-left text-xs font-semibold text-shell-text-secondary uppercase tracking-wider">Shortcut</th>
+              <th className="px-5 py-3 text-left text-xs font-semibold text-shell-text-secondary uppercase tracking-wider">Action</th>
+              <th className="px-5 py-3 text-left text-xs font-semibold text-shell-text-secondary uppercase tracking-wider">Scope</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shortcuts.length === 0 ? (
+              <tr>
+                <td colSpan={3} className="px-5 py-4 text-sm text-shell-text-tertiary">No shortcuts registered.</td>
+              </tr>
+            ) : (
+              shortcuts.map((s, i) => (
+                <tr key={i} className="border-b border-white/5 last:border-0">
+                  <td className="px-5 py-3 font-mono text-xs text-sky-300">{s.combo}</td>
+                  <td className="px-5 py-3">{s.label}</td>
+                  <td className="px-5 py-3 text-shell-text-tertiary capitalize">{s.scope}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <p className={`mt-4 text-sm font-medium ${keyboardLockActive ? "text-emerald-400" : "text-shell-text-tertiary"}`}>
+        Keyboard lock: {keyboardLockActive ? "Active" : "Inactive"}
+      </p>
+      <p className="mt-1 text-xs text-shell-text-tertiary">
+        Full keyboard capture requires fullscreen mode in Chrome or Edge
+      </p>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Accessibility                                                      */
+/* ------------------------------------------------------------------ */
+
+function AccessibilitySection() {
+  const [reduceMotion, setReduceMotion] = useState(
+    () => localStorage.getItem("taos-reduce-motion") === "true"
+  );
+  const [highContrast, setHighContrast] = useState(
+    () => localStorage.getItem("taos-high-contrast") === "true"
+  );
+  const [fontSize, setFontSize] = useState(
+    () => localStorage.getItem("taos-font-size") ?? "medium"
+  );
+  const [focusMode, setFocusMode] = useState(
+    () => localStorage.getItem("taos-focus-mode") ?? "keyboard"
+  );
+
+  const toggleReduceMotion = () => {
+    const next = !reduceMotion;
+    setReduceMotion(next);
+    localStorage.setItem("taos-reduce-motion", String(next));
+    document.documentElement.classList.toggle("reduce-motion", next);
+  };
+
+  const toggleHighContrast = () => {
+    const next = !highContrast;
+    setHighContrast(next);
+    localStorage.setItem("taos-high-contrast", String(next));
+    document.documentElement.classList.toggle("high-contrast", next);
+  };
+
+  const applyFontSize = (size: string) => {
+    setFontSize(size);
+    localStorage.setItem("taos-font-size", size);
+    const sizeMap: Record<string, string> = { small: "14px", medium: "16px", large: "18px" };
+    document.documentElement.style.fontSize = sizeMap[size] ?? "16px";
+  };
+
+  const applyFocusMode = (mode: string) => {
+    setFocusMode(mode);
+    localStorage.setItem("taos-focus-mode", mode);
+    document.documentElement.classList.toggle("focus-always", mode === "always");
+  };
+
+  return (
+    <section aria-label="Accessibility settings">
+      <h2 className="text-lg font-semibold mb-5">Accessibility</h2>
+
+      <div className="space-y-3">
+        <Card className="p-4 flex items-center justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <Label htmlFor="reduce-motion" className="text-sm font-medium text-shell-text">
+              Reduce motion
+            </Label>
+            <p className="text-xs text-shell-text-tertiary mt-0.5">Minimize animations and transitions</p>
+          </div>
+          <Switch
+            id="reduce-motion"
+            checked={reduceMotion}
+            onCheckedChange={toggleReduceMotion}
+            aria-label="Reduce motion"
+          />
+        </Card>
+
+        <Card className="p-4 flex items-center justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <Label htmlFor="high-contrast" className="text-sm font-medium text-shell-text">
+              High contrast
+            </Label>
+            <p className="text-xs text-shell-text-tertiary mt-0.5">Increase contrast for better visibility</p>
+          </div>
+          <Switch
+            id="high-contrast"
+            checked={highContrast}
+            onCheckedChange={toggleHighContrast}
+            aria-label="High contrast"
+          />
+        </Card>
+
+        <Card className="p-4">
+          <p className="text-sm font-medium mb-3">Font size</p>
+          <div className="flex gap-2" role="group" aria-label="Font size">
+            {(["small", "medium", "large"] as const).map((size) => (
+              <Button
+                key={size}
+                variant={fontSize === size ? "secondary" : "outline"}
+                size="sm"
+                onClick={() => applyFontSize(size)}
+                aria-pressed={fontSize === size}
+              >
+                {size.charAt(0).toUpperCase() + size.slice(1)}
+              </Button>
+            ))}
+          </div>
+        </Card>
+
+        <Card className="p-4">
+          <p className="text-sm font-medium mb-3">Focus indicators</p>
+          <div className="flex gap-2" role="group" aria-label="Focus indicators">
+            {[
+              { value: "always", label: "Always visible" },
+              { value: "keyboard", label: "Keyboard only" },
+            ].map((opt) => (
+              <Button
+                key={opt.value}
+                variant={focusMode === opt.value ? "secondary" : "outline"}
+                size="sm"
+                onClick={() => applyFocusMode(opt.value)}
+                aria-pressed={focusMode === opt.value}
+              >
+                {opt.label}
+              </Button>
+            ))}
+          </div>
+        </Card>
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Desktop & Dock                                                     */
+/* ------------------------------------------------------------------ */
+
+function DesktopDockSection() {
+  const [dockSize, setDockSize] = useState(
+    () => localStorage.getItem("taos-dock-size") ?? "medium"
+  );
+  const [dockPosition, setDockPosition] = useState(
+    () => localStorage.getItem("taos-dock-position") ?? "bottom"
+  );
+
+  const applyDockSize = (size: string) => {
+    setDockSize(size);
+    localStorage.setItem("taos-dock-size", size);
+  };
+
+  const applyDockPosition = (position: string) => {
+    setDockPosition(position);
+    localStorage.setItem("taos-dock-position", position);
+  };
+
+  return (
+    <section aria-label="Desktop and dock settings">
+      <h2 className="text-lg font-semibold mb-5">Desktop & Dock</h2>
+
+      <div className="space-y-3">
+        <Card className="p-4">
+          <p className="text-sm font-medium mb-3">Dock icon size</p>
+          <div className="flex gap-2" role="group" aria-label="Dock icon size">
+            {(["small", "medium", "large"] as const).map((size) => (
+              <Button
+                key={size}
+                variant={dockSize === size ? "secondary" : "outline"}
+                size="sm"
+                onClick={() => applyDockSize(size)}
+                aria-pressed={dockSize === size}
+              >
+                {size.charAt(0).toUpperCase() + size.slice(1)}
+              </Button>
+            ))}
+          </div>
+        </Card>
+
+        <Card className="p-4">
+          <p className="text-sm font-medium mb-3">Dock position</p>
+          <div className="flex gap-2" role="group" aria-label="Dock position">
+            {[
+              { value: "bottom", label: "Bottom" },
+              { value: "left", label: "Left" },
+            ].map((opt) => (
+              <Button
+                key={opt.value}
+                variant={dockPosition === opt.value ? "secondary" : "outline"}
+                size="sm"
+                onClick={() => applyDockPosition(opt.value)}
+                aria-pressed={dockPosition === opt.value}
+              >
+                {opt.label}
+              </Button>
+            ))}
+          </div>
+        </Card>
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Main SettingsApp                                                   */
 /* ------------------------------------------------------------------ */
 
@@ -777,6 +1023,9 @@ export function SettingsApp({ windowId: _windowId }: { windowId: string }) {
     backup: <BackupSection />,
     updates: <UpdatesSection />,
     advanced: <AdvancedSection />,
+    shortcuts: <KeyboardShortcutsSection />,
+    accessibility: <AccessibilitySection />,
+    desktop: <DesktopDockSection />,
   };
 
   const handleSelectSection = (id: Section) => {
