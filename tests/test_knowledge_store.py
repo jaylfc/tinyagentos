@@ -96,3 +96,119 @@ async def test_delete_item(store):
     deleted = await store.delete_item(item_id)
     assert deleted is True
     assert await store.get_item(item_id) is None
+
+
+@pytest.mark.asyncio
+async def test_search_fts(store):
+    await store.add_item(
+        source_type="article",
+        source_url="https://example.com/async",
+        title="Async Python Guide",
+        author="dev",
+        content="asyncio event loop coroutine await",
+        summary="Guide to async Python.",
+        categories=["Tech"],
+        tags=[],
+        metadata={},
+    )
+    await store.add_item(
+        source_type="article",
+        source_url="https://example.com/rust",
+        title="Rust Memory Safety",
+        author="dev",
+        content="ownership borrowing lifetimes",
+        summary="Guide to Rust.",
+        categories=["Tech"],
+        tags=[],
+        metadata={},
+    )
+    results = await store.search_fts("asyncio")
+    assert len(results) == 1
+    assert results[0]["title"] == "Async Python Guide"
+
+
+@pytest.mark.asyncio
+async def test_snapshot_roundtrip(store):
+    item_id = await store.add_item(
+        source_type="reddit",
+        source_url="https://reddit.com/r/test/comments/abc",
+        title="Thread",
+        author="u/tester",
+        content="Original text.",
+        summary="Summary.",
+        categories=[],
+        tags=[],
+        metadata={},
+    )
+    snap_id = await store.add_snapshot(
+        item_id, "deadbeef",
+        diff_json={"new_comments": 2},
+        metadata_json={"upvotes": 100},
+    )
+    assert snap_id > 0
+    snaps = await store.list_snapshots(item_id)
+    assert len(snaps) == 1
+    assert snaps[0]["content_hash"] == "deadbeef"
+    assert snaps[0]["diff_json"]["new_comments"] == 2
+
+
+@pytest.mark.asyncio
+async def test_category_rules_crud(store):
+    rule_id = await store.add_rule(
+        pattern="LocalLLaMA", match_on="subreddit", category="AI/ML", priority=10
+    )
+    assert rule_id > 0
+    rules = await store.list_rules()
+    assert len(rules) == 1
+    assert rules[0]["category"] == "AI/ML"
+    deleted = await store.delete_rule(rule_id)
+    assert deleted is True
+    assert await store.list_rules() == []
+
+
+@pytest.mark.asyncio
+async def test_agent_subscriptions(store):
+    await store.set_subscription("research-agent", "AI/ML", auto_ingest=True)
+    await store.set_subscription("research-agent", "Rockchip", auto_ingest=False)
+    subs = await store.list_subscriptions("research-agent")
+    assert len(subs) == 2
+    categories = {s["category"] for s in subs}
+    assert categories == {"AI/ML", "Rockchip"}
+
+    matching = await store.subscribers_for_categories(["AI/ML"])
+    assert len(matching) == 1
+    assert matching[0]["auto_ingest"] is True
+
+    deleted = await store.delete_subscription("research-agent", "Rockchip")
+    assert deleted is True
+    subs = await store.list_subscriptions("research-agent")
+    assert len(subs) == 1
+
+
+@pytest.mark.asyncio
+async def test_list_items_filter_by_category(store):
+    await store.add_item(
+        source_type="article",
+        source_url="https://example.com/ai",
+        title="AI Article",
+        author="tester",
+        content="content",
+        summary="summary",
+        categories=["AI/ML"],
+        tags=[],
+        metadata={},
+    )
+    await store.add_item(
+        source_type="article",
+        source_url="https://example.com/other",
+        title="Other Article",
+        author="tester",
+        content="content",
+        summary="summary",
+        categories=["Other"],
+        tags=[],
+        metadata={},
+    )
+    results = await store.list_items(category="AI/ML")
+    assert len(results) == 1
+    assert results[0]["title"] == "AI Article"
