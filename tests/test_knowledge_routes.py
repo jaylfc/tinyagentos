@@ -1,0 +1,211 @@
+from __future__ import annotations
+
+import pytest
+import pytest_asyncio
+from pathlib import Path
+from httpx import ASGITransport, AsyncClient
+from tinyagentos.app import create_app
+import yaml
+
+
+@pytest_asyncio.fixture
+async def knowledge_client(tmp_path):
+    config = {
+        "server": {"host": "0.0.0.0", "port": 6969},
+        "backends": [],
+        "qmd": {"url": "http://localhost:7832"},
+        "agents": [],
+        "metrics": {"poll_interval": 30, "retention_days": 30},
+    }
+    (tmp_path / "config.yaml").write_text(yaml.dump(config))
+    (tmp_path / ".setup_complete").touch()
+
+    app = create_app(data_dir=tmp_path)
+
+    # Init required stores
+    await app.state.metrics.init()
+    await app.state.notifications.init()
+    await app.state.qmd_client.init()
+    await app.state.knowledge_store.init()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c
+
+    await app.state.knowledge_store.close()
+    await app.state.notifications.close()
+    await app.state.metrics.close()
+    await app.state.qmd_client.close()
+    await app.state.http_client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_ingest_returns_item_id(knowledge_client):
+    resp = await knowledge_client.post("/api/knowledge/ingest", json={
+        "url": "https://example.com/test",
+        "title": "Test Article",
+        "text": "Some pre-provided content that is long enough for testing purposes.",
+        "categories": ["Tech"],
+        "source": "test",
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "id" in data
+    assert data["status"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_list_items_empty(knowledge_client):
+    resp = await knowledge_client.get("/api/knowledge/items")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "items" in data
+    assert isinstance(data["items"], list)
+
+
+@pytest.mark.asyncio
+async def test_get_item(knowledge_client):
+    # Ingest first
+    ingest_resp = await knowledge_client.post("/api/knowledge/ingest", json={
+        "url": "https://example.com/get-test",
+        "title": "Get Test",
+        "text": "Content for get test endpoint.",
+        "categories": [],
+        "source": "test",
+    })
+    item_id = ingest_resp.json()["id"]
+
+    resp = await knowledge_client.get(f"/api/knowledge/items/{item_id}")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["id"] == item_id
+    assert data["source_url"] == "https://example.com/get-test"
+
+
+@pytest.mark.asyncio
+async def test_get_item_not_found(knowledge_client):
+    resp = await knowledge_client.get("/api/knowledge/items/does-not-exist")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_item(knowledge_client):
+    ingest_resp = await knowledge_client.post("/api/knowledge/ingest", json={
+        "url": "https://example.com/delete-test",
+        "title": "Delete Test",
+        "text": "Content for delete test.",
+        "categories": [],
+        "source": "test",
+    })
+    item_id = ingest_resp.json()["id"]
+
+    del_resp = await knowledge_client.delete(f"/api/knowledge/items/{item_id}")
+    assert del_resp.status_code == 200
+
+    get_resp = await knowledge_client.get(f"/api/knowledge/items/{item_id}")
+    assert get_resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_list_items_filter_by_source_type(knowledge_client):
+    await knowledge_client.post("/api/knowledge/ingest", json={
+        "url": "https://reddit.com/r/test/comments/abc",
+        "title": "Reddit post",
+        "text": "Reddit content.",
+        "categories": [],
+        "source": "test",
+    })
+    await knowledge_client.post("/api/knowledge/ingest", json={
+        "url": "https://example.com/article",
+        "title": "Article",
+        "text": "Article content.",
+        "categories": [],
+        "source": "test",
+    })
+    resp = await knowledge_client.get("/api/knowledge/items?source_type=reddit")
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    assert all(i["source_type"] == "reddit" for i in items)
+
+
+@pytest.mark.asyncio
+async def test_search_empty(knowledge_client):
+    resp = await knowledge_client.get("/api/knowledge/search?q=nonexistent")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "results" in data
+    assert data["mode"] == "keyword"
+
+
+@pytest.mark.asyncio
+async def test_list_rules_empty(knowledge_client):
+    resp = await knowledge_client.get("/api/knowledge/rules")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "rules" in data
+    assert isinstance(data["rules"], list)
+
+
+@pytest.mark.asyncio
+async def test_create_and_delete_rule(knowledge_client):
+    resp = await knowledge_client.post("/api/knowledge/rules", json={
+        "pattern": "python",
+        "match_on": "title",
+        "category": "Tech",
+        "priority": 1,
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "id" in data
+    rule_id = data["id"]
+
+    del_resp = await knowledge_client.delete(f"/api/knowledge/rules/{rule_id}")
+    assert del_resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_list_subscriptions_empty(knowledge_client):
+    resp = await knowledge_client.get("/api/knowledge/subscriptions")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "subscriptions" in data
+    assert isinstance(data["subscriptions"], list)
+
+
+@pytest.mark.asyncio
+async def test_add_and_delete_subscription(knowledge_client):
+    resp = await knowledge_client.post("/api/knowledge/subscriptions", json={
+        "agent_name": "test-agent",
+        "category": "Tech",
+        "auto_ingest": False,
+    })
+    assert resp.status_code == 200
+
+    list_resp = await knowledge_client.get("/api/knowledge/subscriptions?agent_name=test-agent")
+    assert list_resp.status_code == 200
+    subs = list_resp.json()["subscriptions"]
+    assert len(subs) == 1
+
+    del_resp = await knowledge_client.delete("/api/knowledge/subscriptions/test-agent/Tech")
+    assert del_resp.status_code == 200
+
+    list_resp2 = await knowledge_client.get("/api/knowledge/subscriptions?agent_name=test-agent")
+    assert list_resp2.json()["subscriptions"] == []
+
+
+@pytest.mark.asyncio
+async def test_snapshots_empty(knowledge_client):
+    ingest_resp = await knowledge_client.post("/api/knowledge/ingest", json={
+        "url": "https://example.com/snap-test",
+        "title": "Snap Test",
+        "text": "Content.",
+        "categories": [],
+        "source": "test",
+    })
+    item_id = ingest_resp.json()["id"]
+
+    resp = await knowledge_client.get(f"/api/knowledge/items/{item_id}/snapshots")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "snapshots" in data
+    assert isinstance(data["snapshots"], list)
