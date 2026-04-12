@@ -147,3 +147,132 @@ async def test_ingest_sets_error_on_failure(pipeline, store):
     await pipeline.run(item_id)
     item = await store.get_item(item_id)
     assert item["status"] == "error"
+
+
+# ------------------------------------------------------------------
+# Task 9: LLM + QMD integration tests
+# ------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_summarise_called_when_llm_url_set(store):
+    """When llm_base_url is set, _summarise should be called and stored."""
+    from tinyagentos.knowledge_ingest import IngestPipeline
+
+    llm_response = AsyncMock()
+    llm_response.status_code = 200
+    llm_response.json = MagicMock(return_value={"text": "This is a generated summary."})
+    llm_response.raise_for_status = MagicMock()
+
+    article_response = AsyncMock()
+    article_response.status_code = 200
+    article_response.text = "<html><body><p>Long enough article body text content here for testing purposes.</p></body></html>"
+    article_response.raise_for_status = MagicMock()
+
+    mock_http = AsyncMock()
+    # First call is article fetch, second call is LLM summarise
+    mock_http.get = AsyncMock(return_value=article_response)
+    mock_http.post = AsyncMock(return_value=llm_response)
+
+    notif = AsyncMock()
+    notif.emit_event = AsyncMock()
+    cat_engine = AsyncMock()
+    cat_engine.categorise = AsyncMock(return_value=["Tech"])
+
+    pipeline = IngestPipeline(
+        store=store,
+        http_client=mock_http,
+        notifications=notif,
+        category_engine=cat_engine,
+        qmd_base_url="",  # disable embed for this test
+        llm_base_url="http://localhost:8080",
+    )
+
+    item_id = await pipeline.submit(
+        url="https://example.com/summarise-test",
+        title="",
+        text="",
+        categories=[],
+        source="test",
+    )
+    await pipeline.run(item_id)
+
+    item = await store.get_item(item_id)
+    assert item["summary"] == "This is a generated summary."
+
+
+@pytest.mark.asyncio
+async def test_embed_called_when_qmd_url_set(store):
+    """When qmd_base_url is set, the /ingest endpoint should be called with collection=knowledge."""
+    from tinyagentos.knowledge_ingest import IngestPipeline
+
+    qmd_response = AsyncMock()
+    qmd_response.status_code = 200
+    qmd_response.raise_for_status = AsyncMock()
+
+    mock_http = AsyncMock()
+    mock_http.get = AsyncMock(side_effect=Exception("no HTTP in this test"))
+    mock_http.post = AsyncMock(return_value=qmd_response)
+
+    notif = AsyncMock()
+    notif.emit_event = AsyncMock()
+    cat_engine = AsyncMock()
+    cat_engine.categorise = AsyncMock(return_value=[])
+
+    pipeline = IngestPipeline(
+        store=store,
+        http_client=mock_http,
+        notifications=notif,
+        category_engine=cat_engine,
+        qmd_base_url="http://localhost:7832",
+        llm_base_url="",
+    )
+
+    item_id = await pipeline.submit(
+        url="https://example.com/embed-test",
+        title="Embed Test",
+        text="Content long enough to trigger embedding pipeline call here.",
+        categories=[],
+        source="test",
+    )
+    await pipeline.run(item_id)
+
+    # Verify /ingest was called on the QMD base URL
+    calls = [str(call) for call in mock_http.post.call_args_list]
+    assert any("ingest" in c for c in calls)
+
+
+@pytest.mark.asyncio
+async def test_categories_from_caller_are_preserved(store):
+    """When categories are provided at submit time, they bypass the engine."""
+    from tinyagentos.knowledge_ingest import IngestPipeline
+
+    notif = AsyncMock()
+    notif.emit_event = AsyncMock()
+    cat_engine = AsyncMock()
+    cat_engine.categorise = AsyncMock(return_value=["Wrong"])  # should not be called
+
+    mock_http = AsyncMock()
+    mock_http.get = AsyncMock(side_effect=Exception("no HTTP"))
+
+    pipeline = IngestPipeline(
+        store=store,
+        http_client=mock_http,
+        notifications=notif,
+        category_engine=cat_engine,
+        qmd_base_url="",
+        llm_base_url="",
+    )
+
+    item_id = await pipeline.submit(
+        url="https://example.com/precategorised",
+        title="Pre-categorised",
+        text="Content long enough for the pipeline to keep.",
+        categories=["AI/ML", "Rockchip"],
+        source="test",
+    )
+    await pipeline.run(item_id)
+
+    cat_engine.categorise.assert_not_awaited()
+    item = await store.get_item(item_id)
+    assert "AI/ML" in item["categories"]
+    assert "Rockchip" in item["categories"]
