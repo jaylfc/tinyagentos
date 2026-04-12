@@ -30,6 +30,7 @@ const apps: AppManifest[] = [
   { id: "tasks", name: "Tasks", icon: "calendar-clock", category: "platform", component: () => import("@/apps/TasksApp").then((m) => ({ default: m.TasksApp })), defaultSize: { w: 800, h: 500 }, minSize: { w: 450, h: 350 }, singleton: true, pinned: false, launchpadOrder: 11 },
   { id: "import", name: "Import", icon: "upload", category: "platform", component: () => import("@/apps/ImportApp").then((m) => ({ default: m.ImportApp })), defaultSize: { w: 700, h: 450 }, minSize: { w: 400, h: 300 }, singleton: true, pinned: false, launchpadOrder: 12 },
   { id: "images", name: "Images", icon: "image", category: "platform", component: () => import("@/apps/ImagesApp").then((m) => ({ default: m.ImagesApp })), defaultSize: { w: 900, h: 600 }, minSize: { w: 500, h: 400 }, singleton: true, pinned: false, launchpadOrder: 13 },
+  { id: "library", name: "Library", icon: "book-open", category: "platform", component: () => import("@/apps/LibraryApp").then((m) => ({ default: m.LibraryApp })), defaultSize: { w: 1000, h: 650 }, minSize: { w: 550, h: 400 }, singleton: true, pinned: true, launchpadOrder: 13.5 },
 
   // OS apps
   { id: "calculator", name: "Calculator", icon: "calculator", category: "os", component: () => import("@/apps/CalculatorApp").then((m) => ({ default: m.CalculatorApp })), defaultSize: { w: 320, h: 480 }, minSize: { w: 280, h: 400 }, singleton: true, pinned: false, launchpadOrder: 20 },
