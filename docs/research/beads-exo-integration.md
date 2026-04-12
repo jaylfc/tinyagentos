@@ -54,16 +54,28 @@
 - Our backend adapter system already supports OpenAI-compatible endpoints
 - Just add an "exo" backend type to the adapter layer
 
-**Assessment:** Integration is low-effort, high-value. Makes the cluster useful for models that exceed any single device's capacity. 6-12 months before exo is production-ready but worth supporting now for enthusiasts.
+**Assessment:** Integration is low-effort, high-value. Makes the cluster useful for models that exceed any single device's capacity. Experimental today but worth supporting for enthusiasts.
 
-## Recommended Implementation
+**Updated findings (2026-04-12):**
+- License is **Apache-2.0** (not GPL-3.0 -- the old ex-exo repo was GPL)
+- No pip package -- requires source build with `uv` + Rust + Node.js
+- Default port is **52415** (OpenAI-compat API)
+- Python **3.13+** required
+- **No ARM64/Rockchip support** -- Apple Silicon and x86 only today
+- Upstream issue filed: exo-explore/exo#1878 (ARM64/RK3588 NPU backend)
 
-### Phase 1 (Now): 
-- Add exo as a backend type in backend_adapters.py
-- Add exo to catalog as a service app
-- Cluster dashboard shows when exo could help (model > any single device's VRAM)
+## Current Integration Status (2026-04-12)
 
-### Phase 2 (After fresh test):
+### Done:
+- exo registered as backend type in `backend_adapters.py` (OpenAI compat adapter)
+- exo in `BACKEND_CAPABILITIES` with `llm-chat` capability
+- Worker probe detects exo on port 52415 automatically
+- Catalog manifest at `app-catalog/services/exo/manifest.yaml`
+- `taos-deploy-helper.sh install-exo` deploys exo on a worker from the controller UI
+- README section documenting exo with hardware support matrix
+
+### Remaining:
+- Deploy wizard "Distributed (exo)" option when model exceeds single-worker VRAM
+- Cluster optimiser suggesting exo for oversized models
 - Beads integration for structured task delegation
-- Auto-detect when a model should use exo vs single-device
-- Cluster optimiser suggests exo for oversized models
+- Worker-side HTTP server to receive deploy/remote commands from controller
