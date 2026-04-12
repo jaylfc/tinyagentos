@@ -202,34 +202,83 @@ class VectorMemory:
                 "when", "where", "which", "who", "whom", "many", "much", "long"}
         keywords = [w.lower().strip("?.,!") for w in query.split() if len(w) > 2 and w.lower() not in stop]
 
-        # Load all embeddings and compute similarity
-        rows = self._conn.execute("SELECT * FROM vector_memory").fetchall()
-        scored = []
-        for row in rows:
-            try:
-                emb = json.loads(row["embedding"])
-                sim = cosine_similarity(query_emb, emb)
+        # Load all embeddings and compute similarity using numpy batch operations
+        rows = self._conn.execute("SELECT id, text, embedding, metadata_json, created_at FROM vector_memory").fetchall()
+        if not rows:
+            return []
 
-                # Hybrid: boost by keyword overlap
-                if hybrid and keywords:
-                    text_lower = row["text"].lower()
+        try:
+            import numpy as np
+
+            # Parse all embeddings into a matrix
+            ids = []
+            texts = []
+            metas = []
+            created = []
+            emb_list = []
+            for row in rows:
+                try:
+                    emb = json.loads(row["embedding"])
+                    if emb:
+                        ids.append(row["id"])
+                        texts.append(row["text"])
+                        metas.append(row["metadata_json"])
+                        created.append(row["created_at"])
+                        emb_list.append(emb)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+
+            if not emb_list:
+                return []
+
+            # Batch cosine similarity with numpy
+            query_vec = np.array(query_emb, dtype=np.float32)
+            emb_matrix = np.array(emb_list, dtype=np.float32)
+            # Normalise
+            query_norm = query_vec / (np.linalg.norm(query_vec) + 1e-8)
+            emb_norms = emb_matrix / (np.linalg.norm(emb_matrix, axis=1, keepdims=True) + 1e-8)
+            # Dot product = cosine similarity (both normalised)
+            similarities = emb_norms @ query_norm
+
+            # Hybrid keyword boost
+            if hybrid and keywords:
+                for i, text in enumerate(texts):
+                    text_lower = text.lower()
                     keyword_hits = sum(1 for kw in keywords if kw in text_lower)
-                    keyword_boost = keyword_hits / len(keywords) * 0.3  # Up to 30% boost
-                    sim = min(1.0, sim + keyword_boost)
+                    boost = keyword_hits / len(keywords) * 0.3
+                    similarities[i] = min(1.0, similarities[i] + boost)
 
-                scored.append({
-                    "id": row["id"],
-                    "text": row["text"],
-                    "similarity": round(sim, 4),
-                    "metadata": json.loads(row["metadata_json"]),
-                    "created_at": row["created_at"],
-                })
-            except (json.JSONDecodeError, TypeError):
-                continue
+            # Get top-k indices
+            top_indices = np.argsort(similarities)[::-1][:limit]
 
-        # Sort by similarity descending
-        scored.sort(key=lambda x: x["similarity"], reverse=True)
-        return scored[:limit]
+            return [
+                {
+                    "id": ids[i],
+                    "text": texts[i],
+                    "similarity": round(float(similarities[i]), 4),
+                    "metadata": json.loads(metas[i]),
+                    "created_at": created[i],
+                }
+                for i in top_indices
+            ]
+        except ImportError:
+            # Fallback to Python loop if numpy not available
+            scored = []
+            for row in rows:
+                try:
+                    emb = json.loads(row["embedding"])
+                    sim = cosine_similarity(query_emb, emb)
+                    scored.append({
+                        "id": row["id"],
+                        "text": row["text"],
+                        "similarity": round(sim, 4),
+                        "metadata": json.loads(row["metadata_json"]),
+                        "created_at": row["created_at"],
+                    })
+                except (json.JSONDecodeError, TypeError):
+                    continue
+            scored.sort(key=lambda x: x["similarity"], reverse=True)
+            return scored[:limit]
 
     async def count(self) -> int:
         row = self._conn.execute("SELECT COUNT(*) as n FROM vector_memory").fetchone()
