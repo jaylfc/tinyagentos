@@ -27,27 +27,36 @@ logger = logging.getLogger(__name__)
 # ------------------------------------------------------------------
 
 # Patterns that indicate relationships
+# Subject pattern: anchored more tightly — 1 to 5 words before the verb
+_S = r"((?:[\w\-]+\s+){0,4}[\w\-]+)"
+# Object pattern: everything after the verb until sentence end
+_O = r"([\w][\w\s\-]{1,50}?)"
+# Optional article
+_ART = r"(?:the |a |an )?"
+
 RELATIONSHIP_PATTERNS = [
     # "X is a Y" / "X is Y"
-    (r"(?:^|\. )(\w[\w\s]{1,30})\s+(?:is|are)\s+(?:a |an |the )?(\w[\w\s]{1,40}?)(?:\.|,|$)", "is_a"),
-    # "X uses Y" / "X runs Y"
-    (r"(?:^|\. )(\w[\w\s]{1,30})\s+(?:uses?|runs?|runs on)\s+(\w[\w\s]{1,40}?)(?:\.|,|$)", "uses"),
-    # "X prefers Y" / "X likes Y"
-    (r"(?:^|\. )(\w[\w\s]{1,30})\s+(?:prefers?|likes?|favou?rs?)\s+(\w[\w\s]{1,40}?)(?:\.|,|$)", "prefers"),
-    # "X created Y" / "X built Y" / "X made Y"
-    (r"(?:^|\. )(\w[\w\s]{1,30})\s+(?:created?|built|made|developed|wrote)\s+(\w[\w\s]{1,40}?)(?:\.|,|$)", "created"),
-    # "X works on Y" / "X is working on Y"
-    (r"(?:^|\. )(\w[\w\s]{1,30})\s+(?:works? on|is working on|working on)\s+(\w[\w\s]{1,40}?)(?:\.|,|$)", "works_on"),
-    # "X manages Y" / "X owns Y"
-    (r"(?:^|\. )(\w[\w\s]{1,30})\s+(?:manages?|owns?|maintains?)\s+(\w[\w\s]{1,40}?)(?:\.|,|$)", "manages"),
+    (rf"{_S}\s+(?:is|are)\s+{_ART}{_O}(?:\.|,|$)", "is_a"),
+    # "X uses Y" / "X runs Y" / "X runs on Y"
+    (rf"{_S}\s+(?:uses?|runs?|runs on)\s+{_ART}{_O}(?:\.|,|$)", "uses"),
+    # "X prefers Y" / "X prefers running Y"
+    (rf"{_S}\s+(?:prefers?|likes?|favou?rs?)\s+(?:running |using )?{_ART}{_O}(?:\.|,|$)", "prefers"),
+    # "X created Y" / "X built Y"
+    (rf"{_S}\s+(?:created?|built|made|developed|wrote)\s+{_ART}{_O}(?:\.|,|$)", "created"),
+    # "X works on Y"
+    (rf"{_S}\s+(?:works? on|is working on|working on)\s+{_ART}{_O}(?:\.|,|$)", "works_on"),
+    # "X manages Y"
+    (rf"{_S}\s+(?:manages?|owns?|maintains?)\s+{_ART}{_O}(?:\.|,|$)", "manages"),
     # "X has Y" / "X includes Y"
-    (r"(?:^|\. )(\w[\w\s]{1,30})\s+(?:has|have|includes?|contains?|features?)\s+(\w[\w\s]{1,40}?)(?:\.|,|$)", "has"),
+    (rf"{_S}\s+(?:has|have|includes?|contains?|features?)\s+{_ART}{_O}(?:\.|,|$)", "has"),
     # "X supports Y"
-    (r"(?:^|\. )(\w[\w\s]{1,30})\s+(?:supports?)\s+(\w[\w\s]{1,40}?)(?:\.|,|$)", "supports"),
-    # "X moved to Y" / "X switched to Y"
-    (r"(?:^|\. )(\w[\w\s]{1,30})\s+(?:moved? to|switched? to|migrated? to)\s+(\w[\w\s]{1,40}?)(?:\.|,|$)", "moved_to"),
-    # "X depends on Y" / "X requires Y" / "X needs Y"
-    (r"(?:^|\. )(\w[\w\s]{1,30})\s+(?:depends? on|requires?|needs?)\s+(\w[\w\s]{1,40}?)(?:\.|,|$)", "depends_on"),
+    (rf"{_S}\s+(?:supports?)\s+{_ART}{_O}(?:\.|,|$)", "supports"),
+    # "X moved to Y"
+    (rf"{_S}\s+(?:moved? to|switched? to|migrated? to)\s+{_ART}{_O}(?:\.|,|$)", "moved_to"),
+    # "X depends on Y"
+    (rf"{_S}\s+(?:depends? on|requires?|needs?)\s+{_ART}{_O}(?:\.|,|$)", "depends_on"),
+    # "X monitors Y"
+    (rf"{_S}\s+(?:monitors?|tracks?|watches?)\s+{_ART}{_O}(?:\.|,|$)", "monitors"),
 ]
 
 # Words to skip as subjects/objects (too generic)
@@ -80,30 +89,45 @@ def _clean_entity(text: str) -> str | None:
     return text
 
 
+def _split_sentences(text: str) -> list[str]:
+    """Split text into sentences. Handles ". " and newlines."""
+    # Split on period+space, newlines, semicolons
+    raw = re.split(r'(?<=[.!?])\s+|\n+|;\s*', text)
+    return [s.strip() for s in raw if s.strip()]
+
+
+def _strip_leading_article(text: str) -> str:
+    """Remove leading 'The/A/An' from entity text."""
+    return re.sub(r'^(?:The|the|A|a|An|an)\s+', '', text).strip()
+
+
 def extract_facts_from_text(text: str) -> list[dict]:
     """Extract structured facts from free text using pattern matching.
 
+    Splits text into sentences first, then applies patterns to each.
     Returns list of {subject, predicate, object} dicts.
     """
     facts = []
     seen = set()
+    sentences = _split_sentences(text)
 
-    for pattern, predicate in RELATIONSHIP_PATTERNS:
-        for match in re.finditer(pattern, text, re.IGNORECASE | re.MULTILINE):
-            subject = _clean_entity(match.group(1))
-            obj = _clean_entity(match.group(2))
-            if not subject or not obj:
-                continue
-            # Deduplicate
-            key = (subject.lower(), predicate, obj.lower())
-            if key in seen:
-                continue
-            seen.add(key)
-            facts.append({
-                "subject": subject,
-                "predicate": predicate,
-                "object": obj,
-            })
+    for sentence in sentences:
+        for pattern, predicate in RELATIONSHIP_PATTERNS:
+            for match in re.finditer(pattern, sentence, re.IGNORECASE):
+                subject = _clean_entity(_strip_leading_article(match.group(1)))
+                obj = _clean_entity(_strip_leading_article(match.group(2)))
+                if not subject or not obj:
+                    continue
+                # Deduplicate
+                key = (subject.lower(), predicate, obj.lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                facts.append({
+                    "subject": subject,
+                    "predicate": predicate,
+                    "object": obj,
+                })
 
     return facts
 

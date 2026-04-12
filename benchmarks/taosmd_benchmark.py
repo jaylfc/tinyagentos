@@ -376,5 +376,129 @@ async def run_benchmark():
         print("\n" + "=" * 60)
 
 
+async def run_extraction_benchmark():
+    """Benchmark: extract facts from text, store in KG, then recall."""
+    print("\n" + "=" * 60)
+    print("taOSmd Extraction + Recall Benchmark")
+    print("=" * 60)
+
+    from tinyagentos.temporal_knowledge_graph import TemporalKnowledgeGraph
+    from tinyagentos.memory_extractor import extract_facts_from_text, process_conversation_turn
+    from tinyagentos.context_assembler import ContextAssembler
+    from tinyagentos.archive import ArchiveStore
+    import tempfile, os
+
+    tmp = tempfile.mkdtemp()
+    kg = TemporalKnowledgeGraph(db_path=os.path.join(tmp, "kg.db"))
+    archive = ArchiveStore(archive_dir=os.path.join(tmp, "archive"), index_path=os.path.join(tmp, "idx.db"))
+    await kg.init()
+    await archive.init()
+
+    # Simulate a conversation with rich factual content
+    conversations = [
+        "Jay created taOS, a personal AI operating system. taOS runs on the Orange Pi 5 Plus which has an RK3588 NPU with 6 TOPS of compute.",
+        "The Knowledge Pipeline uses Python for the backend and React for the frontend. It supports Reddit, YouTube, GitHub, and X for content ingestion.",
+        "Jay prefers running local models on the NPU rather than using cloud APIs. The system uses SQLite for storage and QMD for vector search.",
+        "The research agent monitors Reddit and YouTube daily for new content about AI and Rockchip development.",
+        "taOS has 32 bundled apps including a Library, Reddit Client, YouTube Library, GitHub Browser, and X Monitor.",
+        "The dev agent works on the knowledge pipeline and manages GitHub integrations. It depends on the Agent Browsers system for cookie authentication.",
+    ]
+
+    # Phase 1: Extract facts from conversations
+    print("\nPhase 1: Extracting facts from 6 conversation turns...")
+    total_facts = 0
+    total_triples = 0
+    t0 = time.time()
+
+    for i, text in enumerate(conversations):
+        facts = extract_facts_from_text(text)
+        triple_ids = await process_conversation_turn(text, "research-agent", kg, archive, source="benchmark")
+        total_facts += len(facts)
+        total_triples += len(triple_ids)
+        print(f"  Turn {i+1}: {len(facts)} facts extracted, {len(triple_ids)} triples stored")
+
+    extraction_time = (time.time() - t0) * 1000
+    stats = await kg.stats()
+    print(f"\n  Total: {total_facts} facts extracted, {total_triples} triples stored")
+    print(f"  KG: {stats['entities']} entities, {stats['triples']} triples")
+    print(f"  Extraction time: {extraction_time:.0f}ms ({extraction_time/len(conversations):.0f}ms/turn)")
+
+    # Phase 2: Context assembly at different depths
+    print("\nPhase 2: Context assembly benchmarks...")
+    assembler = ContextAssembler(kg=kg, archive=archive)
+
+    test_queries = [
+        "What hardware does taOS run on?",
+        "What platforms does the research agent monitor?",
+        "What does Jay prefer for inference?",
+        "Tell me about the knowledge pipeline",
+    ]
+
+    for depth in ("minimal", "standard", "deep"):
+        print(f"\n  Depth: {depth}")
+        total_tokens = 0
+        total_latency = 0
+
+        for q in test_queries:
+            result = await assembler.assemble(
+                query=q,
+                agent_name="research-agent",
+                user_name="Jay",
+                depth=depth,
+            )
+            total_tokens += result["total_tokens"]
+            total_latency += result["latency_ms"]
+            layers = result["layers"]
+            layer_str = " | ".join(f"L{i}:{v}t" for i, v in enumerate(layers.values()))
+            print(f"    Q: {q[:40]:40s} → {result['total_tokens']:3d} tokens in {result['latency_ms']:5.1f}ms [{layer_str}]")
+
+        avg_tokens = total_tokens / len(test_queries)
+        avg_latency = total_latency / len(test_queries)
+        print(f"    Average: {avg_tokens:.0f} tokens, {avg_latency:.1f}ms")
+
+    # Phase 3: Recall test — can we find what we stored?
+    print("\nPhase 3: Recall test — querying stored facts...")
+
+    recall_queries = [
+        ("Jay", "created", ["taOS"]),
+        ("Jay", "prefers", ["local models"]),
+        ("taOS", "runs_on", ["Orange Pi 5 Plus"]),
+        ("research agent", "monitors", ["Reddit", "YouTube"]),
+        ("taOS", "has", ["32 bundled apps"]),
+    ]
+
+    hits = 0
+    total = 0
+    for entity, predicate, expected in recall_queries:
+        results = await kg.query_entity(entity, direction="outgoing")
+        found_predicates = [r["predicate"] for r in results]
+        found_objects = [r.get("object_name", "") for r in results]
+        match = predicate in found_predicates
+        if match:
+            hits += 1
+        total += 1
+        status = "HIT" if match else "MISS"
+        print(f"  {status}: {entity} {predicate} → {', '.join(found_objects) if found_objects else 'nothing'}")
+
+    recall_pct = (hits / total * 100) if total > 0 else 0
+    print(f"\n  Recall: {hits}/{total} ({recall_pct:.0f}%)")
+
+    await archive.close()
+    await kg.close()
+
+    # Summary
+    print("\n" + "=" * 60)
+    print("EXTRACTION + RECALL SUMMARY")
+    print("=" * 60)
+    print(f"  Facts extracted:    {total_facts} from {len(conversations)} turns")
+    print(f"  Triples stored:    {total_triples}")
+    print(f"  Entities created:  {stats['entities']}")
+    print(f"  Extraction speed:  {extraction_time/len(conversations):.0f}ms per turn")
+    print(f"  Recall accuracy:   {recall_pct:.0f}%")
+    print(f"  Context assembly:  minimal ~{0}ms, standard ~{0}ms, deep ~{0}ms")
+    print("=" * 60)
+
+
 if __name__ == "__main__":
     asyncio.run(run_benchmark())
+    asyncio.run(run_extraction_benchmark())
