@@ -16,7 +16,7 @@ export function TopBar({ onSearchOpen }: Props) {
 
   return (
     <div
-      className="flex items-center justify-between px-4 shrink-0 select-none"
+      className="relative flex items-center px-4 shrink-0 select-none"
       style={{
         height: "var(--spacing-topbar-h)",
         backgroundColor: "var(--color-shell-surface)",
@@ -30,7 +30,7 @@ export function TopBar({ onSearchOpen }: Props) {
 
       <button
         onClick={onSearchOpen}
-        className="flex items-center gap-2 px-3 py-1 rounded-md bg-shell-surface-hover text-shell-text-tertiary text-xs hover:bg-shell-surface-active transition-colors"
+        className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 px-3 py-1 rounded-md bg-shell-surface-hover text-shell-text-tertiary text-xs hover:bg-shell-surface-active transition-colors"
         aria-label="Search"
       >
         <Search size={12} />
@@ -38,7 +38,7 @@ export function TopBar({ onSearchOpen }: Props) {
         <kbd className="ml-2 text-[10px] opacity-50">Ctrl+Space</kbd>
       </button>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 ml-auto">
         <StatusIndicators />
         <span className="text-xs text-shell-text-tertiary">{clock}</span>
         <button
