@@ -78,7 +78,7 @@ def _clean_entity(text: str) -> str | None:
     """Clean and validate an extracted entity name."""
     text = text.strip().strip(".,;:!?\"'()[]{}").strip()
     # Truncate at conjunctions/relative pronouns (captures cleaner entities)
-    for stop in (" which ", " who ", " that ", " and ", " or ", " for the ", " rather ", " instead "):
+    for stop in (" which ", " who ", " that ", " for the ", " rather ", " instead ", " including "):
         idx = text.lower().find(stop)
         if idx > 0:
             text = text[:idx].strip()
