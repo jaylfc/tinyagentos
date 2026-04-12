@@ -21,6 +21,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Optional
 
+from tinyagentos.scheduler.resource_shape import BackendResourceShape, get_default_shape
+
 logger = logging.getLogger(__name__)
 
 # Mapping from backend type → set of capabilities that type provides.
@@ -70,6 +72,18 @@ class BackendEntry:
             if name == needle or name.startswith(needle) or needle.startswith(name):
                 return True
         return False
+
+    def get_resource_shape(self) -> BackendResourceShape:
+        """Return the hardware resource shape for this backend type.
+
+        The shape declares which dimensions (NPU cores, GPU IDs, memory)
+        this backend can allocate. Used by CoreAwareModelScheduler to make
+        load decisions without hard-coding backend knowledge in the scheduler.
+
+        Override in a subclass or replace the entry in the catalog to
+        supply hardware-specific details (e.g. actual vram_mb from a probe).
+        """
+        return get_default_shape(self.type)
 
     def to_dict(self) -> dict:
         return {

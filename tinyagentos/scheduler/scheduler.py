@@ -1,4 +1,4 @@
-"""Scheduler — dispatcher across registered Resources.
+"""Scheduler -- dispatcher across registered Resources.
 
 Phase 1 is deliberately minimal: tasks are routed synchronously in the
 order of their preferred_resources list, the first resource that passes
@@ -7,8 +7,31 @@ for the Activity app.
 
 Priority-queue sharing across resources, task aging, mid-task preemption,
 and max_wait_ms enforcement are Phase 2 work and intentionally absent
-here — adding them before the single-resource path is proven would mask
+here -- adding them before the single-resource path is proven would mask
 the simpler bugs.
+
+Phase 1.5 core-aware extension
+--------------------------------
+TODO (#172): CoreAwareModelScheduler (tinyagentos/scheduler/
+core_aware_scheduler.py) provides load_with_core_awareness(). It must
+be called from the backend dispatch path BEFORE an inference task is
+submitted here, in the layer that decides whether a model needs to be
+loaded and which tp_mode to use. That wiring belongs with the Phase 1.5
+sequential-loading work tracked in issue #172 and is intentionally
+absent here until that task lands.
+
+Concretely, the call site belongs inside the function that handles an
+/api/inference or /api/generate request. Before calling scheduler.submit,
+the dispatch layer should do:
+
+    decision = await core_aware_sched.load_with_core_awareness(
+        model_id=model_id,
+        backend_name=backend.type,
+        priority=agent.deployment_priority,
+    )
+    # Use decision.tp_mode when opening the InferenceSession.
+    core_aware_sched.register_loaded(decision)
+    result = await scheduler.submit(task)
 """
 from __future__ import annotations
 
