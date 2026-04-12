@@ -155,6 +155,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     from tinyagentos.temporal_knowledge_graph import TemporalKnowledgeGraph
     knowledge_graph = TemporalKnowledgeGraph(db_path=data_dir / "knowledge-graph.db")
 
+    from tinyagentos.archive import ArchiveStore
+    archive = ArchiveStore(archive_dir=data_dir / "archive", index_path=data_dir / "archive-index.db")
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         await metrics_store.init()
@@ -188,6 +191,8 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.browsing_history = browsing_history
         await knowledge_graph.init()
         app.state.knowledge_graph = knowledge_graph
+        await archive.init()
+        app.state.archive = archive
         await benchmark_store.init()
         await scheduler_history_store.init()
         app.state.config = config
@@ -332,6 +337,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         await agent_browsers.close()
         await browsing_history.close()
         await knowledge_graph.close()
+        await archive.close()
         await installed_apps.close()
         await user_memory.close()
         await desktop_settings.close()
@@ -580,6 +586,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     from tinyagentos.routes.knowledge_graph import router as kg_router
     app.include_router(kg_router)
+
+    from tinyagentos.routes.archive import router as archive_router
+    app.include_router(archive_router)
 
     # Lobby demo (internal only — not included in public builds)
     try:
