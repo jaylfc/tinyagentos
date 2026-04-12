@@ -1,7 +1,8 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { Search, X } from "lucide-react";
 import { getAllApps, getApp } from "@/registry/app-registry";
 import { useProcessStore } from "@/stores/process-store";
+import { useShortcut } from "@/hooks/use-shortcut-registry";
 import { LaunchpadIcon } from "./LaunchpadIcon";
 
 interface Props {
@@ -19,7 +20,12 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 export function Launchpad({ open, onClose, onOpenApp }: Props) {
   const [query, setQuery] = useState("");
+  const openRef = useRef(open);
+  openRef.current = open;
   const { openWindow } = useProcessStore();
+
+  // Register Escape at overlay priority so it beats any system shortcuts when open
+  useShortcut("Escape", () => { if (openRef.current) onClose(); }, "Close launchpad", "overlay");
   // Detect mobile to skip autoFocus (prevents iOS keyboard popping automatically)
   const isMobile = typeof window !== "undefined" && window.innerWidth < 640;
 

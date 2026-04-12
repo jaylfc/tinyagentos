@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { Search, X } from "lucide-react";
 import { getAllApps, getApp } from "@/registry/app-registry";
 import { useProcessStore } from "@/stores/process-store";
+import { useShortcut } from "@/hooks/use-shortcut-registry";
 import * as icons from "lucide-react";
 
 interface Props {
@@ -23,8 +24,13 @@ interface SearchResult {
 export function SearchPalette({ open, onClose, onOpenApp }: Props) {
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const openRef = useRef(open);
+  openRef.current = open;
   const { openWindow } = useProcessStore();
   const [selectedIndex, setSelectedIndex] = useState(0);
+
+  // Register Escape at overlay priority so it beats any system shortcuts when open
+  useShortcut("Escape", () => { if (openRef.current) onClose(); }, "Close search", "overlay");
 
   useEffect(() => {
     if (open) {
@@ -111,7 +117,7 @@ export function SearchPalette({ open, onClose, onOpenApp }: Props) {
 
   useEffect(() => {
     setSelectedIndex(0);
-  }, [query]);
+  }, [results]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") {
@@ -122,8 +128,6 @@ export function SearchPalette({ open, onClose, onOpenApp }: Props) {
       setSelectedIndex((i) => Math.max(i - 1, 0));
     } else if (e.key === "Enter" && results[selectedIndex]) {
       results[selectedIndex].action();
-    } else if (e.key === "Escape") {
-      onClose();
     }
   };
 
