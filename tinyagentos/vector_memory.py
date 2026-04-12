@@ -129,11 +129,22 @@ class VectorMemory:
         self._conn.commit()
         return cursor.lastrowid
 
-    async def search(self, query: str, limit: int = 5) -> list[dict]:
-        """Semantic search — find most similar passages to the query."""
+    async def search(self, query: str, limit: int = 5, hybrid: bool = True) -> list[dict]:
+        """Semantic search with optional hybrid keyword boosting.
+
+        When hybrid=True, boosts results that contain exact keywords from
+        the query (similar to MemPalace's hybrid scoring approach).
+        """
         query_emb = await self.embed(query)
         if not query_emb:
             return []
+
+        # Extract meaningful keywords from query (3+ chars, not stop words)
+        stop = {"the", "what", "how", "did", "does", "was", "were", "are", "is",
+                "my", "your", "for", "and", "but", "not", "with", "this", "that",
+                "from", "have", "has", "had", "been", "can", "will", "would",
+                "when", "where", "which", "who", "whom", "many", "much", "long"}
+        keywords = [w.lower().strip("?.,!") for w in query.split() if len(w) > 2 and w.lower() not in stop]
 
         # Load all embeddings and compute similarity
         rows = self._conn.execute("SELECT * FROM vector_memory").fetchall()
@@ -142,6 +153,14 @@ class VectorMemory:
             try:
                 emb = json.loads(row["embedding"])
                 sim = cosine_similarity(query_emb, emb)
+
+                # Hybrid: boost by keyword overlap
+                if hybrid and keywords:
+                    text_lower = row["text"].lower()
+                    keyword_hits = sum(1 for kw in keywords if kw in text_lower)
+                    keyword_boost = keyword_hits / len(keywords) * 0.3  # Up to 30% boost
+                    sim = min(1.0, sim + keyword_boost)
+
                 scored.append({
                     "id": row["id"],
                     "text": row["text"],

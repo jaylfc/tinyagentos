@@ -159,7 +159,9 @@ async def run_benchmark(limit: int = 50, question_type: str | None = None, use_l
 
         # Ingest conversation sessions
         t0 = time.time()
-        for session in sessions:
+        for si, session in enumerate(sessions):
+            # Build session-level text blocks for embedding
+            session_text = ""
             for turn in session:
                 content = turn.get("content", "")
                 role = turn.get("role", "user")
@@ -175,8 +177,21 @@ async def run_benchmark(limit: int = 50, question_type: str | None = None, use_l
                         {"role": role, "content": content},
                         summary=content[:80],
                     )
-                    # Embed into vector memory for semantic search
-                    await vmem.add(content, metadata={"role": role})
+                    session_text += f"\n[{role}]: {content}"
+
+            # Embed the full session as one block (better for multi-turn recall)
+            if session_text:
+                # Split into ~500 char chunks with overlap for embedding
+                chunks = []
+                words = session_text.split()
+                chunk_size = 100  # words per chunk
+                overlap = 20
+                for start in range(0, len(words), chunk_size - overlap):
+                    chunk = " ".join(words[start:start + chunk_size])
+                    if chunk.strip():
+                        chunks.append(chunk)
+                for chunk in chunks:
+                    await vmem.add(chunk, metadata={"session": si})
 
         ingest_time = time.time() - t0
 
