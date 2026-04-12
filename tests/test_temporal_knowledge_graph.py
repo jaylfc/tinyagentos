@@ -167,3 +167,59 @@ def test_classify_discovery():
 
 def test_classify_fallback():
     assert classify_memory_type("xyz abc 123") == "fact"  # fallback to fact
+
+
+# ------------------------------------------------------------------
+# Contradiction detection
+# ------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_detect_contradiction_singular_predicate(graph):
+    await graph.add_triple("Jay", "works_on", "ProjectA")
+    contradictions = await graph.detect_contradictions("Jay", "works_on", "ProjectB")
+    assert len(contradictions) == 1
+    assert contradictions[0]["object_name"] == "ProjectA"
+
+
+@pytest.mark.asyncio
+async def test_no_contradiction_non_singular_predicate(graph):
+    await graph.add_triple("Jay", "uses", "Python")
+    contradictions = await graph.detect_contradictions("Jay", "uses", "React")
+    assert len(contradictions) == 0  # "uses" is not singular — you can use multiple things
+
+
+@pytest.mark.asyncio
+async def test_no_contradiction_same_object(graph):
+    await graph.add_triple("Jay", "works_on", "taOS")
+    contradictions = await graph.detect_contradictions("Jay", "works_on", "taOS")
+    assert len(contradictions) == 0  # Same fact, not a contradiction
+
+
+@pytest.mark.asyncio
+async def test_add_with_auto_resolve(graph):
+    await graph.add_triple("Jay", "works_on", "ProjectA")
+    result = await graph.add_triple_with_contradiction_check(
+        "Jay", "works_on", "ProjectB", auto_resolve=True,
+    )
+    assert result["contradictions_found"] == 1
+    assert result["contradictions_resolved"] == 1
+    # Old triple should be invalidated
+    current = await graph.query_entity("Jay")
+    objects = [r["object_name"] for r in current]
+    assert "ProjectB" in objects
+    assert "ProjectA" not in objects
+
+
+@pytest.mark.asyncio
+async def test_add_without_auto_resolve(graph):
+    await graph.add_triple("Jay", "works_on", "ProjectA")
+    result = await graph.add_triple_with_contradiction_check(
+        "Jay", "works_on", "ProjectB", auto_resolve=False,
+    )
+    assert result["contradictions_found"] == 1
+    assert result["contradictions_resolved"] == 0
+    # Both triples should still be active
+    current = await graph.query_entity("Jay")
+    objects = [r["object_name"] for r in current]
+    assert "ProjectA" in objects
+    assert "ProjectB" in objects

@@ -299,6 +299,90 @@ class TemporalKnowledgeGraph:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    # ------------------------------------------------------------------
+    # Contradiction detection
+    # ------------------------------------------------------------------
+
+    # Predicates where only one active value should exist per subject
+    SINGULAR_PREDICATES = {
+        "is_a", "works_on", "lives_in", "prefers", "uses_model",
+        "runs_on", "managed_by", "owned_by", "located_in",
+    }
+
+    async def detect_contradictions(
+        self,
+        subject: str,
+        predicate: str,
+        new_object: str,
+    ) -> list[dict]:
+        """Check if adding this triple contradicts existing active facts.
+
+        Returns list of conflicting triples. For singular predicates (where
+        only one value makes sense), any existing active triple with the same
+        subject+predicate but different object is a contradiction.
+        """
+        if predicate not in self.SINGULAR_PREDICATES:
+            return []
+
+        sub_id = self._entity_id(subject)
+        new_obj_id = self._entity_id(new_object)
+
+        rows = self._conn.execute(
+            """SELECT t.*, o.name as object_name
+               FROM kg_triples t
+               JOIN kg_entities o ON o.id = t.object_id
+               WHERE t.subject_id = ? AND t.predicate = ? AND t.valid_to IS NULL
+                 AND t.object_id != ?""",
+            (sub_id, predicate, new_obj_id),
+        ).fetchall()
+
+        return [dict(r) for r in rows]
+
+    async def add_triple_with_contradiction_check(
+        self,
+        subject: str,
+        predicate: str,
+        obj: str,
+        valid_from: float | None = None,
+        confidence: float = 1.0,
+        source: str = "",
+        subject_type: str = "unknown",
+        object_type: str = "unknown",
+        auto_resolve: bool = True,
+    ) -> dict:
+        """Add a triple, checking for contradictions first.
+
+        If auto_resolve is True and a contradiction is found for a singular
+        predicate, the old triple is automatically invalidated and replaced.
+
+        Returns {triple_id, contradictions_found, contradictions_resolved}.
+        """
+        contradictions = await self.detect_contradictions(subject, predicate, obj)
+
+        if contradictions and auto_resolve:
+            for c in contradictions:
+                await self.invalidate(c["id"])
+
+        tid = await self.add_triple(
+            subject=subject, predicate=predicate, obj=obj,
+            valid_from=valid_from, confidence=confidence, source=source,
+            subject_type=subject_type, object_type=object_type,
+        )
+
+        return {
+            "triple_id": tid,
+            "contradictions_found": len(contradictions),
+            "contradictions_resolved": len(contradictions) if auto_resolve else 0,
+            "contradictions": [
+                {"id": c["id"], "object": c["object_name"], "predicate": predicate}
+                for c in contradictions
+            ],
+        }
+
+    # ------------------------------------------------------------------
+    # Stats
+    # ------------------------------------------------------------------
+
     async def stats(self) -> dict:
         """Get graph statistics."""
         entities = self._conn.execute("SELECT COUNT(*) as n FROM kg_entities").fetchone()["n"]
