@@ -131,10 +131,13 @@ async def main():
         print(f"\n{'='*70}")
         results = []
 
-        for model in test_models:
-            print(f"\nTesting {model}...", end="", flush=True)
+        for i, model in enumerate(test_models):
+            print(f"\n[{i+1}/{len(test_models)}] Testing {model}...", end="", flush=True)
             result = await test_model(client, model)
             results.append(result)
+            # Brief pause to let rkllama unload the model before loading the next
+            if i < len(test_models) - 1:
+                await asyncio.sleep(2)
 
             if "error" in result:
                 print(f" ERROR: {result['error']}")
