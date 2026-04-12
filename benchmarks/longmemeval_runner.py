@@ -23,7 +23,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from tinyagentos.temporal_knowledge_graph import TemporalKnowledgeGraph
 from tinyagentos.archive import ArchiveStore
 from tinyagentos.memory_extractor import extract_facts_from_text, process_conversation_turn
-from tinyagentos.context_assembler import ContextAssembler, estimate_tokens
+from tinyagentos.context_assembler import ContextAssembler
+from tinyagentos.vector_memory import VectorMemory
 
 
 DATA_PATH = os.path.join(os.path.dirname(__file__), "data", "longmemeval_oracle.json")
@@ -144,12 +145,17 @@ async def run_benchmark(limit: int = 50, question_type: str | None = None, use_l
         gold_answer = item["answer"]
         sessions = item.get("haystack_sessions", [])
 
-        # Create fresh KG + archive per question (isolated test)
+        # Create fresh KG + archive + vector memory per question (isolated test)
         tmp = tempfile.mkdtemp()
         kg = TemporalKnowledgeGraph(db_path=os.path.join(tmp, "kg.db"))
         archive = ArchiveStore(archive_dir=os.path.join(tmp, "archive"), index_path=os.path.join(tmp, "idx.db"))
+        vmem = VectorMemory(db_path=os.path.join(tmp, "vectors.db"))
         await kg.init()
         await archive.init()
+
+        import httpx as _httpx
+        embed_client = _httpx.AsyncClient(timeout=15)
+        await vmem.init(http_client=embed_client)
 
         # Ingest conversation sessions
         t0 = time.time()
@@ -158,17 +164,19 @@ async def run_benchmark(limit: int = 50, question_type: str | None = None, use_l
                 content = turn.get("content", "")
                 role = turn.get("role", "user")
                 if content:
-                    # Extract facts from each turn
+                    # Extract facts into KG
                     await process_conversation_turn(
                         content, agent_name="assistant" if role == "assistant" else None,
                         kg=kg, archive=archive, source="longmemeval",
                     )
-                    # Also archive raw content
+                    # Archive raw content
                     await archive.record(
                         "conversation",
                         {"role": role, "content": content},
                         summary=content[:80],
                     )
+                    # Embed into vector memory for semantic search
+                    await vmem.add(content, metadata={"role": role})
 
         ingest_time = time.time() - t0
 
@@ -194,24 +202,28 @@ async def run_benchmark(limit: int = 50, question_type: str | None = None, use_l
                 except Exception:
                     pass
 
+        # Also do semantic vector search (the MemPalace approach)
+        vector_results = await vmem.search(question, limit=5)
+        vector_text = " ".join(r["text"] for r in vector_results)
+
         query_time = time.time() - t1
 
-        # Score
-        full_context = ctx["context"] + " " + archive_text
+        # Score — combine ALL retrieval methods
+        full_context = ctx["context"] + " " + archive_text + " " + vector_text
 
         if use_llm and llm_client is not None:
+            t_llm = time.time()
             # Step 1: LLM generates answer from recalled context
             answer = await llm_answer(llm_client, full_context, question)
             # Step 2: LLM judges whether answer matches gold (official eval method)
-            if answer:
+            if answer and not any(idk in answer.lower() for idk in ("i don't know", "i do not know", "i'm sorry", "not in the context", "does not contain", "no information")):
                 correct = await score_answer_llm(llm_client, answer, gold_answer, question)
             else:
                 correct = False
-            # Debug: show what the LLM produced
-            if i < 3:  # First 3 questions only
-                print(f"      LLM answer: {(answer or 'NONE')[:100]}")
-                print(f"      Gold: {gold_answer[:100]}")
-                print(f"      Correct: {correct}")
+            llm_time = time.time() - t_llm
+            # Debug
+            if i < 5:
+                print(f"      [{llm_time:.1f}s] Answer: {(answer or 'EMPTY')[:80]} → {'✓' if correct else '✗'}")
         else:
             correct = score_answer_substring(full_context, gold_answer)
 
@@ -233,6 +245,8 @@ async def run_benchmark(limit: int = 50, question_type: str | None = None, use_l
 
         await archive.close()
         await kg.close()
+        await vmem.close()
+        await embed_client.aclose()
 
     # Results
     overall = total_correct / total_questions * 100 if total_questions > 0 else 0
