@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   BookOpen,
   Search,
@@ -45,6 +45,7 @@ import type {
   AgentSubscription,
   ListItemsParams,
 } from "@/lib/knowledge";
+import { useFocusTrap } from "@/hooks/use-focus-trap";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -151,6 +152,8 @@ export function LibraryApp({ windowId: _windowId }: { windowId: string }) {
 
   /* ---------- category manager ---------- */
   const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
+  const categoryManagerRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(categoryManagerRef, categoryManagerOpen);
   const [rules, setRules] = useState<CategoryRule[]>([]);
   const [rulesExpanded, setRulesExpanded] = useState(false);
   const [newRule, setNewRule] = useState({
@@ -1062,7 +1065,7 @@ export function LibraryApp({ windowId: _windowId }: { windowId: string }) {
         if (e.target === e.currentTarget) setCategoryManagerOpen(false);
       }}
     >
-      <div className="bg-shell-surface border border-white/10 rounded-xl shadow-2xl w-[560px] max-w-[90vw] max-h-[80vh] flex flex-col">
+      <div ref={categoryManagerRef} className="bg-shell-surface border border-white/10 rounded-xl shadow-2xl w-[560px] max-w-[90vw] max-h-[80vh] flex flex-col">
         {/* Dialog header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
           <div className="flex items-center gap-2">
