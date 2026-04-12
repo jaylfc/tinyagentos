@@ -57,6 +57,39 @@ TinyAgentOS does not want to be a single point of failure. If the upstream Huggi
 
 Do **not** modify the SHA256 constants when self-hosting. The whole point of the verification layer is to catch unexpected drift, including drift introduced by a well-meaning self-hoster who re-compressed the file. If you need to host a genuinely different file, you are running a different install path and should open an issue upstream.
 
+## Sizing: what belongs in a TAOS mirror
+
+A TAOS mirror repo is for **supply-chain-critical binaries**, not a
+convenience model cache. The practical ceiling for a single mirror
+repo is:
+
+- **Per-file limit**: 5 GB. HuggingFace's LFS quota per file is 5 GB
+  on the free tier; larger files need chunking or a different host.
+- **Per-repo limit**: ~50 GB total. Beyond that, clone times become
+  painful and the `huggingface-cli download` path gets slow enough
+  to frustrate users during install.
+- **Per-class scope**: one accelerator class per repo. Do not mix
+  Rockchip and Pi binaries in the same repo; the README and the
+  self-host path both assume one class per repo.
+
+Rockchip model weights in particular can exceed these limits:
+`dulimov/rkllm-*` repos are often ~20 GB per model. **We do not
+mirror full model weight catalogues.** We mirror:
+
+- Runtime libraries (`librknnrt.so`, small, ~10 MB)
+- One preloaded NPU-converted default model per tier (~2-4 GB)
+- Optional quantised variants the install script installs by default
+- Firmware / driver blobs if upstream is unreliable
+
+Everything else the user downloads at runtime from wherever the
+upstream source is — the mirror is not an attempt to replace HF. It
+is an attempt to make *the verified install path* independent of HF's
+uptime.
+
+If a binary doesn't fit this policy (e.g. a 40 GB model variant a
+user wants as default), the answer is to change the install path
+rather than grow the mirror. Tracked in #225.
+
 ## Future work: mirror health check
 
 The mirror as it stands is static: files are uploaded, SHA256s are recorded, and we rely on HuggingFace's CDN to keep serving them. The next step is an automated health check job that:
