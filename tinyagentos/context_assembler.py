@@ -269,24 +269,43 @@ class ContextAssembler:
         user_name: str | None = None,
         project: str | None = None,
         system_info: dict | None = None,
-        depth: str = "standard",  # "minimal" | "standard" | "deep"
+        depth: str = "standard",  # "minimal" | "standard" | "deep" | "auto"
         max_total_tokens: int = 1800,
     ) -> dict:
         """Assemble the full context from all layers.
 
-        Returns {context: str, layers: {l0, l1, l2, l3}, tokens: int, depth: str}
+        When depth="auto", uses intent classification to determine which
+        layers to prioritise and how much budget to allocate to each.
+
+        Returns {context: str, layers: {l0, l1, l2, l3}, tokens: int, depth: str, intent: str}
         """
         t0 = time.time()
         layers = {}
+        intent = "general"
+
+        # Intent-aware depth selection
+        if depth == "auto":
+            from tinyagentos.intent_classifier import get_search_strategy
+            strategy = get_search_strategy(query)
+            intent = strategy["intent"]
+            # Adjust token budgets based on intent weights
+            kg_budget = int(200 * strategy["kg_weight"])
+            archive_budget = int(500 * strategy["archive_weight"])
+            qmd_budget = int(500 * strategy["qmd_weight"])
+            depth = "deep"  # Always do deep search in auto mode, but weighted
+        else:
+            kg_budget = 200
+            archive_budget = 500
+            qmd_budget = 500
 
         # L0 always loaded
         layers["l0"] = await self.assemble_l0(agent_name, user_name, system_info, max_tokens=100)
 
-        # L1 always loaded
-        layers["l1"] = await self.assemble_l1(user_name, agent_name, project, max_tokens=200)
+        # L1 always loaded (KG facts, budget adjusted by intent)
+        layers["l1"] = await self.assemble_l1(user_name, agent_name, project, max_tokens=kg_budget)
 
         if depth in ("standard", "deep"):
-            layers["l2"] = await self.assemble_l2(query, agent_name, max_tokens=500)
+            layers["l2"] = await self.assemble_l2(query, agent_name, max_tokens=max(archive_budget, qmd_budget))
         else:
             layers["l2"] = ""
 
@@ -308,5 +327,6 @@ class ContextAssembler:
             "layers": {k: estimate_tokens(v) for k, v in layers.items()},
             "total_tokens": tokens,
             "depth": depth,
+            "intent": intent,
             "latency_ms": latency_ms,
         }
