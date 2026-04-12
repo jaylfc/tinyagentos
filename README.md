@@ -430,6 +430,29 @@ Measured on an Orange Pi 5 Plus with the LCM Dreamshaper submodels:
 
 The benchmark harness is at `scripts/spikes/ez-rknn-async/`. Set `RKNN_SD_LEGACY_WRAPPER=1` on the `tinyagentos-rknn-sd.service` unit to fall back to the stock runtime if you hit an issue; `/health` on the service reports which backend is in use via a `runtime` field. The package (`ztu_somemodelruntime_ez_rknn_async`) is pulled in as a standard pip dependency during worker install on RK3588 hosts.
 
+## TurboQuant KV cache compression
+
+TinyAgentOS supports **Google's TurboQuant** (ICLR 2026) KV cache quantization via TheTom/llama-cpp-turboquant on x86 workers. Unlike weight quantization, which compresses model files, TurboQuant compresses the per-request attention-time KV cache, the per-token memory that scales with context length. This is the piece that actually wall-clocks consumer hardware when context gets long.
+
+The correct default is **asymmetric** K and V quantization: keys need more bits than values because softmax amplifies key-side noise, while values are linearly combined. Empirically validated on Qwen3.5-9B-Q4_K_M on an RTX 3060 class box (NexusQuant llama.cpp#21591, Ziskind's "After This, 16GB Feels Different"). Config recommendations per hardware class:
+
+| Hardware | K type | V type | Boundary layer protect |
+|---|---|---|---|
+| 8 GB VRAM / unified | turbo2 | turbo2 | 2 (Qwen family) |
+| 12 GB VRAM / unified | q8_0 | turbo3 | 0 |
+| 16 GB+ VRAM | f16 | f16 | 0 (not needed) |
+
+Measured KV cache self-memory on Qwen3.5-9B-Q4_K_M at 131K native context on a Fedora 43 LXC with the CPU build of TheTom/llama-cpp-turboquant:
+
+| Config | KV self (MiB) | Total host (MiB) | Compression vs f16 |
+|---|---|---|---|
+| f16 K + f16 V | 4146 | 10054 | 1.0x |
+| turbo2 K + turbo2 V | 696 | 6612 | **5.96x** |
+
+At native 131K context, turbo2/turbo2 lets Qwen3.5-9B fit in ~6.6 GB instead of ~10 GB, bringing full-context runs within reach of 8 GB consumer GPUs that could not touch it under f16. Symmetric configs are a quality landmine on Qwen2.5 family specifically (PPL goes astronomical without boundary layer protection). The deploy wizard exposes separate `K bits`, `V bits`, and `boundary layers` knobs when the worker reports a backend that supports them. Default is always `f16 / f16 / 0` unless the user explicitly opts in or the per-model manifest recommends otherwise.
+
+The llama.cpp CUDA build is currently blocked by glibc 2.42 adding `noexcept` to math functions that conflict with CUDA's headers, tracked as a follow-up. The CPU build is production-ready and the config surface is fully plumbed through the cluster and deploy wizard.
+
 ## Known Limitations
 
 **Sequential model loading (deferred to Phase 1.5).** On shared RK3588 hardware, rkllama runs in lazy-load mode (no `--preload`), and the RKNN SD server lazy-loads its pipeline on the first /generate request. That already frees several GB of NPU memory when either is idle. The remaining work is a proper resource scheduler with per-model TTL eviction, LRU under pressure, and the core-aware resource model described in `docs/superpowers/specs/2026-04-11-taos-framework-integration-bridge-design.md` §Phase 1.5. Until that lands, two heavyweight models on the same board will still fight for NPU cores at load time.

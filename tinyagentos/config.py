@@ -109,18 +109,32 @@ def normalize_agent(agent: dict) -> dict:
         agent["on_worker_failure"] = _default_on_worker_failure(agent)
     if "paused" not in agent:
         agent["paused"] = False
-    # KV cache quantization mode for this agent's inference calls.  Defaults
-    # to "fp16" so old configs and new configs with no explicit preference
-    # behave identically.  The value is intentionally a free-form string -
-    # the worker capability probe is the source of truth for valid values, not
-    # a hardcoded allowlist here.
+    # KV cache quantization config for this agent's inference calls. Split
+    # into separate K and V fields plus a boundary-layer protect count
+    # because research (NexusQuant llama.cpp#21591, Ziskind empirical)
+    # shows symmetric K/V is a quality landmine and asymmetric Q8K + T3V
+    # is the safe default, with Qwen2.5 specifically needing a 2-layer
+    # fp16 boundary protection to survive turbo K quants.
     #
-    # TODO: thread this field through to the inference call path once the
-    # first backend with real KV quant support lands.  The call site is in
+    # Defaults to fp16/fp16/0 so old configs and new configs with no
+    # explicit preference behave identically. Values are free-form strings,
+    # validated by the worker capability probe (the source of truth for
+    # what the currently-loaded backend actually supports).
+    #
+    # The old single kv_cache_quant field is read as both _k and _v to keep
+    # rolling updates safe. New writes always use the split fields.
+    #
+    # TODO: thread these fields through to the inference call path once
+    # the first backend with real KV quant support lands. The call site is
     # tinyagentos/clients/ (or wherever the per-agent LLM client is
-    # constructed).  Track in #144.
-    if "kv_cache_quant" not in agent:
-        agent["kv_cache_quant"] = "fp16"
+    # constructed). Track in #144.
+    legacy = agent.pop("kv_cache_quant", None)
+    if "kv_cache_quant_k" not in agent:
+        agent["kv_cache_quant_k"] = legacy if legacy else "fp16"
+    if "kv_cache_quant_v" not in agent:
+        agent["kv_cache_quant_v"] = legacy if legacy else "fp16"
+    if "kv_cache_quant_boundary_layers" not in agent:
+        agent["kv_cache_quant_boundary_layers"] = 0
     return agent
 
 def save_config(config: AppConfig, path: Path) -> None:

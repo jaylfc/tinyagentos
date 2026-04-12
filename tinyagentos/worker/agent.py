@@ -67,50 +67,44 @@ class WorkerAgent:
 
     async def _probe_kv_quant(
         self, client: httpx.AsyncClient, backend_type: str, base_url: str
-    ) -> list[str]:
-        """Return the KV cache quantization types available on a backend.
+    ) -> dict:
+        """Return separate K and V quant type lists and boundary-layer support.
 
-        The probe is best-effort: any network error or unexpected response
-        silently returns ["fp16"] so the cluster still gets a usable default.
-        Image-generation backends (sd-cpp, rknn-sd) return an empty list
-        because KV quant is not applicable to diffusion pipelines.
+        Returns a dict with three fields:
+            k: list[str] of valid -ctk flag values for this backend
+            v: list[str] of valid -ctv flag values for this backend
+            boundary: bool, True if the backend can keep first/last N layers at fp16
+                      while the middle layers use a different type
 
-        When a backend (e.g. a future vLLM build with TurboQuant merged) starts
-        reporting additional types, they appear here and flow up to the cluster-
-        wide union without any other code changes.
+        Probe is best-effort, any network or parse error silently returns the
+        safe default {k: ["fp16"], v: ["fp16"], boundary: False}. Image-gen
+        backends return empty lists because KV quant is not applicable to
+        diffusion pipelines.
 
-        TODO: once vLLM upstream ships kv_cache_dtype support, replace the
-        static ["fp16"] stub below with a live probe of GET /v1/info or a
-        dedicated endpoint that the TurboQuant fork exposes.  Track in #144.
+        When a backend (e.g. a future vLLM build with TurboQuant merged, or
+        TheTom/llama-cpp-turboquant exposed as a llama.cpp-compat worker)
+        starts reporting a richer surface, it appears here and flows up to
+        the cluster-wide union without any other code changes.
+
+        Per research (Ziskind empirical, NexusQuant llama.cpp#21591), the
+        correct shape is asymmetric: keys need more bits than values. A
+        single flat list cannot express this because the safe K quants and
+        safe V quants are different sets.
+
+        TODO: once a backend actually ships a /v1/kv-quant-options or
+        equivalent endpoint, replace the static stubs below with a live
+        probe. Track in #144.
         """
         try:
             if backend_type in ("sd-cpp", "rknn-sd"):
                 # Image-gen backends, KV quant is not applicable.
-                return []
-            if backend_type == "vllm":
-                # vLLM exposes kv_cache_dtype in its model config.  Upstream
-                # does not yet have a stable endpoint for enumerating supported
-                # types; the TurboQuant fork will add one when it lands.  For
-                # now we return ["fp16"] as the safe default.  When the
-                # /v1/kv-quant-options or equivalent endpoint lands, replace
-                # this block with a live GET and parse the response.
-                return ["fp16"]
-            if backend_type == "ollama":
-                # Ollama wraps llama.cpp and does not yet expose KV quant
-                # options externally.  Inherits whatever llama.cpp ships.
-                return ["fp16"]
-            if backend_type == "llama-cpp":
-                # llama.cpp has its own Q-type scheme; TurboQuant-style KV
-                # quantization has not landed upstream as of 2026-04.
-                return ["fp16"]
-            if backend_type in ("rkllama", "rknn-sd"):
-                # rknn-toolkit does not expose KV cache quantization at the
-                # Python API level.  Return the safe default.
-                return ["fp16"]
-            # Unknown backend type, default safe.
-            return ["fp16"]
+                return {"k": [], "v": [], "boundary": False}
+            # All current real backends return the default until one of them
+            # starts exposing a capability endpoint. The worker merely
+            # advertises what the backend says it can do.
+            return {"k": ["fp16"], "v": ["fp16"], "boundary": False}
         except Exception:
-            return ["fp16"]
+            return {"k": ["fp16"], "v": ["fp16"], "boundary": False}
 
     async def _probe_models(
         self, client: httpx.AsyncClient, backend_type: str, base_url: str
@@ -157,22 +151,43 @@ class WorkerAgent:
         except Exception:
             return None
 
-    def detect_kv_quant_support(self, backends: list[dict]) -> list[str]:
-        """Union of KV cache quant types across all detected backends.
+    def detect_kv_quant_support(self, backends: list[dict]) -> dict:
+        """Aggregate KV cache K/V quant support across all detected backends.
 
-        Image-gen backends return [] (not applicable) and are skipped.  All
-        LLM-capable backends contribute at minimum ["fp16"].  The result is
-        sorted for stable serialisation.
+        Returns a dict with four fields:
+            k: sorted list[str] of supported -ctk values across all LLM backends
+            v: sorted list[str] of supported -ctv values across all LLM backends
+            boundary: bool, True if ANY backend supports boundary-layer protect
+            legacy: sorted list[str] union of k and v (backwards compat)
+
+        Image-gen backends return empty dicts from the probe and are skipped.
+        All LLM-capable backends contribute at minimum {"k": ["fp16"], "v": ["fp16"]}.
         """
-        quant_types: set[str] = set()
+        k_types: set[str] = set()
+        v_types: set[str] = set()
+        boundary = False
         for b in backends:
             per_backend = b.get("kv_quant_support")
-            if per_backend is not None:
-                quant_types.update(per_backend)
-        # Always include fp16 as the baseline, a worker with no LLM backends
-        # at all still defaults to fp16 for protocol compatibility.
-        quant_types.add("fp16")
-        return sorted(quant_types)
+            if not per_backend:
+                continue
+            if isinstance(per_backend, dict):
+                k_types.update(per_backend.get("k") or [])
+                v_types.update(per_backend.get("v") or [])
+                boundary = boundary or bool(per_backend.get("boundary"))
+            elif isinstance(per_backend, list):
+                # Legacy shape: flat list. Apply to both K and V.
+                k_types.update(per_backend)
+                v_types.update(per_backend)
+        # Always include fp16 as the baseline so protocol stays compatible
+        # with consumers that expect at least one entry.
+        k_types.add("fp16")
+        v_types.add("fp16")
+        return {
+            "k": sorted(k_types),
+            "v": sorted(v_types),
+            "boundary": boundary,
+            "legacy": sorted(k_types | v_types),
+        }
 
     def get_container_runtime(self) -> str | None:
         """Detect available container runtime (docker or podman). Returns None if neither found."""
@@ -245,7 +260,10 @@ class WorkerAgent:
             "capabilities": caps,
             "platform": platform.system().lower(),
             "models": [],
-            "kv_cache_quant_support": kv_quant,
+            "kv_cache_quant_support": kv_quant.get("legacy", ["fp16"]),
+            "kv_cache_quant_k_support": kv_quant.get("k", ["fp16"]),
+            "kv_cache_quant_v_support": kv_quant.get("v", ["fp16"]),
+            "kv_cache_quant_boundary_layer_protect": bool(kv_quant.get("boundary", False)),
         }
 
         try:
@@ -285,7 +303,10 @@ class WorkerAgent:
                         "load": load,
                         "backends": backends,
                         "capabilities": caps,
-                        "kv_cache_quant_support": kv_quant,
+                        "kv_cache_quant_support": kv_quant.get("legacy", ["fp16"]),
+                        "kv_cache_quant_k_support": kv_quant.get("k", ["fp16"]),
+                        "kv_cache_quant_v_support": kv_quant.get("v", ["fp16"]),
+                        "kv_cache_quant_boundary_layer_protect": bool(kv_quant.get("boundary", False)),
                     },
                 )
                 return resp.status_code

@@ -21,9 +21,12 @@ class WorkerRegister(BaseModel):
     models: list[str] = []
     capabilities: list[str] = []
     platform: str = ""
-    # KV quant support advertised at registration time.  Defaults to ["fp16"]
-    # so legacy workers that don't send this field still get a sensible value.
+    # KV quant support, asymmetric K/V plus boundary-layer flag. Defaults
+    # to fp16-only so legacy workers that don't send these still validate.
     kv_cache_quant_support: list[str] = ["fp16"]
+    kv_cache_quant_k_support: list[str] = ["fp16"]
+    kv_cache_quant_v_support: list[str] = ["fp16"]
+    kv_cache_quant_boundary_layer_protect: bool = False
 
 
 class HeartbeatBody(BaseModel):
@@ -34,11 +37,13 @@ class HeartbeatBody(BaseModel):
     # worker agents that only report load + models still validate.
     backends: list[dict] | None = None
     capabilities: list[str] | None = None
-    # KV quant support, forwarded from the worker's detect_kv_quant_support()
-    # result.  None means the heartbeat came from an old worker agent that
-    # doesn't know about this field; the controller leaves the existing value
-    # unchanged rather than overwriting with a default.
+    # KV quant support. Each field is optional; None means the worker didn't
+    # send it and the controller leaves the cached value unchanged rather
+    # than overwriting with a default.
     kv_cache_quant_support: list[str] | None = None
+    kv_cache_quant_k_support: list[str] | None = None
+    kv_cache_quant_v_support: list[str] | None = None
+    kv_cache_quant_boundary_layer_protect: bool | None = None
 
 
 class RouteRequest(BaseModel):
@@ -102,6 +107,9 @@ async def register_worker(request: Request, body: WorkerRegister):
         capabilities=body.capabilities,
         platform=body.platform,
         kv_cache_quant_support=body.kv_cache_quant_support,
+        kv_cache_quant_k_support=body.kv_cache_quant_k_support,
+        kv_cache_quant_v_support=body.kv_cache_quant_v_support,
+        kv_cache_quant_boundary_layer_protect=body.kv_cache_quant_boundary_layer_protect,
     )
     await cluster.register_worker(info)
     return {"status": "registered", "name": body.name}
@@ -117,6 +125,9 @@ async def worker_heartbeat(request: Request, body: HeartbeatBody):
         backends=body.backends,
         capabilities=body.capabilities,
         kv_cache_quant_support=body.kv_cache_quant_support,
+        kv_cache_quant_k_support=body.kv_cache_quant_k_support,
+        kv_cache_quant_v_support=body.kv_cache_quant_v_support,
+        kv_cache_quant_boundary_layer_protect=body.kv_cache_quant_boundary_layer_protect,
     )
     if not ok:
         return JSONResponse({"error": "Worker not registered"}, status_code=404)
@@ -147,18 +158,34 @@ async def list_capabilities(request: Request):
 
 @router.get("/api/cluster/kv-quant-options")
 async def kv_quant_options(request: Request):
-    """Return the set-union of KV cache quant types across all online workers.
+    """Return supported KV cache quant options as separate K and V lists.
 
-    The deploy wizard fetches this to decide whether to show a KV quant
-    dropdown.  When only ["fp16"] is returned, the wizard shows nothing, no
-    dead toggle, no greyed-out control.  As soon as any online worker
-    advertises a second type the dropdown materialises automatically.
+    The deploy wizard fetches this to decide whether to render the K / V
+    dropdowns and the boundary-layer toggle. When both K and V contain only
+    "fp16", the wizard shows nothing (no dead control). As soon as any
+    online worker advertises a second type the relevant dropdown
+    materialises automatically.
 
-    Response shape: {"options": ["fp16", "turboquant-k3v2", ...]}
+    Response shape:
+        {
+            "options": ["fp16", ...],          # legacy flat union for old clients
+            "k": ["fp16", "q8_0", ...],        # valid -ctk values
+            "v": ["fp16", "turbo3", ...],      # valid -ctv values
+            "boundary_layer_protect": bool     # true if any worker supports it
+        }
+
+    Keeping the legacy "options" field for one release while any older
+    desktop builds in the field upgrade.
     """
     cluster = request.app.state.cluster_manager
-    options = cluster.kv_quant_union()
-    return {"options": options}
+    legacy = cluster.kv_quant_union()
+    detailed = cluster.kv_quant_union_detailed()
+    return {
+        "options": legacy,
+        "k": detailed["k"],
+        "v": detailed["v"],
+        "boundary_layer_protect": detailed["boundary"],
+    }
 
 
 @router.get("/api/cluster/backends")

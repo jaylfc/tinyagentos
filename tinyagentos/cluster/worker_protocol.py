@@ -22,11 +22,27 @@ class WorkerInfo:
     platform: str = ""                # linux | windows | macos
     tier_id: str = ""                 # catalog hardware tier, e.g. "x86-cuda-12gb"
     potential_capabilities: list[str] = field(default_factory=list)  # derived from catalog + tier
-    # KV cache quantization types this worker can serve.  Defaults to ["fp16"]
-    # so old workers that pre-date this field are treated as fp16-only.  A
-    # worker running a TurboQuant-capable vLLM build will probe its backends at
-    # startup and report additional entries here, e.g. ["fp16", "turboquant-k3v2"].
-    # The controller unions these across all online workers and exposes the
-    # result via /api/cluster/kv-quant-options so the deploy wizard can show a
-    # dropdown only when there is actually something to choose from.
+    # KV cache quantization support exposed as separate K and V type lists
+    # plus a boundary-layer-protect flag. Research (NexusQuant llama.cpp#21591
+    # plus Ziskind empirical) shows asymmetric K/V is the correct default:
+    # keys need more bits than values because softmax amplifies key-side
+    # noise, while values are linearly combined. Qwen2.5 breaks with turbo K
+    # unless boundary layers are kept at fp16.
+    #
+    # Defaults to k=["fp16"], v=["fp16"], boundary=False so old workers that
+    # predate these fields are treated as fp16-only.
+    #
+    # A worker running TheTom/llama-cpp-turboquant or a TurboQuant-capable
+    # vLLM build will probe its backends and report what llama-cli's -ctk/-ctv
+    # flags actually accept, e.g.
+    #   k = ["f16", "bf16", "q8_0", "q4_0", "q5_0", "turbo2", "turbo3", "turbo4"]
+    #   v = ["f16", "bf16", "q8_0", "q4_0", "q5_0", "turbo2", "turbo3", "turbo4"]
+    #   boundary_layer_protect = True
+    #
+    # The legacy kv_cache_quant_support field is retained as a read-only
+    # aggregate (union of k and v) for backwards compatibility with any
+    # consumer that hasn't learned the split yet.
     kv_cache_quant_support: list[str] = field(default_factory=lambda: ["fp16"])
+    kv_cache_quant_k_support: list[str] = field(default_factory=lambda: ["fp16"])
+    kv_cache_quant_v_support: list[str] = field(default_factory=lambda: ["fp16"])
+    kv_cache_quant_boundary_layer_protect: bool = False

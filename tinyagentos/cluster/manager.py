@@ -76,10 +76,8 @@ class ClusterManager:
     def kv_quant_union(self) -> list[str]:
         """Return the set-union of KV cache quant types across all online workers.
 
-        Always includes "fp16" as the baseline.  If every online worker only
-        supports fp16 the result is ["fp16"].  The deploy wizard uses this to
-        decide whether to show the KV quant dropdown at all, if the list has
-        only one entry the control must not be rendered.
+        Legacy flat union, kept for consumers that have not learned the
+        split K/V shape yet. New callers should use kv_quant_union_detailed().
         """
         types: set[str] = {"fp16"}
         for w in self._workers.values():
@@ -87,6 +85,37 @@ class ClusterManager:
                 continue
             types.update(w.kv_cache_quant_support or ["fp16"])
         return sorted(types)
+
+    def kv_quant_union_detailed(self) -> dict:
+        """Return separate K and V quant type unions plus boundary support.
+
+        Shape:
+            {
+                "k": sorted list[str] of -ctk values any online worker supports
+                "v": sorted list[str] of -ctv values any online worker supports
+                "boundary": bool, True if ANY online worker supports boundary-layer protection
+            }
+
+        Always includes "fp16" in both K and V as the baseline, so a cluster
+        with no TurboQuant-capable workers still returns a valid shape. The
+        deploy wizard uses this to decide whether to render the K/V
+        dropdowns: if both lists have only "fp16" the control is not shown.
+        """
+        k_types: set[str] = {"fp16"}
+        v_types: set[str] = {"fp16"}
+        boundary = False
+        for w in self._workers.values():
+            if w.status != "online":
+                continue
+            k_types.update(getattr(w, "kv_cache_quant_k_support", None) or ["fp16"])
+            v_types.update(getattr(w, "kv_cache_quant_v_support", None) or ["fp16"])
+            if getattr(w, "kv_cache_quant_boundary_layer_protect", False):
+                boundary = True
+        return {
+            "k": sorted(k_types),
+            "v": sorted(v_types),
+            "boundary": boundary,
+        }
 
     def heartbeat(
         self,
@@ -96,6 +125,9 @@ class ClusterManager:
         backends: list[dict] | None = None,
         capabilities: list[str] | None = None,
         kv_cache_quant_support: list[str] | None = None,
+        kv_cache_quant_k_support: list[str] | None = None,
+        kv_cache_quant_v_support: list[str] | None = None,
+        kv_cache_quant_boundary_layer_protect: bool | None = None,
     ) -> bool:
         """Accept a worker heartbeat.
 
@@ -127,6 +159,12 @@ class ClusterManager:
             worker.capabilities = list(capabilities)
         if kv_cache_quant_support is not None:
             worker.kv_cache_quant_support = list(kv_cache_quant_support)
+        if kv_cache_quant_k_support is not None:
+            worker.kv_cache_quant_k_support = list(kv_cache_quant_k_support)
+        if kv_cache_quant_v_support is not None:
+            worker.kv_cache_quant_v_support = list(kv_cache_quant_v_support)
+        if kv_cache_quant_boundary_layer_protect is not None:
+            worker.kv_cache_quant_boundary_layer_protect = bool(kv_cache_quant_boundary_layer_protect)
         return True
 
     def unregister_worker(self, name: str) -> bool:
