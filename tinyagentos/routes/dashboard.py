@@ -73,14 +73,61 @@ async def api_capabilities(request: Request):
 
 
 @router.get("/api/health")
-async def api_health(request: Request):
-    """System health check -- returns agent and backend counts."""
+async def api_health(request: Request, detailed: bool = False):
+    """System health check.
+
+    Without query params: a cheap liveness probe suitable for systemd
+    or a load balancer. Returns agent and backend counts and a status
+    of ``ok`` when the controller is responsive.
+
+    With ``?detailed=true``: a richer status blob used by monitoring
+    tools. Adds per-subsystem state (cluster, scheduler, qmd) so an
+    operator can tell *what* is wrong, not just *that* something is
+    wrong. Each subsystem reports independently; one failing subsystem
+    does not drag the whole response to a failure state — callers can
+    read each block and decide.
+    """
     config = request.app.state.config
-    return {
+    basic = {
         "status": "ok",
         "agents": len(config.agents),
         "backends": len(config.backends),
     }
+    if not detailed:
+        return basic
+
+    subsystems: dict = {}
+
+    cluster = getattr(request.app.state, "cluster_manager", None) or getattr(
+        request.app.state, "cluster", None
+    )
+    if cluster is not None:
+        workers = cluster.get_workers()
+        online = [w for w in workers if w.status == "online"]
+        subsystems["cluster"] = {
+            "status": "ok" if online or not workers else "degraded",
+            "workers_total": len(workers),
+            "workers_online": len(online),
+        }
+    else:
+        subsystems["cluster"] = {"status": "unavailable"}
+
+    scheduler = getattr(request.app.state, "scheduler", None)
+    if scheduler is not None:
+        subsystems["scheduler"] = {
+            "status": "ok",
+            "backends": len(getattr(scheduler, "backends", []) or []),
+        }
+    else:
+        subsystems["scheduler"] = {"status": "unavailable"}
+
+    qmd = getattr(request.app.state, "qmd_client", None)
+    if qmd is not None:
+        subsystems["qmd"] = {"status": "ok", "url": getattr(qmd, "url", None)}
+    else:
+        subsystems["qmd"] = {"status": "unavailable"}
+
+    return {**basic, "subsystems": subsystems}
 
 
 @router.get("/api/system")
