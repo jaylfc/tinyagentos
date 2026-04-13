@@ -8,11 +8,11 @@
 
 Self-hosted AI agent platform that runs on whatever hardware you have. An old laptop, a Raspberry Pi, a gaming PC, an SBC gathering dust, or all of them at once. TinyAgentOS turns your spare hardware into a distributed AI compute cluster.
 
-A full web desktop environment with 32 bundled apps, 87 catalog apps, 43 MCP plugins, 15 agent frameworks, a curated local model catalog of 97 manifests covering LLMs, vision, embeddings, audio, and image generation (including RK3588 NPU variants via c01zaut/happyme531), plus 167k+ searchable models from HuggingFace, agent deployment, training, image/video/audio generation, and full system monitoring, all from a single web dashboard. Supports Apple Silicon (MLX), NVIDIA, AMD, Rockchip NPU, Raspberry Pi, Android phones, and more.
+A full web desktop environment with 34 bundled apps, 87 catalog apps, 43 MCP plugins, 15 agent frameworks, a curated local model catalog of 97 manifests covering LLMs, vision, embeddings, audio, and image generation (including RK3588 NPU variants via c01zaut/happyme531), plus 167k+ searchable models from HuggingFace, agent deployment, training, image/video/audio generation, and full system monitoring, all from a single web dashboard. Supports Apple Silicon (MLX), NVIDIA, AMD, Rockchip NPU, Raspberry Pi, Android phones, and more.
 
 **Framework-agnostic by design.** TinyAgentOS owns everything that matters: your agent's memory, files, communication channels, model access, and configuration. The agent framework is just a replaceable execution engine. Switch from SmolAgents to LangChain to OpenClaw and your agent keeps its entire history, all its Telegram/Discord/Slack connections, its trained LoRA adapters, its files, and its API keys. No migration, no data loss, no reconfiguration. This is possible because TinyAgentOS manages the full agent lifecycle outside the framework.
 
-**[taOSmd](https://github.com/jaylfc/taosmd) — State-of-the-art memory system.** 97.2% Recall@5 on [LongMemEval-S](https://github.com/xiaowu0162/LongMemEval) (500 questions, 50+ sessions/question), beating MemPalace (96.6%) and SuperMemory (81.6%) — running entirely on a £170 Orange Pi with no cloud dependencies. Per-category: knowledge-update 100%, single-session-user 100%, multi-session 98.5%, temporal-reasoning 95.5%. The memory stack includes a temporal knowledge graph with validity windows and contradiction detection, hybrid semantic+keyword vector search, a zero-loss append-only archive, automatic fact extraction (regex real-time + LLM background), intent-aware retrieval routing, and multi-layer context assembly. Framework-agnostic by design — any agent framework can read/write through the HTTP API.
+**[taOSmd](https://github.com/jaylfc/taosmd) — State-of-the-art memory system.** 97.0% Recall@5 on [LongMemEval-S](https://github.com/xiaowu0162/LongMemEval) (500 questions, 50+ sessions/question), beating MemPalace (96.6%) and SuperMemory (81.6%) — running entirely on a £170 Orange Pi with no cloud dependencies. Per-category: knowledge-update 100%, single-session-user 100%, multi-session 98.5%, temporal-reasoning 95.5%. The memory stack includes a temporal knowledge graph with validity windows and contradiction detection, hybrid semantic+keyword vector search, a zero-loss append-only archive, automatic fact extraction (regex real-time + LLM background), intent-aware retrieval routing, and multi-layer context assembly. Framework-agnostic by design — any agent framework can read/write through the HTTP API.
 
 ## Quick Start
 
@@ -36,7 +36,7 @@ Open `http://your-host:6969` (or `http://tinyagentos.local:6969` with mDNS). The
 
 ## Web Desktop Experience
 
-TinyAgentOS ships with a full browser-based desktop environment. Open it at `http://your-host:6969/` and you get a window manager, dock, launchpad, notifications, widgets, and 32 bundled apps, no native install required. On phones and tablets it automatically swaps to a Palm webOS-style card switcher with a pill-bar and iOS-style home grid, installable as a fullscreen PWA from the browser's "Add to Home Screen".
+TinyAgentOS ships with a full browser-based desktop environment. Open it at `http://your-host:6969/` and you get a window manager, dock, launchpad, notifications, widgets, and 34 bundled apps, no native install required. On phones and tablets it automatically swaps to a widget-first home screen with swipeable pages, a persistent dock, and desktop-style app windows with close/minimise title bars, installable as a fullscreen PWA from the browser's "Add to Home Screen".
 
 - **Window manager.** Float, snap zones, drag, resize, minimise, maximise, close
 - **Top bar.** Global search (Ctrl+Space), clock, notifications, widget toggle
@@ -48,14 +48,14 @@ TinyAgentOS ships with a full browser-based desktop environment. Open it at `htt
 - **Notifications.** Toast stack + notification centre dropdown
 - **Persistent sessions.** Windows, dock layout, and wallpaper restore across devices
 - **Login gate.** Optional password protection
-- **Mobile/tablet mode.** Auto-detects touch + screen width (desktop >=1024px, tablet 768-1024px touch, mobile <768px), iOS PWA fullscreen with safe-area support
-- **Card switcher.** WebOS-style horizontal carousel with flick-to-close
+- **Mobile/tablet mode.** Auto-detects touch + screen width, widget-first home with swipeable pages, persistent dock, desktop-style app windows with title bars, iOS PWA fullscreen
+- **Card switcher.** Horizontal carousel triggered from the dock, tap cards to switch or X to close
 - **Standalone Chat PWA**. Messages available as a dedicated installable app at `/chat-pwa`
 - **shadcn/ui primitives**. Button, Card, Input, Tabs, Switch, Toolbar
 
-### 32 Bundled Desktop Apps
+### 34 Bundled Desktop Apps
 
-**Platform apps (15):** Messages (WebSocket chat), Agents (deploy wizard + logs + skills), Store (43+ apps), Settings (multi-section with Memory capture toggles), Models, Memory (User + Agent sections), Channels, Secrets, Tasks, Import, Images, Dashboard, Files (real VFS with workspace + shared folders), Cluster (worker management + health), Providers (cloud LLM provider management, add/test/remove OpenAI, Anthropic, and compatible APIs).
+**Platform apps (21):** Messages (WebSocket chat), Agents (deploy wizard + logs + skills), Store (43+ apps), Settings (multi-section with Memory capture toggles), Models, Memory (User + Agent sections), Channels, Secrets, Tasks, Import, Images, Dashboard, Files (real VFS with workspace + shared folders), Cluster (worker management + health), Providers (cloud LLM provider management, add/test/remove OpenAI, Anthropic, and compatible APIs), Library (knowledge pipeline, document library with collections and search), Reddit (subreddit browser with saved threads and memory ingest), YouTube (video library with transcript extraction), GitHub (repository browser with code search), X (feed monitor with bookmarks and memory capture), Agent Browsers (manage agent browser sessions).
 
 **OS apps (8):** Calculator (math.js), Calendar (month view), Contacts (CRUD), Browser (URL-rewriting proxy, agent-ready), Media Player (Plyr), Text Editor (CodeMirror 6 with Obsidian-style theme), Image Viewer (zoom/rotate), Terminal (real PTY + SSH client).
 
@@ -69,7 +69,7 @@ The Activity app includes a Cluster overview panel showing live worker status an
 Full browser-based desktop OS with window manager (float + snap), dock, launchpad, right-click context menu, wallpaper picker, notifications, widgets, and persistent sessions that follow you across devices. 32 bundled apps, platform tools, OS utilities, and games, plus an optional password login gate. See [Web Desktop Experience](#web-desktop-experience) above.
 
 ### Mobile & Tablet Mode
-Auto-detects touch devices and swaps the desktop for a Palm webOS-style card switcher with a bottom pill-bar (back, home, app switcher, notifications), iOS-style home grid with gradient-tinted icons, and a mobile top bar with "< Back" + centred app title. Installable as a fullscreen PWA on iOS and Android with safe-area support and native browser chrome hidden. A standalone Chat PWA is available at `/chat-pwa` and installs like a private Discord.
+Auto-detects touch devices and swaps the desktop for a widget-first home screen with customisable multi-page layout (swipe or tap dots to navigate), a persistent dock with app launcher and app switcher, and desktop-style app windows with close/minimise title bars. The top bar features iOS 26-style frosted glass buttons for search and notifications, with a "taOS" home button. Installable as a fullscreen PWA on iOS and Android. A standalone Chat PWA is available at `/chat-pwa` and installs like a private Discord.
 
 ### User Memory System
 Personal memory powered by [taOSmd](https://github.com/jaylfc/taosmd), think Pieces App but self-hosted. Temporal knowledge graph + hybrid vector search + zero-loss archive auto-captures conversations from the Message Hub, notes from the Text Editor, file activity, and search queries. Per-category capture toggles live in Settings. Available in global search (Ctrl+Space) alongside apps, with a "Save to Memory" right-click option on the desktop. Agents can optionally read user memory with explicit permission via the `TAOS_USER_MEMORY_URL` environment variable. A "My Memory" section in the Memory app sits alongside agent memories.
@@ -221,7 +221,7 @@ Search across agents, apps, messages, and files from a single endpoint. Finds an
 - **System Updates.** Pull latest from GitHub via Settings page
 - **Provider Management.** Add/test/remove inference providers with live connectivity checks. The Providers desktop app manages cloud LLM credentials; the model browser reflects configured providers automatically.
 
-## App Catalog (87 Catalog Apps + 32 Desktop Apps + 43 MCP Plugins)
+## App Catalog (87 Catalog Apps + 34 Desktop Apps + 43 MCP Plugins)
 
 | Category | Apps |
 |----------|------|
@@ -260,7 +260,7 @@ Search across agents, apps, messages, and files from a single endpoint. Finds an
 ```
 TinyAgentOS Controller (FastAPI + htmx + React Desktop Shell)
 ├── Web Desktop Shell (window manager, dock, launchpad, widgets, 32 bundled apps)
-├── Mobile/Tablet Shell (card switcher, pill bar, iOS PWA)
+├── Mobile/Tablet Shell (widget home, dock, app title bars, swipeable pages, iOS PWA)
 ├── Skills & Plugins Registry (7 default skills, 15 framework adapters)
 ├── User Memory (SQLite + FTS5, auto-capture, global search integration)
 ├── Web Dashboard (27 route modules, 48 templates)
