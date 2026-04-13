@@ -36,8 +36,31 @@ const CARD_STYLE: React.CSSProperties = {
   padding: "12px",
 };
 
-function WidgetCard({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
-  return <div style={{ ...CARD_STYLE, ...style }}>{children}</div>;
+// Mapping from widget type → app id that opens when tapped
+const WIDGET_APP_MAP: Record<string, string> = {
+  "weather": "weather",
+  "system-stats": "dashboard",
+  "agent-status": "agents",
+  "clock": "calendar",
+};
+
+function WidgetCard({ children, style, onClick }: { children: React.ReactNode; style?: React.CSSProperties; onClick?: () => void }) {
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        ...CARD_STYLE,
+        ...style,
+        cursor: onClick ? "pointer" : undefined,
+        transition: "background 150ms ease",
+      }}
+      onMouseDown={onClick ? (e) => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; } : undefined}
+      onMouseUp={onClick ? (e) => { e.currentTarget.style.background = CARD_STYLE.background as string; } : undefined}
+      onMouseLeave={onClick ? (e) => { e.currentTarget.style.background = CARD_STYLE.background as string; } : undefined}
+    >
+      {children}
+    </div>
+  );
 }
 
 function renderWidgetContent(widgetType: string): React.ReactNode {
@@ -119,20 +142,23 @@ function PageContent({ page, onOpenApp }: { page: HomePage; onOpenApp: (appId: s
             const nextIsSide = next && (next.widgetType === "clock" || next.widgetType === "system-stats" || next.widgetType === "weather");
 
             if (curIsSide && nextIsSide && next) {
+              const curApp = WIDGET_APP_MAP[cur.widgetType];
+              const nextApp = WIDGET_APP_MAP[next.widgetType];
               rendered.push(
                 <div key={`pair-${cur.index}`} style={{ display: "flex", gap: "12px" }}>
-                  <WidgetCard style={{ flex: 1 }}>
+                  <WidgetCard style={{ flex: 1 }} onClick={curApp ? () => onOpenApp(curApp) : undefined}>
                     {renderWidgetContent(cur.widgetType)}
                   </WidgetCard>
-                  <WidgetCard style={{ flex: 1 }}>
+                  <WidgetCard style={{ flex: 1 }} onClick={nextApp ? () => onOpenApp(nextApp) : undefined}>
                     {renderWidgetContent(next.widgetType)}
                   </WidgetCard>
                 </div>
               );
               skipNext = true;
             } else {
+              const curApp = WIDGET_APP_MAP[cur.widgetType];
               rendered.push(
-                <WidgetCard key={cur.index}>
+                <WidgetCard key={cur.index} onClick={curApp ? () => onOpenApp(curApp) : undefined}>
                   {renderWidgetContent(cur.widgetType)}
                 </WidgetCard>
               );
