@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { getHomeLocation } from "@/apps/WeatherApp";
+import { getHomeLocation, getTempUnit, getWindUnit, cToF, kmhToMph, UNIT_CHANGED_EVENT } from "@/apps/WeatherApp";
 
 interface Weather {
   temp: number;
@@ -72,6 +72,8 @@ async function fetchWeather(): Promise<Weather | null> {
 export function WeatherWidget() {
   const [weather, setWeather] = useState<Weather | null>(null);
   const [noHome, setNoHome] = useState(!getHomeLocation());
+  const [tempUnit, setTempUnit] = useState(getTempUnit);
+  const [windUnit, setWindUnit] = useState(getWindUnit);
 
   useEffect(() => {
     const load = () => {
@@ -81,10 +83,17 @@ export function WeatherWidget() {
     };
     load();
     const timer = setInterval(load, 600_000); // 10 min
-    // Also refresh when storage changes (e.g. home set from app)
+    // Refresh when home location changes (from another window) or when
+    // the user toggles units in the Weather app (same window).
     const onStorage = () => load();
+    const onUnits = () => { setTempUnit(getTempUnit()); setWindUnit(getWindUnit()); };
     window.addEventListener("storage", onStorage);
-    return () => { clearInterval(timer); window.removeEventListener("storage", onStorage); };
+    window.addEventListener(UNIT_CHANGED_EVENT, onUnits);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener(UNIT_CHANGED_EVENT, onUnits);
+    };
   }, []);
 
   if (noHome) {
@@ -116,15 +125,17 @@ export function WeatherWidget() {
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <span style={{ fontSize: 32, lineHeight: 1 }}>{weather.icon}</span>
         <div>
-          <span style={{ fontSize: 28, fontWeight: 700, color: "rgba(255,255,255,0.9)", lineHeight: 1 }}>{weather.temp}°</span>
-          <span style={{ fontSize: 13, color: "rgba(255,255,255,0.4)", marginLeft: 2 }}>C</span>
+          <span style={{ fontSize: 28, fontWeight: 700, color: "rgba(255,255,255,0.9)", lineHeight: 1 }}>
+            {tempUnit === "C" ? weather.temp : cToF(weather.temp)}°
+          </span>
+          <span style={{ fontSize: 13, color: "rgba(255,255,255,0.4)", marginLeft: 2 }}>{tempUnit}</span>
         </div>
       </div>
 
       <div style={{ display: "flex", gap: 12, fontSize: 11, color: "rgba(255,255,255,0.4)" }}>
-        <span>Feels {weather.feelsLike}°</span>
+        <span>Feels {tempUnit === "C" ? weather.feelsLike : cToF(weather.feelsLike)}°</span>
         <span>💧 {weather.humidity}%</span>
-        <span>💨 {weather.wind}km/h</span>
+        <span>💨 {windUnit === "kmh" ? `${weather.wind}km/h` : `${kmhToMph(weather.wind)}mph`}</span>
       </div>
     </div>
   );

@@ -61,6 +61,11 @@ function codeInfo(code: number, isDay = true) {
 }
 
 const HOME_LOCATION_KEY = "taos-weather-home";
+const TEMP_UNIT_KEY = "taos-weather-temp-unit";
+const WIND_UNIT_KEY = "taos-weather-wind-unit";
+
+export type TempUnit = "C" | "F";
+export type WindUnit = "kmh" | "mph";
 
 export function getHomeLocation(): Location | null {
   try {
@@ -70,6 +75,31 @@ export function getHomeLocation(): Location | null {
     return null;
   }
 }
+
+export function getTempUnit(): TempUnit {
+  return (localStorage.getItem(TEMP_UNIT_KEY) as TempUnit) === "F" ? "F" : "C";
+}
+
+export function getWindUnit(): WindUnit {
+  return (localStorage.getItem(WIND_UNIT_KEY) as WindUnit) === "mph" ? "mph" : "kmh";
+}
+
+export function cToF(c: number): number {
+  return Math.round(c * 9 / 5 + 32);
+}
+
+export function kmhToMph(kmh: number): number {
+  return Math.round(kmh * 0.621371);
+}
+
+// Fire a custom event so widgets on the same page can refresh without
+// waiting for a full window reload. localStorage 'storage' events don't
+// fire in the same window that made the change.
+const UNIT_CHANGED_EVENT = "taos-weather-units-changed";
+function emitUnitChange() {
+  window.dispatchEvent(new Event(UNIT_CHANGED_EVENT));
+}
+export { UNIT_CHANGED_EVENT };
 
 async function searchLocations(query: string): Promise<Location[]> {
   if (!query.trim()) return [];
@@ -128,6 +158,23 @@ export function WeatherApp() {
   const [searching, setSearching] = useState(false);
   const [forecast, setForecast] = useState<{ current: CurrentWeather; daily: DailyForecast[] } | null>(null);
   const [loading, setLoading] = useState(false);
+  const [tempUnit, setTempUnit] = useState<TempUnit>(getTempUnit);
+  const [windUnit, setWindUnit] = useState<WindUnit>(getWindUnit);
+
+  const toggleTempUnit = useCallback(() => {
+    const next: TempUnit = tempUnit === "C" ? "F" : "C";
+    setTempUnit(next);
+    localStorage.setItem(TEMP_UNIT_KEY, next);
+    emitUnitChange();
+  }, [tempUnit]);
+
+  const toggleWindUnit = useCallback(() => {
+    const next: WindUnit = windUnit === "kmh" ? "mph" : "kmh";
+    setWindUnit(next);
+    localStorage.setItem(WIND_UNIT_KEY, next);
+    emitUnitChange();
+  }, [windUnit]);
+
 
   const loadForecast = useCallback(async (loc: Location) => {
     setLoading(true);
@@ -260,12 +307,18 @@ export function WeatherApp() {
             <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 28, padding: "16px 20px", background: "rgba(255,255,255,0.05)", borderRadius: 16, border: "1px solid rgba(255,255,255,0.08)" }}>
               <div style={{ fontSize: 72, lineHeight: 1 }}>{info.icon}</div>
               <div style={{ flex: 1 }}>
-                <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                  <span style={{ fontSize: 56, fontWeight: 300, lineHeight: 1, color: "rgba(255,255,255,0.95)" }}>{forecast.current.temperature}°</span>
-                  <span style={{ fontSize: 18, color: "rgba(255,255,255,0.5)" }}>C</span>
-                </div>
+                <button
+                  onClick={toggleTempUnit}
+                  title="Tap to toggle °C / °F"
+                  style={{ display: "flex", alignItems: "baseline", gap: 8, background: "none", border: "none", padding: 0, cursor: "pointer", color: "inherit" }}
+                >
+                  <span style={{ fontSize: 56, fontWeight: 300, lineHeight: 1, color: "rgba(255,255,255,0.95)" }}>
+                    {tempUnit === "C" ? forecast.current.temperature : cToF(forecast.current.temperature)}°
+                  </span>
+                  <span style={{ fontSize: 18, color: "rgba(255,255,255,0.5)" }}>{tempUnit}</span>
+                </button>
                 <p style={{ fontSize: 14, color: "rgba(255,255,255,0.7)", margin: "4px 0 0" }}>{info.label}</p>
-                <p style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", margin: "2px 0 0" }}>Feels like {forecast.current.feelsLike}°</p>
+                <p style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", margin: "2px 0 0" }}>Feels like {tempUnit === "C" ? forecast.current.feelsLike : cToF(forecast.current.feelsLike)}°</p>
               </div>
             </div>
 
@@ -275,10 +328,17 @@ export function WeatherApp() {
                 <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5, color: "rgba(255,255,255,0.4)" }}>Humidity</div>
                 <div style={{ fontSize: 20, fontWeight: 600, marginTop: 4 }}>{forecast.current.humidity}%</div>
               </div>
-              <div style={{ padding: 14, background: "rgba(255,255,255,0.05)", borderRadius: 12, border: "1px solid rgba(255,255,255,0.06)" }}>
+              <button
+                onClick={toggleWindUnit}
+                title="Tap to toggle km/h / mph"
+                style={{ padding: 14, background: "rgba(255,255,255,0.05)", borderRadius: 12, border: "1px solid rgba(255,255,255,0.06)", textAlign: "left", cursor: "pointer", color: "inherit" }}
+              >
                 <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5, color: "rgba(255,255,255,0.4)" }}>Wind</div>
-                <div style={{ fontSize: 20, fontWeight: 600, marginTop: 4 }}>{forecast.current.windSpeed}<span style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", marginLeft: 4, fontWeight: 400 }}>km/h</span></div>
-              </div>
+                <div style={{ fontSize: 20, fontWeight: 600, marginTop: 4 }}>
+                  {windUnit === "kmh" ? forecast.current.windSpeed : kmhToMph(forecast.current.windSpeed)}
+                  <span style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", marginLeft: 4, fontWeight: 400 }}>{windUnit === "kmh" ? "km/h" : "mph"}</span>
+                </div>
+              </button>
             </div>
 
             {/* 7-day forecast */}
@@ -294,8 +354,8 @@ export function WeatherApp() {
                       <span style={{ width: 52, fontSize: 13, color: "rgba(255,255,255,0.8)", fontWeight: 500 }}>{label}</span>
                       <span style={{ fontSize: 22, width: 32, textAlign: "center" }}>{dayInfo.icon}</span>
                       <span style={{ flex: 1, fontSize: 12, color: "rgba(255,255,255,0.55)" }}>{dayInfo.label}</span>
-                      <span style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", width: 36, textAlign: "right" }}>{day.tempMin}°</span>
-                      <span style={{ fontSize: 13, color: "rgba(255,255,255,0.9)", width: 36, textAlign: "right", fontWeight: 500 }}>{day.tempMax}°</span>
+                      <span style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", width: 36, textAlign: "right" }}>{tempUnit === "C" ? day.tempMin : cToF(day.tempMin)}°</span>
+                      <span style={{ fontSize: 13, color: "rgba(255,255,255,0.9)", width: 36, textAlign: "right", fontWeight: 500 }}>{tempUnit === "C" ? day.tempMax : cToF(day.tempMax)}°</span>
                     </div>
                   );
                 })}
