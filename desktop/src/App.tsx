@@ -232,59 +232,58 @@ export function App() {
   return (
     <ShortcutProvider>
       <SystemShortcuts toggleSearch={toggleSearch} toggleLaunchpad={toggleLaunchpad} />
-    <div
-      className={`h-screen w-screen flex flex-col overflow-hidden text-shell-text transition-all duration-500 ${launched ? "opacity-100 scale-100" : "opacity-0 scale-95"}`}
-      style={{ background: wallpaperStyle }}
-    >
-      <MobileTopBar
-        currentAppName={activeApp?.name ?? null}
-        onBack={handleMobileBack}
-      />
-      {/* Main content area — flex-1 so it fills between top bar and bottom nav */}
-      <div className="flex-1 relative overflow-hidden">
-        {activeWindowId && activeWindow ? (
-          <MobileApp appId={activeWindow.appId} windowId={activeWindowId} />
-        ) : (
-          <div className="h-full overflow-y-auto py-6">
-            {/* App grid */}
-            <div className="px-6 pb-8">
-              <div className="grid grid-cols-4 gap-x-4 gap-y-7 max-w-sm mx-auto">
-                {getAllApps()
-                  .slice(0, 24)
-                  .map((app) => {
-                    const Icon = resolveIcon(app.icon);
-                    return (
-                      <button
-                        key={app.id}
-                        onClick={() => {
-                          const wid = openWindow(app.id, app.defaultSize);
-                          setActiveWindowId(wid);
-                        }}
-                        className="flex flex-col items-center gap-1.5 active:scale-90 transition-transform"
-                        aria-label={`Open ${app.name}`}
-                      >
-                        <div className="w-[60px] h-[60px] rounded-[16px] flex items-center justify-center shadow-lg"
-                          style={{
-                            background: CATEGORY_GRADIENTS[app.category] ?? "rgba(255,255,255,0.08)",
-                            backdropFilter: "blur(10px)",
-                            WebkitBackdropFilter: "blur(10px)",
-                            border: "1px solid rgba(255,255,255,0.08)",
+    <div className="fixed inset-0 flex flex-col text-shell-text" style={{ background: wallpaperStyle }}>
+      <div className={`flex-1 flex flex-col overflow-hidden transition-all duration-500 ${launched ? "opacity-100 scale-100" : "opacity-0 scale-95"}`}>
+        <MobileTopBar
+          currentAppName={activeApp?.name ?? null}
+          onBack={handleMobileBack}
+        />
+        {/* Main content area — flex-1 so it fills between top bar and bottom nav */}
+        <div className="flex-1 relative overflow-hidden">
+          {activeWindowId && activeWindow ? (
+            <MobileApp appId={activeWindow.appId} windowId={activeWindowId} />
+          ) : (
+            <div className="h-full overflow-y-auto py-6">
+              {/* App grid */}
+              <div className="px-6 pb-8">
+                <div className="grid grid-cols-4 gap-x-4 gap-y-7 max-w-sm mx-auto">
+                  {getAllApps()
+                    .slice(0, 24)
+                    .map((app) => {
+                      const Icon = resolveIcon(app.icon);
+                      return (
+                        <button
+                          key={app.id}
+                          onClick={() => {
+                            const wid = openWindow(app.id, app.defaultSize);
+                            setActiveWindowId(wid);
                           }}
+                          className="flex flex-col items-center gap-1.5 active:scale-90 transition-transform"
+                          aria-label={`Open ${app.name}`}
                         >
-                          <Icon size={26} className="text-white/80" />
-                        </div>
-                        <span className="text-[11px] text-white/70 truncate w-full text-center leading-tight">
-                          {app.name}
-                        </span>
-                      </button>
-                    );
-                  })}
+                          <div className="w-[60px] h-[60px] rounded-[16px] flex items-center justify-center shadow-lg"
+                            style={{
+                              background: CATEGORY_GRADIENTS[app.category] ?? "rgba(255,255,255,0.08)",
+                              backdropFilter: "blur(10px)",
+                              WebkitBackdropFilter: "blur(10px)",
+                              border: "1px solid rgba(255,255,255,0.08)",
+                            }}
+                          >
+                            <Icon size={26} className="text-white/80" />
+                          </div>
+                          <span className="text-[11px] text-white/70 truncate w-full text-center leading-tight">
+                            {app.name}
+                          </span>
+                        </button>
+                      );
+                    })}
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
-      {/* Bottom navigation — always visible, in normal flow */}
+      {/* Bottom navigation — outside the transition container so it's never clipped */}
       <MobileBottomNav
         onBack={handleMobileBack}
         onHome={handleMobileHome}
