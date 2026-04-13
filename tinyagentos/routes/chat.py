@@ -208,6 +208,26 @@ async def post_message(request: Request):
                 },
                 setting_key="capture_conversations",
             ))
+
+    # Auto-archive every message for the zero-loss layer
+    archive = getattr(request.app.state, "archive", None)
+    if archive:
+        try:
+            await archive.record(
+                "conversation",
+                {
+                    "content": body.get("content", ""),
+                    "channel_id": body["channel_id"],
+                    "message_id": message.get("id"),
+                    "author_id": body["author_id"],
+                    "author_type": body.get("author_type", "agent"),
+                },
+                agent_name=body["author_id"] if body.get("author_type") == "agent" else None,
+                summary=body.get("content", "")[:100],
+            )
+        except Exception:
+            pass  # Never block chat for archive failures
+
     return message
 
 
