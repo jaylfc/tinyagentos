@@ -149,13 +149,13 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     from tinyagentos.agent_browsers import AgentBrowsersManager
     agent_browsers = AgentBrowsersManager(db_path=data_dir / "agent-browsers.db", mock=True)
 
-    from tinyagentos.browsing_history import BrowsingHistoryStore
+    from taosmd import BrowsingHistory as BrowsingHistoryStore
     browsing_history = BrowsingHistoryStore(db_path=data_dir / "browsing-history.db")
 
-    from tinyagentos.temporal_knowledge_graph import TemporalKnowledgeGraph
+    from taosmd import KnowledgeGraph as TemporalKnowledgeGraph
     knowledge_graph = TemporalKnowledgeGraph(db_path=data_dir / "knowledge-graph.db")
 
-    from tinyagentos.archive import ArchiveStore
+    from taosmd import Archive as ArchiveStore
     archive = ArchiveStore(archive_dir=data_dir / "archive", index_path=data_dir / "archive-index.db")
 
     @asynccontextmanager

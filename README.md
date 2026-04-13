@@ -72,7 +72,7 @@ Full browser-based desktop OS with window manager (float + snap), dock, launchpa
 Auto-detects touch devices and swaps the desktop for a Palm webOS-style card switcher with a bottom pill-bar (back, home, app switcher, notifications), iOS-style home grid with gradient-tinted icons, and a mobile top bar with "< Back" + centred app title. Installable as a fullscreen PWA on iOS and Android with safe-area support and native browser chrome hidden. A standalone Chat PWA is available at `/chat-pwa` and installs like a private Discord.
 
 ### User Memory System
-Personal QMD-style memory for you, the user, think Pieces App but self-hosted. SQLite store with FTS5 full-text search auto-captures conversations from the Message Hub, notes from the Text Editor, file activity, and search queries. Per-category capture toggles live in Settings. Available in global search (Ctrl+Space) alongside apps, with a "Save to Memory" right-click option on the desktop. Agents can optionally read user memory with explicit permission via the `TAOS_USER_MEMORY_URL` environment variable. A "My Memory" section in the Memory app sits alongside agent memories.
+Personal memory powered by [taOSmd](https://github.com/jaylfc/taosmd), think Pieces App but self-hosted. Temporal knowledge graph + hybrid vector search + zero-loss archive auto-captures conversations from the Message Hub, notes from the Text Editor, file activity, and search queries. Per-category capture toggles live in Settings. Available in global search (Ctrl+Space) alongside apps, with a "Save to Memory" right-click option on the desktop. Agents can optionally read user memory with explicit permission via the `TAOS_USER_MEMORY_URL` environment variable. A "My Memory" section in the Memory app sits alongside agent memories.
 
 ### Skills & Plugins Registry
 Framework-agnostic skill system with 7 default skills, memory_search, file_read, file_write, web_search, code_exec, image_generation, http_request, categorised by search, files, code, media, browser, data, comms, system. Each skill declares compatibility per framework (native/adapter/unsupported) and works across all 15 supported frameworks via adapter translation. Assign or remove skills per agent from the Skills tab with compatibility badges.
@@ -126,7 +126,7 @@ Pick from 1,467 agent templates, 12 built-in plus 196 from awesome-openclaw-agen
 One-click install for agent frameworks, AI models, and services. Hardware-aware, only shows what works on your device.
 
 ### Agent Deployment
-5-step wizard: pick framework → choose model → configure → deploy into an isolated container (LXC on bare metal, Docker on VPS, auto-detected). Each agent gets its own memory system, its own QMD instance, its own file storage, and its own network identity. The framework runs inside the container but TinyAgentOS manages everything around it: memory, channels, secrets, model access, scheduled tasks, and inter-agent communication. This means the framework is a swappable component, not a lock-in decision.
+5-step wizard: pick framework → choose model → configure → deploy into an isolated container (LXC on bare metal, Docker on VPS, auto-detected). Each agent gets its own memory system (taOSmd instance), its own file storage, and its own network identity. The framework runs inside the container but TinyAgentOS manages everything around it: memory, channels, secrets, model access, scheduled tasks, and inter-agent communication. This means the framework is a swappable component, not a lock-in decision.
 
 ### Channel Hub (Framework-Agnostic Messaging)
 Most agent frameworks force you to wire up Telegram, Discord, or Slack directly into their code. If you switch frameworks, you rebuild all those integrations from scratch. TinyAgentOS flips this: the platform owns the messaging connections and routes messages to whichever framework the agent currently uses. Switch an agent from SmolAgents to LangChain and it keeps every channel, every conversation, every connection. The framework never touches the bot tokens.
@@ -154,8 +154,8 @@ Features unlock automatically based on your hardware and cluster. Solo Pi sees c
 - **Smart routing**. GPU workers get instant LoRA hot-swap, NPU uses time-shared merged models
 - **Deployment.** Auto-converts and deploys to all backends in the cluster
 
-### Agent Memory System
-A single `qmd.service` systemd unit runs on the controller host (port 7832) and serves all per-agent memory indexes. There is no per-container QMD process, agents reach memory over HTTP via injected environment variables. Per-tenant isolation is handled by `dbPath` routing: each agent's index lives at `data/agent-memory/{name}/index.sqlite` on the host and is addressed by passing the path as a query param or body field. Agent A cannot reach Agent B's index; the user's personal index is invisible to agents unless they have an explicit `can_read_user_memory` grant.
+### Agent Memory System ([taOSmd](https://github.com/jaylfc/taosmd))
+taOSmd is the memory system — 97.0% Recall@5 on LongMemEval-S, beating MemPalace (96.6%) and agentmemory (95.2%). It provides a temporal knowledge graph, hybrid vector search (semantic + keyword), zero-loss archive, automatic fact extraction, and intent-aware retrieval. QMD (`qmd.service`, port 7832) remains as the NPU-accelerated embedding/reranking backend, serving all per-agent memory indexes. Per-tenant isolation is handled by `dbPath` routing: each agent's index lives at `data/agent-memory/{name}/index.sqlite`. Agent A cannot reach Agent B's index; the user's personal index is invisible to agents unless they have an explicit `can_read_user_memory` grant.
 
 - **Document ingestion.** Drag-and-drop files into agent memory via the web UI or API. Supports text, markdown, PDFs, code.
 - **Automatic embedding.** Documents are chunked and embedded using your local inference backend (NPU, GPU, or CPU). No external API calls.
@@ -167,7 +167,7 @@ A single `qmd.service` systemd unit runs on the controller host (port 7832) and 
 - **Framework-independent.** Memory lives on the host, not in the framework or the container. Switch frameworks and the agent's entire knowledge base stays intact.
 - **Portable.** Export an agent's config, channels, and memory. Import on another TinyAgentOS instance.
 
-The QMD fork adds a remote model server (`qmd serve`) with an Ollama-compatible embedding backend, batch embedding, and retry logic. LiteLLM also exposes a `/v1/embeddings` endpoint that routes to the same backends so frameworks using the OpenAI embeddings API work without any shim.
+The embedding backend (`qmd.service`, port 7832) provides an Ollama-compatible embedding API with batch embedding and retry logic, backed by rkllama on RK3588 or node-llama-cpp elsewhere. LiteLLM also exposes a `/v1/embeddings` endpoint that routes to the same backends so frameworks using the OpenAI embeddings API work without any shim.
 
 ### Agent Workspace
 Click on any agent to enter their "virtual computer", a tablet-like interface with app icons: Messages, Memory, Files, Tasks, Channels, Logs. Browse their conversations, search their knowledge, manage their files. Like logging into their personal device.
@@ -277,7 +277,7 @@ TinyAgentOS Controller (FastAPI + htmx + React Desktop Shell)
 ├── App Store + Registry (87 apps + 43 MCP plugins, manifest-based)
 ├── Live Model Browser (HuggingFace + Ollama search)
 ├── Container Manager (LXC or Docker, auto-detected)
-├── Agent Memory (QMD per agent, FTS5 + sqlite-vec + hybrid)
+├── Agent Memory (taOSmd — temporal KG + vector search + zero-loss archive)
 ├── Health Monitor + Notifications
 ├── Secrets Manager (encrypted, per-agent access)
 ├── Task Scheduler (cron with presets)
@@ -312,14 +312,14 @@ Run `curl -fsSL https://raw.githubusercontent.com/jaylfc/tinyagentos/master/scri
 | Where | What |
 |---|---|
 | `/etc/systemd/system/tinyagentos.service` | Main controller systemd unit. Runs uvicorn on port 6969. |
-| `/etc/systemd/system/qmd.service` | Shared model provider (embed / rerank / query expansion) on port 7832. Backed by rkllama on RK3588 boards or local node-llama-cpp elsewhere. |
+| `/etc/systemd/system/qmd.service` | Embedding backend (embed / rerank / query expansion) on port 7832. Used by taOSmd for vector operations. Backed by rkllama on RK3588 boards or local node-llama-cpp elsewhere. |
 | `/etc/systemd/system/tinyagentos-sdcpp.service` | (RK3588 only) CPU image generation backend. |
 | `/etc/systemd/system/tinyagentos-rknn-sd.service` | (RK3588 only) NPU image generation backend. |
 | `/home/<user>/tinyagentos/` | The repo checkout. All code, all configs. |
 | `/home/<user>/tinyagentos/.venv/` | Python virtualenv. All Python deps live here, never `pip install` to system Python. |
 | `/home/<user>/tinyagentos/data/` | All persistent state. **One directory to back up.** Contains: agent state YAMLs, agent memory SQLite indexes, agent workspaces, secrets DB, scheduler history, channel credentials, downloaded models, torrent settings, telemetry opt-in flag. |
-| `/home/<user>/.cache/qmd/index.sqlite` | User memory index, the qmd-managed knowledge base for your personal notes. Per-agent indexes live separately under `data/agent-memory/{name}/index.sqlite`. |
-| Ports listened on | **6969** (controller HTTP API + web UI), **7832** (qmd model + index service), **4000** (LiteLLM proxy, localhost only by default) |
+| `/home/<user>/.cache/qmd/index.sqlite` | User memory index (taOSmd knowledge base for personal notes). Per-agent indexes live separately under `data/agent-memory/{name}/index.sqlite`. |
+| Ports listened on | **6969** (controller HTTP API + web UI), **7832** (qmd embedding service), **4000** (LiteLLM proxy, localhost only by default) |
 | OS packages added | python3 + venv + pip, git, curl, ca-certificates, libtorrent-rasterbar (for the model torrent mesh), nginx (only if you ask the installer to set up a reverse proxy) |
 | User accounts created | None. Everything runs as the user who ran the installer. |
 
@@ -531,7 +531,7 @@ CI runs automatically on every push (Python 3.10-3.13 + security audit).
 - [x] Live model browser (HuggingFace + Ollama, 167k+ models)
 - [x] Agent deployment wizard (LXC containers)
 - [x] Image + video generation (multi-backend)
-- [x] Semantic vector search via qmd serve
+- [x] Semantic vector search via taOSmd (hybrid semantic + keyword)
 - [x] Multi-host backend fallback with auto-recovery
 - [x] Communication channels (8 types, Easy/Advanced)
 - [x] Secrets manager (encrypted, per-agent access)
@@ -563,7 +563,7 @@ CI runs automatically on every push (Python 3.10-3.13 + security audit).
 - [x] Web desktop shell (window manager, dock, launchpad, widgets, 32 bundled apps)
 - [x] Mobile/tablet responsive mode with iOS PWA support
 - [x] Persistent desktop sessions across devices (windows, dock, wallpaper)
-- [x] User memory system (personal QMD with FTS5 + auto-capture)
+- [x] User memory system (taOSmd with temporal KG + FTS5 + auto-capture)
 - [x] Skills & plugins registry (7 default skills, per-framework compatibility)
 - [x] Terminal app with real PTY + SSH client
 - [x] Standalone Chat PWA at /chat-pwa
@@ -579,7 +579,7 @@ CI runs automatically on every push (Python 3.10-3.13 + security audit).
 - [x] Cluster app + Cluster panel in Activity, dedicated worker management app and read-only cluster overview in Activity
 - [x] Providers app + cloud models in Model Browser, manage cloud LLM providers, provider badge per model, deploy wizard accepts cloud models
 - [x] Loaded Models widget, unions controller-local + cluster worker models, host badge per entry, always renders
-- [x] Host-managed qmd.service, single qmd process on the controller host, per-agent index isolation via dbPath routing
+- [x] Host-managed embedding service (qmd.service), single process on the controller host, per-agent index isolation via dbPath routing
 - [x] Worker hardware detection without nvidia-smi, `/proc/driver/nvidia` probe + VRAM lookup table; installer offers nvidia-utils on native hosts
 - [x] install-server.sh, controller installer companion to install-worker.sh; supports Debian/Ubuntu/Fedora/Arch/Alpine + macOS; system or user-mode systemd unit
 - [x] install-rknpu.sh, opt-in Rockchip NPU setup; pins librknnrt 2.3.0, installs rkllama fork, preloads three chat models; all binaries from TAOS mirror with SHA256 verification
@@ -621,7 +621,7 @@ TinyAgentOS stands on a lot of excellent community work, particularly on Rockchi
 - **darkbit1001.** The NHWC `data_format` fix for UNet and VAE decoder under `librknnrt 2.3.2` that made SD on RK3588 run cleanly in the first place. Upstreamed to happyme531's repo as [discussion #6](https://huggingface.co/happyme531/Stable-Diffusion-1.5-LCM-ONNX-RKNN2/discussions/6).
 - **c01zaut**. Qwen2.5 1.5B → 14B RKLLM model ports that let chat work on RK3588 at all.
 - **NotPunchnox.** Original rkllama HTTP server that TinyAgentOS extends with a rerank patch.
-- **tobi** and contributors on [qmd](https://github.com/tobi/qmd), the embedding / reranker / query-expansion pipeline that TinyAgentOS uses for memory search, including the centralised `qmd serve` mode ([PR #511](https://github.com/tobi/qmd/pull/511)).
+- **tobi** and contributors on [qmd](https://github.com/tobi/qmd), the embedding / reranker / query-expansion backend that taOSmd uses for vector operations, including the centralised `qmd serve` mode ([PR #511](https://github.com/tobi/qmd/pull/511)).
 
 If you maintain one of the libraries above and want a different phrasing or a link added, open an issue and I will fix it.
 

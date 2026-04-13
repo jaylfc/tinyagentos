@@ -166,6 +166,6 @@ async def stats(request: Request):
 
 @router.post("/api/kg/classify")
 async def classify(body: ClassifyRequest):
-    from tinyagentos.temporal_knowledge_graph import classify_memory_type
+    from taosmd.knowledge_graph import classify_memory_type
     mtype = classify_memory_type(body.text)
     return {"type": mtype, "text": body.text}
