@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS kg_triples (
     valid_to REAL,
     confidence REAL NOT NULL DEFAULT 1.0,
     source TEXT NOT NULL DEFAULT '',
+    source_ids TEXT NOT NULL DEFAULT '[]',
+    superseded_by TEXT,
     appeared_count INTEGER NOT NULL DEFAULT 1,
     accessed_count INTEGER NOT NULL DEFAULT 0,
     last_accessed_at REAL,
@@ -243,6 +245,7 @@ class TemporalKnowledgeGraph:
                    FROM kg_triples t
                    JOIN kg_entities e ON e.id = t.object_id
                    WHERE t.subject_id = ?
+                     AND t.superseded_by IS NULL
                      AND t.valid_from <= ?
                      AND (t.valid_to IS NULL OR t.valid_to >= ?)""",
                 (eid, ts, ts),
@@ -269,6 +272,7 @@ class TemporalKnowledgeGraph:
                    FROM kg_triples t
                    JOIN kg_entities e ON e.id = t.subject_id
                    WHERE t.object_id = ?
+                     AND t.superseded_by IS NULL
                      AND t.valid_from <= ?
                      AND (t.valid_to IS NULL OR t.valid_to >= ?)""",
                 (eid, ts, ts),
