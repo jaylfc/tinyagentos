@@ -1,14 +1,15 @@
 import { useRef, useCallback } from "react";
-import { ChevronLeft, Bell } from "lucide-react";
+import { ChevronLeft, Bell, Search } from "lucide-react";
 import { useNotificationStore } from "@/stores/notification-store";
 
 interface Props {
   onHome: () => void;
   onCardSwitcher: () => void;
   onBack: () => void;
+  onSearch?: () => void;
 }
 
-export function PillBar({ onHome, onCardSwitcher, onBack }: Props) {
+export function PillBar({ onHome, onCardSwitcher, onBack, onSearch }: Props) {
   const startY = useRef<number | null>(null);
   const pillRef = useRef<HTMLDivElement>(null);
   const unreadCount = useNotificationStore((s) => s.notifications.filter((n) => !n.read).length);
@@ -59,14 +60,14 @@ export function PillBar({ onHome, onCardSwitcher, onBack }: Props) {
         height: "calc(40px + env(safe-area-inset-bottom, 0px) * 0.35)",
         paddingBottom: "calc(env(safe-area-inset-bottom, 0px) * 0.35)",
         backgroundColor: "#14142a",
-        borderTop: "1px solid rgba(255,255,255,0.06)",
-        boxShadow: "0 40px 0 0 #14142a",
+        borderTop: "1px solid rgba(255,255,255,0.12)",
+        boxShadow: "0 40px 0 0 #14142a, 0 -2px 10px rgba(0,0,0,0.3)",
       }}
     >
       {/* Interactive row — icons vertically centred in the 28px content area */}
       <div className="flex-1 flex items-center px-3">
-        {/* Left — back button */}
-        <div className="flex-1 flex justify-start">
+        {/* Left — back + search */}
+        <div className="flex-1 flex justify-start gap-1">
           <button
             onClick={onBack}
             className="flex items-center justify-center w-10 h-10 rounded-md active:bg-white/10 transition-colors"
@@ -74,6 +75,15 @@ export function PillBar({ onHome, onCardSwitcher, onBack }: Props) {
           >
             <ChevronLeft size={22} className="text-white/60" />
           </button>
+          {onSearch && (
+            <button
+              onClick={onSearch}
+              className="flex items-center justify-center w-10 h-10 rounded-md active:bg-white/10 transition-colors"
+              aria-label="Search"
+            >
+              <Search size={20} className="text-white/60" />
+            </button>
+          )}
         </div>
 
         {/* Centre — pill handle */}

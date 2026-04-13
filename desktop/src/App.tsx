@@ -290,6 +290,7 @@ export function App() {
         onHome={handleMobileHome}
         onCardSwitcher={() => setCardSwitcherOpen(true)}
         onBack={handleMobileBack}
+        onSearch={() => setSearchOpen(true)}
       />
       <CardSwitcher
         open={cardSwitcherOpen}
