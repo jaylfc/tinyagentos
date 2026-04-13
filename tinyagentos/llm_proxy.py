@@ -256,7 +256,6 @@ class LLMProxy:
                     "--config", str(config_path),
                     "--port", str(self.port),
                     "--host", "127.0.0.1",
-                    "--detailed_debug",
                 ],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
