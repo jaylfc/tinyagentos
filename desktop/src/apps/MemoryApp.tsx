@@ -1,463 +1,154 @@
 import { useState, useEffect, useCallback } from "react";
-import { Database, Search, Trash2, User, FolderOpen, ChevronLeft } from "lucide-react";
-import {
-  Button,
-  Card,
-  CardHeader,
-  CardContent,
-  Input,
-} from "@/components/ui";
+import { Database, LayoutDashboard, CalendarSearch, GitFork, Users, Settings2 } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { fetchBackendCapabilities } from "@/lib/memory";
+import { Dashboard } from "@/components/memory/Dashboard";
+import { SessionBrowser } from "@/components/memory/SessionBrowser";
+import { PipelineControl } from "@/components/memory/PipelineControl";
+import { AgentMemoryTable } from "@/components/memory/AgentMemoryTable";
+import { MemorySettings } from "@/components/memory/MemorySettings";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
-interface Agent {
+type Tab = 'dashboard' | 'sessions' | 'pipeline' | 'agents' | 'settings';
+
+interface AgentEntry {
   name: string;
   color: string;
-  collections: string[];
+  strategy?: string;
+  layers?: string[];
+  backend?: string;
+  collections?: string[];
 }
-
-interface MemoryChunk {
-  id: string;
-  title: string;
-  collection: string;
-  preview: string;
-  hash: string;
-}
-
-type SearchMode = "keyword" | "semantic" | "hybrid";
-
-const USER_MEMORY_ID = "__user__";
-const USER_MEMORY_COLOR = "#a855f7"; // purple accent to distinguish from agents
 
 /* ------------------------------------------------------------------ */
-/*  MemoryApp (main)                                                   */
+/*  MemoryApp                                                          */
 /* ------------------------------------------------------------------ */
 
 export function MemoryApp({ windowId: _windowId }: { windowId: string }) {
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [userCollections, setUserCollections] = useState<string[]>([]);
-  const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
-  const [selectedCollection, setSelectedCollection] = useState<string | null>(null);
-  const [chunks, setChunks] = useState<MemoryChunk[]>([]);
-  const [search, setSearch] = useState("");
-  const [searchMode, setSearchMode] = useState<SearchMode>("keyword");
-  const [loading, setLoading] = useState(true);
-  const [chunksLoading, setChunksLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<Tab>('dashboard');
+  const [capabilities, setCapabilities] = useState<string[]>([]);
+  const [agents, setAgents] = useState<AgentEntry[]>([]);
 
-  const isUserMemory = selectedAgent === USER_MEMORY_ID;
-
-  // Fetch agents
+  // Load backend capabilities on mount
   useEffect(() => {
     (async () => {
-      try {
-        const res = await fetch("/api/agents", { headers: { Accept: "application/json" } });
-        if (res.ok) {
-          const ct = res.headers.get("content-type") ?? "";
-          if (ct.includes("application/json")) {
-            const data = await res.json();
-            if (Array.isArray(data) && data.length > 0) {
-              const mapped = data.map((a: Record<string, unknown>) => ({
-                name: String(a.name ?? "unknown"),
-                color: String(a.color ?? "#3b82f6"),
-                collections: Array.isArray(a.collections) ? a.collections.map(String) : [],
-              }));
-              setAgents(mapped);
-              setLoading(false);
-              return;
-            }
-          }
-        }
-      } catch { /* fall through */ }
-      setAgents([]);
-      setLoading(false);
+      const caps = await fetchBackendCapabilities();
+      setCapabilities(caps.capabilities ?? []);
     })();
   }, []);
 
-  // Fetch user memory chunks
-  const fetchUserChunks = useCallback(async () => {
-    setChunksLoading(true);
-    setChunks([]);
+  // Load agents for the agent config tab
+  const loadAgents = useCallback(async () => {
     try {
-      const res = await fetch(`/api/user-memory/browse`, {
-        headers: { Accept: "application/json" },
-      });
-      if (res.ok) {
-        const ct = res.headers.get("content-type") ?? "";
-        if (ct.includes("application/json")) {
-          const data = await res.json();
-          const list = Array.isArray(data?.chunks) ? data.chunks : [];
-          setChunks(
-            list.map((c: Record<string, unknown>) => ({
-              id: String(c.hash ?? Math.random().toString(36).slice(2)),
-              title: String(c.title ?? "Untitled"),
-              collection: String(c.collection ?? "snippets"),
-              preview: String(c.content ?? ""),
-              hash: String(c.hash ?? "------"),
-            })),
-          );
-          setChunksLoading(false);
-          return;
-        }
-      }
-    } catch { /* fall through */ }
-    setChunks([]);
-    setChunksLoading(false);
-  }, []);
-
-  const fetchUserCollections = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/user-memory/collections`, {
-        headers: { Accept: "application/json" },
-      });
-      if (res.ok) {
-        const ct = res.headers.get("content-type") ?? "";
-        if (ct.includes("application/json")) {
-          const data = await res.json();
-          const list = Array.isArray(data?.collections) ? data.collections.map(String) : [];
-          setUserCollections(list);
-        }
-      }
+      const res = await fetch('/api/agents', { headers: { Accept: 'application/json' } });
+      if (!res.ok) return;
+      const ct = res.headers.get('content-type') ?? '';
+      if (!ct.includes('application/json')) return;
+      const data = await res.json();
+      if (!Array.isArray(data)) return;
+      setAgents(
+        data.map((a: Record<string, unknown>) => ({
+          name: String(a.name ?? 'unknown'),
+          color: String(a.color ?? '#3b82f6'),
+          strategy: typeof a.strategy === 'string' ? a.strategy : undefined,
+          layers: Array.isArray(a.layers) ? a.layers.map(String) : undefined,
+          backend: typeof a.backend === 'string' ? a.backend : undefined,
+          collections: Array.isArray(a.collections) ? a.collections.map(String) : [],
+        })),
+      );
     } catch { /* ignore */ }
   }, []);
 
-  // Fetch chunks when agent selected
-  const fetchChunks = useCallback(async (agentName: string) => {
-    setChunksLoading(true);
-    setChunks([]);
-    try {
-      const res = await fetch(`/api/memory/browse?agent=${encodeURIComponent(agentName)}`, {
-        headers: { Accept: "application/json" },
-      });
-      if (res.ok) {
-        const ct = res.headers.get("content-type") ?? "";
-        if (ct.includes("application/json")) {
-          const data = await res.json();
-          if (Array.isArray(data)) {
-            setChunks(
-              data.map((c: Record<string, unknown>) => ({
-                id: String(c.id ?? Math.random().toString(36).slice(2)),
-                title: String(c.title ?? "Untitled"),
-                collection: String(c.collection ?? "default"),
-                preview: String(c.preview ?? c.text ?? ""),
-                hash: String(c.hash ?? "------"),
-              })),
-            );
-            setChunksLoading(false);
-            return;
-          }
-        }
-      }
-    } catch { /* fall through */ }
-    setChunks([]);
-    setChunksLoading(false);
-  }, []);
+  // Determine which tabs to show based on capabilities
+  const hasCapability = (cap: string) =>
+    capabilities.length === 0 || capabilities.includes(cap);
 
-  // Fetch collections for agent
-  const fetchCollections = useCallback(async (agentName: string) => {
-    try {
-      const res = await fetch(`/api/memory/collections/${encodeURIComponent(agentName)}`, {
-        headers: { Accept: "application/json" },
-      });
-      if (res.ok) {
-        const ct = res.headers.get("content-type") ?? "";
-        if (ct.includes("application/json")) {
-          const data = await res.json();
-          if (Array.isArray(data)) {
-            setAgents((prev) =>
-              prev.map((a) =>
-                a.name === agentName ? { ...a, collections: data.map(String) } : a,
-              ),
-            );
-          }
-        }
-      }
-    } catch { /* ignore */ }
-  }, []);
+  const showSessions = hasCapability('catalog');
+  const showPipeline = hasCapability('pipeline');
+  const showAgents = hasCapability('agent-config');
+  const showSettings = hasCapability('settings');
 
-  const handleSelectAgent = (name: string) => {
-    setSelectedAgent(name);
-    setSelectedCollection(null);
-    setSearch("");
-    if (name === USER_MEMORY_ID) {
-      fetchUserChunks();
-      fetchUserCollections();
-    } else {
-      fetchChunks(name);
-      fetchCollections(name);
-    }
-  };
-
-  const handleDeleteChunk = async (chunk: MemoryChunk) => {
-    if (isUserMemory) {
-      try {
-        const res = await fetch(`/api/user-memory/chunk/${encodeURIComponent(chunk.hash)}`, {
-          method: "DELETE",
-          headers: { Accept: "application/json" },
-        });
-        if (res.ok) {
-          setChunks((prev) => prev.filter((c) => c.id !== chunk.id));
-          return;
-        }
-      } catch { /* ignore */ }
-    }
-    setChunks((prev) => prev.filter((c) => c.id !== chunk.id));
-  };
-
-  const currentAgent = agents.find((a) => a.name === selectedAgent);
-  const currentCollections = isUserMemory
-    ? userCollections
-    : currentAgent?.collections ?? [];
-  const q = search.toLowerCase();
-
-  const filteredChunks = chunks.filter((c) => {
-    if (selectedCollection && c.collection !== selectedCollection) return false;
-    if (q && !c.title.toLowerCase().includes(q) && !c.preview.toLowerCase().includes(q)) return false;
-    return true;
-  });
-
-  const MODES: { id: SearchMode; label: string }[] = [
-    { id: "keyword", label: "Keyword" },
-    { id: "semantic", label: "Semantic" },
-    { id: "hybrid", label: "Hybrid" },
+  const tabs: { id: Tab; label: string; icon: React.ReactNode; show: boolean }[] = [
+    { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={14} />, show: true },
+    { id: 'sessions', label: 'Sessions', icon: <CalendarSearch size={14} />, show: showSessions },
+    { id: 'pipeline', label: 'Pipeline', icon: <GitFork size={14} />, show: showPipeline },
+    { id: 'agents', label: 'Agents', icon: <Users size={14} />, show: showAgents },
+    { id: 'settings', label: 'Settings', icon: <Settings2 size={14} />, show: showSettings },
   ];
 
-  const isMobile = typeof window !== "undefined" && window.innerWidth < 640;
+  const visibleTabs = tabs.filter((t) => t.show);
 
-  const handleSelectAgentMobile = (name: string) => {
-    handleSelectAgent(name);
-  };
+  // If current tab becomes hidden, fall back to dashboard
+  useEffect(() => {
+    const visible = visibleTabs.find((t) => t.id === activeTab);
+    if (!visible && visibleTabs.length > 0) {
+      setActiveTab(visibleTabs[0]!.id);
+    }
+  }, [activeTab, visibleTabs]);
 
-  const sidebarUI = (
-    <nav
-      className={isMobile ? "w-full flex flex-col overflow-hidden h-full" : "w-52 shrink-0 border-r border-white/5 bg-shell-surface/30 flex flex-col overflow-hidden"}
-      aria-label="Agent list"
-    >
-      <div className="flex items-center gap-2 px-3 py-3 border-b border-white/5">
-        <Database size={15} className="text-accent" />
-        <h1 className="text-sm font-semibold">Memory</h1>
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-2 space-y-1">
-        {/* My Memory — always first */}
-        {(() => {
-          const active = selectedAgent === USER_MEMORY_ID;
-          return (
-            <Button
-              key="__user_memory__"
-              variant="ghost"
-              onClick={() => handleSelectAgentMobile(USER_MEMORY_ID)}
-              className={`w-full justify-start h-auto px-3 py-2.5 border ${
-                active
-                  ? "bg-purple-500/15 text-shell-text border-purple-500/40 hover:bg-purple-500/20"
-                  : "border-transparent"
-              }`}
-              aria-current={active ? "page" : undefined}
-            >
-              <User
-                size={14}
-                className="shrink-0"
-                style={{ color: USER_MEMORY_COLOR }}
-                aria-hidden="true"
-              />
-              <span className="truncate font-medium">My Memory</span>
-            </Button>
-          );
-        })()}
-
-        {/* Divider between user memory and agent list */}
-        <div className="h-px bg-white/5 my-2" />
-
-        {loading ? (
-          <p className="text-xs text-shell-text-tertiary px-2 py-4 text-center">Loading...</p>
-        ) : agents.length === 0 ? (
-          <p className="text-xs text-shell-text-tertiary px-2 py-4 text-center">No agents found</p>
-        ) : (
-          agents.map((agent) => {
-            const active = selectedAgent === agent.name;
-            return (
-              <Button
-                key={agent.name}
-                variant={active ? "secondary" : "ghost"}
-                onClick={() => handleSelectAgentMobile(agent.name)}
-                className="w-full justify-start h-auto px-3 py-2.5"
-                aria-current={active ? "page" : undefined}
-              >
-                <span
-                  className="w-2.5 h-2.5 rounded-full shrink-0"
-                  style={{ backgroundColor: agent.color }}
-                  aria-hidden="true"
-                />
-                <span className="truncate">{agent.name}</span>
-              </Button>
-            );
-          })
-        )}
-      </div>
-
-      {/* Collection pills */}
-      {selectedAgent && currentCollections.length > 0 && (
-        <div className="border-t border-white/5 p-2">
-          <p className="text-[10px] uppercase tracking-wider text-shell-text-tertiary px-2 mb-1.5">Collections</p>
-          <div className="flex flex-wrap gap-1">
-            <Button
-              variant={!selectedCollection ? "secondary" : "outline"}
-              size="sm"
-              onClick={() => setSelectedCollection(null)}
-              className="h-6 px-2 rounded-full text-[11px]"
-            >
-              All
-            </Button>
-            {currentCollections.map((col) => (
-              <Button
-                key={col}
-                variant={selectedCollection === col ? "secondary" : "outline"}
-                size="sm"
-                onClick={() => setSelectedCollection(selectedCollection === col ? null : col)}
-                className="h-6 px-2 rounded-full text-[11px]"
-              >
-                {col}
-              </Button>
-            ))}
-          </div>
-        </div>
-      )}
-    </nav>
-  );
-
-  const mainPanelUI = (
-    <main className="flex-1 flex flex-col overflow-hidden">
-      {!selectedAgent ? (
-        <div className="flex flex-col items-center justify-center h-full gap-3 text-shell-text-tertiary">
-          <User size={40} className="opacity-30" />
-          <p className="text-sm">Select an agent to browse memory</p>
-        </div>
-      ) : (
-        <>
-          {/* Header / search bar */}
-          <div className="flex items-center gap-2 px-4 py-2.5 border-b border-white/5">
-            {isMobile && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setSelectedAgent(null)}
-                className="text-xs shrink-0"
-              >
-                <ChevronLeft size={14} /> Back
-              </Button>
-            )}
-            {isUserMemory && (
-              <div className="flex items-center gap-1.5 shrink-0 px-2 py-1 rounded-md bg-purple-500/10 border border-purple-500/30">
-                <User size={12} style={{ color: USER_MEMORY_COLOR }} aria-hidden="true" />
-                <span className="text-[11px] font-medium" style={{ color: USER_MEMORY_COLOR }}>My Memory</span>
-              </div>
-            )}
-            <div className="relative flex-1">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-shell-text-tertiary pointer-events-none z-10" />
-              <Input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={isUserMemory ? "Search my memory..." : "Search memory..."}
-                className="pl-8 h-8"
-                aria-label="Search memory chunks"
-              />
-            </div>
-            <div className="flex items-center gap-1" role="radiogroup" aria-label="Search mode">
-              {MODES.map((mode) => (
-                <Button
-                  key={mode.id}
-                  variant={searchMode === mode.id ? "secondary" : "outline"}
-                  size="sm"
-                  onClick={() => setSearchMode(mode.id)}
-                  role="radio"
-                  aria-checked={searchMode === mode.id}
-                >
-                  {mode.label}
-                </Button>
-              ))}
-            </div>
-          </div>
-
-          {/* Results */}
-          <div className="flex-1 overflow-auto p-4">
-            {chunksLoading ? (
-              <div className="flex items-center justify-center h-full text-shell-text-tertiary text-sm">
-                Loading memory...
-              </div>
-            ) : filteredChunks.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full gap-3 text-shell-text-tertiary">
-                <FolderOpen size={36} className="opacity-30" />
-                <p className="text-sm">
-                  {chunks.length === 0
-                    ? isUserMemory
-                      ? "No memory stored yet"
-                      : "No memory stored for this agent"
-                    : "No results match your filter"}
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                {filteredChunks.map((chunk) => (
-                  <Card
-                    key={chunk.id}
-                    className={
-                      isUserMemory
-                        ? "bg-purple-500/5 border-purple-500/20"
-                        : ""
-                    }
-                  >
-                    <CardHeader className="flex flex-row items-start justify-between gap-2 p-3.5 pb-2">
-                      <div className="flex-1 min-w-0">
-                        <h3 className="text-sm font-medium truncate" title={chunk.title}>
-                          {chunk.title || "Untitled"}
-                        </h3>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="px-1.5 py-0.5 rounded bg-white/5 text-[10px] font-medium text-shell-text-tertiary">
-                            {chunk.collection}
-                          </span>
-                          <span className="text-[10px] text-shell-text-tertiary font-mono tabular-nums">
-                            #{chunk.hash}
-                          </span>
-                        </div>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleDeleteChunk(chunk)}
-                        className="shrink-0 h-7 w-7 hover:bg-red-500/15 hover:text-red-400"
-                        aria-label={`Delete memory chunk: ${chunk.title}`}
-                        title="Delete"
-                      >
-                        <Trash2 size={14} />
-                      </Button>
-                    </CardHeader>
-                    <CardContent className="p-3.5 pt-0">
-                      <p className="text-xs text-shell-text-secondary line-clamp-3 leading-relaxed">
-                        {chunk.preview}
-                      </p>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </div>
-        </>
-      )}
-    </main>
-  );
+  // Load agents when agents tab is first activated
+  useEffect(() => {
+    if (activeTab === 'agents' && agents.length === 0) {
+      loadAgents();
+    }
+  }, [activeTab, agents.length, loadAgents]);
 
   return (
-    <div className="flex h-full bg-shell-bg text-shell-text select-none">
-      {isMobile ? (
-        selectedAgent ? mainPanelUI : sidebarUI
-      ) : (
-        <>
-          {sidebarUI}
-          {mainPanelUI}
-        </>
-      )}
+    <div className="flex flex-col h-full bg-shell-bg text-shell-text select-none">
+      {/* Header */}
+      <header className="flex items-center gap-2 px-4 py-2.5 border-b border-white/5 shrink-0">
+        <Database size={15} className="text-accent" aria-hidden="true" />
+        <h1 className="text-sm font-semibold">Memory</h1>
+      </header>
+
+      {/* Tabs */}
+      <Tabs
+        value={activeTab}
+        onValueChange={(v) => setActiveTab(v as Tab)}
+        className="flex flex-col flex-1 min-h-0"
+      >
+        <div className="px-4 pt-2.5 pb-0 shrink-0 border-b border-white/5">
+          <TabsList className="h-8 gap-0.5" aria-label="Memory app sections">
+            {visibleTabs.map((tab) => (
+              <TabsTrigger
+                key={tab.id}
+                value={tab.id}
+                aria-label={tab.label}
+                className="h-7 px-3 gap-1.5 text-xs"
+              >
+                <span aria-hidden="true">{tab.icon}</span>
+                {tab.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
+
+        {/* Tab panels */}
+        <div className="flex-1 min-h-0 overflow-hidden">
+          <TabsContent value="dashboard" className="h-full mt-0 overflow-hidden">
+            <Dashboard />
+          </TabsContent>
+
+          <TabsContent value="sessions" className="h-full mt-0 overflow-hidden">
+            <SessionBrowser />
+          </TabsContent>
+
+          <TabsContent value="pipeline" className="h-full mt-0 overflow-hidden">
+            <PipelineControl />
+          </TabsContent>
+
+          <TabsContent value="agents" className="h-full mt-0 overflow-hidden">
+            <AgentMemoryTable agents={agents} />
+          </TabsContent>
+
+          <TabsContent value="settings" className="h-full mt-0 overflow-hidden">
+            <MemorySettings />
+          </TabsContent>
+        </div>
+      </Tabs>
     </div>
   );
 }
