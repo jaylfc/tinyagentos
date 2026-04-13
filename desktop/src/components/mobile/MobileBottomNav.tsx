@@ -11,14 +11,15 @@ interface Props {
 export function MobileBottomNav({ onBack, onHome, onSearch, onSwitcher, hasActiveApp }: Props) {
   return (
     <nav
-      className="shrink-0 flex items-center justify-around"
+      className="shrink-0 flex items-center justify-around relative"
       style={{
         height: "calc(52px + env(safe-area-inset-bottom, 0px))",
         paddingBottom: "env(safe-area-inset-bottom, 0px)",
-        backgroundColor: "rgba(20, 20, 42, 0.95)",
+        backgroundColor: "rgba(20, 20, 42, 0.98)",
         borderTop: "1px solid rgba(255, 255, 255, 0.1)",
         backdropFilter: "blur(20px)",
         WebkitBackdropFilter: "blur(20px)",
+        zIndex: 9500,
       }}
       aria-label="Navigation"
     >

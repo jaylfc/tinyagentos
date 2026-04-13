@@ -194,7 +194,7 @@ export function App() {
 
   const handleMobileHome = useCallback(() => {
     setActiveWindowId(null);
-    setLaunchpadOpen(true);
+    setLaunchpadOpen((v) => !v);
   }, []);
 
   if (mode === "desktop") {

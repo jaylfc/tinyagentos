@@ -28,32 +28,29 @@ export function MobileTopBar({ currentAppName, onBack }: Props) {
         className="flex items-center px-1"
         style={{ height: 44 }}
       >
-        {/* Left — back button (in app) or logo (home) */}
-        {isHome ? (
-          <div className="flex items-center gap-2 px-2 min-w-[60px]">
-            <img src="/static/taos-logo.png" alt="taOS" className="h-4 w-auto" />
-          </div>
-        ) : (
-          <button
-            onClick={onBack}
-            className="flex items-center gap-0 px-2 py-2 text-accent active:opacity-60 transition-opacity min-w-[60px]"
-            aria-label="Go back to home"
-          >
-            <ChevronLeft size={20} strokeWidth={2.5} />
-            <span className="text-[15px]">Back</span>
-          </button>
-        )}
-
-        {/* Centre — app name or taOS */}
-        <div className="flex-1 text-center">
-          <span className="text-[17px] font-semibold text-shell-text">
-            {isHome ? "taOS" : currentAppName}
-          </span>
+        {/* Left — taOS or Back + app name */}
+        <div className="flex items-center min-w-[70px]">
+          {isHome ? (
+            <span className="text-[17px] font-semibold text-shell-text px-2">taOS</span>
+          ) : (
+            <button
+              onClick={onBack}
+              className="flex items-center gap-0 px-1 py-2 text-accent active:opacity-60 transition-opacity"
+              aria-label="Go back to home"
+            >
+              <ChevronLeft size={20} strokeWidth={2.5} />
+              <span className="text-[15px] truncate max-w-[100px]">{currentAppName}</span>
+            </button>
+          )}
         </div>
 
-        {/* Right — indicators + notifications bell */}
-        <div className="flex items-center justify-end gap-1" style={{ minWidth: 60 }}>
+        {/* Centre — status indicators */}
+        <div className="flex-1 flex items-center justify-center">
           <StatusIndicators compact />
+        </div>
+
+        {/* Right — notifications bell */}
+        <div className="flex items-center justify-end" style={{ minWidth: 50 }}>
           <button
             onClick={toggleCentre}
             className="relative flex items-center justify-center w-10 h-10 rounded-lg active:bg-white/10 transition-colors"
