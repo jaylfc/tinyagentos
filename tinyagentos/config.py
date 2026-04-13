@@ -73,11 +73,37 @@ def load_config(path: Path) -> AppConfig:
 AGENT_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 
 def validate_agent_name(name: str) -> str | None:
-    """Validate agent name for safe use in container names and paths.
-    Returns error message or None if valid."""
-    if not AGENT_NAME_RE.match(name):
-        return "Agent name must be 1-63 lowercase alphanumeric chars or hyphens, starting with alphanumeric"
+    """Validate agent display name. Accepts any non-empty string up to 64
+    characters. The display name is what the user sees; for container and
+    path operations, callers should derive a safe slug via
+    ``slugify_agent_name``.
+    """
+    if not name or not name.strip():
+        return "Agent name cannot be empty"
+    if len(name) > 64:
+        return "Agent name must be 64 characters or fewer"
+    # Ensure the name produces a non-empty slug — otherwise we can't make
+    # a container out of it (e.g. pure emoji or pure whitespace).
+    if not slugify_agent_name(name):
+        return "Agent name must contain at least one letter or number"
     return None
+
+
+def slugify_agent_name(name: str) -> str:
+    """Derive a container-safe slug from a free-form agent display name.
+
+    Lowercases, replaces any run of non-alphanumeric characters with a
+    single hyphen, trims leading/trailing hyphens, and truncates to 63
+    chars. Returns an empty string if nothing survives — callers should
+    handle that case.
+
+    Examples:
+        "Mary's Coding Buddy" -> "mary-s-coding-buddy"
+        "🚀 Alpha v2" -> "alpha-v2"
+        "Agent_42!" -> "agent-42"
+    """
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    return slug[:63]
 
 
 def _default_on_worker_failure(agent: dict) -> str:

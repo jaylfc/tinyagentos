@@ -27,6 +27,7 @@ import {
 
 interface Agent {
   name: string;
+  display_name?: string;
   host: string;
   color: string;
   status: "running" | "stopped" | "error" | "deploying";
@@ -98,7 +99,7 @@ function AgentRow({
           style={{ backgroundColor: agent.color }}
           aria-label={`Color: ${agent.color}`}
         />
-        <span className="font-medium text-sm truncate">{agent.name}</span>
+        <span className="font-medium text-sm truncate">{agent.display_name || agent.name}</span>
         {agent.paused && (
           <span
             className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/20 text-amber-400 border border-amber-500/20"

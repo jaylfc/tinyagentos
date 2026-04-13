@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from tinyagentos.agent_db import find_agent, get_agent_summaries
-from tinyagentos.config import save_config_locked, validate_agent_name
+from tinyagentos.config import save_config_locked, validate_agent_name, slugify_agent_name
 
 EXPORT_VERSION = 1
 
@@ -75,16 +75,34 @@ async def get_agent_endpoint(request: Request, name: str):
 
 @router.post("/api/agents")
 async def add_agent(request: Request, body: AgentCreate):
-    """Add a new agent to the configuration."""
+    """Add a new agent to the configuration.
+
+    The user-supplied name is stored verbatim as ``display_name`` for UI
+    purposes and slugified into ``name`` for container and path safety.
+    If the slug collides with an existing agent, a numeric suffix is
+    appended until it's unique.
+    """
     config = request.app.state.config
-    name_error = validate_agent_name(body.name)
+    display_name = body.name.strip()
+    name_error = validate_agent_name(display_name)
     if name_error:
         return JSONResponse({"error": name_error}, status_code=400)
-    if find_agent(config, body.name):
-        return JSONResponse({"error": f"Agent '{body.name}' already exists"}, status_code=409)
-    config.agents.append(body.model_dump())
+
+    slug = slugify_agent_name(display_name)
+    unique_slug = slug
+    suffix = 2
+    while find_agent(config, unique_slug):
+        unique_slug = f"{slug}-{suffix}"
+        suffix += 1
+        if suffix > 100:
+            return JSONResponse({"error": "Could not generate a unique agent slug"}, status_code=400)
+
+    agent = body.model_dump()
+    agent["name"] = unique_slug
+    agent["display_name"] = display_name
+    config.agents.append(agent)
     await save_config_locked(config, config.config_path)
-    return {"status": "created", "name": body.name}
+    return {"status": "created", "name": unique_slug, "display_name": display_name}
 
 
 @router.put("/api/agents/{name}")
@@ -177,17 +195,28 @@ async def deploy_agent_endpoint(request: Request, body: DeployAgentRequest):
     6. Model not found anywhere in the cluster — 404.
     """
     config = request.app.state.config
-    name_error = validate_agent_name(body.name)
+    display_name = body.name.strip()
+    name_error = validate_agent_name(display_name)
     if name_error:
         return JSONResponse({"error": name_error}, status_code=400)
+    # Derive a container-safe slug and ensure uniqueness
+    slug = slugify_agent_name(display_name)
+    unique_slug = slug
+    suffix = 2
+    while find_agent(config, unique_slug):
+        unique_slug = f"{slug}-{suffix}"
+        suffix += 1
+        if suffix > 100:
+            return JSONResponse({"error": "Could not generate a unique agent slug"}, status_code=400)
+    # Rewrite body.name to the unique slug; the original user-entered name
+    # is preserved as display_name for the UI.
+    body.name = unique_slug
     # Validate framework against catalog instead of hardcoded list
     if body.framework != "none":
         registry = request.app.state.registry
         known = {a.id for a in registry.list_available(type_filter="agent-framework")}
         if body.framework not in known:
             return JSONResponse({"error": f"Unknown framework '{body.framework}'. Available: {sorted(known)}"}, status_code=400)
-    if find_agent(config, body.name):
-        return JSONResponse({"error": f"Agent '{body.name}' already exists"}, status_code=409)
 
     # ------------------------------------------------------------------
     # Cross-worker deploy routing (task #176 stub)
@@ -294,6 +323,7 @@ async def deploy_agent_endpoint(request: Request, body: DeployAgentRequest):
     from tinyagentos.config import normalize_agent
     new_agent = normalize_agent({
         "name": body.name,
+        "display_name": display_name,
         "host": "",
         "color": body.color,
         "status": "deploying",
