@@ -1,17 +1,15 @@
-import { ChevronLeft, Bell } from "lucide-react";
+import { Search, Bell } from "lucide-react";
 import { useNotificationStore } from "@/stores/notification-store";
 import { StatusIndicators } from "../StatusIndicators";
 
 interface Props {
-  currentAppName: string | null;
-  onBack: () => void;
+  onHome: () => void;
+  onSearch: () => void;
 }
 
-export function MobileTopBar({ currentAppName, onBack }: Props) {
+export function MobileTopBar({ onHome, onSearch }: Props) {
   const unreadCount = useNotificationStore((s) => s.notifications.filter((n) => !n.read).length);
   const toggleCentre = useNotificationStore((s) => s.toggleCentre);
-
-  const isHome = !currentAppName;
 
   return (
     <div
@@ -25,40 +23,61 @@ export function MobileTopBar({ currentAppName, onBack }: Props) {
       }}
     >
       <div
-        className="flex items-center px-1"
+        className="flex items-center px-2"
         style={{ height: 44 }}
       >
-        {/* Left — taOS or Back + app name */}
-        <div className="flex items-center min-w-[70px]">
-          {isHome ? (
-            <span className="text-[17px] font-semibold text-shell-text px-2">taOS</span>
-          ) : (
-            <button
-              onClick={onBack}
-              className="flex items-center gap-0 px-1 py-2 text-accent active:opacity-60 transition-opacity"
-              aria-label="Go back to home"
-            >
-              <ChevronLeft size={20} strokeWidth={2.5} />
-              <span className="text-[15px] truncate max-w-[100px]">{currentAppName}</span>
-            </button>
-          )}
-        </div>
+        {/* Left — taOS (tap to go home) */}
+        <button
+          onClick={onHome}
+          className="px-2 py-1 active:opacity-60 transition-opacity"
+          aria-label="Go to home screen"
+        >
+          <span className="text-[17px] font-semibold text-shell-text">taOS</span>
+        </button>
 
         {/* Centre — status indicators */}
         <div className="flex-1 flex items-center justify-center">
           <StatusIndicators compact />
         </div>
 
-        {/* Right — notifications bell */}
-        <div className="flex items-center justify-end" style={{ minWidth: 50 }}>
+        {/* Right — glass buttons */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onSearch}
+            className="relative flex items-center justify-center active:opacity-60 transition-opacity"
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: "50%",
+              background: "rgba(255,255,255,0.08)",
+              backdropFilter: "blur(10px)",
+              WebkitBackdropFilter: "blur(10px)",
+              border: "1px solid rgba(255,255,255,0.1)",
+            }}
+            aria-label="Search"
+          >
+            <Search size={15} className="text-white/70" />
+          </button>
           <button
             onClick={toggleCentre}
-            className="relative flex items-center justify-center w-10 h-10 rounded-lg active:bg-white/10 transition-colors"
+            className="relative flex items-center justify-center active:opacity-60 transition-opacity"
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: "50%",
+              background: "rgba(255,255,255,0.08)",
+              backdropFilter: "blur(10px)",
+              WebkitBackdropFilter: "blur(10px)",
+              border: "1px solid rgba(255,255,255,0.1)",
+            }}
             aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ""}`}
           >
-            <Bell size={20} className="text-white/70" />
+            <Bell size={15} className="text-white/70" />
             {unreadCount > 0 && (
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />
+              <span
+                className="absolute bg-red-500 rounded-full"
+                style={{ width: 6, height: 6, top: 5, right: 5 }}
+              />
             )}
           </button>
         </div>

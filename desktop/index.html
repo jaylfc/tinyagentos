@@ -29,27 +29,21 @@
         margin: 0;
         padding: 0;
         overflow: hidden;
-        /* Use dynamic viewport height — tracks visual viewport on iOS 15.4+ */
-        height: 100dvh;
+        height: 100vh;
         width: 100vw;
-        /* MUST match the pill bar colour, not the wallpaper —
-           prevents "lighter area below bar" on iOS PWA by ensuring any fractional
-           pixel gap bleeds through a matching colour */
-        background: #14142a;
+        background: transparent;
         overscroll-behavior: none;
         -webkit-user-select: none;
         user-select: none;
         -webkit-touch-callout: none;
         -webkit-tap-highlight-color: transparent;
       }
-      /* Allow text selection inside text inputs and textareas */
       input, textarea, [contenteditable="true"] {
         -webkit-user-select: text;
         user-select: text;
       }
-      /* Ensure the app fills the entire screen including notch/safe areas */
       #root {
-        height: 100dvh;
+        height: 100vh;
         width: 100vw;
       }
     </style>

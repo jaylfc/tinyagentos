@@ -1,5 +1,4 @@
 import { useState, useCallback, useEffect } from "react";
-import * as icons from "lucide-react";
 import { TopBar } from "@/components/TopBar";
 import { Desktop } from "@/components/Desktop";
 import { Dock } from "@/components/Dock";
@@ -11,11 +10,12 @@ import { useDeviceMode } from "@/hooks/use-device-mode";
 import { useThemeStore } from "@/stores/theme-store";
 import { useProcessStore } from "@/stores/process-store";
 import { useDockStore } from "@/stores/dock-store";
-import { getAllApps, getApp } from "@/registry/app-registry";
-import { MobileBottomNav } from "@/components/mobile/MobileBottomNav";
+import { getApp } from "@/registry/app-registry";
+import { MobileDock } from "@/components/mobile/MobileDock";
 import { CardSwitcher } from "@/components/mobile/CardSwitcher";
 import { MobileTopBar } from "@/components/mobile/MobileTopBar";
-import { MobileApp } from "@/components/mobile/MobileApp";
+import { MobileAppWindow } from "@/components/mobile/MobileAppWindow";
+import { MobileHomePages } from "@/components/mobile/MobileHomePages";
 import { LoginGate } from "@/components/LoginGate";
 import { LoginScreen } from "@/components/LoginScreen";
 import { NotificationToasts } from "@/components/NotificationToast";
@@ -99,21 +99,6 @@ function SystemShortcuts({ toggleSearch, toggleLaunchpad }: SystemShortcutsProps
   return null;
 }
 
-const CATEGORY_GRADIENTS: Record<string, string> = {
-  platform: "linear-gradient(135deg, rgba(102,126,234,0.25), rgba(118,75,162,0.15))",
-  os: "linear-gradient(135deg, rgba(67,233,123,0.2), rgba(56,249,215,0.1))",
-  game: "linear-gradient(135deg, rgba(250,112,154,0.2), rgba(254,225,64,0.1))",
-  streaming: "linear-gradient(135deg, rgba(79,172,254,0.2), rgba(0,242,254,0.1))",
-};
-
-function resolveIcon(iconName: string): icons.LucideIcon {
-  const key = iconName
-    .split("-")
-    .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
-    .join("") as keyof typeof icons;
-  return (icons[key] as icons.LucideIcon) ?? icons.HelpCircle;
-}
-
 export function App() {
   // Auto-launch on mobile/PWA — skip the login screen
   const isPwa = typeof window !== "undefined" && (
@@ -134,9 +119,10 @@ export function App() {
   const wallpaperStyle = useThemeStore((s) => s.wallpaperStyle);
   const windows = useProcessStore((s) => s.windows);
   const openWindow = useProcessStore((s) => s.openWindow);
+  const closeWindow = useProcessStore((s) => s.closeWindow);
+  const minimizeWindow = useProcessStore((s) => s.minimizeWindow);
 
   const activeWindow = windows.find((w) => w.id === activeWindowId);
-  const activeApp = activeWindow ? getApp(activeWindow.appId) : null;
 
   // Clear activeWindowId if the window was closed externally
   useEffect(() => {
@@ -181,21 +167,46 @@ export function App() {
   }, []);
 
   // Mobile handlers
-  const handleMobileBack = useCallback(() => {
-    if (activeWindowId) {
-      setActiveWindowId(null);
-    }
-  }, [activeWindowId]);
+  const handleMobileHome = useCallback(() => {
+    setActiveWindowId(null);
+    setCardSwitcherOpen(false);
+    setSearchOpen(false);
+  }, []);
 
   const handleSelectApp = useCallback((windowId: string) => {
     setActiveWindowId(windowId);
     setCardSwitcherOpen(false);
   }, []);
 
-  const handleMobileHome = useCallback(() => {
-    setActiveWindowId(null);
-    setLaunchpadOpen((v) => !v);
-  }, []);
+  const handleMobileOpenApp = useCallback((appId: string) => {
+    // If already open, focus it
+    const existing = windows.find((w) => w.appId === appId);
+    if (existing) {
+      setActiveWindowId(existing.id);
+    } else {
+      const app = getApp(appId);
+      if (app) {
+        const wid = openWindow(appId, app.defaultSize);
+        setActiveWindowId(wid);
+      }
+    }
+    setCardSwitcherOpen(false);
+    setSearchOpen(false);
+  }, [windows, openWindow]);
+
+  const handleMobileClose = useCallback(() => {
+    if (activeWindowId) {
+      closeWindow(activeWindowId);
+      setActiveWindowId(null);
+    }
+  }, [activeWindowId, closeWindow]);
+
+  const handleMobileMinimise = useCallback(() => {
+    if (activeWindowId) {
+      minimizeWindow(activeWindowId);
+      setActiveWindowId(null);
+    }
+  }, [activeWindowId, minimizeWindow]);
 
   if (mode === "desktop") {
     return (
@@ -232,64 +243,32 @@ export function App() {
   return (
     <ShortcutProvider>
       <SystemShortcuts toggleSearch={toggleSearch} toggleLaunchpad={toggleLaunchpad} />
-    <div className="fixed inset-0 flex flex-col text-shell-text" style={{ background: wallpaperStyle }}>
+    <div className="h-screen w-screen flex flex-col text-shell-text" style={{ background: wallpaperStyle }}>
       <div className={`flex-1 flex flex-col overflow-hidden transition-all duration-500 ${launched ? "opacity-100 scale-100" : "opacity-0 scale-95"}`}>
         <MobileTopBar
-          currentAppName={activeApp?.name ?? null}
-          onBack={handleMobileBack}
+          onHome={handleMobileHome}
+          onSearch={() => { setCardSwitcherOpen(false); setSearchOpen((v) => !v); }}
         />
-        {/* Main content area — flex-1 so it fills between top bar and bottom nav */}
+        {/* Main content area */}
         <div className="flex-1 relative overflow-hidden">
           {activeWindowId && activeWindow ? (
-            <MobileApp appId={activeWindow.appId} windowId={activeWindowId} />
+            <MobileAppWindow
+              appId={activeWindow.appId}
+              windowId={activeWindowId}
+              onClose={handleMobileClose}
+              onMinimise={handleMobileMinimise}
+            />
           ) : (
-            <div className="h-full overflow-y-auto py-6">
-              {/* App grid */}
-              <div className="px-6 pb-8">
-                <div className="grid grid-cols-4 gap-x-4 gap-y-7 max-w-sm mx-auto">
-                  {getAllApps()
-                    .slice(0, 24)
-                    .map((app) => {
-                      const Icon = resolveIcon(app.icon);
-                      return (
-                        <button
-                          key={app.id}
-                          onClick={() => {
-                            const wid = openWindow(app.id, app.defaultSize);
-                            setActiveWindowId(wid);
-                          }}
-                          className="flex flex-col items-center gap-1.5 active:scale-90 transition-transform"
-                          aria-label={`Open ${app.name}`}
-                        >
-                          <div className="w-[60px] h-[60px] rounded-[16px] flex items-center justify-center shadow-lg"
-                            style={{
-                              background: CATEGORY_GRADIENTS[app.category] ?? "rgba(255,255,255,0.08)",
-                              backdropFilter: "blur(10px)",
-                              WebkitBackdropFilter: "blur(10px)",
-                              border: "1px solid rgba(255,255,255,0.08)",
-                            }}
-                          >
-                            <Icon size={26} className="text-white/80" />
-                          </div>
-                          <span className="text-[11px] text-white/70 truncate w-full text-center leading-tight">
-                            {app.name}
-                          </span>
-                        </button>
-                      );
-                    })}
-                </div>
-              </div>
-            </div>
+            <MobileHomePages onOpenApp={handleMobileOpenApp} />
           )}
         </div>
       </div>
-      {/* Bottom navigation — outside the transition container so it's never clipped */}
-      <MobileBottomNav
-        onBack={handleMobileBack}
-        onHome={handleMobileHome}
-        onSearch={() => setSearchOpen(true)}
-        onSwitcher={() => setCardSwitcherOpen(true)}
-        hasActiveApp={!!activeWindowId}
+      {/* Dock — outside the transition container so it's never clipped */}
+      <MobileDock
+        onOpenApp={handleMobileOpenApp}
+        onToggleSwitcher={() => setCardSwitcherOpen((v) => !v)}
+        onOpenLaunchpad={() => { setCardSwitcherOpen(false); setSearchOpen(false); setLaunchpadOpen((v) => !v); }}
+        activeAppId={activeWindow?.appId ?? null}
       />
       <CardSwitcher
         open={cardSwitcherOpen}

@@ -68,11 +68,16 @@ export function CardSwitcher({ open, onClose, onSelectApp, onLaunchpad }: Props)
 
   return (
     <div
-      className="fixed inset-0 z-[10000] flex flex-col bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 flex flex-col backdrop-blur-sm"
+      style={{ zIndex: 9000, backgroundColor: "rgba(0, 0, 0, 0.6)" }}
       role="dialog"
       aria-label="App Switcher"
+      onClick={onClose}
     >
-      <div className="flex items-center justify-between px-4 pt-4 pb-2">
+      <div
+        className="flex items-center justify-between px-4 pt-4 pb-2"
+        onClick={(e) => e.stopPropagation()}
+      >
         <h2 className="text-white text-lg font-medium">App Switcher</h2>
         <button
           onClick={onClose}
@@ -87,7 +92,8 @@ export function CardSwitcher({ open, onClose, onSelectApp, onLaunchpad }: Props)
         <div className="flex-1 flex flex-col items-center justify-center gap-4">
           <p className="text-white/60 text-base">No apps open</p>
           <button
-            onClick={() => {
+            onClick={(e) => {
+              e.stopPropagation();
               onLaunchpad();
               onClose();
             }}
@@ -100,8 +106,17 @@ export function CardSwitcher({ open, onClose, onSelectApp, onLaunchpad }: Props)
         </div>
       ) : (
         <div
-          className="flex-1 flex items-center overflow-x-auto gap-4 px-4 snap-x snap-mandatory"
-          style={{ scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch" }}
+          className="flex-1 flex items-center overflow-x-auto snap-x snap-mandatory"
+          style={{
+            scrollSnapType: "x mandatory",
+            WebkitOverflowScrolling: "touch",
+            paddingLeft: "calc(50vw - 35vw)",
+            paddingRight: "calc(50vw - 35vw)",
+            gap: "1rem",
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) onClose();
+          }}
         >
           {windows.map((win) => {
             const app = getApp(win.appId);
@@ -131,7 +146,8 @@ export function CardSwitcher({ open, onClose, onSelectApp, onLaunchpad }: Props)
                 onTouchStart={(e) => handleCardTouchStart(win.id, e.touches[0]?.clientY ?? 0)}
                 onTouchMove={(e) => handleCardTouchMove(win.id, e.touches[0]?.clientY ?? 0)}
                 onTouchEnd={() => handleCardTouchEnd(win.id)}
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   onSelectApp(win.id);
                   onClose();
                 }}
