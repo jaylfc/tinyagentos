@@ -58,11 +58,12 @@ export function Launchpad({ open, onClose, onOpenApp }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-[9000] flex flex-col backdrop-blur-md bg-black/40"
+      className="fixed top-0 left-0 right-0 z-[9000] flex flex-col backdrop-blur-md bg-black/40"
       onClick={onClose}
       style={{
+        bottom: isMobile ? 76 : 0,
         paddingTop: "calc(env(safe-area-inset-top, 0px) + 60px)",
-        paddingBottom: "calc(52px + env(safe-area-inset-bottom, 0px) + 16px)",
+        paddingBottom: isMobile ? 16 : "calc(52px + env(safe-area-inset-bottom, 0px) + 16px)",
       }}
     >
       <div
