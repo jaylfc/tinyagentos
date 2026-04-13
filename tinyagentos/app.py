@@ -597,6 +597,10 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     except ImportError:
         pass  # Lobby not present in public release
 
+    # --- Memory Management Routes ---
+    from tinyagentos.routes.memory_management import router as memory_management_router
+    app.include_router(memory_management_router)
+
     return app
 
 
