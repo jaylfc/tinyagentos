@@ -115,8 +115,16 @@ function resolveIcon(iconName: string): icons.LucideIcon {
 }
 
 export function App() {
-  const [launched, setLaunched] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  // Auto-launch on mobile/PWA — skip the login screen
+  const isPwa = typeof window !== "undefined" && (
+    window.matchMedia("(display-mode: standalone)").matches ||
+    (navigator as unknown as { standalone?: boolean }).standalone === true
+  );
+  const isTouchDevice = typeof window !== "undefined" && (
+    "ontouchstart" in window || navigator.maxTouchPoints > 0
+  );
+  const [launched, setLaunched] = useState(isPwa || isTouchDevice);
+  const [isFullscreen, setIsFullscreen] = useState(isPwa);
   const [launchpadOpen, setLaunchpadOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [cardSwitcherOpen, setCardSwitcherOpen] = useState(false);
@@ -220,21 +228,10 @@ export function App() {
     );
   }
 
-  // Mobile/Tablet layout
+  // Mobile/Tablet layout — no login gate, no fullscreen button (PWA is already fullscreen)
   return (
     <ShortcutProvider>
       <SystemShortcuts toggleSearch={toggleSearch} toggleLaunchpad={toggleLaunchpad} />
-      <LoginGate>
-        {!launched && <LoginScreen onLaunch={() => setLaunched(true)} />}
-        {launched && !isFullscreen && (
-          <button
-            onClick={() => document.documentElement.requestFullscreen().catch(() => {})}
-            className="fixed top-2 left-1/2 -translate-x-1/2 z-[9998] px-4 py-1.5 rounded-full bg-accent/90 text-white text-xs font-medium shadow-lg hover:bg-accent transition-colors"
-            aria-label="Return to fullscreen"
-          >
-            Return to fullscreen
-          </button>
-        )}
     <div
       className={`h-screen w-screen flex flex-col overflow-hidden text-shell-text transition-all duration-500 ${launched ? "opacity-100 scale-100" : "opacity-0 scale-95"}`}
       style={{ background: wallpaperStyle }}
@@ -306,7 +303,6 @@ export function App() {
       <NotificationToasts />
       <NotificationCentre />
     </div>
-      </LoginGate>
     </ShortcutProvider>
   );
 }
