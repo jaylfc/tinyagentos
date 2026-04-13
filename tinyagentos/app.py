@@ -597,6 +597,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     from tinyagentos.routes.memory_management import router as memory_mgmt_router
     app.include_router(memory_mgmt_router)
 
+    from tinyagentos.routes.jobs import router as jobs_router
+    app.include_router(jobs_router)
+
     # Lobby demo (internal only — not included in public builds)
     try:
         from tinyagentos.lobby.routes import router as lobby_router
