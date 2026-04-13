@@ -12,7 +12,7 @@ import { useThemeStore } from "@/stores/theme-store";
 import { useProcessStore } from "@/stores/process-store";
 import { useDockStore } from "@/stores/dock-store";
 import { getAllApps, getApp } from "@/registry/app-registry";
-import { PillBar } from "@/components/mobile/PillBar";
+import { MobileBottomNav } from "@/components/mobile/MobileBottomNav";
 import { CardSwitcher } from "@/components/mobile/CardSwitcher";
 import { MobileTopBar } from "@/components/mobile/MobileTopBar";
 import { MobileApp } from "@/components/mobile/MobileApp";
@@ -240,16 +240,17 @@ export function App() {
         currentAppName={activeApp?.name ?? null}
         onBack={handleMobileBack}
       />
-      <div className="flex-1 relative overflow-hidden" style={{ paddingBottom: "calc(40px + env(safe-area-inset-bottom, 0px) * 0.35)" }}>
+      {/* Main content area — flex-1 so it fills between top bar and bottom nav */}
+      <div className="flex-1 relative overflow-hidden">
         {activeWindowId && activeWindow ? (
           <MobileApp appId={activeWindow.appId} windowId={activeWindowId} />
         ) : (
-          <div className="h-full overflow-y-auto" style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 32px)" }}>
-            {/* iOS-style home grid */}
+          <div className="h-full overflow-y-auto py-6">
+            {/* App grid */}
             <div className="px-6 pb-8">
               <div className="grid grid-cols-4 gap-x-4 gap-y-7 max-w-sm mx-auto">
                 {getAllApps()
-                  .slice(0, 20)
+                  .slice(0, 24)
                   .map((app) => {
                     const Icon = resolveIcon(app.icon);
                     return (
@@ -283,11 +284,13 @@ export function App() {
           </div>
         )}
       </div>
-      <PillBar
-        onHome={handleMobileHome}
-        onCardSwitcher={() => setCardSwitcherOpen(true)}
+      {/* Bottom navigation — always visible, in normal flow */}
+      <MobileBottomNav
         onBack={handleMobileBack}
+        onHome={handleMobileHome}
         onSearch={() => setSearchOpen(true)}
+        onSwitcher={() => setCardSwitcherOpen(true)}
+        hasActiveApp={!!activeWindowId}
       />
       <CardSwitcher
         open={cardSwitcherOpen}
