@@ -220,6 +220,20 @@ class LLMProxy:
         if self.is_running():
             return True
 
+        # Check if a litellm process from a previous taOS run is already
+        # listening on our port. If so, adopt it rather than spawning a
+        # duplicate (which would fail to bind and sit idle, leaking memory).
+        try:
+            async with httpx.AsyncClient(timeout=3) as client:
+                resp = await client.get(f"{self.url}/health")
+                if resp.status_code == 200:
+                    logger.info("LiteLLM proxy already running on port %d (adopted from previous run)", self.port)
+                    # Rewrite config so it reflects current backends
+                    self.write_config(backends)
+                    return True
+        except Exception:
+            pass  # Not running — proceed to start
+
         config_path = self.write_config(backends)
 
         # Resolve litellm binary from the same venv that's running
