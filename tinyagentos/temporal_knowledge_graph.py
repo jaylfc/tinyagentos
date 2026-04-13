@@ -33,6 +33,9 @@ CREATE TABLE IF NOT EXISTS kg_triples (
     valid_to REAL,
     confidence REAL NOT NULL DEFAULT 1.0,
     source TEXT NOT NULL DEFAULT '',
+    appeared_count INTEGER NOT NULL DEFAULT 1,
+    accessed_count INTEGER NOT NULL DEFAULT 0,
+    last_accessed_at REAL,
     created_at REAL NOT NULL,
     FOREIGN KEY (subject_id) REFERENCES kg_entities(id),
     FOREIGN KEY (object_id) REFERENCES kg_entities(id)
@@ -222,10 +225,16 @@ class TemporalKnowledgeGraph:
         name: str,
         as_of: float | None = None,
         direction: str = "both",
+        track_access: bool = True,
     ) -> list[dict]:
-        """Get all relationships for an entity, optionally at a point in time."""
+        """Get all relationships for an entity, optionally at a point in time.
+
+        When track_access=True, increments accessed_count for retrieved triples
+        (used for importance scoring: hit_rate = accessed / appeared).
+        """
         eid = self._entity_id(name)
         ts = as_of or time.time()
+        now = time.time()
         results = []
 
         if direction in ("both", "outgoing"):
@@ -238,10 +247,21 @@ class TemporalKnowledgeGraph:
                      AND (t.valid_to IS NULL OR t.valid_to >= ?)""",
                 (eid, ts, ts),
             ).fetchall()
-            results.extend(
-                {**dict(r), "direction": "outgoing", "current": r["valid_to"] is None}
-                for r in rows
-            )
+            for r in rows:
+                d = dict(r)
+                d["direction"] = "outgoing"
+                d["current"] = r["valid_to"] is None
+                # Compute importance score
+                appeared = d.get("appeared_count", 1) or 1
+                accessed = d.get("accessed_count", 0)
+                d["importance"] = round(accessed / appeared, 3) if appeared > 0 else 0
+                results.append(d)
+                # Track access
+                if track_access:
+                    self._conn.execute(
+                        "UPDATE kg_triples SET accessed_count = accessed_count + 1, last_accessed_at = ? WHERE id = ?",
+                        (now, r["id"]),
+                    )
 
         if direction in ("both", "incoming"):
             rows = self._conn.execute(
@@ -253,10 +273,22 @@ class TemporalKnowledgeGraph:
                      AND (t.valid_to IS NULL OR t.valid_to >= ?)""",
                 (eid, ts, ts),
             ).fetchall()
-            results.extend(
-                {**dict(r), "direction": "incoming", "current": r["valid_to"] is None}
-                for r in rows
-            )
+            for r in rows:
+                d = dict(r)
+                d["direction"] = "incoming"
+                d["current"] = r["valid_to"] is None
+                appeared = d.get("appeared_count", 1) or 1
+                accessed = d.get("accessed_count", 0)
+                d["importance"] = round(accessed / appeared, 3) if appeared > 0 else 0
+                results.append(d)
+                if track_access:
+                    self._conn.execute(
+                        "UPDATE kg_triples SET accessed_count = accessed_count + 1, last_accessed_at = ? WHERE id = ?",
+                        (now, r["id"]),
+                    )
+
+        if track_access and results:
+            self._conn.commit()
 
         return results
 
