@@ -110,9 +110,54 @@ export function SearchPalette({ open, onClose, onOpenApp }: Props) {
     };
   }, [query, openWindow, onClose, onOpenApp]);
 
+  // Also search session catalog for timeline results
+  const [catalogResults, setCatalogResults] = useState<SearchResult[]>([]);
+
+  useEffect(() => {
+    const q = query.trim();
+    if (!q || q.length < 2) {
+      setCatalogResults([]);
+      return;
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      fetch(
+        `/api/memory/catalog/search?q=${encodeURIComponent(q)}&limit=3`,
+        { signal: controller.signal },
+      )
+        .then((r) => (r.ok ? r.json() : []))
+        .then((items) => {
+          if (!Array.isArray(items)) return;
+          setCatalogResults(
+            items.map((s: { id: number; topic: string; description: string; date: string; start_str?: string; end_str?: string; category: string }) => ({
+              id: `catalog-${s.id}`,
+              name: s.topic || "Session",
+              category: s.category || "session",
+              icon: "calendar-search",
+              type: "memory" as const,
+              subtitle: `${s.date || ""} ${s.start_str || ""}-${s.end_str || ""} ${s.description || ""}`.trim().slice(0, 100),
+              action: () => {
+                const memApp = getApp("memory");
+                if (memApp) {
+                  const wid = openWindow("memory", memApp.defaultSize);
+                  onOpenApp?.(wid);
+                }
+                onClose();
+              },
+            })),
+          );
+        })
+        .catch(() => {});
+    }, 300);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [query, openWindow, onClose, onOpenApp]);
+
   const results = useMemo<SearchResult[]>(
-    () => [...appResults, ...memoryResults],
-    [appResults, memoryResults],
+    () => [...appResults, ...memoryResults, ...catalogResults],
+    [appResults, memoryResults, catalogResults],
   );
 
   useEffect(() => {
