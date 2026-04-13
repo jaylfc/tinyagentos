@@ -211,8 +211,8 @@ export function SearchPalette({ open, onClose, onOpenApp }: Props) {
         onClick={(e) => e.stopPropagation()}
       >
         {/* Search input */}
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-shell-border">
-          <Search size={18} className="text-shell-text-tertiary shrink-0" />
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-shell-border">
+          <Search size={15} className="text-shell-text-tertiary shrink-0" />
           <input
             ref={inputRef}
             type="text"
@@ -220,12 +220,12 @@ export function SearchPalette({ open, onClose, onOpenApp }: Props) {
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Search apps, settings, files..."
-            className="flex-1 bg-transparent text-base text-shell-text outline-none placeholder:text-shell-text-tertiary"
+            className="flex-1 bg-transparent text-sm text-shell-text outline-none placeholder:text-shell-text-tertiary"
             autoFocus
           />
           {query && (
             <button onClick={() => setQuery("")} aria-label="Clear">
-              <X size={14} className="text-shell-text-tertiary" />
+              <X size={13} className="text-shell-text-tertiary" />
             </button>
           )}
         </div>
@@ -253,21 +253,21 @@ export function SearchPalette({ open, onClose, onOpenApp }: Props) {
                 key={result.id}
                 onClick={result.action}
                 onMouseEnter={() => setSelectedIndex(i)}
-                className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${
+                className={`w-full flex items-center gap-2.5 px-3 py-1.5 text-left transition-colors ${
                   i === selectedIndex ? "bg-accent/15" : "hover:bg-white/5"
                 }`}
               >
                 <div
-                  className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                  className={`w-7 h-7 rounded-md flex items-center justify-center ${
                     i === selectedIndex ? "bg-accent/20 text-accent" : "bg-shell-surface text-shell-text-secondary"
                   }`}
                 >
                   {getIcon(result.icon)}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm text-shell-text truncate">{result.name}</div>
+                  <div className="text-xs text-shell-text truncate">{result.name}</div>
                 </div>
-                <span className="text-[10px] text-shell-text-tertiary uppercase tracking-wider">
+                <span className="text-[9px] text-shell-text-tertiary uppercase tracking-wider">
                   {categoryLabels[result.category] ?? result.category}
                 </span>
               </button>
