@@ -68,8 +68,8 @@ export function MemoryApp({ windowId: _windowId }: { windowId: string }) {
 
   const showSessions = hasCapability('catalog');
   const showPipeline = hasCapability('pipeline');
-  const showAgents = hasCapability('agent-config');
-  const showSettings = hasCapability('settings');
+  const showAgents = true;   // Always visible
+  const showSettings = true; // Always visible
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode; show: boolean }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={14} />, show: true },
