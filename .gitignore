@@ -48,3 +48,4 @@ data/agent-memory/
 data/agent-workspaces/
 benchmarks/data/longmemeval_s_cleaned.json
 benchmarks/data/*.json
+models/minilm-onnx/minilm-l6-rk3588.rknn
