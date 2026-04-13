@@ -15,10 +15,6 @@ export function MobileTopBar({ onHome, onSearch }: Props) {
     <div
       className="shrink-0"
       style={{
-        backgroundColor: "rgba(26, 27, 46, 0.85)",
-        borderBottom: "1px solid rgba(255,255,255,0.06)",
-        backdropFilter: "blur(20px)",
-        WebkitBackdropFilter: "blur(20px)",
         paddingTop: "env(safe-area-inset-top, 0px)",
       }}
     >

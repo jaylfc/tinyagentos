@@ -21,6 +21,7 @@ const DEFAULT_PAGES: HomePage[] = [
   {
     items: [
       { type: "widget", widgetType: "greeting" },
+      { type: "widget", widgetType: "weather" },
       { type: "widget", widgetType: "system-stats" },
       { type: "widget", widgetType: "agent-status" },
     ],

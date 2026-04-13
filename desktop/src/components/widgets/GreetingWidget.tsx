@@ -7,6 +7,13 @@ function getGreeting(hour: number): string {
   return "Good night.";
 }
 
+function getGreetingEmoji(hour: number): string {
+  if (hour >= 5 && hour < 12) return "☀️";
+  if (hour >= 12 && hour < 17) return "🌤";
+  if (hour >= 17 && hour < 21) return "🌅";
+  return "🌙";
+}
+
 interface SystemSummary {
   agentCount: number;
   taskCount: number;
@@ -34,37 +41,58 @@ async function fetchSummary(): Promise<SystemSummary | null> {
 }
 
 export function GreetingWidget() {
-  const [greeting, setGreeting] = useState(() => getGreeting(new Date().getHours()));
+  const [now, setNow] = useState(() => new Date());
   const [summary, setSummary] = useState<SystemSummary | null>(null);
 
   useEffect(() => {
-    const tick = () => setGreeting(getGreeting(new Date().getHours()));
-    const greetingTimer = setInterval(tick, 60_000);
-    return () => clearInterval(greetingTimer);
+    const timer = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(timer);
   }, []);
 
   useEffect(() => {
     fetchSummary().then(setSummary);
-    const pollTimer = setInterval(() => {
-      fetchSummary().then(setSummary);
-    }, 30_000);
-    return () => clearInterval(pollTimer);
+    const timer = setInterval(() => fetchSummary().then(setSummary), 30_000);
+    return () => clearInterval(timer);
   }, []);
 
-  const subtitleText = summary !== null
-    ? `${summary.agentCount} agent${summary.agentCount !== 1 ? "s" : ""} running · ${summary.taskCount} task${summary.taskCount !== 1 ? "s" : ""} queued`
-    : null;
+  const hour = now.getHours();
+  const greeting = getGreeting(hour);
+  const emoji = getGreetingEmoji(hour);
+
+  const subtitleParts: string[] = [];
+  if (summary !== null) {
+    if (summary.agentCount > 0) subtitleParts.push(`${summary.agentCount} agent${summary.agentCount !== 1 ? "s" : ""} running`);
+    if (summary.taskCount > 0) subtitleParts.push(`${summary.taskCount} task${summary.taskCount !== 1 ? "s" : ""} queued`);
+  }
+  const subtitleText = subtitleParts.length > 0 ? subtitleParts.join(" · ") : "All systems idle";
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", justifyContent: "center", height: "100%", gap: 4 }}>
-      <span style={{ fontSize: "22px", fontWeight: 600, color: "rgba(255,255,255,0.9)", lineHeight: 1.2 }}>
+    <div style={{
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "24px 16px 20px",
+      gap: 8,
+    }}>
+      <span style={{ fontSize: 36, lineHeight: 1 }}>{emoji}</span>
+      <span style={{
+        fontSize: 28,
+        fontWeight: 700,
+        color: "rgba(255,255,255,0.95)",
+        lineHeight: 1.2,
+        textAlign: "center",
+        letterSpacing: "-0.5px",
+      }}>
         {greeting}
       </span>
-      {subtitleText !== null && (
-        <span style={{ fontSize: "12px", color: "rgba(255,255,255,0.4)" }}>
-          {subtitleText}
-        </span>
-      )}
+      <span style={{
+        fontSize: 13,
+        color: "rgba(255,255,255,0.45)",
+        textAlign: "center",
+      }}>
+        {subtitleText}
+      </span>
     </div>
   );
 }

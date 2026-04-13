@@ -107,8 +107,16 @@ function PageContent({ page, onOpenApp }: { page: HomePage; onOpenApp: (appId: s
 
             if (!cur) continue;
 
-            const curIsSide = cur.widgetType === "clock" || cur.widgetType === "system-stats";
-            const nextIsSide = next && (next.widgetType === "clock" || next.widgetType === "system-stats");
+            // Greeting renders without a card — it's a hero banner
+            if (cur.widgetType === "greeting") {
+              rendered.push(
+                <div key={cur.index}>{renderWidgetContent("greeting")}</div>
+              );
+              continue;
+            }
+
+            const curIsSide = cur.widgetType === "clock" || cur.widgetType === "system-stats" || cur.widgetType === "weather";
+            const nextIsSide = next && (next.widgetType === "clock" || next.widgetType === "system-stats" || next.widgetType === "weather");
 
             if (curIsSide && nextIsSide && next) {
               rendered.push(
