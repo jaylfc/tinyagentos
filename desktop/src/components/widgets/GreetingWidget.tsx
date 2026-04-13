@@ -64,7 +64,7 @@ export function GreetingWidget() {
     if (summary.agentCount > 0) subtitleParts.push(`${summary.agentCount} agent${summary.agentCount !== 1 ? "s" : ""} running`);
     if (summary.taskCount > 0) subtitleParts.push(`${summary.taskCount} task${summary.taskCount !== 1 ? "s" : ""} queued`);
   }
-  const subtitleText = subtitleParts.length > 0 ? subtitleParts.join(" · ") : "All systems idle";
+  const subtitleText = subtitleParts.length > 0 ? subtitleParts.join(" · ") : "All systems operational";
 
   return (
     <div style={{
