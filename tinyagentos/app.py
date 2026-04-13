@@ -232,6 +232,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.webhook_notifier = webhook_notifier
         app.state.llm_proxy = llm_proxy
         app.state.channel_hub_router = channel_hub_router
+        channel_hub_router.set_archive(archive)  # Wire archive for zero-loss channel message capture
         app.state.adapter_manager = adapter_manager
         app.state.channel_hub_connectors = {}
         app.state.deploy_tasks = {}

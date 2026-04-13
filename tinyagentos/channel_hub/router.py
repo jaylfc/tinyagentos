@@ -31,11 +31,19 @@ class MessageRouter:
         self._agent_ports[agent_name] = port
         return port
 
+    def set_archive(self, archive) -> None:
+        """Set the archive store for zero-loss message capture."""
+        self._archive = archive
+
     async def route_message(self, agent_name: str, message: IncomingMessage) -> OutgoingMessage | None:
         port = self._agent_ports.get(agent_name)
         if not port:
             logger.warning(f"No adapter registered for agent '{agent_name}'")
             return None
+
+        # Archive inbound message (zero-loss layer — never loses a message)
+        await self._archive_message(agent_name, message, direction="inbound")
+
         try:
             async with httpx.AsyncClient(timeout=120) as client:
                 resp = await client.post(
@@ -56,12 +64,13 @@ class MessageRouter:
 
                 # Check if response is structured or plain text with hints
                 if isinstance(data.get("content"), str) and not data.get("buttons"):
-                    # Try parsing inline hints from plain text
                     parsed = parse_inline_hints(data["content"])
                     if parsed.buttons or parsed.images:
+                        await self._archive_message(agent_name, parsed, direction="outbound",
+                                                     platform=message.platform, channel_id=message.channel_id)
                         return parsed
 
-                return OutgoingMessage(
+                response = OutgoingMessage(
                     content=data.get("content", ""),
                     buttons=data.get("buttons", []),
                     images=data.get("images", []),
@@ -71,6 +80,48 @@ class MessageRouter:
                     passthrough_platform=data.get("platform", ""),
                     passthrough_payload=data.get("payload", {}),
                 )
+
+                # Archive outbound response
+                await self._archive_message(agent_name, response, direction="outbound",
+                                             platform=message.platform, channel_id=message.channel_id)
+                return response
         except Exception as e:
             logger.error(f"Failed to route message to {agent_name}: {e}")
             return None
+
+    async def _archive_message(self, agent_name: str, message, direction: str,
+                                platform: str = "", channel_id: str = "") -> None:
+        """Archive a channel message to the zero-loss layer. Never blocks routing."""
+        archive = getattr(self, "_archive", None)
+        if not archive:
+            return
+        try:
+            if isinstance(message, IncomingMessage):
+                await archive.record(
+                    "conversation",
+                    {
+                        "content": message.text,
+                        "from_id": message.from_id,
+                        "from_name": message.from_name,
+                        "platform": message.platform,
+                        "channel_id": message.channel_id,
+                        "direction": "inbound",
+                        "message_id": message.id,
+                    },
+                    agent_name=agent_name,
+                    summary=f"[{message.platform}] {message.from_name}: {message.text[:80]}",
+                )
+            elif isinstance(message, OutgoingMessage):
+                await archive.record(
+                    "conversation",
+                    {
+                        "content": message.content,
+                        "platform": platform,
+                        "channel_id": channel_id,
+                        "direction": "outbound",
+                    },
+                    agent_name=agent_name,
+                    summary=f"[{platform}→] {message.content[:80]}",
+                )
+        except Exception:
+            pass  # Never block message routing for archive failures
