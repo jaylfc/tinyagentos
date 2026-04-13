@@ -104,6 +104,7 @@ async def api_health(request: Request, detailed: bool = False):
     return {**basic, "subsystems": subsystems}
 
 
+@router.get("/api/system/info")
 @router.get("/api/system")
 async def api_system(request: Request):
     """Comprehensive system overview -- hardware, resources, platform stats."""
