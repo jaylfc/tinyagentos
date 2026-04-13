@@ -38,6 +38,7 @@ const apps: AppManifest[] = [
   { id: "agent-browsers", name: "Browsers", icon: "globe", category: "platform", component: () => import("@/apps/AgentBrowsersApp").then((m) => ({ default: m.AgentBrowsersApp })), defaultSize: { w: 1000, h: 650 }, minSize: { w: 550, h: 400 }, singleton: true, pinned: false, launchpadOrder: 16 },
 
   // OS apps
+  { id: "weather", name: "Weather", icon: "cloud", category: "os", component: () => import("@/apps/WeatherApp").then((m) => ({ default: m.WeatherApp })), defaultSize: { w: 800, h: 600 }, minSize: { w: 400, h: 400 }, singleton: true, pinned: false, launchpadOrder: 19 },
   { id: "calculator", name: "Calculator", icon: "calculator", category: "os", component: () => import("@/apps/CalculatorApp").then((m) => ({ default: m.CalculatorApp })), defaultSize: { w: 320, h: 480 }, minSize: { w: 280, h: 400 }, singleton: true, pinned: false, launchpadOrder: 20 },
   { id: "calendar", name: "Calendar", icon: "calendar", category: "os", component: () => import("@/apps/CalendarApp").then((m) => ({ default: m.CalendarApp })), defaultSize: { w: 900, h: 600 }, minSize: { w: 600, h: 400 }, singleton: true, pinned: false, launchpadOrder: 21 },
   { id: "contacts", name: "Contacts", icon: "contact", category: "os", component: () => import("@/apps/ContactsApp").then((m) => ({ default: m.ContactsApp })), defaultSize: { w: 700, h: 500 }, minSize: { w: 400, h: 300 }, singleton: true, pinned: false, launchpadOrder: 22 },

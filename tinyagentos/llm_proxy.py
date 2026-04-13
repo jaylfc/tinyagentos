@@ -181,9 +181,14 @@ def generate_litellm_config(backends: list[dict], default_model: str = "default"
     return {
         "model_list": model_list,
         "router_settings": {
-            "routing_strategy": "latency-based-routing",
+            "routing_strategy": "simple-shuffle",
             "num_retries": 2,
             "timeout": 120,
+            "enable_pre_call_checks": False,
+        },
+        "general_settings": {
+            "background_health_checks": False,
+            "disable_spend_logs": True,
         },
     }
 

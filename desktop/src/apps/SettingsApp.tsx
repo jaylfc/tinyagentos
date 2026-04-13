@@ -18,6 +18,8 @@ import {
   Keyboard,
   Accessibility,
   Monitor,
+  Cloud,
+  MapPin,
 } from "lucide-react";
 import {
   Button,
@@ -33,7 +35,7 @@ import { useShortcuts } from "@/hooks/use-shortcut-registry";
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
-type Section = "system" | "storage" | "providers" | "memory" | "backup" | "updates" | "advanced" | "shortcuts" | "accessibility" | "desktop";
+type Section = "system" | "storage" | "providers" | "memory" | "backup" | "updates" | "advanced" | "shortcuts" | "accessibility" | "desktop" | "weather";
 
 interface SectionDef {
   id: Section;
@@ -80,6 +82,7 @@ const SECTIONS: SectionDef[] = [
   { id: "shortcuts", label: "Keyboard Shortcuts", icon: Keyboard },
   { id: "accessibility", label: "Accessibility", icon: Accessibility },
   { id: "desktop", label: "Desktop & Dock", icon: Monitor },
+  { id: "weather", label: "Weather", icon: Cloud },
 ];
 
 const PLACEHOLDER_SYSTEM: SystemInfo = {
