@@ -29,7 +29,25 @@ export default defineConfig({
         // ordered longest-prefix-first so more specific matches win.
         manualChunks(id) {
           if (!id.includes("node_modules")) return;
-          if (id.includes("@codemirror") || id.includes("@lezer")) return "vendor-codemirror";
+          // CodeMirror + @lezer: only bucket the core runtime into the
+          // shared chunk. Languages (loaded lazily by @codemirror/language-data)
+          // and their @lezer grammars stay as individual chunks so a user
+          // opening a .ts file doesn't download the Fortran grammar.
+          if (
+            id.includes("@codemirror/state") ||
+            id.includes("@codemirror/view") ||
+            id.includes("@codemirror/language") ||
+            id.includes("@codemirror/commands") ||
+            id.includes("@codemirror/search") ||
+            id.includes("@codemirror/autocomplete") ||
+            id.includes("@codemirror/lint") ||
+            id.includes("@codemirror/theme-one-dark") ||
+            id.includes("@lezer/common") ||
+            id.includes("@lezer/lr") ||
+            id.includes("@lezer/highlight")
+          ) {
+            return "vendor-codemirror";
+          }
           if (id.includes("@milkdown") || id.includes("prosemirror")) return "vendor-milkdown";
           if (id.includes("@xterm")) return "vendor-xterm";
           if (id.includes("mathjs")) return "vendor-mathjs";

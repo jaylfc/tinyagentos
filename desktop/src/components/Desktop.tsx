@@ -19,7 +19,8 @@ type ContextMenuState = {
 export function Desktop() {
   const windows = useProcessStore((s) => s.windows);
   const { openWindow } = useProcessStore();
-  const wallpaperStyle = useThemeStore((s) => s.wallpaperStyle);
+  const wallpaperImage = useThemeStore((s) => s.wallpaperImage);
+  const wallpaperFallback = useThemeStore((s) => s.wallpaperFallback);
   const { showWidgets, toggleWidgets } = useWidgetStore();
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
   const [wallpaperPickerOpen, setWallpaperPickerOpen] = useState(false);
@@ -107,8 +108,8 @@ export function Desktop() {
 
   return (
     <div
-      className="relative flex-1 overflow-hidden"
-      style={{ background: wallpaperStyle }}
+      className="taos-wallpaper relative flex-1 overflow-hidden"
+      style={{ backgroundImage: wallpaperImage, backgroundColor: wallpaperFallback }}
       onContextMenu={handleContextMenu}
       data-desktop-surface
     >

@@ -51,7 +51,13 @@ export function WallpaperPicker({ open, onClose }: Props) {
             >
               <div
                 className="h-24 w-full"
-                style={{ background: wp.style }}
+                style={{
+                  backgroundImage: wp.image,
+                  backgroundColor: wp.fallback,
+                  backgroundSize: "cover",
+                  backgroundPosition: "center",
+                  backgroundRepeat: "no-repeat",
+                }}
               />
               <div className="px-2 py-1.5 text-xs text-shell-text-secondary text-left">
                 {wp.label}

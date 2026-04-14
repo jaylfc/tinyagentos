@@ -48,6 +48,23 @@
   --shadow-card-hover: 0 8px 24px rgba(0, 0, 0, 0.3), 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
+/* Wallpaper sizing
+   ----------------
+   Desktop fills the viewport (cover crops edges if aspect mismatches).
+   Mobile/portrait scales the full image in (contain) so pieces like the
+   'taOS' letters near the edges of a wide wallpaper aren't clipped.
+*/
+.taos-wallpaper {
+  background-position: center center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+@media (max-width: 767px), (orientation: portrait) {
+  .taos-wallpaper {
+    background-size: contain;
+  }
+}
+
 /* React-grid-layout dark theme overrides for widget system */
 .react-grid-item.react-grid-placeholder {
   background: rgba(102, 126, 234, 0.2) !important;
