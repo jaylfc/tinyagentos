@@ -52,31 +52,34 @@ class TestAuthManager:
     def test_check_password_correct(self, tmp_path):
         mgr = AuthManager(tmp_path)
         mgr.set_password("test123")
-        assert mgr.check_password("test123") is True
+        ok, _ = mgr.check_password("test123")
+        assert ok is True
 
     def test_check_password_wrong(self, tmp_path):
         mgr = AuthManager(tmp_path)
         mgr.set_password("test123")
-        assert mgr.check_password("wrong") is False
+        ok, _ = mgr.check_password("wrong")
+        assert ok is False
 
     def test_check_password_not_configured(self, tmp_path):
         mgr = AuthManager(tmp_path)
-        assert mgr.check_password("anything") is False
+        ok, _ = mgr.check_password("anything")
+        assert ok is False
 
     def test_create_and_validate_session(self, tmp_path):
         mgr = AuthManager(tmp_path)
-        token = mgr.create_session()
-        assert mgr.validate_session(token) is True
+        token = mgr.create_session(user_id="uid1")
+        assert mgr.validate_session(token) is not None
 
     def test_validate_invalid_token(self, tmp_path):
         mgr = AuthManager(tmp_path)
-        assert mgr.validate_session("bogus") is False
+        assert mgr.validate_session("bogus") is None
 
     def test_revoke_session(self, tmp_path):
         mgr = AuthManager(tmp_path)
-        token = mgr.create_session()
+        token = mgr.create_session(user_id="uid1")
         mgr.revoke_session(token)
-        assert mgr.validate_session(token) is False
+        assert mgr.validate_session(token) is None
 
     def test_revoke_nonexistent_session(self, tmp_path):
         mgr = AuthManager(tmp_path)
@@ -84,19 +87,19 @@ class TestAuthManager:
 
     def test_expired_session(self, tmp_path):
         mgr = AuthManager(tmp_path)
-        token = mgr.create_session()
-        # Manually expire it
-        mgr._sessions[token] = time.time() - 1
-        assert mgr.validate_session(token) is False
+        token = mgr.create_session(user_id="uid1")
+        # Manually expire it — use dict format matching new schema
+        mgr._sessions[token] = {"user_id": "uid1", "expires_at": time.time() - 1, "long_lived": False}
+        assert mgr.validate_session(token) is None
         # Should also be cleaned up
         assert token not in mgr._sessions
 
     def test_cleanup_sessions(self, tmp_path):
         mgr = AuthManager(tmp_path)
-        t1 = mgr.create_session()
-        t2 = mgr.create_session()
-        # Expire t1
-        mgr._sessions[t1] = time.time() - 1
+        t1 = mgr.create_session(user_id="uid1")
+        t2 = mgr.create_session(user_id="uid2")
+        # Expire t1 using dict format
+        mgr._sessions[t1] = {"user_id": "uid1", "expires_at": time.time() - 1, "long_lived": False}
         mgr.cleanup_sessions()
         assert t1 not in mgr._sessions
         assert t2 in mgr._sessions
@@ -200,7 +203,8 @@ class TestAuthRoutes:
         )
         assert resp.status_code == 303
         assert app.state.auth.is_configured() is True
-        assert app.state.auth.check_password("newpass") is True
+        ok, _ = app.state.auth.check_password("newpass")
+        assert ok is True
 
     @pytest.mark.asyncio
     async def test_auth_setup_rejects_if_already_configured(self, app, auth_client):
@@ -315,3 +319,273 @@ class TestAuthMiddleware:
             json={"worker_id": "test"},
         )
         assert resp.status_code != 401
+
+
+class TestMultiUser:
+    """Multi-user invite flow, admin gates, session revocation."""
+
+    @pytest.mark.asyncio
+    async def test_first_setup_creates_admin(self, app, auth_client):
+        resp = await auth_client.post(
+            "/auth/setup",
+            json={"username": "admin", "full_name": "Admin", "email": "", "password": "adminpass", "auto_login": False},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        assert data["user"]["is_admin"] is True
+
+    @pytest.mark.asyncio
+    async def test_admin_can_add_user(self, app, auth_client):
+        # Setup admin
+        await auth_client.post(
+            "/auth/setup",
+            json={"username": "admin", "full_name": "Admin", "email": "", "password": "adminpass", "auto_login": False},
+        )
+        login = await auth_client.post(
+            "/auth/login",
+            json={"username": "admin", "password": "adminpass", "auto_login": False},
+        )
+        cookies = login.cookies
+        resp = await auth_client.post(
+            "/auth/users",
+            json={"username": "alice"},
+            cookies=cookies,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        code = data["invite_code"]
+        assert len(code) == 8
+        assert code.isdigit()
+
+    @pytest.mark.asyncio
+    async def test_pending_user_login_with_invite_code(self, app, auth_client):
+        await auth_client.post(
+            "/auth/setup",
+            json={"username": "admin", "full_name": "Admin", "email": "", "password": "adminpass", "auto_login": False},
+        )
+        login = await auth_client.post(
+            "/auth/login",
+            json={"username": "admin", "password": "adminpass", "auto_login": False},
+        )
+        cookies = login.cookies
+        add = await auth_client.post(
+            "/auth/users",
+            json={"username": "bob"},
+            cookies=cookies,
+        )
+        code = add.json()["invite_code"]
+        # Bob logs in with the invite code as password
+        resp = await auth_client.post(
+            "/auth/login",
+            json={"username": "bob", "password": code, "auto_login": False},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        assert data["needs_onboarding"] is True
+        assert data["user"]["username"] == "bob"
+
+    @pytest.mark.asyncio
+    async def test_complete_invite_sets_profile_and_password(self, app, auth_client):
+        await auth_client.post(
+            "/auth/setup",
+            json={"username": "admin", "full_name": "Admin", "email": "", "password": "adminpass", "auto_login": False},
+        )
+        login = await auth_client.post(
+            "/auth/login",
+            json={"username": "admin", "password": "adminpass", "auto_login": False},
+        )
+        add = await auth_client.post(
+            "/auth/users",
+            json={"username": "carol"},
+            cookies=login.cookies,
+        )
+        code = add.json()["invite_code"]
+        resp = await auth_client.post(
+            "/auth/complete",
+            json={
+                "username": "carol",
+                "invite_code": code,
+                "full_name": "Carol Smith",
+                "email": "carol@example.com",
+                "password": "carolpass",
+                "auto_login": False,
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json()["ok"] is True
+        # Now log in with real password
+        resp2 = await auth_client.post(
+            "/auth/login",
+            json={"username": "carol", "password": "carolpass", "auto_login": False},
+        )
+        assert resp2.status_code == 200
+        assert resp2.json()["ok"] is True
+
+    @pytest.mark.asyncio
+    async def test_non_admin_cannot_add_users(self, app, auth_client):
+        await auth_client.post(
+            "/auth/setup",
+            json={"username": "admin", "full_name": "Admin", "email": "", "password": "adminpass", "auto_login": False},
+        )
+        login_admin = await auth_client.post(
+            "/auth/login",
+            json={"username": "admin", "password": "adminpass", "auto_login": False},
+        )
+        add = await auth_client.post(
+            "/auth/users",
+            json={"username": "dave"},
+            cookies=login_admin.cookies,
+        )
+        code = add.json()["invite_code"]
+        await auth_client.post(
+            "/auth/complete",
+            json={"username": "dave", "invite_code": code, "full_name": "Dave", "email": "", "password": "davepass", "auto_login": False},
+        )
+        login_dave = await auth_client.post(
+            "/auth/login",
+            json={"username": "dave", "password": "davepass", "auto_login": False},
+        )
+        resp = await auth_client.post(
+            "/auth/users",
+            json={"username": "newguy"},
+            cookies=login_dave.cookies,
+        )
+        assert resp.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_cannot_delete_self(self, app, auth_client):
+        await auth_client.post(
+            "/auth/setup",
+            json={"username": "admin", "full_name": "Admin", "email": "", "password": "adminpass", "auto_login": False},
+        )
+        login = await auth_client.post(
+            "/auth/login",
+            json={"username": "admin", "password": "adminpass", "auto_login": False},
+        )
+        resp = await auth_client.delete("/auth/users/admin", cookies=login.cookies)
+        assert resp.status_code == 400
+        assert "self" in resp.json()["error"]
+
+    @pytest.mark.asyncio
+    async def test_cannot_delete_last_admin(self, app, auth_client):
+        await auth_client.post(
+            "/auth/setup",
+            json={"username": "admin", "full_name": "Admin", "email": "", "password": "adminpass", "auto_login": False},
+        )
+        login_admin = await auth_client.post(
+            "/auth/login",
+            json={"username": "admin", "password": "adminpass", "auto_login": False},
+        )
+        # Add a non-admin user
+        add = await auth_client.post("/auth/users", json={"username": "eve"}, cookies=login_admin.cookies)
+        code = add.json()["invite_code"]
+        await auth_client.post(
+            "/auth/complete",
+            json={"username": "eve", "invite_code": code, "full_name": "Eve", "email": "", "password": "evepass", "auto_login": False},
+        )
+        # Try to delete admin (the only admin)
+        resp = await auth_client.delete("/auth/users/eve", cookies=login_admin.cookies)
+        assert resp.status_code == 200
+        # Now try to delete self (admin) — blocked even though we just deleted eve
+        resp2 = await auth_client.delete("/auth/users/admin", cookies=login_admin.cookies)
+        assert resp2.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_admin_reset_password(self, app, auth_client):
+        await auth_client.post(
+            "/auth/setup",
+            json={"username": "admin", "full_name": "Admin", "email": "", "password": "adminpass", "auto_login": False},
+        )
+        login = await auth_client.post(
+            "/auth/login",
+            json={"username": "admin", "password": "adminpass", "auto_login": False},
+        )
+        add = await auth_client.post("/auth/users", json={"username": "frank"}, cookies=login.cookies)
+        code = add.json()["invite_code"]
+        await auth_client.post(
+            "/auth/complete",
+            json={"username": "frank", "invite_code": code, "full_name": "Frank", "email": "", "password": "frankpass", "auto_login": False},
+        )
+        resp = await auth_client.post("/auth/users/frank/reset", cookies=login.cookies)
+        assert resp.status_code == 200
+        new_code = resp.json()["invite_code"]
+        assert len(new_code) == 8
+        assert new_code.isdigit()
+        # Frank can no longer log in with old password
+        bad = await auth_client.post(
+            "/auth/login",
+            json={"username": "frank", "password": "frankpass", "auto_login": False},
+        )
+        assert bad.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_profile_update_self(self, app, auth_client):
+        await auth_client.post(
+            "/auth/setup",
+            json={"username": "admin", "full_name": "Admin", "email": "old@example.com", "password": "adminpass", "auto_login": False},
+        )
+        login = await auth_client.post(
+            "/auth/login",
+            json={"username": "admin", "password": "adminpass", "auto_login": False},
+        )
+        resp = await auth_client.post(
+            "/auth/users/admin/profile",
+            json={"full_name": "Admin Updated", "email": "new@example.com"},
+            cookies=login.cookies,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["user"]["full_name"] == "Admin Updated"
+
+    @pytest.mark.asyncio
+    async def test_profile_update_other_user_forbidden(self, app, auth_client):
+        await auth_client.post(
+            "/auth/setup",
+            json={"username": "admin", "full_name": "Admin", "email": "", "password": "adminpass", "auto_login": False},
+        )
+        login_admin = await auth_client.post(
+            "/auth/login",
+            json={"username": "admin", "password": "adminpass", "auto_login": False},
+        )
+        add = await auth_client.post("/auth/users", json={"username": "grace"}, cookies=login_admin.cookies)
+        code = add.json()["invite_code"]
+        await auth_client.post(
+            "/auth/complete",
+            json={"username": "grace", "invite_code": code, "full_name": "Grace", "email": "", "password": "gracepass", "auto_login": False},
+        )
+        login_grace = await auth_client.post(
+            "/auth/login",
+            json={"username": "grace", "password": "gracepass", "auto_login": False},
+        )
+        # Grace tries to update admin's profile
+        resp = await auth_client.post(
+            "/auth/users/admin/profile",
+            json={"full_name": "Hacked"},
+            cookies=login_grace.cookies,
+        )
+        assert resp.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_sessions_revoked_on_delete(self, app, auth_client):
+        await auth_client.post(
+            "/auth/setup",
+            json={"username": "admin", "full_name": "Admin", "email": "", "password": "adminpass", "auto_login": False},
+        )
+        login_admin = await auth_client.post(
+            "/auth/login",
+            json={"username": "admin", "password": "adminpass", "auto_login": False},
+        )
+        add = await auth_client.post("/auth/users", json={"username": "henry"}, cookies=login_admin.cookies)
+        code = add.json()["invite_code"]
+        comp = await auth_client.post(
+            "/auth/complete",
+            json={"username": "henry", "invite_code": code, "full_name": "Henry", "email": "", "password": "henrypass", "auto_login": False},
+        )
+        henry_cookies = comp.cookies
+        # Delete henry
+        await auth_client.delete("/auth/users/henry", cookies=login_admin.cookies)
+        # Henry's session should be invalid now
+        resp = await auth_client.get("/api/system", cookies=henry_cookies)
+        assert resp.status_code == 401

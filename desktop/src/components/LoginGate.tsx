@@ -9,7 +9,8 @@ interface Props {
 type AuthStatus =
   | { phase: "loading" }
   | { phase: "onboarding" }
-  | { phase: "login"; legacy: boolean }
+  | { phase: "invite"; username: string; inviteCode: string; multiUser: boolean }
+  | { phase: "login"; legacy: boolean; multiUser: boolean }
   | { phase: "ready" };
 
 export function LoginGate({ children }: Props) {
@@ -24,7 +25,6 @@ export function LoginGate({ children }: Props) {
     try {
       const res = await fetch("/auth/status", { credentials: "include" });
       if (!res.ok) {
-        // Auth subsystem disabled or unreachable — fall through to children.
         setStatus({ phase: "ready" });
         return;
       }
@@ -32,12 +32,21 @@ export function LoginGate({ children }: Props) {
       if (!data.configured) {
         setStatus({ phase: "onboarding" });
       } else if (data.authenticated) {
-        setStatus({ phase: "ready" });
+        if (data.needs_onboarding && data.user?.username) {
+          // Pending invited user — collect their profile and password
+          setStatus({
+            phase: "invite",
+            username: data.user.username,
+            inviteCode: "",   // invite code was accepted at login; the session holds it
+            multiUser: !!data.multi_user,
+          });
+        } else {
+          setStatus({ phase: "ready" });
+        }
       } else {
-        setStatus({ phase: "login", legacy: !data.user });
+        setStatus({ phase: "login", legacy: !data.user, multiUser: !!data.multi_user });
       }
     } catch {
-      // Network error — assume auth not enforced and let the desktop load.
       setStatus({ phase: "ready" });
     }
   }, []);
@@ -62,7 +71,18 @@ export function LoginGate({ children }: Props) {
         }),
       });
       if (res.ok) {
-        await refreshStatus();
+        const data = await res.json().catch(() => ({}));
+        if (data.needs_onboarding && data.user?.username) {
+          // Pending user — route to invite completion
+          setStatus({
+            phase: "invite",
+            username: data.user.username,
+            inviteCode: password,  // the invite code they just typed as password
+            multiUser: true,
+          });
+        } else {
+          await refreshStatus();
+        }
       } else {
         const data = await res.json().catch(() => ({}));
         setError(data?.error ?? "Incorrect username or password");
@@ -82,11 +102,25 @@ export function LoginGate({ children }: Props) {
   }
 
   if (status.phase === "onboarding") {
-    return <OnboardingScreen onDone={refreshStatus} />;
+    return <OnboardingScreen onDone={refreshStatus} defaultAutoLogin={true} />;
+  }
+
+  if (status.phase === "invite") {
+    return (
+      <OnboardingScreen
+        onDone={refreshStatus}
+        invitedUsername={status.username}
+        inviteCode={status.inviteCode}
+        defaultAutoLogin={!status.multiUser}
+      />
+    );
   }
 
   if (status.phase === "login") {
     const showUsername = !status.legacy;
+    // Default auto-login to false in multi-user mode
+    const defaultAutoLogin = !status.multiUser;
+
     return (
       <div
         className="h-screen w-screen flex items-center justify-center p-4"
@@ -135,7 +169,7 @@ export function LoginGate({ children }: Props) {
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="current-password"
             autoFocus={!showUsername}
-            placeholder="Password"
+            placeholder={showUsername ? "Password or invite code" : "Password"}
             className="w-full px-4 py-2.5 rounded-lg bg-shell-bg-deep border border-white/10 text-sm text-shell-text outline-none focus:border-accent/40 transition-colors"
           />
 
@@ -150,6 +184,7 @@ export function LoginGate({ children }: Props) {
               type="checkbox"
               checked={autoLogin}
               onChange={(e) => setAutoLogin(e.target.checked)}
+              defaultChecked={defaultAutoLogin}
               className="w-4 h-4 accent-accent cursor-pointer"
             />
             <span className="text-xs text-shell-text-secondary">Stay signed in on this device</span>

@@ -1,11 +1,97 @@
-import { Bell, Search, LayoutGrid } from "lucide-react";
+import { Bell, Search, LayoutGrid, Power, Lock, Settings, RotateCcw, LogOut } from "lucide-react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useClock } from "@/hooks/use-clock";
 import { useWidgetStore } from "@/stores/widget-store";
 import { useNotificationStore } from "@/stores/notification-store";
+import { useProcessStore } from "@/stores/process-store";
 import { StatusIndicators } from "./StatusIndicators";
 
 interface Props {
   onSearchOpen: () => void;
+}
+
+function PowerMenu() {
+  const openWindow = useProcessStore((s) => s.openWindow);
+
+  const lock = async () => {
+    await fetch("/auth/lock", { method: "POST", credentials: "include" }).catch(() => {});
+    window.location.reload();
+  };
+
+  const openSettings = () => {
+    openWindow("settings", { w: 760, h: 520 });
+  };
+
+  // TODO: lift RestartProgressModal up the tree to allow triggering from here
+  // without opening Settings. For now navigate to Settings → Updates where the
+  // Restart button exists.
+  const restartServer = () => {
+    openWindow("settings", { w: 760, h: 520 });
+  };
+
+  const menuItem =
+    "flex items-center gap-2.5 w-full px-3 py-2 text-sm rounded-md text-shell-text-secondary hover:bg-shell-surface-hover hover:text-shell-text outline-none focus:bg-shell-surface-hover focus:text-shell-text cursor-pointer select-none transition-colors";
+
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <button
+          className="p-1 rounded hover:bg-shell-surface-hover transition-colors text-shell-text-secondary"
+          aria-label="Power menu"
+          title="Power"
+        >
+          <Power size={14} />
+        </button>
+      </DropdownMenu.Trigger>
+
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          align="end"
+          sideOffset={6}
+          className="z-50 min-w-[180px] rounded-xl border border-white/10 bg-shell-surface p-1.5 shadow-2xl backdrop-blur-xl"
+          style={{ backgroundColor: "rgba(28,26,44,0.96)" }}
+          onEscapeKeyDown={() => {}}
+        >
+          <DropdownMenu.Item
+            className={menuItem}
+            onSelect={lock}
+          >
+            <Lock size={14} />
+            <span className="flex-1">Lock taOS</span>
+            <kbd className="text-[10px] opacity-40 font-mono">⌘L</kbd>
+          </DropdownMenu.Item>
+
+          <DropdownMenu.Item
+            className={menuItem}
+            onSelect={openSettings}
+          >
+            <Settings size={14} />
+            <span className="flex-1">Settings</span>
+          </DropdownMenu.Item>
+
+          <DropdownMenu.Separator className="my-1 h-px bg-white/10" />
+
+          <DropdownMenu.Item
+            className={menuItem}
+            onSelect={restartServer}
+            // TODO: trigger RestartProgressModal directly once it is lifted
+            // into a context/store (see comment in restartServer above)
+          >
+            <RotateCcw size={14} />
+            <span className="flex-1">Restart server</span>
+          </DropdownMenu.Item>
+
+          <DropdownMenu.Item
+            className={menuItem}
+            onSelect={lock}
+          >
+            <LogOut size={14} />
+            <span className="flex-1">Sign out</span>
+          </DropdownMenu.Item>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  );
 }
 
 export function TopBar({ onSearchOpen }: Props) {
@@ -41,6 +127,7 @@ export function TopBar({ onSearchOpen }: Props) {
       <div className="flex items-center gap-3 ml-auto">
         <StatusIndicators />
         <span className="text-xs text-shell-text-tertiary">{clock}</span>
+        <PowerMenu />
         <button
           onClick={toggleWidgets}
           className={`p-1 rounded transition-colors ${showWidgets ? "text-accent bg-accent/10" : "text-shell-text-secondary hover:bg-shell-surface-hover"}`}
