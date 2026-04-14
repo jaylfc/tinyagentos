@@ -166,6 +166,13 @@ async def install_app(request: Request, body: InstallRequest):
     result = await installer.install(body.app_id, manifest.install, **kwargs)
     if result["success"]:
         registry.mark_installed(body.app_id, manifest.version)
+        if manifest.type == "plugin":
+            mcp_store = getattr(request.app.state, "mcp_store", None)
+            if mcp_store is not None:
+                transport = manifest.install.get("transport", "stdio")
+                await mcp_store.register_server(
+                    body.app_id, manifest.version, transport
+                )
         return {"status": "installed", "app_id": body.app_id}
     return JSONResponse({"error": result.get("error", "Install failed")}, status_code=500)
 
@@ -186,5 +193,13 @@ async def uninstall_app(request: Request, body: UninstallRequest):
     else:
         await installer.uninstall(body.app_id)
 
+    if manifest and manifest.type == "plugin":
+        mcp_supervisor = getattr(request.app.state, "mcp_supervisor", None)
+        if mcp_supervisor is not None:
+            mcp_store = getattr(request.app.state, "mcp_store", None)
+            if mcp_store is not None:
+                existing = await mcp_store.get_server(body.app_id)
+                if existing is not None:
+                    await mcp_supervisor.uninstall(body.app_id)
     registry.mark_uninstalled(body.app_id)
     return {"status": "uninstalled", "app_id": body.app_id}
