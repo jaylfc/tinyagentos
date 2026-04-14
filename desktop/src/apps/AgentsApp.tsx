@@ -1350,7 +1350,7 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
 
 // TODO (#144): Cluster widget KV quant chip.
 // Once a backend actually reports a type beyond fp16, add a small chip to the
-// loaded-model row in DashboardApp's cluster widget showing the active KV
+// loaded-model row in ActivityApp's cluster widget showing the active KV
 // quant mode.  The chip should be absent when the mode is fp16 (the default),
 // visible for anything else.  The data is already in ClusterWorker
 // kv_cache_quant_support and flows through to the model list in

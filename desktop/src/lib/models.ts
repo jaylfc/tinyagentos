@@ -10,7 +10,7 @@
  *
  * Each entry carries a `host` field (controller name, worker name, or
  * provider display name) so the UI can show a host badge matching the
- * teal badge pattern used by the Loaded Models widget in DashboardApp.
+ * teal badge pattern used by the Loaded Models widget in ActivityApp.
  */
 import type { ClusterWorker } from "@/lib/cluster";
 
