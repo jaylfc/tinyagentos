@@ -71,10 +71,14 @@ async def login(request: Request):
         long_lived = bool(body.get("auto_login", False))
         token = auth_mgr.create_session(long_lived=long_lived)
         resp = JSONResponse({"ok": True, "user": auth_mgr.get_user()})
-        resp.set_cookie(
-            "taos_session", token, httponly=True, samesite="lax",
-            max_age=auth_mgr.session_ttl_for(long_lived),
-        )
+        if long_lived:
+            resp.set_cookie(
+                "taos_session", token, httponly=True, samesite="lax",
+                max_age=auth_mgr.session_ttl_for(True),
+            )
+        else:
+            # Session cookie — dies on PWA / browser close → taOS locks.
+            resp.set_cookie("taos_session", token, httponly=True, samesite="lax")
         return resp
 
     form = await request.form()
@@ -132,10 +136,16 @@ async def auth_setup(request: Request):
         long_lived = bool(body.get("auto_login", True))
         token = auth_mgr.create_session(long_lived=long_lived)
         resp = JSONResponse({"ok": True, "user": user})
-        resp.set_cookie(
-            "taos_session", token, httponly=True, samesite="lax",
-            max_age=auth_mgr.session_ttl_for(long_lived),
-        )
+        # Long-lived: persistent cookie that survives a browser/PWA close.
+        # Otherwise: session cookie (no max_age) that dies when the PWA
+        # or browser is closed, locking taOS automatically.
+        if long_lived:
+            resp.set_cookie(
+                "taos_session", token, httponly=True, samesite="lax",
+                max_age=auth_mgr.session_ttl_for(True),
+            )
+        else:
+            resp.set_cookie("taos_session", token, httponly=True, samesite="lax")
         return resp
 
     # Legacy password-only form setup
