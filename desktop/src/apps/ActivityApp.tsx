@@ -850,15 +850,31 @@ export function ActivityApp({ windowId: _windowId }: { windowId: string }) {
                         {hw?.npu?.cores && card.kind === "npu" && ` · ${hw.npu.cores} cores`}
                       </div>
                       <div className="mt-1 flex flex-wrap gap-1">
-                        {(w.capabilities || []).map((c) => (
-                          <span
-                            key={`worker-cap-${c}`}
-                            className="text-[9px] px-1.5 py-0.5 rounded-full bg-blue-500/20 text-blue-200 font-medium"
-                            title="Capability reported by this worker"
-                          >
-                            {c}
-                          </span>
-                        ))}
+                        {(() => {
+                          const ready = new Set(w.capabilities || []);
+                          const potential = (w.potential_capabilities || []) as string[];
+                          const latent = potential.filter((c) => !ready.has(c));
+                          return [
+                            ...(w.capabilities || []).map((c) => (
+                              <span
+                                key={`worker-ready-${c}`}
+                                className="text-[9px] px-1.5 py-0.5 rounded-full bg-violet-500/20 text-violet-200 font-medium"
+                                title="Ready now — backend is loaded"
+                              >
+                                {c}
+                              </span>
+                            )),
+                            ...latent.map((c) => (
+                              <span
+                                key={`worker-latent-${c}`}
+                                className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/[0.03] text-shell-text-tertiary border border-white/5"
+                                title="Latent — supported by this hardware but no backend loaded yet"
+                              >
+                                {c}
+                              </span>
+                            )),
+                          ];
+                        })()}
                       </div>
                     </div>
                   ));
