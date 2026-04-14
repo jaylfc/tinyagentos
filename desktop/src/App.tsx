@@ -117,6 +117,7 @@ export function App() {
 
   const mode = useDeviceMode();
   const wallpaperImage = useThemeStore((s) => s.wallpaperImage);
+  const wallpaperMobileImage = useThemeStore((s) => s.wallpaperMobileImage);
   const wallpaperFallback = useThemeStore((s) => s.wallpaperFallback);
   const windows = useProcessStore((s) => s.windows);
   const openWindow = useProcessStore((s) => s.openWindow);
@@ -244,7 +245,7 @@ export function App() {
   return (
     <ShortcutProvider>
       <SystemShortcuts toggleSearch={toggleSearch} toggleLaunchpad={toggleLaunchpad} />
-    <div className="taos-wallpaper h-screen w-screen flex flex-col text-shell-text" style={{ backgroundImage: wallpaperImage, backgroundColor: wallpaperFallback }}>
+    <div className="taos-wallpaper h-screen w-screen flex flex-col text-shell-text" style={{ backgroundColor: wallpaperFallback, ["--wallpaper-desktop" as never]: wallpaperImage, ["--wallpaper-mobile" as never]: wallpaperMobileImage }}>
       <div className={`flex-1 flex flex-col overflow-hidden transition-all duration-500 ${launched ? "opacity-100 scale-100" : "opacity-0 scale-95"}`}>
         <MobileTopBar
           onHome={handleMobileHome}

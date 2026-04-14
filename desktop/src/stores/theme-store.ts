@@ -8,8 +8,9 @@ import { create } from "zustand";
 interface Wallpaper {
   id: string;
   label: string;
-  image: string; // assigned to CSS background-image
-  fallback: string; // assigned to CSS background-color
+  image: string; // desktop background-image
+  mobileImage?: string; // portrait-cropped variant, falls back to `image` if absent
+  fallback: string; // background-color used as a fallback colour behind the image
 }
 
 const WALLPAPERS: Wallpaper[] = [
@@ -17,6 +18,7 @@ const WALLPAPERS: Wallpaper[] = [
     id: "default",
     label: "Default",
     image: "url('/static/wallpaper.png')",
+    mobileImage: "url('/static/wallpaper-mobile.png')",
     fallback: "#1a1b2e",
   },
   {
@@ -72,6 +74,7 @@ const WALLPAPERS: Wallpaper[] = [
 interface ThemeStore {
   wallpaperId: string;
   wallpaperImage: string;
+  wallpaperMobileImage: string;
   wallpaperFallback: string;
   showDesktopIcons: boolean;
 
@@ -83,6 +86,7 @@ interface ThemeStore {
 export const useThemeStore = create<ThemeStore>((set) => ({
   wallpaperId: "default",
   wallpaperImage: WALLPAPERS[0]!.image,
+  wallpaperMobileImage: WALLPAPERS[0]!.mobileImage ?? WALLPAPERS[0]!.image,
   wallpaperFallback: WALLPAPERS[0]!.fallback,
   showDesktopIcons: true,
 
@@ -92,6 +96,7 @@ export const useThemeStore = create<ThemeStore>((set) => ({
       set({
         wallpaperId: id,
         wallpaperImage: wp.image,
+        wallpaperMobileImage: wp.mobileImage ?? wp.image,
         wallpaperFallback: wp.fallback,
       });
     }

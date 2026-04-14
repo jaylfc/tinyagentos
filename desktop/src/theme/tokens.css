@@ -55,18 +55,17 @@
    'taOS' letters near the edges of a wide wallpaper aren't clipped.
 */
 .taos-wallpaper {
+  background-image: var(--wallpaper-desktop);
   background-position: center center;
   background-repeat: no-repeat;
   background-size: cover;
 }
 @media (max-width: 767px), (orientation: portrait) {
-  /* The wallpaper is landscape (1920x1200 ≈ 1.6:1). On a portrait phone
-     (9:19.5 ≈ 0.46:1) we pick 100% width / auto height so the full
-     horizontal composition — including the 'taOS' letters at the edges —
-     stays visible. The vertical gap above/below is filled with
-     wallpaperFallback which matches the image's dark background. */
+  /* On phones we switch to a portrait-cropped image if the wallpaper
+     provides one, and stretch it to fill both axes. */
   .taos-wallpaper {
-    background-size: 100% auto;
+    background-image: var(--wallpaper-mobile, var(--wallpaper-desktop));
+    background-size: 100% 100%;
   }
 }
 

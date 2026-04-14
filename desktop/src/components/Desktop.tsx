@@ -20,6 +20,7 @@ export function Desktop() {
   const windows = useProcessStore((s) => s.windows);
   const { openWindow } = useProcessStore();
   const wallpaperImage = useThemeStore((s) => s.wallpaperImage);
+  const wallpaperMobileImage = useThemeStore((s) => s.wallpaperMobileImage);
   const wallpaperFallback = useThemeStore((s) => s.wallpaperFallback);
   const { showWidgets, toggleWidgets } = useWidgetStore();
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
@@ -109,7 +110,7 @@ export function Desktop() {
   return (
     <div
       className="taos-wallpaper relative flex-1 overflow-hidden"
-      style={{ backgroundImage: wallpaperImage, backgroundColor: wallpaperFallback }}
+      style={{ backgroundColor: wallpaperFallback, ["--wallpaper-desktop" as never]: wallpaperImage, ["--wallpaper-mobile" as never]: wallpaperMobileImage }}
       onContextMenu={handleContextMenu}
       data-desktop-surface
     >
