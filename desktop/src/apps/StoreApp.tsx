@@ -185,7 +185,7 @@ const APP_ICONS: Record<string, string> = {
   // directly; otherwise we use the owning org/user's GitHub avatar.
   "smolagents": gh("huggingface"),
   "pocketflow": gh("The-Pocket"),
-  "openclaw": "https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/openclaw-logo-text-dark.svg",
+  "openclaw": "/static/store-icons/openclaw.jpg",
   "nanoclaw": gh("openclaw"),
   "picoclaw": "https://raw.githubusercontent.com/sipeed/picoclaw/main/assets/logo.webp",
   "zeroclaw": gh("nicholasgasior"),
