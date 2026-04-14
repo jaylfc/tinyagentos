@@ -16,6 +16,7 @@ export function LoginGate({ children }: Props) {
   const [status, setStatus] = useState<AuthStatus>({ phase: "loading" });
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [autoLogin, setAutoLogin] = useState(true);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -54,7 +55,11 @@ export function LoginGate({ children }: Props) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ username: username.trim() || undefined, password }),
+        body: JSON.stringify({
+          username: username.trim() || undefined,
+          password,
+          auto_login: autoLogin,
+        }),
       });
       if (res.ok) {
         await refreshStatus();
@@ -135,6 +140,20 @@ export function LoginGate({ children }: Props) {
           />
 
           {error && <p className="text-xs text-red-400 mt-2" role="alert">{error}</p>}
+
+          <label
+            htmlFor="login-autologin"
+            className="flex items-center gap-2 mt-3 cursor-pointer select-none"
+          >
+            <input
+              id="login-autologin"
+              type="checkbox"
+              checked={autoLogin}
+              onChange={(e) => setAutoLogin(e.target.checked)}
+              className="w-4 h-4 accent-accent cursor-pointer"
+            />
+            <span className="text-xs text-shell-text-secondary">Stay signed in on this device</span>
+          </label>
 
           <button
             type="submit"

@@ -20,6 +20,7 @@ export function OnboardingScreen({ onDone }: Props) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [autoLogin, setAutoLogin] = useState(true);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -46,6 +47,7 @@ export function OnboardingScreen({ onDone }: Props) {
           full_name: fullName.trim(),
           email: email.trim(),
           password,
+          auto_login: autoLogin,
         }),
       });
       if (!res.ok) {
@@ -157,6 +159,25 @@ export function OnboardingScreen({ onDone }: Props) {
               <p className="text-[11px] text-red-400 mt-1">Passwords don't match.</p>
             )}
           </Field>
+
+          <label
+            htmlFor="onb-autologin"
+            className="flex items-start gap-3 mt-1 cursor-pointer select-none"
+          >
+            <input
+              id="onb-autologin"
+              type="checkbox"
+              checked={autoLogin}
+              onChange={(e) => setAutoLogin(e.target.checked)}
+              className="mt-0.5 w-4 h-4 accent-accent cursor-pointer"
+            />
+            <span className="text-xs text-shell-text-secondary leading-snug">
+              Stay signed in on this device
+              <span className="block text-[10px] text-shell-text-tertiary mt-0.5">
+                Skips the login screen for a year. Turn off if this is a shared device.
+              </span>
+            </span>
+          </label>
         </div>
 
         {error && (

@@ -68,9 +68,13 @@ async def login(request: Request):
         password = body.get("password") or ""
         if not auth_mgr.check_password(password, username=username):
             return JSONResponse({"error": "invalid credentials"}, status_code=401)
-        token = auth_mgr.create_session()
+        long_lived = bool(body.get("auto_login", False))
+        token = auth_mgr.create_session(long_lived=long_lived)
         resp = JSONResponse({"ok": True, "user": auth_mgr.get_user()})
-        resp.set_cookie("taos_session", token, httponly=True, samesite="lax", max_age=auth_mgr.session_ttl)
+        resp.set_cookie(
+            "taos_session", token, httponly=True, samesite="lax",
+            max_age=auth_mgr.session_ttl_for(long_lived),
+        )
         return resp
 
     form = await request.form()
@@ -125,9 +129,13 @@ async def auth_setup(request: Request):
             user = auth_mgr.setup_user(username, full_name, email, password)
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
-        token = auth_mgr.create_session()
+        long_lived = bool(body.get("auto_login", True))
+        token = auth_mgr.create_session(long_lived=long_lived)
         resp = JSONResponse({"ok": True, "user": user})
-        resp.set_cookie("taos_session", token, httponly=True, samesite="lax", max_age=auth_mgr.session_ttl)
+        resp.set_cookie(
+            "taos_session", token, httponly=True, samesite="lax",
+            max_age=auth_mgr.session_ttl_for(long_lived),
+        )
         return resp
 
     # Legacy password-only form setup

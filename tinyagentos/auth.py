@@ -87,7 +87,8 @@ class AuthManager:
         self._user_file = data_dir / ".auth_user.json"
         self._sessions_file = data_dir / ".auth_sessions"
         self._sessions = _PersistentSessions(self._sessions_file)
-        self.session_ttl = 86400 * 7  # 7 days
+        self.session_ttl = 86400 * 7  # 7 days, default
+        self.long_session_ttl = 86400 * 365  # 1 year for "stay signed in"
 
     # ----- profile storage ------------------------------------------------
 
@@ -176,10 +177,14 @@ class AuthManager:
 
     # ----- sessions -------------------------------------------------------
 
-    def create_session(self) -> str:
+    def create_session(self, long_lived: bool = False) -> str:
         token = secrets.token_urlsafe(32)
-        self._sessions[token] = time.time() + self.session_ttl
+        ttl = self.long_session_ttl if long_lived else self.session_ttl
+        self._sessions[token] = time.time() + ttl
         return token
+
+    def session_ttl_for(self, long_lived: bool = False) -> int:
+        return self.long_session_ttl if long_lived else self.session_ttl
 
     def validate_session(self, token: str) -> bool:
         expiry = self._sessions.get(token)
