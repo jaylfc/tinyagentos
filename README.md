@@ -14,6 +14,24 @@ A full web desktop environment with 34 bundled apps, 87 catalog apps, 43 MCP plu
 
 **[taOSmd](https://github.com/jaylfc/taosmd) — State-of-the-art memory system.** 97.0% Recall@5 on [LongMemEval-S](https://github.com/xiaowu0162/LongMemEval) (500 questions, 50+ sessions/question), beating MemPalace (96.6%) and SuperMemory (81.6%) — running entirely on a £170 Orange Pi with no cloud dependencies. Per-category: knowledge-update 100%, single-session-user 100%, multi-session 98.5%, temporal-reasoning 95.5%. The memory stack includes a temporal knowledge graph with validity windows and contradiction detection, hybrid semantic+keyword vector search, a zero-loss append-only archive, automatic fact extraction (regex real-time + LLM background), intent-aware retrieval routing, and multi-layer context assembly. Framework-agnostic by design — any agent framework can read/write through the HTTP API.
 
+---
+
+<p align="center">
+  <img src="docs/images/desktop-home.jpg" alt="taOS desktop home" width="100%">
+</p>
+
+<p align="center">
+  <img src="docs/images/mobile-home.jpg" alt="taOS mobile home" width="30%">
+  &nbsp;
+  <img src="docs/images/mobile-search.png" alt="Global search on mobile" width="30%">
+  &nbsp;
+  <img src="docs/images/mobile-store.png" alt="App store on mobile" width="30%">
+</p>
+
+<p align="center"><sub>Same platform, same session — desktop, tablet, and phone.</sub></p>
+
+---
+
 ## Quick Start
 
 **Controller (server):**
@@ -63,6 +81,12 @@ TinyAgentOS ships with a full browser-based desktop environment. Open it at `htt
 
 The Activity app includes a Cluster overview panel showing live worker status and resource stats alongside the process monitor. The Model Browser surfaces cloud models (from configured providers) alongside local catalog models, with a provider badge per entry. The deploy wizard accepts cloud models as inference targets.
 
+<p align="center">
+  <img src="docs/images/desktop-store.png" alt="App store — 87 catalog apps, 15 agent frameworks, hardware-filtered" width="100%">
+</p>
+
+<p align="center"><sub>The Store — agent frameworks, models, plugins, services. One-click install, hardware-filtered.</sub></p>
+
 ## Key Features
 
 ### Web Desktop Shell
@@ -70,6 +94,16 @@ Full browser-based desktop OS with window manager (float + snap), dock, launchpa
 
 ### Mobile & Tablet Mode
 Auto-detects touch devices and swaps the desktop for a widget-first home screen with customisable multi-page layout (swipe or tap dots to navigate), a persistent dock with app launcher and app switcher, and desktop-style app windows with close/minimise title bars. The top bar features iOS 26-style frosted glass buttons for search and notifications, with a "taOS" home button. Installable as a fullscreen PWA on iOS and Android. A standalone Chat PWA is available at `/chat-pwa` and installs like a private Discord.
+
+<p align="center">
+  <img src="docs/images/mobile-activity-system.png" alt="Mobile activity view — per-core CPU, NPU, RAM" width="30%">
+  &nbsp;
+  <img src="docs/images/mobile-activity-cluster.png" alt="Mobile cluster view — worker hardware, thermals, network" width="30%">
+  &nbsp;
+  <img src="docs/images/mobile-activity-scheduler.png" alt="Mobile scheduler view — worker hardware and capabilities" width="30%">
+</p>
+
+<p align="center"><sub>Full system observability on your phone — per-core stats, cluster health, and the hardware-aware scheduler.</sub></p>
 
 ### User Memory System
 Personal memory powered by [taOSmd](https://github.com/jaylfc/taosmd), think Pieces App but self-hosted. Temporal knowledge graph + hybrid vector search + zero-loss archive auto-captures conversations from the Message Hub, notes from the Text Editor, file activity, and search queries. Per-category capture toggles live in Settings. Available in global search (Ctrl+Space) alongside apps, with a "Save to Memory" right-click option on the desktop. Agents can optionally read user memory with explicit permission via the `TAOS_USER_MEMORY_URL` environment variable. A "My Memory" section in the Memory app sits alongside agent memories.
@@ -213,6 +247,17 @@ Built-in browser with a server-side proxy that rewrites HTML URLs and strips `X-
 Search across agents, apps, messages, and files from a single endpoint. Finds anything on the platform instantly.
 
 ### Monitoring & Management
+
+<p align="center">
+  <img src="docs/images/desktop-activity-system.png" alt="Activity — CPU, NPU, memory, disk, cluster" width="100%">
+</p>
+
+<p align="center">
+  <img src="docs/images/desktop-activity-scheduler.png" alt="Activity scheduler — per-worker hardware and capabilities" width="100%">
+</p>
+
+<p align="center"><sub>Every core, every worker, every capability — visible at a glance.</sub></p>
+
 - **Dashboard**. KPIs, CPU/RAM sparklines, activity feed, quick actions, backend health, cluster stats. The Loaded Models widget unions controller-local models with each cluster worker's heartbeat-reported models, with a per-host badge on each entry. It always renders, shows an empty state when nothing is loaded rather than hiding.
 - **Health Debug Page.** Checks all services, backends, agents, disk, RAM with live status
 - **Notifications.** Health alerts, backend up/down, worker join/leave, webhook forwarding (Slack/Discord/Telegram). Toast notifications appear top-right. The welcome notification is gated on a `localStorage` flag so it fires once per install, not on every page load.
