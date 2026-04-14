@@ -487,6 +487,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     from tinyagentos.routes.auth import router as auth_router
     app.include_router(auth_router)
 
+    from tinyagentos.routes.system import router as system_router
+    app.include_router(system_router)
+
     from tinyagentos.routes.dashboard import router as dashboard_router
     app.include_router(dashboard_router)
 

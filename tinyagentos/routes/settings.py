@@ -457,6 +457,46 @@ async def check_for_updates(request: Request):
     }
 
 
+@router.get("/api/settings/update-status")
+async def update_status(request: Request):
+    """Return current SHA, pending restart SHA, and auto-update prefs."""
+    import asyncio
+    from tinyagentos.restart_orchestrator import read_pending_restart
+    from tinyagentos.auto_update import PREF_NAMESPACE, DEFAULT_PREFS
+
+    project_dir = Path(__file__).parent.parent.parent
+
+    proc = await asyncio.create_subprocess_exec(
+        "git", "rev-parse", "HEAD",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+        cwd=str(project_dir),
+    )
+    stdout, _ = await proc.communicate()
+    current_sha = stdout.decode().strip() if stdout else ""
+
+    pending = read_pending_restart()
+    pending_sha = pending.get("target_sha") if pending else None
+
+    settings = getattr(request.app.state, "desktop_settings", None)
+    prefs = dict(DEFAULT_PREFS)
+    if settings:
+        try:
+            saved = await settings.get_preference("user", PREF_NAMESPACE)
+            if saved:
+                prefs.update(saved)
+        except Exception:
+            pass
+
+    return {
+        "current_sha": current_sha,
+        "pending_restart_sha": pending_sha,
+        "auto_check": prefs.get("check_enabled", True),
+        "auto_apply": prefs.get("auto_apply", False),
+        "auto_restart": prefs.get("auto_restart", False),
+    }
+
+
 @router.post("/api/settings/update-check-now")
 async def force_update_check(request: Request):
     """Run the auto-updater now. Honours user auto_apply pref."""
