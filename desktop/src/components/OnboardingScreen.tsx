@@ -3,24 +3,36 @@ import { Sparkles } from "lucide-react";
 
 interface Props {
   onDone: () => void;
+  /** When set, this is an invited user completing their account (not first-run). */
+  invitedUsername?: string;
+  inviteCode?: string;
+  /** Default for the auto-login checkbox. False in multi-user mode. */
+  defaultAutoLogin?: boolean;
 }
 
 /**
- * First-run onboarding. Collects username, full name, email, and a
- * password to seed the single-user record. Once submitted, the server
- * sets a session cookie and we hand control back to LoginGate which
- * re-checks `/auth/status` and renders the desktop.
+ * First-run onboarding (no props) or invite completion (invitedUsername + inviteCode).
  *
- * Email is gathered now (even though it's unused today) so cloud
- * services can reach the user without a second prompt later.
+ * In invite mode:
+ * - Title becomes "Complete your account"
+ * - Username field is read-only
+ * - Submit POSTs to /auth/complete instead of /auth/setup
+ * - auto-login defaults to false
  */
-export function OnboardingScreen({ onDone }: Props) {
-  const [username, setUsername] = useState("");
+export function OnboardingScreen({
+  onDone,
+  invitedUsername,
+  inviteCode,
+  defaultAutoLogin,
+}: Props) {
+  const isInvite = Boolean(invitedUsername && inviteCode);
+
+  const [username, setUsername] = useState(invitedUsername ?? "");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
-  const [autoLogin, setAutoLogin] = useState(true);
+  const [autoLogin, setAutoLogin] = useState(defaultAutoLogin ?? !isInvite);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -38,17 +50,22 @@ export function OnboardingScreen({ onDone }: Props) {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/auth/setup", {
+      const endpoint = isInvite ? "/auth/complete" : "/auth/setup";
+      const body: Record<string, unknown> = {
+        username: username.trim(),
+        full_name: fullName.trim(),
+        email: email.trim(),
+        password,
+        auto_login: autoLogin,
+      };
+      if (isInvite) {
+        body.invite_code = inviteCode;
+      }
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({
-          username: username.trim(),
-          full_name: fullName.trim(),
-          email: email.trim(),
-          password,
-          auto_login: autoLogin,
-        }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -81,7 +98,7 @@ export function OnboardingScreen({ onDone }: Props) {
           backgroundColor: "rgba(255,255,255,0.04)",
           backdropFilter: "blur(20px)",
         }}
-        aria-label="Welcome to taOS"
+        aria-label={isInvite ? "Complete your account" : "Welcome to taOS"}
       >
         <div className="flex flex-col items-center gap-3 mb-6">
           <div
@@ -90,24 +107,39 @@ export function OnboardingScreen({ onDone }: Props) {
           >
             <Sparkles size={24} className="text-white" />
           </div>
-          <h1 className="text-lg font-semibold text-shell-text">Welcome to taOS</h1>
+          <h1 className="text-lg font-semibold text-shell-text">
+            {isInvite ? "Complete your account" : "Welcome to taOS"}
+          </h1>
           <p className="text-xs text-shell-text-secondary text-center">
-            Set up your account. You can change any of these later in Settings.
+            {isInvite
+              ? "Set a password and fill in your details to activate your account."
+              : "Set up your account. You can change any of these later in Settings."}
           </p>
         </div>
 
         <div className="space-y-3">
           <Field label="Username" id="onb-username" required>
-            <input
-              id="onb-username"
-              type="text"
-              value={username}
-              onChange={(e) => setUsername(e.target.value.replace(/\s+/g, "").toLowerCase())}
-              autoComplete="username"
-              autoFocus
-              placeholder="jay"
-              className="onb-input"
-            />
+            {isInvite ? (
+              <div
+                id="onb-username"
+                className="onb-input opacity-60 cursor-not-allowed"
+                aria-readonly="true"
+                role="textbox"
+              >
+                {username}
+              </div>
+            ) : (
+              <input
+                id="onb-username"
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value.replace(/\s+/g, "").toLowerCase())}
+                autoComplete="username"
+                autoFocus
+                placeholder="jay"
+                className="onb-input"
+              />
+            )}
           </Field>
 
           <Field label="Full name" id="onb-fullname" required>
@@ -117,6 +149,7 @@ export function OnboardingScreen({ onDone }: Props) {
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
               autoComplete="name"
+              autoFocus={isInvite}
               placeholder="Jay Doe"
               className="onb-input"
             />
@@ -191,7 +224,9 @@ export function OnboardingScreen({ onDone }: Props) {
           disabled={!valid || loading}
           className="w-full mt-5 px-4 py-2.5 rounded-lg bg-accent text-white text-sm font-medium hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
         >
-          {loading ? "Setting up..." : "Get started"}
+          {loading
+            ? isInvite ? "Activating..." : "Setting up..."
+            : isInvite ? "Activate account" : "Get started"}
         </button>
 
         <style>{`
