@@ -56,6 +56,7 @@ from tinyagentos.knowledge_store import KnowledgeStore
 from tinyagentos.knowledge_ingest import IngestPipeline
 from tinyagentos.knowledge_categories import CategoryEngine
 from tinyagentos.knowledge_monitor import MonitorService
+from tinyagentos.mcp import MCPServerStore, MCPSupervisor
 
 PROJECT_DIR = Path(__file__).parent.parent
 
@@ -82,6 +83,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     metrics_store = MetricsStore(data_dir / "metrics.db")
     notif_store = NotificationStore(data_dir / "notifications.db")
+    mcp_store = MCPServerStore(data_dir / "mcp.db")
     qmd_client = QmdClient(config.qmd.get("url", "http://localhost:7832"))
     http_client = httpx.AsyncClient(timeout=30)
     torrent_settings_store = TorrentSettingsStore(data_dir / "torrent_settings.json")
@@ -183,6 +185,10 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         await installed_apps.init()
         await skills.init()
         await knowledge_store.init()
+        await mcp_store.init()
+        mcp_supervisor = MCPSupervisor(mcp_store, catalog=registry, notif_store=notif_store, secrets_store=secrets_store)
+        app.state.mcp_store = mcp_store
+        app.state.mcp_supervisor = mcp_supervisor
         app.state.knowledge_store = knowledge_store
         app.state.ingest_pipeline = knowledge_ingest
         app.state.knowledge_monitor = knowledge_monitor
@@ -366,6 +372,8 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
             await auto_updater.stop()
         except Exception:
             pass
+        await app.state.mcp_supervisor.stop_all()
+        await mcp_store.close()
         await scheduler_history_store.close()
         await benchmark_store.close()
         await skills.close()
@@ -454,6 +462,8 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     app.state.knowledge_store = knowledge_store
     app.state.ingest_pipeline = knowledge_ingest
     app.state.knowledge_monitor = knowledge_monitor
+    app.state.mcp_store = mcp_store
+    app.state.mcp_supervisor = MCPSupervisor(mcp_store, catalog=registry, notif_store=notif_store, secrets_store=secrets_store)
     app.state.orchestrator = RestartOrchestrator(app.state)
 
     # Detect and set container runtime (eager, so tests work without lifespan)
@@ -639,6 +649,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     from tinyagentos.routes.jobs import router as jobs_router
     app.include_router(jobs_router)
+
+    from tinyagentos.routes.mcp import router as mcp_router
+    app.include_router(mcp_router)
 
     # Lobby demo (internal only — not included in public builds)
     try:
