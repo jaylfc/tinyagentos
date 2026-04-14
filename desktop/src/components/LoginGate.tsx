@@ -1,61 +1,74 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Lock } from "lucide-react";
+import { OnboardingScreen } from "./OnboardingScreen";
 
 interface Props {
   children: React.ReactNode;
 }
 
+type AuthStatus =
+  | { phase: "loading" }
+  | { phase: "onboarding" }
+  | { phase: "login"; legacy: boolean }
+  | { phase: "ready" };
+
 export function LoginGate({ children }: Props) {
-  const [authed, setAuthed] = useState<boolean | null>(null);
+  const [status, setStatus] = useState<AuthStatus>({ phase: "loading" });
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    // Check auth status — try fetching desktop settings (a protected endpoint)
-    fetch("/api/desktop/settings", { credentials: "include" })
-      .then((r) => {
-        if (r.status === 401) {
-          setAuthed(false);
-        } else {
-          setAuthed(true);
-        }
-      })
-      .catch(() => setAuthed(true)); // if the check fails, assume auth is disabled
+  const refreshStatus = useCallback(async () => {
+    try {
+      const res = await fetch("/auth/status", { credentials: "include" });
+      if (!res.ok) {
+        // Auth subsystem disabled or unreachable — fall through to children.
+        setStatus({ phase: "ready" });
+        return;
+      }
+      const data = await res.json();
+      if (!data.configured) {
+        setStatus({ phase: "onboarding" });
+      } else if (data.authenticated) {
+        setStatus({ phase: "ready" });
+      } else {
+        setStatus({ phase: "login", legacy: !data.user });
+      }
+    } catch {
+      // Network error — assume auth not enforced and let the desktop load.
+      setStatus({ phase: "ready" });
+    }
   }, []);
+
+  useEffect(() => {
+    refreshStatus();
+  }, [refreshStatus]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
     try {
-      // TinyAgentOS auth uses form-urlencoded POST to /auth/login.
-      // A 303 redirect on success sets the session cookie; a failed
-      // login redirects back to /auth/login?error=1.
-      const body = new URLSearchParams();
-      body.set("password", password);
       const res = await fetch("/auth/login", {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        headers: { "Content-Type": "application/json" },
         credentials: "include",
-        redirect: "manual",
-        body: body.toString(),
+        body: JSON.stringify({ username: username.trim() || undefined, password }),
       });
-      // Re-check against a protected endpoint to confirm auth state
-      const check = await fetch("/api/desktop/settings", { credentials: "include" });
-      if (check.status !== 401) {
-        setAuthed(true);
+      if (res.ok) {
+        await refreshStatus();
       } else {
-        setError("Incorrect password");
+        const data = await res.json().catch(() => ({}));
+        setError(data?.error ?? "Incorrect username or password");
       }
-      void res;
     } catch {
       setError("Login failed");
     }
     setLoading(false);
   };
 
-  if (authed === null) {
+  if (status.phase === "loading") {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-shell-bg text-shell-text-tertiary text-sm">
         Loading...
@@ -63,7 +76,12 @@ export function LoginGate({ children }: Props) {
     );
   }
 
-  if (!authed) {
+  if (status.phase === "onboarding") {
+    return <OnboardingScreen onDone={refreshStatus} />;
+  }
+
+  if (status.phase === "login") {
+    const showUsername = !status.legacy;
     return (
       <div
         className="h-screen w-screen flex items-center justify-center p-4"
@@ -85,8 +103,24 @@ export function LoginGate({ children }: Props) {
               <Lock size={24} className="text-white" />
             </div>
             <h1 className="text-lg font-semibold text-shell-text">taOS</h1>
-            <p className="text-xs text-shell-text-secondary">Enter your password to continue</p>
+            <p className="text-xs text-shell-text-secondary">Sign in to continue</p>
           </div>
+
+          {showUsername && (
+            <>
+              <label htmlFor="login-username" className="sr-only">Username</label>
+              <input
+                id="login-username"
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                autoComplete="username"
+                autoFocus
+                placeholder="Username"
+                className="w-full px-4 py-2.5 mb-2 rounded-lg bg-shell-bg-deep border border-white/10 text-sm text-shell-text outline-none focus:border-accent/40 transition-colors"
+              />
+            </>
+          )}
 
           <label htmlFor="login-password" className="sr-only">Password</label>
           <input
@@ -94,7 +128,8 @@ export function LoginGate({ children }: Props) {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            autoFocus
+            autoComplete="current-password"
+            autoFocus={!showUsername}
             placeholder="Password"
             className="w-full px-4 py-2.5 rounded-lg bg-shell-bg-deep border border-white/10 text-sm text-shell-text outline-none focus:border-accent/40 transition-colors"
           />
@@ -103,7 +138,7 @@ export function LoginGate({ children }: Props) {
 
           <button
             type="submit"
-            disabled={loading || !password}
+            disabled={loading || !password || (showUsername && !username)}
             className="w-full mt-4 px-4 py-2.5 rounded-lg bg-accent text-white text-sm font-medium hover:brightness-110 disabled:opacity-50 transition-all"
           >
             {loading ? "Signing in..." : "Sign In"}
