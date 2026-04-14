@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import RedirectResponse
 
-EXEMPT_PATHS = {"/auth/login", "/auth/setup", "/auth/status", "/auth/me", "/api/health", "/api/cluster/workers", "/api/cluster/heartbeat", "/setup", "/setup/complete"}
+EXEMPT_PATHS = {"/auth/login", "/auth/setup", "/auth/status", "/auth/me", "/auth/complete", "/auth/lock", "/api/health", "/api/cluster/workers", "/api/cluster/heartbeat", "/setup", "/setup/complete"}
 EXEMPT_PREFIXES = ("/static/", "/desktop", "/chat-pwa")
 
 
@@ -34,7 +34,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         # Check session cookie
         token = request.cookies.get("taos_session")
-        if token and auth_mgr.validate_session(token):
+        if token and auth_mgr.validate_session(token) is not None:
             return await call_next(request)
 
         # Redirect to login for browsers, 401 for API calls
