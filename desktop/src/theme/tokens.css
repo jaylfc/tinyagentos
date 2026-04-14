@@ -25,9 +25,9 @@
   --color-accent-glow: rgba(102, 126, 234, 0.3);
 
   /* Dock + top bar — matched opacity so they read as one chrome layer */
-  --color-dock-bg: rgba(255, 255, 255, 0.10);
-  --color-dock-border: rgba(255, 255, 255, 0.08);
-  --color-topbar-bg: rgba(255, 255, 255, 0.10);
+  --color-dock-bg: rgba(255, 255, 255, 0.22);
+  --color-dock-border: rgba(255, 255, 255, 0.14);
+  --color-topbar-bg: rgba(255, 255, 255, 0.22);
 
   /* Snap zones */
   --color-snap-preview: rgba(102, 126, 234, 0.15);
