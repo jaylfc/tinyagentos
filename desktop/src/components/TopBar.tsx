@@ -19,7 +19,7 @@ export function TopBar({ onSearchOpen }: Props) {
       className="relative flex items-center px-4 shrink-0 select-none"
       style={{
         height: "var(--spacing-topbar-h)",
-        backgroundColor: "var(--color-shell-surface)",
+        backgroundColor: "var(--color-topbar-bg)",
         borderBottom: "1px solid var(--color-shell-border)",
       }}
     >
