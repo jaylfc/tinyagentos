@@ -27,16 +27,14 @@ async def prepare_shutdown(request: Request):
 
 @router.post("/api/system/restart/prepare")
 async def prepare_restart(request: Request):
-    """Prepare all agents for update restart, then trigger the restart."""
-    orchestrator = getattr(request.app.state, "orchestrator", None)
-    if orchestrator is None:
-        return JSONResponse({"error": "orchestrator not available"}, status_code=503)
+    """Restart just the controller process.
 
-    orchestrator._status["phase"] = "restarting"
-
-    report = await orchestrator.prepare("all", "update")
-
-    # Write pending-restart.json with the target SHA if known
+    Agents and LiteLLM run independently and stay up across a controller
+    restart, so there's nothing to drain — the restart is a ~5s uvicorn
+    bounce. Framework-side retry/backoff (tracked separately) covers the
+    brief window where controller-bound calls fail.
+    """
+    # Record target SHA so the boot-time check can confirm the update took.
     auto_updater = getattr(request.app.state, "auto_updater", None)
     target_sha = ""
     if auto_updater is not None:
@@ -47,10 +45,17 @@ async def prepare_restart(request: Request):
     if target_sha:
         write_pending_restart(target_sha)
 
-    # Trigger restart
-    asyncio.create_task(_do_restart(request.app.state))
+    orchestrator = getattr(request.app.state, "orchestrator", None)
+    if orchestrator is not None:
+        orchestrator._status = {
+            "phase": "restarting",
+            "reason": "update",
+            "started_at": int(__import__("time").time()),
+            "agents": {},
+        }
 
-    return {"status": "restarting", "report": report}
+    asyncio.create_task(_do_restart(request.app.state))
+    return {"status": "restarting"}
 
 
 async def _do_restart(app_state) -> None:

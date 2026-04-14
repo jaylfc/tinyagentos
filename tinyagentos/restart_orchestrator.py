@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 PENDING_RESTART_PATH = Path("~/.config/taos/pending-restart.json").expanduser()
 
-Reason = Literal["update", "pause", "stop", "controller-shutdown", "system-shutdown"]
+Reason = Literal["pause", "stop", "system-shutdown"]
 
 
 def write_pending_restart(target_sha: str) -> None:

@@ -350,10 +350,10 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         elif runtime in ("docker", "podman"):
             set_backend(DockerBackend(binary=runtime))
         yield
-        try:
-            await app.state.orchestrator.prepare("all", "controller-shutdown")
-        except Exception:
-            logger.exception("graceful orchestrator prepare on shutdown failed — continuing teardown")
+        # NOTE: controller restart/shutdown does NOT touch agent containers —
+        # agents and LiteLLM keep running independently, so there's nothing to
+        # gracefully drain here. Only true system halt (system-shutdown) and
+        # explicit agent pause/stop go through the orchestrator.
         adapter_manager.stop_all()
         for c in list(getattr(app.state, "channel_hub_connectors", {}).values()):
             await c.stop()
