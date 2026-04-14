@@ -63,8 +63,14 @@ export function OnboardingScreen({ onDone }: Props) {
 
   return (
     <div
-      className="h-screen w-screen flex items-center justify-center p-4 overflow-y-auto"
-      style={{ background: "linear-gradient(160deg, #1a1b2e 0%, #1e2140 40%, #252848 100%)" }}
+      className="h-screen w-screen flex items-center justify-center overflow-y-auto"
+      style={{
+        background: "linear-gradient(160deg, #1a1b2e 0%, #1e2140 40%, #252848 100%)",
+        paddingTop: "calc(env(safe-area-inset-top, 0px) + 16px)",
+        paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)",
+        paddingLeft: "calc(env(safe-area-inset-left, 0px) + 16px)",
+        paddingRight: "calc(env(safe-area-inset-right, 0px) + 16px)",
+      }}
     >
       <form
         onSubmit={handleSubmit}

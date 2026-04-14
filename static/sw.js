@@ -1,4 +1,4 @@
-const CACHE_NAME = 'taos-v1';
+const CACHE_NAME = 'taos-v2-onboarding';
 const OFFLINE_URL = '/offline';
 
 // Assets to pre-cache
