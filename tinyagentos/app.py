@@ -41,6 +41,7 @@ from tinyagentos.computer_use import ComputerUseManager
 from tinyagentos.webhook_notifier import WebhookNotifier
 from tinyagentos.llm_proxy import LLMProxy
 from tinyagentos.auto_update import AutoUpdateService
+from tinyagentos.restart_orchestrator import RestartOrchestrator, apply_pending_restart_check, resume_agents_from_notes
 from tinyagentos.channel_hub.router import MessageRouter
 from tinyagentos.channel_hub.adapter_manager import AdapterManager
 from tinyagentos.chat.message_store import ChatMessageStore
@@ -248,6 +249,18 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.benchmark_store = benchmark_store
         app.state.score_cache = score_cache
         app.state.scheduler_history_store = scheduler_history_store
+        orchestrator = RestartOrchestrator(app.state)
+        app.state.orchestrator = orchestrator
+        # Boot-time: check if a pending restart was applied successfully
+        try:
+            await apply_pending_restart_check(app.state)
+        except Exception:
+            logger.exception("boot-time pending restart check failed")
+        # Boot-time: resume any agents that have resume notes from a prior shutdown
+        try:
+            await resume_agents_from_notes(app.state)
+        except Exception:
+            logger.exception("boot-time agent resume failed")
         # Optionally start LiteLLM proxy (non-fatal if not installed)
         try:
             await llm_proxy.start(config.backends)
@@ -337,6 +350,10 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         elif runtime in ("docker", "podman"):
             set_backend(DockerBackend(binary=runtime))
         yield
+        try:
+            await app.state.orchestrator.prepare("all", "controller-shutdown")
+        except Exception:
+            logger.exception("graceful orchestrator prepare on shutdown failed — continuing teardown")
         adapter_manager.stop_all()
         for c in list(getattr(app.state, "channel_hub_connectors", {}).values()):
             await c.stop()
@@ -437,6 +454,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     app.state.knowledge_store = knowledge_store
     app.state.ingest_pipeline = knowledge_ingest
     app.state.knowledge_monitor = knowledge_monitor
+    app.state.orchestrator = RestartOrchestrator(app.state)
 
     # Detect and set container runtime (eager, so tests work without lifespan)
     try:
