@@ -24,10 +24,10 @@
   --color-accent: #667eea;
   --color-accent-glow: rgba(102, 126, 234, 0.3);
 
-  /* Dock + top bar — matched opacity so they read as one chrome layer */
-  --color-dock-bg: rgba(255, 255, 255, 0.22);
-  --color-dock-border: rgba(255, 255, 255, 0.14);
-  --color-topbar-bg: rgba(255, 255, 255, 0.22);
+  /* Dock + top bar — dark gunmetal chrome */
+  --color-dock-bg: rgba(22, 25, 32, 0.92);
+  --color-dock-border: rgba(255, 255, 255, 0.08);
+  --color-topbar-bg: rgba(22, 25, 32, 0.92);
 
   /* Snap zones */
   --color-snap-preview: rgba(102, 126, 234, 0.15);

@@ -21,7 +21,7 @@ import {
   AlertCircle,
   Download,
 } from "lucide-react";
-import { Button, Card, Toolbar, ToolbarGroup, ToolbarSpacer } from "@/components/ui";
+import { Button, Card, Toolbar, ToolbarGroup } from "@/components/ui";
 import { MobileSplitView } from "@/components/mobile/MobileSplitView";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 
@@ -530,28 +530,29 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
     <div className="flex-1 flex flex-col min-w-0 h-full">
       {/* Toolbar — hidden on mobile when inside MobileSplitView (nav bar handles actions) */}
       {!isMobile && (
-        <Toolbar className="shrink-0">
-          <ToolbarGroup>
-            {currentPath && (
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={goUp}
-                className="h-8 w-8"
-                aria-label="Go up one directory"
-              >
-                <ArrowLeft size={16} />
-              </Button>
-            )}
-          </ToolbarGroup>
+        <Toolbar className="shrink-0 flex-nowrap">
+          {currentPath && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={goUp}
+              className="h-8 w-8 shrink-0"
+              aria-label="Go up one directory"
+            >
+              <ArrowLeft size={16} />
+            </Button>
+          )}
 
-          {/* Breadcrumbs */}
-          <nav className="flex items-center gap-1 text-xs min-w-0 flex-1" aria-label="File path">
+          {/* Breadcrumbs — take all remaining space, truncate the whole trail if needed */}
+          <nav
+            className="flex items-center gap-1 text-xs min-w-0 flex-1 overflow-hidden"
+            aria-label="File path"
+          >
             <Button
               variant="ghost"
               size="sm"
               onClick={() => navigateTo("")}
-              className={`h-7 px-1.5 truncate ${!currentPath ? "text-shell-text font-medium" : ""}`}
+              className={`h-7 px-2 shrink-0 ${!currentPath ? "text-shell-text font-medium" : ""}`}
             >
               {location === "workspace" ? "Workspace" : location}
             </Button>
@@ -565,7 +566,7 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
                     variant="ghost"
                     size="sm"
                     onClick={() => navigateTo(segPath)}
-                    className={`h-7 px-1.5 truncate ${isLast ? "text-shell-text font-medium" : ""}`}
+                    className={`h-7 px-2 truncate ${isLast ? "text-shell-text font-medium" : ""}`}
                   >
                     {seg}
                   </Button>
@@ -574,8 +575,7 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
             })}
           </nav>
 
-          <ToolbarSpacer />
-          <ToolbarGroup>{toolbarActions}</ToolbarGroup>
+          <ToolbarGroup className="shrink-0">{toolbarActions}</ToolbarGroup>
         </Toolbar>
       )}
 
