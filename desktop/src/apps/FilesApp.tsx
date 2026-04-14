@@ -527,7 +527,7 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
 
   /* ---- Main file browser (detail pane) ---- */
   const mainContentUI = (
-    <div className="flex-1 flex flex-col min-w-0 h-full">
+    <div className="w-full h-full flex flex-col min-w-0">
       {/* Toolbar — hidden on mobile when inside MobileSplitView (nav bar handles actions) */}
       {!isMobile && (
         <Toolbar className="shrink-0 flex-nowrap w-full">
