@@ -186,7 +186,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         await skills.init()
         await knowledge_store.init()
         await mcp_store.init()
-        mcp_supervisor = MCPSupervisor(mcp_store, catalog=registry, notif_store=notif_store)
+        mcp_supervisor = MCPSupervisor(mcp_store, catalog=registry, notif_store=notif_store, secrets_store=secrets_store)
         app.state.mcp_store = mcp_store
         app.state.mcp_supervisor = mcp_supervisor
         app.state.knowledge_store = knowledge_store
@@ -463,7 +463,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     app.state.ingest_pipeline = knowledge_ingest
     app.state.knowledge_monitor = knowledge_monitor
     app.state.mcp_store = mcp_store
-    app.state.mcp_supervisor = MCPSupervisor(mcp_store, catalog=registry, notif_store=notif_store)
+    app.state.mcp_supervisor = MCPSupervisor(mcp_store, catalog=registry, notif_store=notif_store, secrets_store=secrets_store)
     app.state.orchestrator = RestartOrchestrator(app.state)
 
     # Detect and set container runtime (eager, so tests work without lifespan)

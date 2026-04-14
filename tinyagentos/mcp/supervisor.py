@@ -25,10 +25,11 @@ class ServerProcess:
 
 
 class MCPSupervisor:
-    def __init__(self, store: MCPServerStore, catalog, notif_store) -> None:
+    def __init__(self, store: MCPServerStore, catalog, notif_store, secrets_store=None) -> None:
         self._store = store
         self._catalog = catalog
         self._notif_store = notif_store
+        self._secrets_store = secrets_store
         self._processes: dict[str, ServerProcess] = {}
 
     async def start(self, server_id: str) -> bool:
@@ -115,16 +116,14 @@ class MCPSupervisor:
         })
 
         secrets_dropped = 0
-        if self._notif_store is not None:
+        if self._secrets_store is not None:
             try:
-                secrets_store = getattr(self._notif_store, "_secrets", None)
-                if secrets_store is not None:
-                    prefix = f"mcp:{server_id}:"
-                    all_secrets = await secrets_store.list()
-                    for s in all_secrets:
-                        if s["name"].startswith(prefix):
-                            await secrets_store.delete(s["name"])
-                            secrets_dropped += 1
+                prefix = f"mcp:{server_id}:"
+                all_secrets = await self._secrets_store.list()
+                for s in all_secrets:
+                    if s["name"].startswith(prefix):
+                        await self._secrets_store.delete(s["name"])
+                        secrets_dropped += 1
             except Exception:
                 logger.exception("mcp uninstall: error cleaning secrets for %s", server_id)
 
