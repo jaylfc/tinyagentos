@@ -52,6 +52,7 @@ class WorkerAgent:
                 models = await self._probe_models(client, backend_type, base_url)
                 if models is None:
                     continue  # backend not running here
+                loaded_models = await self._probe_loaded_models(client, backend_type, base_url)
                 kv_quant = await self._probe_kv_quant(client, backend_type, base_url)
                 backends.append({
                     "name": f"{backend_type}@{base_url}",
@@ -59,6 +60,10 @@ class WorkerAgent:
                     "url": base_url,
                     "capabilities": sorted(BACKEND_CAPABILITIES.get(backend_type, set())),
                     "models": models,
+                    # Subset of `models` that are actually resident in NPU/GPU/CPU
+                    # memory right now, so Activity's Loaded Models widget reflects
+                    # real residency rather than the full catalog of downloads.
+                    "loaded_models": loaded_models,
                     "status": "ok",
                     # Per-backend KV quant support, used by the worker to build
                     # its cluster-level kv_cache_quant_support advertisement.
@@ -106,6 +111,39 @@ class WorkerAgent:
             return {"k": ["fp16"], "v": ["fp16"], "boundary": False}
         except Exception:
             return {"k": ["fp16"], "v": ["fp16"], "boundary": False}
+
+    async def _probe_loaded_models(
+        self, client: httpx.AsyncClient, backend_type: str, base_url: str
+    ) -> list[dict]:
+        """Ask a backend which of its models are *currently in memory* (not
+        merely downloaded and available). Used to populate the 'Loaded
+        Models' widget in the Activity app so it reflects real NPU/GPU
+        residency, not the full catalog of pulled-but-idle models.
+
+        Returns empty list on any failure — loaded-state is a best-effort
+        signal and should never break heartbeat.
+        """
+        try:
+            if backend_type in ("rkllama", "ollama"):
+                resp = await client.get(f"{base_url}/api/ps")
+                if resp.status_code != 200:
+                    return []
+                data = resp.json()
+                return [
+                    {
+                        "name": m.get("model") or m.get("name", ""),
+                        "size_mb": (m.get("size") or 0) // 1_000_000,
+                    }
+                    for m in data.get("models", [])
+                ]
+            # Other backend types don't expose an "in memory" state yet —
+            # llama-cpp serves one model per process, vLLM similar, etc.
+            # For those, "available" == "loaded" so the normal /v1/models
+            # list is correct. Return [] here and let the caller fall back
+            # to available-models.
+            return []
+        except Exception:
+            return []
 
     async def _probe_models(
         self, client: httpx.AsyncClient, backend_type: str, base_url: str

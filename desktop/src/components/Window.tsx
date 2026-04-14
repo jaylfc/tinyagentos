@@ -17,11 +17,16 @@ export function Window({ win, onDrag, onDragStop }: Props) {
   const app = getApp(win.appId);
   const preSnapRef = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
 
+  // Dock is fixed at `bottom-3` (12px gap) with height 64px, plus a
+  // little breathing room so the window doesn't visually collide with
+  // the dock. Total bottom inset = 12 (gap) + 64 (dock) + 8 (breathing)
+  // = 84px. Viewport.dockH represents that total reserved area, not
+  // just the dock element's height.
   const viewport = {
     width: window.innerWidth,
     height: window.innerHeight,
     topBarH: 32,
-    dockH: 64,
+    dockH: 84,
   };
 
   let displayPos = win.position;
@@ -29,7 +34,10 @@ export function Window({ win, onDrag, onDragStop }: Props) {
 
   if (win.maximized) {
     displayPos = { x: 0, y: viewport.topBarH };
-    displaySize = { w: viewport.width, h: viewport.height - viewport.topBarH - viewport.dockH };
+    displaySize = {
+      w: viewport.width,
+      h: viewport.height - viewport.topBarH - viewport.dockH,
+    };
   } else if (win.snapped) {
     const snapBounds = getSnapBounds(win.snapped, viewport);
     if (snapBounds) {

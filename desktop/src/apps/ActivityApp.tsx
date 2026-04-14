@@ -258,16 +258,22 @@ export function ActivityApp({ windowId: _windowId }: { windowId: string }) {
   }, [fetchCluster]);
 
   // Union the controller's locally loaded models with whatever the
-  // cluster workers report in their heartbeats. Each entry is tagged
-  // with `host` so the widget can show "on fedora-lxc-test" / "on
-  // controller". A worker can host multiple models per backend.
+  // cluster workers report as *in memory right now* in their heartbeats.
+  // Each entry is tagged with `host` so the widget can show "on
+  // fedora-lxc-test" / "on controller". We prefer `loaded_models` (the
+  // subset currently resident in NPU/GPU/CPU memory) over `models` (the
+  // full catalog of pulled-but-idle models). If a worker's version
+  // doesn't populate `loaded_models` yet, we show nothing for it rather
+  // than falsely listing every downloaded model as loaded.
   const mergedLoadedModels: LoadedModel[] = [
     ...loadedModels.map((m) => ({ ...m, host: m.host ?? "controller" })),
     ...clusterWorkers.flatMap((w) => {
       const out: LoadedModel[] = [];
       for (const b of w.backends ?? []) {
         const backendName = b.name ?? b.type ?? "backend";
-        for (const model of b.models ?? []) {
+        const activeList = (b as { loaded_models?: unknown }).loaded_models;
+        const models = Array.isArray(activeList) ? activeList : [];
+        for (const model of models) {
           // Worker backend models can be plain strings or objects.
           // Normalise both shapes.
           if (typeof model === "string") {
@@ -487,10 +493,9 @@ export function ActivityApp({ windowId: _windowId }: { windowId: string }) {
           </CardContent>
         </Card>
 
-        {/* Loaded models — always rendered; contents are dynamic. Shares the
-            same 3-across row as Memory and Disk so it fills the empty slot
-            when no GPU is present, and pairs as a half-width on md screens. */}
-        <Card className="col-span-12 md:col-span-6 lg:col-span-4 p-4">
+        {/* Loaded models — full-width row so multi-worker model lists have
+            room to breathe. */}
+        <Card className="col-span-12 p-4">
           <CardContent className="p-0">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">

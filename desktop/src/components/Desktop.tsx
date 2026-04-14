@@ -28,7 +28,8 @@ export function Desktop() {
     width: typeof window !== "undefined" ? window.innerWidth : 1920,
     height: typeof window !== "undefined" ? window.innerHeight : 1080,
     topBarH: 32,
-    dockH: 64,
+    // Match Window.tsx: dock visual inset = bottom-3 (12) + dock (64) + breathing (8)
+    dockH: 84,
   };
 
   const { previewBounds, onDrag, onDragStop } = useSnapZones(viewport);
