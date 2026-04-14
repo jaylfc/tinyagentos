@@ -390,6 +390,10 @@ install_linux_systemd_system() {
         sudo_cmd="sudo"
     fi
 
+    # Install graceful-stop script
+    $sudo_cmd install -m 0755 "$INSTALL_DIR/scripts/taos-graceful-stop.sh" /usr/local/bin/taos-graceful-stop
+    log "installed /usr/local/bin/taos-graceful-stop"
+
     $sudo_cmd tee "$unit" > /dev/null <<EOF
 [Unit]
 Description=TinyAgentOS Controller
@@ -402,16 +406,28 @@ User=$USER
 Group=$(id -gn)
 WorkingDirectory=$INSTALL_DIR
 ExecStart=$INSTALL_DIR/.venv/bin/python -m uvicorn tinyagentos.app:create_app --factory --host 0.0.0.0 --port $TAOS_PORT
-Restart=always
+ExecStop=/usr/local/bin/taos-graceful-stop
+Restart=on-failure
 RestartSec=5
+TimeoutStopSec=360
 Environment=PYTHONUNBUFFERED=1
 
 [Install]
 WantedBy=multi-user.target
 EOF
     log "installed $unit (system unit, runs as $USER)"
+
+    # Install pre-shutdown hook
+    if [[ -f "$INSTALL_DIR/systemd/taos-pre-shutdown.service" ]]; then
+        $sudo_cmd cp "$INSTALL_DIR/systemd/taos-pre-shutdown.service" /etc/systemd/system/taos-pre-shutdown.service
+        log "installed /etc/systemd/system/taos-pre-shutdown.service"
+    fi
+
     $sudo_cmd systemctl daemon-reload
     $sudo_cmd systemctl enable --now tinyagentos
+    if [[ -f /etc/systemd/system/taos-pre-shutdown.service ]]; then
+        $sudo_cmd systemctl enable taos-pre-shutdown.service
+    fi
     log "controller running as system service"
     log "check: systemctl status tinyagentos"
     log "logs:  journalctl -u tinyagentos -f"
@@ -421,6 +437,10 @@ install_linux_systemd_user() {
     local unit_dir="$HOME/.config/systemd/user"
     local unit="$unit_dir/tinyagentos.service"
     mkdir -p "$unit_dir"
+    # Install graceful-stop script to user-local bin if possible
+    mkdir -p "$HOME/.local/bin"
+    install -m 0755 "$INSTALL_DIR/scripts/taos-graceful-stop.sh" "$HOME/.local/bin/taos-graceful-stop"
+
     cat > "$unit" <<EOF
 [Unit]
 Description=TinyAgentOS Controller
@@ -430,8 +450,10 @@ After=network-online.target
 Type=simple
 WorkingDirectory=$INSTALL_DIR
 ExecStart=$INSTALL_DIR/.venv/bin/python -m uvicorn tinyagentos.app:create_app --factory --host 0.0.0.0 --port $TAOS_PORT
-Restart=always
+ExecStop=$HOME/.local/bin/taos-graceful-stop
+Restart=on-failure
 RestartSec=5
+TimeoutStopSec=360
 Environment=PYTHONUNBUFFERED=1
 
 [Install]
