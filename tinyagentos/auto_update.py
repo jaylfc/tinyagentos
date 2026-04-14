@@ -147,11 +147,10 @@ class AutoUpdateService:
     async def _notify_available(self, current: str, new_commit: str) -> None:
         short_old = (current or "")[:7]
         short_new = new_commit[:7]
-        await self._notif.add_notification(
-            source="system",
+        await self._notif.emit_event(
             event_type="system.update",
             title="taOS update available",
-            body=f"A new version is ready ({short_old}->{short_new}). Open Settings to install.",
+            message=f"A new version is ready ({short_old}->{short_new}). Open Settings to install.",
             level="info",
         )
         logger.info("Notified user of update: %s -> %s", short_old, short_new)
@@ -170,11 +169,10 @@ class AutoUpdateService:
         pip_cmd = str(Path(sys.executable).parent / "pip")
         await _run([pip_cmd, "install", "-e", ".", "-q"], self._project_dir)
 
-        await self._notif.add_notification(
-            source="system",
+        await self._notif.emit_event(
             event_type="system.update",
             title="taOS updated automatically",
-            body=f"Pulled {new_commit[:7]}. Restart the server to finish applying.",
+            message=f"Pulled {new_commit[:7]}. Restart the server to finish applying.",
             level="info",
         )
 

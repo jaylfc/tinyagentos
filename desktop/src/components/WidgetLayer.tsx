@@ -82,8 +82,8 @@ export function WidgetLayer() {
     y: w.y,
     w: w.w,
     h: w.h,
-    minW: 2,
-    minH: 2,
+    minW: w.minW ?? 2,
+    minH: w.minH ?? 2,
   }));
 
   return (

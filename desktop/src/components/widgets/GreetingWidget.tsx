@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useWidgetSize } from "@/hooks/use-widget-size";
 
 function getGreeting(hour: number): string {
   if (hour >= 5 && hour < 12) return "Good morning.";
@@ -21,19 +22,12 @@ interface SystemSummary {
 
 async function fetchSummary(): Promise<SystemSummary | null> {
   try {
-    const [agentsRes, jobsRes] = await Promise.all([
-      fetch("/api/agents"),
-      fetch("/api/jobs"),
-    ]);
-
+    const [agentsRes, jobsRes] = await Promise.all([fetch("/api/agents"), fetch("/api/jobs")]);
     if (!agentsRes.ok || !jobsRes.ok) return null;
-
     const agents = await agentsRes.json();
     const jobs = await jobsRes.json();
-
     const agentCount = Array.isArray(agents) ? agents.length : (agents?.count ?? 0);
     const taskCount = Array.isArray(jobs) ? jobs.length : (jobs?.count ?? 0);
-
     return { agentCount, taskCount };
   } catch {
     return null;
@@ -43,6 +37,7 @@ async function fetchSummary(): Promise<SystemSummary | null> {
 export function GreetingWidget() {
   const [now, setNow] = useState(() => new Date());
   const [summary, setSummary] = useState<SystemSummary | null>(null);
+  const [containerRef, { tier }] = useWidgetSize();
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 60_000);
@@ -67,32 +62,42 @@ export function GreetingWidget() {
   const subtitleText = subtitleParts.length > 0 ? subtitleParts.join(" · ") : "All systems operational";
 
   return (
-    <div style={{
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      justifyContent: "center",
-      padding: "24px 16px 20px",
-      gap: 8,
-    }}>
-      <span style={{ fontSize: 36, lineHeight: 1 }}>{emoji}</span>
-      <span style={{
-        fontSize: 28,
-        fontWeight: 700,
-        color: "rgba(255,255,255,0.95)",
-        lineHeight: 1.2,
+    <div
+      ref={containerRef}
+      style={{
+        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+        height: "100%",
+        padding: tier === "s" ? "4px 8px" : tier === "m" ? "12px 12px" : "20px 16px",
+        gap: tier === "s" ? 4 : 8,
         textAlign: "center",
-        letterSpacing: "-0.5px",
-      }}>
-        {greeting}
+      }}
+      aria-label="Greeting widget"
+      role="region"
+    >
+      {tier !== "s" && (
+        <span style={{ fontSize: tier === "l" ? 36 : 28, lineHeight: 1 }} aria-hidden="true">{emoji}</span>
+      )}
+
+      <span
+        style={{
+          fontSize: tier === "s" ? "1rem" : tier === "m" ? "1.3rem" : "1.7rem",
+          fontWeight: 600,
+          color: "rgba(255,255,255,0.92)",
+          lineHeight: 1.2,
+          letterSpacing: "-0.02em",
+        }}
+      >
+        {tier === "s" ? (
+          // Compact: emoji inline with text
+          <>{emoji} {greeting}</>
+        ) : greeting}
       </span>
-      <span style={{
-        fontSize: 13,
-        color: "rgba(255,255,255,0.45)",
-        textAlign: "center",
-      }}>
-        {subtitleText}
-      </span>
+
+      {tier !== "s" && (
+        <span style={{ fontSize: tier === "l" ? "0.78rem" : "0.7rem", color: "rgba(255,255,255,0.4)", letterSpacing: "0.01em" }}>
+          {subtitleText}
+        </span>
+      )}
     </div>
   );
 }

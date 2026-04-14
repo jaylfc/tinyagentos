@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { getHomeLocation, getTempUnit, getWindUnit, cToF, kmhToMph, UNIT_CHANGED_EVENT } from "@/apps/WeatherApp";
+import { useWidgetSize } from "@/hooks/use-widget-size";
 
 interface Weather {
   temp: number;
@@ -74,6 +75,7 @@ export function WeatherWidget() {
   const [noHome, setNoHome] = useState(!getHomeLocation());
   const [tempUnit, setTempUnit] = useState(getTempUnit);
   const [windUnit, setWindUnit] = useState(getWindUnit);
+  const [containerRef, { tier }] = useWidgetSize();
 
   useEffect(() => {
     const load = () => {
@@ -81,8 +83,6 @@ export function WeatherWidget() {
       setNoHome(!home);
       if (home) fetchWeather().then(setWeather);
     };
-    // Hydrate server-side prefs first so a fresh device (that just signed
-    // in and has no local cache yet) picks up the phone-set home location.
     const hydrate = async () => {
       try {
         const resp = await fetch("/api/preferences/weather");
@@ -99,9 +99,7 @@ export function WeatherWidget() {
       load();
     };
     hydrate();
-    const timer = setInterval(load, 600_000); // 10 min
-    // Refresh when home location changes (from another window) or when
-    // the user toggles units in the Weather app (same window).
+    const timer = setInterval(load, 600_000);
     const onStorage = () => load();
     const onUnits = () => { setTempUnit(getTempUnit()); setWindUnit(getWindUnit()); };
     window.addEventListener("storage", onStorage);
@@ -113,47 +111,116 @@ export function WeatherWidget() {
     };
   }, []);
 
+  const displayTemp = (c: number) => tempUnit === "C" ? c : cToF(c);
+  const displayWind = (kmh: number) => windUnit === "kmh" ? `${kmh} km/h` : `${kmhToMph(kmh)} mph`;
+
   if (noHome) {
     return (
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 4, padding: 8, textAlign: "center" }}>
-        <span style={{ fontSize: 24 }}>🌤</span>
-        <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>Tap to set location</span>
+      <div
+        ref={containerRef}
+        style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 6, padding: 8, textAlign: "center" }}
+        aria-label="Weather widget — no location set"
+        role="region"
+      >
+        <span style={{ fontSize: tier === "s" ? 20 : 28, lineHeight: 1 }}>🌤</span>
+        {tier !== "s" && (
+          <span style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.45)" }}>Tap to set location</span>
+        )}
       </div>
     );
   }
 
   if (!weather) {
     return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "rgba(255,255,255,0.3)", fontSize: 12 }}>
-        Loading...
+      <div
+        ref={containerRef}
+        style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "rgba(255,255,255,0.3)", fontSize: "0.75rem" }}
+        aria-label="Weather widget — loading"
+        role="region"
+      >
+        Loading…
       </div>
     );
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", height: "100%", gap: 4 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: 0.5, color: "rgba(255,255,255,0.4)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "65%" }}>
-          {weather.location}
-        </span>
-        <span style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>{weather.condition}</span>
-      </div>
-
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <span style={{ fontSize: 32, lineHeight: 1 }}>{weather.icon}</span>
-        <div>
-          <span style={{ fontSize: 28, fontWeight: 700, color: "rgba(255,255,255,0.9)", lineHeight: 1 }}>
-            {tempUnit === "C" ? weather.temp : cToF(weather.temp)}°
+    <div
+      ref={containerRef}
+      style={{ height: "100%", display: "flex", flexDirection: "column", padding: tier === "s" ? "0 4px" : "2px 4px 6px", overflow: "hidden" }}
+      aria-label={`Weather: ${weather.condition}, ${displayTemp(weather.temp)}°${tempUnit} in ${weather.location}`}
+      role="region"
+    >
+      {tier === "s" && (
+        /* Small: icon + temperature only, centred */
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", gap: 8 }}>
+          <span style={{ fontSize: "1.8rem", lineHeight: 1 }}>{weather.icon}</span>
+          <span style={{ fontSize: "1.6rem", fontWeight: 600, color: "rgba(255,255,255,0.95)", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+            {displayTemp(weather.temp)}°
           </span>
-          <span style={{ fontSize: 13, color: "rgba(255,255,255,0.4)", marginLeft: 2 }}>{tempUnit}</span>
         </div>
-      </div>
+      )}
 
-      <div style={{ display: "flex", gap: 12, fontSize: 11, color: "rgba(255,255,255,0.4)" }}>
-        <span>Feels {tempUnit === "C" ? weather.feelsLike : cToF(weather.feelsLike)}°</span>
-        <span>💧 {weather.humidity}%</span>
-        <span>💨 {windUnit === "kmh" ? `${weather.wind}km/h` : `${kmhToMph(weather.wind)}mph`}</span>
-      </div>
+      {tier === "m" && (
+        /* Medium: icon + temp left, condition + location right, fills height */
+        <div style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", height: "100%" }}>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: "2.2rem", lineHeight: 1 }}>{weather.icon}</span>
+              <div>
+                <div style={{ fontSize: "1.8rem", fontWeight: 600, color: "rgba(255,255,255,0.95)", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+                  {displayTemp(weather.temp)}°<span style={{ fontSize: "0.85rem", fontWeight: 400, color: "rgba(255,255,255,0.4)", marginLeft: 1 }}>{tempUnit}</span>
+                </div>
+                <div style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.5)", marginTop: 2 }}>{weather.condition}</div>
+              </div>
+            </div>
+          </div>
+          <div style={{ fontSize: "0.68rem", color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.04em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {weather.location}
+          </div>
+        </div>
+      )}
+
+      {tier === "l" && (
+        /* Large: full detail, no empty space */
+        <div style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", height: "100%" }}>
+          {/* Top: location label */}
+          <div style={{ fontSize: "0.65rem", fontWeight: 600, color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.06em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {weather.location}
+          </div>
+
+          {/* Middle: big icon + temp */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "4px 0" }}>
+            <span style={{ fontSize: "2.8rem", lineHeight: 1 }}>{weather.icon}</span>
+            <div>
+              <div style={{ fontSize: "2.4rem", fontWeight: 600, color: "rgba(255,255,255,0.95)", lineHeight: 1, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em" }}>
+                {displayTemp(weather.temp)}°<span style={{ fontSize: "1rem", fontWeight: 400, color: "rgba(255,255,255,0.4)", marginLeft: 2 }}>{tempUnit}</span>
+              </div>
+              <div style={{ fontSize: "0.8rem", color: "rgba(255,255,255,0.55)", marginTop: 3 }}>{weather.condition}</div>
+            </div>
+          </div>
+
+          {/* Bottom: detail row */}
+          <div
+            style={{
+              display: "flex", justifyContent: "space-between",
+              background: "rgba(255,255,255,0.05)", borderRadius: 8,
+              padding: "6px 10px", gap: 4,
+            }}
+          >
+            {[
+              { icon: "🌡", label: "Feels", value: `${displayTemp(weather.feelsLike)}°` },
+              { icon: "💧", label: "Humidity", value: `${weather.humidity}%` },
+              { icon: "💨", label: "Wind", value: displayWind(weather.wind) },
+            ].map(({ icon, label, value }) => (
+              <div key={label} style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1 }}>
+                <span style={{ fontSize: "0.75rem" }}>{icon}</span>
+                <span style={{ fontSize: "0.72rem", fontWeight: 600, color: "rgba(255,255,255,0.8)", fontVariantNumeric: "tabular-nums" }}>{value}</span>
+                <span style={{ fontSize: "0.58rem", color: "rgba(255,255,255,0.3)", textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
