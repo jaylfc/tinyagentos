@@ -9,6 +9,8 @@ import {
 } from "@/components/ui";
 import { useProcessStore } from "@/stores/process-store";
 import { getApp } from "@/registry/app-registry";
+import { MobileSplitView } from "@/components/mobile/MobileSplitView";
+import { useIsMobile } from "@/hooks/use-is-mobile";
 
 /* ------------------------------------------------------------------ */
 /*  Constants — matches VALID_BACKEND_TYPES in tinyagentos/config.py  */
@@ -53,6 +55,8 @@ interface ProviderModel {
   [key: string]: unknown;
 }
 
+type ProviderCategory = "local" | "network" | "cloud";
+
 interface Provider {
   name: string;
   type: string;
@@ -63,7 +67,20 @@ interface Provider {
   status: string;
   response_ms: number;
   models: ProviderModel[];
+  source?: string;
+  category?: ProviderCategory;
+  worker_name?: string;
+  worker_url?: string;
+  worker_platform?: string;
 }
+
+const CATEGORY_LABELS: Record<ProviderCategory, string> = {
+  local: "Local / On Device",
+  network: "Network / Cluster",
+  cloud: "Cloud",
+};
+
+const CATEGORY_ORDER: ProviderCategory[] = ["local", "network", "cloud"];
 
 interface FormState {
   name: string;
@@ -107,6 +124,30 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
+function WorkerBadge({ name, platform }: { name: string; platform?: string }) {
+  const platformLabel = platform ? ` · ${platform}` : "";
+  return (
+    <span
+      className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-blue-500/20 text-blue-300 inline-flex items-center gap-1"
+      title={`Backend on worker ${name}${platformLabel}`}
+    >
+      <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
+        <circle cx="4" cy="4" r="3" stroke="currentColor" strokeWidth="1.5" />
+      </svg>
+      {name}
+    </span>
+  );
+}
+
+function groupByCategory(providers: Provider[]): Record<ProviderCategory, Provider[]> {
+  const groups: Record<ProviderCategory, Provider[]> = { local: [], network: [], cloud: [] };
+  for (const p of providers) {
+    const cat: ProviderCategory = p.category ?? (p.source?.startsWith("worker:") ? "network" : (CLOUD_TYPES as readonly string[]).includes(p.type) ? "cloud" : "local");
+    groups[cat].push(p);
+  }
+  return groups;
+}
+
 function defaultFormState(editingProvider?: Provider | null): FormState {
   if (editingProvider) {
     return {
@@ -141,6 +182,7 @@ function ProviderForm({
   onSave: () => void;
   onClose: () => void;
 }) {
+  const isMobile = useIsMobile();
   const [form, setForm] = useState<FormState>(() => defaultFormState(editing));
   const [testResult, setTestResult] = useState<TestResult>(null);
   const [testing, setTesting] = useState(false);
@@ -255,14 +297,23 @@ function ProviderForm({
 
   return (
     <div
-      className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      className={
+        isMobile
+          ? "absolute inset-0 z-50 flex items-end bg-black/50 backdrop-blur-sm"
+          : "absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      }
       onClick={onClose}
       role="dialog"
       aria-modal="true"
       aria-label={isEdit ? "Edit provider" : "Add provider"}
     >
       <Card
-        className="w-full max-w-md max-h-full overflow-y-auto bg-shell-surface shadow-2xl"
+        className={
+          isMobile
+            ? "w-full max-h-[92%] overflow-y-auto bg-shell-surface shadow-2xl"
+            : "w-full max-w-md max-h-full overflow-y-auto bg-shell-surface shadow-2xl"
+        }
+        style={isMobile ? { borderRadius: "20px 20px 0 0" } : undefined}
         onClick={(e) => e.stopPropagation()}
       >
         <CardContent className="p-5 space-y-4">
@@ -441,6 +492,7 @@ function ProviderDetail({
   onDelete: () => void;
   onTestDone: (result: TestResult) => void;
 }) {
+  const isMobile = useIsMobile();
   const [copied, setCopied] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<TestResult>(null);
@@ -484,48 +536,84 @@ function ProviderDetail({
 
   return (
     <div className="flex flex-col h-full min-h-0 overflow-hidden">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-white/5 shrink-0">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <h2 className="text-sm font-semibold text-shell-text truncate">{provider.name}</h2>
+      {/* Header — hide on mobile (MobileSplitView nav bar shows the name) */}
+      {!isMobile && (
+        <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-white/5 shrink-0">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-sm font-semibold text-shell-text truncate">{provider.name}</h2>
+              <TypePill type={provider.type} />
+              <StatusPill status={provider.status} />
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-shell-text-tertiary">
+                priority {provider.priority}
+              </span>
+            </div>
+            {provider.response_ms > 0 && (
+              <p className="text-[11px] text-shell-text-tertiary mt-0.5">{provider.response_ms} ms</p>
+            )}
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleTest}
+              disabled={testing}
+              aria-label={`Test connection for ${provider.name}`}
+            >
+              <RefreshCw size={13} className={testing ? "animate-spin" : ""} />
+              {testing ? "Testing..." : "Test"}
+            </Button>
+            <Button size="sm" variant="outline" onClick={onEdit} aria-label={`Edit provider ${provider.name}`}>
+              <Edit size={13} />
+              Edit
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onDelete}
+              className="hover:bg-red-500/15 hover:text-red-300"
+              aria-label={`Delete provider ${provider.name}`}
+            >
+              <Trash2 size={13} />
+              Delete
+            </Button>
+          </div>
+        </div>
+      )}
+      {/* Mobile: status + pills + action buttons shown as a prominent summary row */}
+      {isMobile && (
+        <div className="shrink-0 px-4 py-3 border-b border-white/5">
+          <div className="flex items-center gap-2 flex-wrap mb-3">
             <TypePill type={provider.type} />
             <StatusPill status={provider.status} />
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-shell-text-tertiary">
+            <span className="text-[11px] px-1.5 py-0.5 rounded bg-white/5 text-shell-text-tertiary">
               priority {provider.priority}
             </span>
+            {provider.response_ms > 0 && (
+              <span className="text-[11px] text-shell-text-tertiary">{provider.response_ms} ms</span>
+            )}
           </div>
-          {provider.response_ms > 0 && (
-            <p className="text-[11px] text-shell-text-tertiary mt-0.5">{provider.response_ms} ms</p>
-          )}
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={handleTest} disabled={testing} className="flex-1">
+              <RefreshCw size={13} className={testing ? "animate-spin" : ""} />
+              {testing ? "Testing..." : "Test"}
+            </Button>
+            <Button size="sm" variant="outline" onClick={onEdit} className="flex-1">
+              <Edit size={13} />
+              Edit
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onDelete}
+              className="flex-1 hover:bg-red-500/15 hover:text-red-300"
+            >
+              <Trash2 size={13} />
+              Delete
+            </Button>
+          </div>
         </div>
-        <div className="flex items-center gap-1 shrink-0">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleTest}
-            disabled={testing}
-            aria-label={`Test connection for ${provider.name}`}
-          >
-            <RefreshCw size={13} className={testing ? "animate-spin" : ""} />
-            {testing ? "Testing..." : "Test"}
-          </Button>
-          <Button size="sm" variant="outline" onClick={onEdit} aria-label={`Edit provider ${provider.name}`}>
-            <Edit size={13} />
-            Edit
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={onDelete}
-            className="hover:bg-red-500/15 hover:text-red-300"
-            aria-label={`Delete provider ${provider.name}`}
-          >
-            <Trash2 size={13} />
-            Delete
-          </Button>
-        </div>
-      </div>
+      )}
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -631,6 +719,7 @@ function ProviderDetail({
 /* ------------------------------------------------------------------ */
 
 export function ProvidersApp({ windowId: _windowId }: { windowId: string }) {
+  const isMobile = useIsMobile();
   const [providers, setProviders] = useState<Provider[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<string | null>(null);
@@ -654,6 +743,8 @@ export function ProvidersApp({ windowId: _windowId }: { windowId: string }) {
             setProviders(data as Provider[]);
             setSelected((cur) => {
               if (cur && data.some((p: Provider) => p.name === cur)) return cur;
+              // On mobile, let the user pick from the list — don't auto-select.
+              if (isMobile) return null;
               return data.length > 0 ? (data[0] as Provider).name : null;
             });
           }
@@ -716,96 +807,183 @@ export function ProvidersApp({ windowId: _windowId }: { windowId: string }) {
 
   const selectedProvider = providers.find((p) => p.name === selected) ?? null;
 
+  // Hide the app-level toolbar on mobile when viewing detail — the
+  // MobileSplitView provides its own nav bar with back button there.
+  const showToolbar = !isMobile || selected === null;
+
   return (
     <div className="flex flex-col h-full min-h-0 overflow-hidden bg-shell-bg text-shell-text select-none relative">
       {/* Toolbar */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/5 shrink-0">
-        <div className="flex items-center gap-2">
-          <Cloud size={18} className="text-accent" />
-          <h1 className="text-sm font-semibold">Providers</h1>
-          <span className="text-xs text-shell-text-tertiary">
-            {providers.length} configured
-          </span>
+      {showToolbar && (
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/5 shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <Cloud size={18} className="text-accent shrink-0" />
+            <h1 className="text-sm font-semibold">Providers</h1>
+            <span className="text-xs text-shell-text-tertiary">
+              {providers.length} configured
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="icon" onClick={fetchProviders} aria-label="Refresh provider list">
+              <RefreshCw size={14} />
+            </Button>
+            <Button size="sm" onClick={openAdd} aria-label="Add provider">
+              <Plus size={14} />
+              {isMobile ? "Add" : "Add Provider"}
+            </Button>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" onClick={fetchProviders} aria-label="Refresh provider list">
-            <RefreshCw size={14} />
-          </Button>
-          <Button size="sm" onClick={openAdd} aria-label="Add provider">
-            <Plus size={14} />
-            Add Provider
-          </Button>
-        </div>
-      </div>
+      )}
 
-      {/* Master-detail */}
-      <div className="flex-1 min-h-0 flex overflow-hidden">
-        {/* List */}
-        <aside
-          className="w-64 shrink-0 border-r border-white/5 overflow-y-auto p-3 space-y-2"
-          aria-label="Provider list"
-        >
-          {loading ? (
-            <div className="text-[11px] text-shell-text-tertiary px-2 py-6 text-center">
-              Loading providers...
-            </div>
-          ) : providers.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 py-6 text-center">
-              <Cloud size={32} className="opacity-20 text-shell-text-tertiary" />
-              <p className="text-[11px] text-shell-text-tertiary">No providers configured yet.</p>
-              <Button size="sm" onClick={openAdd} className="mt-1">
-                <Plus size={13} />
-                Add your first
-              </Button>
-            </div>
-          ) : (
-            providers.map((p) => (
-              <button
-                key={p.name}
-                type="button"
-                onClick={() => setSelected(p.name)}
-                aria-pressed={selected === p.name}
-                aria-label={`Select provider ${p.name}`}
-                className={`w-full text-left p-2.5 rounded-lg border transition-colors ${
-                  selected === p.name
-                    ? "border-accent/50 bg-accent/10"
-                    : "border-white/5 bg-white/[0.02] hover:bg-white/[0.04]"
-                }`}
-              >
-                <div className="flex items-center justify-between gap-1.5 mb-1">
-                  <span className="text-[12px] font-semibold text-shell-text truncate">{p.name}</span>
-                  <StatusPill status={p.status} />
-                </div>
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <TypePill type={p.type} />
-                  <span className="text-[10px] text-shell-text-tertiary">#{p.priority}</span>
-                  {p.models.length > 0 && (
-                    <span className="text-[10px] text-shell-text-tertiary">
-                      {p.models.length} model{p.models.length !== 1 ? "s" : ""}
-                    </span>
-                  )}
-                </div>
-              </button>
-            ))
-          )}
-        </aside>
+      {/* Master-detail — MobileSplitView stacks on mobile, splits on desktop */}
+      <MobileSplitView
+        selectedId={selected}
+        onBack={() => setSelected(null)}
+        listTitle="Providers"
+        detailTitle={selectedProvider?.name}
+        list={
+          <div className={isMobile ? "py-2" : "p-3 space-y-2"} aria-label="Provider list">
+            {loading ? (
+              <div className="text-[11px] text-shell-text-tertiary px-4 py-6 text-center">
+                Loading providers...
+              </div>
+            ) : providers.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 py-10 text-center px-4">
+                <Cloud size={36} className="opacity-20 text-shell-text-tertiary" />
+                <p className="text-[13px] text-shell-text-tertiary">No providers configured yet.</p>
+                <Button size="sm" onClick={openAdd} className="mt-2">
+                  <Plus size={13} />
+                  Add your first
+                </Button>
+              </div>
+            ) : (
+              (() => {
+                const groups = groupByCategory(providers);
+                const nonEmpty = CATEGORY_ORDER.filter((c) => groups[c].length > 0);
 
-        {/* Detail */}
-        <section className="flex-1 min-w-0 min-h-0 overflow-hidden" aria-label="Provider detail">
-          {selectedProvider ? (
+                if (isMobile) {
+                  return (
+                    <div style={{ padding: "8px 0 16px" }}>
+                      {nonEmpty.map((cat) => (
+                        <div key={cat} style={{ marginBottom: 20 }}>
+                          <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5, color: "rgba(255,255,255,0.45)", padding: "0 20px 6px", fontWeight: 600 }}>
+                            {CATEGORY_LABELS[cat]}
+                          </div>
+                          <div
+                            style={{
+                              margin: "0 12px",
+                              borderRadius: 16,
+                              background: "rgba(255,255,255,0.05)",
+                              border: "1px solid rgba(255,255,255,0.08)",
+                              overflow: "hidden",
+                            }}
+                          >
+                            {groups[cat].map((p, idx, arr) => (
+                              <button
+                                key={p.name}
+                                type="button"
+                                onClick={() => setSelected(p.name)}
+                                aria-label={`Select provider ${p.name}`}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 10,
+                                  width: "100%",
+                                  padding: "14px 16px",
+                                  background: "none",
+                                  border: "none",
+                                  borderBottom: idx === arr.length - 1 ? "none" : "1px solid rgba(255,255,255,0.06)",
+                                  cursor: "pointer",
+                                  color: "inherit",
+                                  textAlign: "left",
+                                }}
+                              >
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: 15, fontWeight: 600, color: "rgba(255,255,255,0.95)", display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
+                                    <StatusPill status={p.status} />
+                                  </div>
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <TypePill type={p.type} />
+                                    {p.worker_name && <WorkerBadge name={p.worker_name} platform={p.worker_platform} />}
+                                    <span className="text-[11px] text-shell-text-tertiary">priority {p.priority}</span>
+                                    {p.models.length > 0 && (
+                                      <span className="text-[11px] text-shell-text-tertiary">
+                                        · {p.models.length} model{p.models.length !== 1 ? "s" : ""}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <svg width="8" height="14" viewBox="0 0 8 14" fill="none" style={{ color: "rgba(255,255,255,0.3)", flexShrink: 0 }}>
+                                  <path d="M1 1L7 7L1 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                }
+
+                // Desktop — grouped list with section headers
+                return nonEmpty.map((cat) => (
+                  <div key={cat} className="mb-4">
+                    <div className="text-[10px] uppercase tracking-wider text-shell-text-tertiary font-semibold px-1 mb-1.5">
+                      {CATEGORY_LABELS[cat]}
+                    </div>
+                    <div className="space-y-1.5">
+                      {groups[cat].map((p) => (
+                        <button
+                          key={p.name}
+                          type="button"
+                          onClick={() => setSelected(p.name)}
+                          aria-pressed={selected === p.name}
+                          aria-label={`Select provider ${p.name}`}
+                          className={`w-full text-left p-2.5 rounded-lg border transition-colors ${
+                            selected === p.name
+                              ? "border-accent/50 bg-accent/10"
+                              : "border-white/5 bg-white/[0.02] hover:bg-white/[0.04]"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-1.5 mb-1">
+                            <span className="text-[12px] font-semibold text-shell-text truncate">{p.name}</span>
+                            <StatusPill status={p.status} />
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <TypePill type={p.type} />
+                            {p.worker_name && <WorkerBadge name={p.worker_name} platform={p.worker_platform} />}
+                            <span className="text-[10px] text-shell-text-tertiary">#{p.priority}</span>
+                            {p.models.length > 0 && (
+                              <span className="text-[10px] text-shell-text-tertiary">
+                                {p.models.length} model{p.models.length !== 1 ? "s" : ""}
+                              </span>
+                            )}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ));
+              })()
+            )}
+          </div>
+        }
+        detail={
+          selectedProvider ? (
             <ProviderDetail
               provider={selectedProvider}
               onEdit={() => openEdit(selectedProvider)}
               onDelete={() => handleDelete(selectedProvider.name)}
               onTestDone={() => fetchProviders()}
             />
-          ) : (
+          ) : !isMobile ? (
             <div className="flex items-center justify-center h-full text-shell-text-tertiary text-sm">
               {loading ? "Loading..." : providers.length === 0 ? "Add a provider to get started" : "Select a provider"}
             </div>
-          )}
-        </section>
-      </div>
+          ) : null
+        }
+      />
 
       {/* Form modal */}
       {showForm && (
