@@ -69,14 +69,14 @@ const obsidianTheme = EditorView.theme({
     fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
     lineHeight: "1.75",
     padding: "24px 32px",
-    caretColor: "#667eea",
+    caretColor: "#8b92a3",
   },
   ".cm-cursor": {
-    borderLeftColor: "#667eea",
+    borderLeftColor: "#8b92a3",
     borderLeftWidth: "2px",
   },
   ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
-    backgroundColor: "rgba(102, 126, 234, 0.25) !important",
+    backgroundColor: "rgba(139, 146, 163, 0.25) !important",
   },
   ".cm-gutters": {
     backgroundColor: "#151625",
@@ -96,7 +96,7 @@ const obsidianTheme = EditorView.theme({
   },
   // Markdown-specific styling
   "&.cm-focused .cm-matchingBracket": {
-    backgroundColor: "rgba(102, 126, 234, 0.3)",
+    backgroundColor: "rgba(139, 146, 163, 0.3)",
   },
   ".cm-scroller": {
     overflow: "auto",

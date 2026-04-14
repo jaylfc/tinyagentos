@@ -111,7 +111,7 @@ const MOCK_APPS: CatalogApp[] = [
 
 const TYPE_COLORS: Record<string, string> = {
   "agent-framework": "bg-blue-500/20 text-blue-400",
-  model: "bg-purple-500/20 text-purple-400",
+  model: "bg-slate-500/20 text-slate-400",
   service: "bg-amber-500/20 text-amber-400",
   plugin: "bg-teal-500/20 text-teal-400",
   "streaming-app": "bg-indigo-500/20 text-indigo-400",

@@ -18,7 +18,7 @@ interface Props {
 const CATEGORY_COLORS: Record<string, string> = {
   search: "bg-blue-500/20 text-blue-400",
   files: "bg-amber-500/20 text-amber-400",
-  code: "bg-purple-500/20 text-purple-400",
+  code: "bg-slate-500/20 text-slate-400",
   media: "bg-pink-500/20 text-pink-400",
   browser: "bg-cyan-500/20 text-cyan-400",
   data: "bg-emerald-500/20 text-emerald-400",

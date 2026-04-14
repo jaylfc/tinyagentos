@@ -80,7 +80,7 @@ export function LoginGate({ children }: Props) {
           <div className="flex flex-col items-center gap-3 mb-6">
             <div
               className="w-14 h-14 rounded-2xl flex items-center justify-center"
-              style={{ background: "linear-gradient(135deg, #667eea, #764ba2)" }}
+              style={{ background: "linear-gradient(135deg, #8b92a3, #5b6170)" }}
             >
               <Lock size={24} className="text-white" />
             </div>

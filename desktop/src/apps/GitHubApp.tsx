@@ -88,7 +88,7 @@ const formatBytes = (bytes: number): string => {
 const stateColor = (state: string): string => {
   if (state === "open") return "bg-green-500/15 text-green-400 border-green-500/30";
   if (state === "closed") return "bg-red-500/15 text-red-400 border-red-500/30";
-  if (state === "merged") return "bg-purple-500/15 text-purple-400 border-purple-500/30";
+  if (state === "merged") return "bg-slate-500/15 text-slate-400 border-slate-500/30";
   return "bg-white/10 text-shell-text-tertiary border-white/10";
 };
 

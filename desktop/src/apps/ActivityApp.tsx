@@ -374,7 +374,7 @@ export function ActivityApp({ windowId: _windowId }: { windowId: string }) {
             <CardContent className="p-0">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <Zap size={14} className="text-purple-400" />
+                  <Zap size={14} className="text-slate-400" />
                   <h3 className="text-xs font-semibold text-shell-text">NPU</h3>
                 </div>
                 <span className="text-[10px] text-shell-text-tertiary">

@@ -38,9 +38,9 @@ const WALLPAPERS: Wallpaper[] = [
     fallback: "#0f2027",
   },
   {
-    id: "sunset",
-    label: "Sunset",
-    image: "linear-gradient(135deg, #1a1a2e 0%, #16213e 30%, #0f3460 60%, #533483 100%)",
+    id: "dusk",
+    label: "Dusk",
+    image: "linear-gradient(135deg, #1a1a2e 0%, #16213e 40%, #0f3460 100%)",
     fallback: "#1a1a2e",
   },
   {
@@ -62,10 +62,10 @@ const WALLPAPERS: Wallpaper[] = [
     fallback: "#1c1c1c",
   },
   {
-    id: "nebula",
-    label: "Nebula",
-    image: "linear-gradient(135deg, #1a0a2e 0%, #2d1b4e 40%, #1a2a4e 100%)",
-    fallback: "#1a0a2e",
+    id: "gunmetal",
+    label: "Gunmetal",
+    image: "linear-gradient(165deg, #16181f 0%, #1f232c 50%, #252a35 100%)",
+    fallback: "#16181f",
   },
 ];
 

@@ -284,7 +284,7 @@ function WorkerDetail({
         </Section>
 
         {/* NPU */}
-        <Section title="NPU" icon={<Zap size={14} className="text-purple-400" />}>
+        <Section title="NPU" icon={<Zap size={14} className="text-slate-400" />}>
           {npu.type && npu.type !== "none" ? (
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               <LabelValue label="Type" value={npu.type} />

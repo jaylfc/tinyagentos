@@ -296,7 +296,7 @@ export function SearchPalette({ open, onClose, onOpenApp }: Props) {
                 <div
                   className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
                     i === selectedIndex
-                      ? "bg-purple-500/20 text-purple-300"
+                      ? "bg-slate-500/20 text-slate-300"
                       : "bg-shell-surface text-shell-text-secondary"
                   }`}
                 >

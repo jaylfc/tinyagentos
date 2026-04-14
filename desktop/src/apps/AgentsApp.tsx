@@ -1278,7 +1278,7 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
           onClick={() => setWizardOpen(true)}
           size="sm"
           className="text-white shadow-lg hover:shadow-xl hover:-translate-y-0.5 hover:brightness-110 border-0"
-          style={{ background: "linear-gradient(135deg, #667eea, #764ba2)" }}
+          style={{ background: "linear-gradient(135deg, #8b92a3, #5b6170)" }}
           aria-label="Deploy new agent"
         >
           <Plus size={14} />
@@ -1295,7 +1295,7 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
         ) : agents.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-4 text-shell-text-tertiary">
             <div className="w-20 h-20 rounded-2xl flex items-center justify-center"
-              style={{ background: "linear-gradient(135deg, rgba(102,126,234,0.15), rgba(118,75,162,0.08))" }}
+              style={{ background: "linear-gradient(135deg, rgba(139,146,163,0.15), rgba(91,97,112,0.08))" }}
             >
               <Bot size={36} className="text-accent/50" />
             </div>
@@ -1306,7 +1306,7 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
             <Button
               onClick={() => setWizardOpen(true)}
               className="text-white shadow-lg hover:shadow-xl hover:-translate-y-0.5 hover:brightness-110 border-0 mt-1"
-              style={{ background: "linear-gradient(135deg, #667eea, #764ba2)" }}
+              style={{ background: "linear-gradient(135deg, #8b92a3, #5b6170)" }}
             >
               <Plus size={15} />
               Deploy your first agent

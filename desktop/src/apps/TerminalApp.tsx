@@ -142,14 +142,14 @@ export function TerminalApp({ windowId: _windowId }: { windowId: string }) {
       theme: {
         background: "#151625",
         foreground: "rgba(255, 255, 255, 0.85)",
-        cursor: "#667eea",
+        cursor: "#8b92a3",
         cursorAccent: "#151625",
-        selectionBackground: "rgba(102, 126, 234, 0.3)",
+        selectionBackground: "rgba(139, 146, 163, 0.3)",
         black: "#1a1b2e",
         red: "#ff5f57",
         green: "#28c840",
         yellow: "#febc2e",
-        blue: "#667eea",
+        blue: "#8b92a3",
         magenta: "#f093fb",
         cyan: "#4facfe",
         white: "rgba(255,255,255,0.85)",
@@ -283,7 +283,7 @@ export function TerminalApp({ windowId: _windowId }: { windowId: string }) {
                   startLocal();
                 }
               }}
-              className="cursor-pointer transition hover:border-[#667eea]/60"
+              className="cursor-pointer transition hover:border-[#8b92a3]/60"
               aria-label="Local Shell"
             >
               <CardContent className="p-4">
@@ -303,7 +303,7 @@ export function TerminalApp({ windowId: _windowId }: { windowId: string }) {
                   openSshForm();
                 }
               }}
-              className="cursor-pointer transition hover:border-[#667eea]/60"
+              className="cursor-pointer transition hover:border-[#8b92a3]/60"
               aria-label="SSH Connection"
             >
               <CardContent className="p-4">
@@ -333,7 +333,7 @@ export function TerminalApp({ windowId: _windowId }: { windowId: string }) {
                           openSshForm(h);
                         }
                       }}
-                      className="cursor-pointer transition hover:border-[#667eea]/60"
+                      className="cursor-pointer transition hover:border-[#8b92a3]/60"
                       aria-label={`Connect to ${h.username}@${h.host}:${h.port}`}
                     >
                       <CardContent className="px-3 py-2 text-sm">

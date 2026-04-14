@@ -20,9 +20,9 @@
   --color-traffic-minimize: #febc2e;
   --color-traffic-maximize: #28c840;
 
-  /* Accent */
-  --color-accent: #667eea;
-  --color-accent-glow: rgba(102, 126, 234, 0.3);
+  /* Accent — cool neutral grey, no purple/indigo */
+  --color-accent: #8b92a3;
+  --color-accent-glow: rgba(139, 146, 163, 0.3);
 
   /* Dock + top bar — dark gunmetal chrome */
   --color-dock-bg: rgba(22, 25, 32, 0.92);
@@ -30,8 +30,8 @@
   --color-topbar-bg: rgba(22, 25, 32, 0.92);
 
   /* Snap zones */
-  --color-snap-preview: rgba(102, 126, 234, 0.15);
-  --color-snap-border: rgba(102, 126, 234, 0.4);
+  --color-snap-preview: rgba(139, 146, 163, 0.15);
+  --color-snap-border: rgba(139, 146, 163, 0.4);
 
   /* Spacing */
   --spacing-topbar-h: 32px;
@@ -60,15 +60,18 @@
   background-size: cover;
 }
 @media (max-width: 767px), (orientation: portrait) {
+  /* Fill vertical height, let width preserve aspect. Whatever overflows
+     horizontally is cropped rather than leaving empty bands above/below
+     the image — better fit for narrow portrait viewports. */
   .taos-wallpaper {
-    background-size: contain;
+    background-size: auto 100%;
   }
 }
 
 /* React-grid-layout dark theme overrides for widget system */
 .react-grid-item.react-grid-placeholder {
-  background: rgba(102, 126, 234, 0.2) !important;
-  border: 1px dashed rgba(102, 126, 234, 0.4) !important;
+  background: rgba(139, 146, 163, 0.2) !important;
+  border: 1px dashed rgba(139, 146, 163, 0.4) !important;
   border-radius: 12px !important;
 }
 .react-resizable-handle {
