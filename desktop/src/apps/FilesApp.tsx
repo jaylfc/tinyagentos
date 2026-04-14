@@ -530,52 +530,54 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
     <div className="flex-1 flex flex-col min-w-0 h-full">
       {/* Toolbar — hidden on mobile when inside MobileSplitView (nav bar handles actions) */}
       {!isMobile && (
-        <Toolbar className="shrink-0 flex-nowrap">
-          {currentPath && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={goUp}
-              className="h-8 w-8 shrink-0"
-              aria-label="Go up one directory"
+        <Toolbar className="shrink-0 flex-nowrap w-full">
+          {/* Left group — back button + breadcrumb trail. Grows to fill
+              available space so the actions on the right hit the edge. */}
+          <div className="flex items-center gap-1 min-w-0 flex-1 overflow-hidden">
+            {currentPath && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={goUp}
+                className="h-8 w-8 shrink-0"
+                aria-label="Go up one directory"
+              >
+                <ArrowLeft size={16} />
+              </Button>
+            )}
+            <nav
+              className="flex items-center gap-1 text-xs min-w-0 flex-1 overflow-hidden"
+              aria-label="File path"
             >
-              <ArrowLeft size={16} />
-            </Button>
-          )}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => navigateTo("")}
+                className={`h-7 px-2 shrink-0 ${!currentPath ? "text-shell-text font-medium" : ""}`}
+              >
+                {location === "workspace" ? "Workspace" : location}
+              </Button>
+              {pathSegments.map((seg, i) => {
+                const segPath = pathSegments.slice(0, i + 1).join("/");
+                const isLast = i === pathSegments.length - 1;
+                return (
+                  <span key={segPath} className="flex items-center gap-1 min-w-0">
+                    <ChevronRight size={12} className="text-shell-text-tertiary shrink-0" />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => navigateTo(segPath)}
+                      className={`h-7 px-2 truncate ${isLast ? "text-shell-text font-medium" : ""}`}
+                    >
+                      {seg}
+                    </Button>
+                  </span>
+                );
+              })}
+            </nav>
+          </div>
 
-          {/* Breadcrumbs — take all remaining space, truncate the whole trail if needed */}
-          <nav
-            className="flex items-center gap-1 text-xs min-w-0 flex-1 overflow-hidden"
-            aria-label="File path"
-          >
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => navigateTo("")}
-              className={`h-7 px-2 shrink-0 ${!currentPath ? "text-shell-text font-medium" : ""}`}
-            >
-              {location === "workspace" ? "Workspace" : location}
-            </Button>
-            {pathSegments.map((seg, i) => {
-              const segPath = pathSegments.slice(0, i + 1).join("/");
-              const isLast = i === pathSegments.length - 1;
-              return (
-                <span key={segPath} className="flex items-center gap-1 min-w-0">
-                  <ChevronRight size={12} className="text-shell-text-tertiary shrink-0" />
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => navigateTo(segPath)}
-                    className={`h-7 px-2 truncate ${isLast ? "text-shell-text font-medium" : ""}`}
-                  >
-                    {seg}
-                  </Button>
-                </span>
-              );
-            })}
-          </nav>
-
-          <ToolbarGroup className="shrink-0">{toolbarActions}</ToolbarGroup>
+          <ToolbarGroup className="shrink-0 ml-auto">{toolbarActions}</ToolbarGroup>
         </Toolbar>
       )}
 
