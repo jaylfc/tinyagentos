@@ -223,9 +223,21 @@ class TestAuthRoutes:
 class TestAuthMiddleware:
     @pytest.mark.asyncio
     async def test_no_auth_when_not_configured(self, auth_client):
-        """Without a password set, all routes should be accessible."""
+        """Before onboarding, /api/* must hard-fail so the SPA forces setup.
+
+        Exempt paths (health, cluster heartbeat, /static/, /desktop, /auth/*)
+        still pass through; everything else returns 401 with
+        needs_onboarding so the client routes to OnboardingScreen instead
+        of acting on stale state.
+        """
+        # Exempt path still works
         resp = await auth_client.get("/api/health")
         assert resp.status_code == 200
+
+        # Non-exempt /api/* now requires onboarding
+        resp = await auth_client.get("/api/system")
+        assert resp.status_code == 401
+        assert resp.json().get("needs_onboarding") is True
 
     @pytest.mark.asyncio
     async def test_protected_route_returns_401(self, app, auth_client):
