@@ -180,18 +180,20 @@ const si = (slug: string): string => `https://cdn.simpleicons.org/${slug}/ffffff
 const gh = (owner: string): string => `https://github.com/${owner}.png?size=96`;
 
 const APP_ICONS: Record<string, string> = {
-  // ---- Agent frameworks (GitHub org avatars) ----
+  // ---- Agent frameworks ----
+  // Where the project ships an official logo in its repo we link it
+  // directly; otherwise we use the owning org/user's GitHub avatar.
   "smolagents": gh("huggingface"),
   "pocketflow": gh("The-Pocket"),
-  "openclaw": gh("jaylfc"),
-  "nanoclaw": gh("jaylfc"),
-  "picoclaw": gh("jaylfc"),
-  "zeroclaw": gh("jaylfc"),
-  "microclaw": gh("jaylfc"),
-  "ironclaw": gh("jaylfc"),
-  "nullclaw": gh("jaylfc"),
-  "shibaclaw": gh("jaylfc"),
-  "moltis": gh("jaylfc"),
+  "openclaw": "https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/openclaw-logo-text-dark.svg",
+  "nanoclaw": gh("openclaw"),
+  "picoclaw": "https://raw.githubusercontent.com/sipeed/picoclaw/main/assets/logo.webp",
+  "zeroclaw": gh("nicholasgasior"),
+  "microclaw": gh("nicholasgasior"),
+  "ironclaw": gh("nicholasgasior"),
+  "nullclaw": gh("nicholasgasior"),
+  "shibaclaw": "https://raw.githubusercontent.com/RikyZ90/ShibaClaw/main/assets/shibaclaw_logo.png",
+  "moltis": gh("moltis-ai"),
   "hermes": gh("NousResearch"),
   "agent-zero": gh("frdel"),
   "openai-agents-sdk": si("openai"),
