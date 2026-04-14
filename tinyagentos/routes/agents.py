@@ -403,9 +403,13 @@ async def bulk_start_agents(request: Request):
 
 @router.post("/api/agents/bulk/stop")
 async def bulk_stop_agents(request: Request):
-    """Stop all agent containers."""
+    """Stop all agent containers, running graceful prepare first."""
     from tinyagentos.containers import stop_container
     config = request.app.state.config
+    orchestrator = getattr(request.app.state, "orchestrator", None)
+    report = {}
+    if orchestrator is not None:
+        report = await orchestrator.prepare("all", "stop")
     results = {}
     for agent in config.agents:
         name = agent["name"]
@@ -414,7 +418,7 @@ async def bulk_stop_agents(request: Request):
             results[name] = {"success": result.get("success", False)}
         except Exception as e:
             results[name] = {"success": False, "error": str(e)}
-    return {"action": "stop", "results": results}
+    return {"action": "stop", "prepare_report": report, "results": results}
 
 
 @router.post("/api/agents/bulk/restart")
@@ -440,11 +444,34 @@ async def start_agent(request: Request, name: str):
     return await start_container(f"taos-agent-{name}")
 
 
+@router.post("/api/agents/{name}/pause")
+async def pause_agent(request: Request, name: str):
+    """Gracefully prepare an agent for pause (paused=True, container still running)."""
+    config = request.app.state.config
+    agent = find_agent(config, name)
+    if not agent:
+        return JSONResponse({"error": f"Agent '{name}' not found"}, status_code=404)
+    orchestrator = getattr(request.app.state, "orchestrator", None)
+    report = {}
+    if orchestrator is not None:
+        report = await orchestrator.prepare([name], "pause")
+    return {"status": "paused", "name": name, "report": report}
+
+
 @router.post("/api/agents/{name}/stop")
 async def stop_agent(request: Request, name: str):
-    """Stop an agent's LXC container."""
+    """Gracefully prepare then stop an agent's LXC container."""
     from tinyagentos.containers import stop_container
-    return await stop_container(f"taos-agent-{name}")
+    config = request.app.state.config
+    agent = find_agent(config, name)
+    if not agent:
+        return JSONResponse({"error": f"Agent '{name}' not found"}, status_code=404)
+    orchestrator = getattr(request.app.state, "orchestrator", None)
+    report = {}
+    if orchestrator is not None:
+        report = await orchestrator.prepare([name], "stop")
+    stop_result = await stop_container(f"taos-agent-{name}")
+    return {"prepare_report": report, "stop_result": stop_result}
 
 
 @router.post("/api/agents/{name}/restart")
