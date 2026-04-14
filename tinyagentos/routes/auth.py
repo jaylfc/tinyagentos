@@ -5,34 +5,200 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-LOGIN_PAGE_HTML = """\
-<!DOCTYPE html>
-<html lang="en" data-theme="dark">
+# Self-contained HTML pages for the auth flow.
+#
+# These are deliberately JS-free and CDN-free so they work on any device
+# even when the SPA bundle is broken or stale. After successful submit
+# the server redirects to /desktop where the SPA takes over.
+_AUTH_BASE_STYLE = """
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: env(safe-area-inset-top, 16px) env(safe-area-inset-right, 16px) env(safe-area-inset-bottom, 16px) env(safe-area-inset-left, 16px);
+  background: linear-gradient(160deg, #1a1b2e 0%, #1e2140 40%, #252848 100%);
+  color: rgba(255, 255, 255, 0.85);
+  font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+.card {
+  width: 100%;
+  max-width: 380px;
+  padding: 28px 24px;
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 18px;
+  background: rgba(28, 26, 44, 0.72);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+.brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 22px;
+}
+.brand .icon {
+  width: 56px; height: 56px;
+  border-radius: 16px;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #8b92a3, #5b6170);
+  font-size: 26px;
+}
+.brand h1 { margin: 0; font-size: 18px; font-weight: 600; }
+.brand p { margin: 0; font-size: 12px; color: rgba(255,255,255,0.5); text-align: center; }
+label.field {
+  display: block;
+  margin-bottom: 12px;
+}
+label.field > span {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(255,255,255,0.4);
+  margin-bottom: 4px;
+}
+input[type="text"], input[type="password"], input[type="email"] {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: #151625;
+  color: rgba(255,255,255,0.85);
+  font: inherit;
+  outline: none;
+}
+input:focus { border-color: rgba(139,146,163,0.5); }
+.field .hint {
+  display: block;
+  font-size: 10px;
+  color: rgba(255,255,255,0.3);
+  margin-top: 4px;
+}
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.55);
+  margin-top: 14px;
+}
+button[type="submit"] {
+  width: 100%;
+  margin-top: 18px;
+  padding: 11px 14px;
+  border: 0;
+  border-radius: 10px;
+  background: #8b92a3;
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 120ms;
+}
+button[type="submit"]:hover { filter: brightness(1.1); }
+button[type="submit"]:disabled { opacity: 0.4; cursor: not-allowed; }
+.error {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #fca5a5;
+  font-size: 12px;
+  text-align: center;
+}
+"""
+
+
+def _login_page(error: str = "", multi_user: bool = False) -> str:
+    err = f'<p class="error" role="alert">{error}</p>' if error else ""
+    pwd_placeholder = "Password or invite code" if multi_user else "Password"
+    autologin_default = "" if multi_user else "checked"
+    username_field = '''
+        <label class="field">
+          <span>Username</span>
+          <input type="text" name="username" autocomplete="username" autofocus required>
+        </label>
+        ''' if multi_user else ""
+    return f"""<!DOCTYPE html>
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sign In — TinyAgentOS</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
-    <style>
-        body { display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #13111c; }
-        .login-card { max-width: 380px; width: 100%; padding: 2.5rem; border-radius: 12px; background: #1e1b2e; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
-        .login-card h1 { text-align: center; font-size: 1.5rem; margin-bottom: 0.25rem; }
-        .login-card .subtitle { text-align: center; color: #888; margin-bottom: 2rem; font-size: 0.9rem; }
-        .error-msg { color: #e74c3c; font-size: 0.875rem; margin-bottom: 1rem; text-align: center; }
-        button[type="submit"] { width: 100%; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Sign in — taOS</title>
+<style>{_AUTH_BASE_STYLE}</style>
 </head>
 <body>
-    <div class="login-card">
-        <h1>TinyAgentOS</h1>
-        <p class="subtitle">Sign in to continue</p>
-        {error}
-        <form method="POST" action="/auth/login">
-            <label for="password">Password</label>
-            <input type="password" id="password" name="password" placeholder="Enter password" required autofocus>
-            <button type="submit">Sign In</button>
-        </form>
+  <form class="card" method="POST" action="/auth/login">
+    <div class="brand">
+      <div class="icon">⌗</div>
+      <h1>taOS</h1>
+      <p>Sign in to continue</p>
     </div>
+    {err}
+    {username_field}
+    <label class="field">
+      <span>Password</span>
+      <input type="password" name="password" autocomplete="current-password" placeholder="{pwd_placeholder}" {'' if multi_user else 'autofocus'} required>
+    </label>
+    <label class="checkbox">
+      <input type="checkbox" name="auto_login" value="1" {autologin_default}>
+      Stay signed in on this device
+    </label>
+    <button type="submit">Sign in</button>
+  </form>
+</body>
+</html>
+"""
+
+
+def _setup_page(error: str = "") -> str:
+    err = f'<p class="error" role="alert">{error}</p>' if error else ""
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Welcome — taOS</title>
+<style>{_AUTH_BASE_STYLE}</style>
+</head>
+<body>
+  <form class="card" method="POST" action="/auth/setup">
+    <div class="brand">
+      <div class="icon">✦</div>
+      <h1>Welcome to taOS</h1>
+      <p>Set up your account to get started.</p>
+    </div>
+    {err}
+    <label class="field">
+      <span>Username</span>
+      <input type="text" name="username" autocomplete="username" autofocus required>
+    </label>
+    <label class="field">
+      <span>Full name</span>
+      <input type="text" name="full_name" autocomplete="name" required>
+    </label>
+    <label class="field">
+      <span>Email</span>
+      <input type="email" name="email" autocomplete="email">
+      <span class="hint">Optional today, used for cloud services later.</span>
+    </label>
+    <label class="field">
+      <span>Password</span>
+      <input type="password" name="password" autocomplete="new-password" minlength="4" required>
+      <span class="hint">At least 4 characters.</span>
+    </label>
+    <label class="checkbox">
+      <input type="checkbox" name="auto_login" value="1" checked>
+      Stay signed in on this device
+    </label>
+    <button type="submit">Get started</button>
+  </form>
 </body>
 </html>
 """
@@ -64,10 +230,31 @@ def _require_self(request: Request, username: str) -> tuple[bool, JSONResponse |
 
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request, error: str = ""):
-    error_html = ""
+    """Server-rendered login page. Works without JavaScript — the SPA
+    takes over once the user is signed in and lands on /desktop."""
+    auth_mgr = request.app.state.auth
+    # If the install isn't configured yet, send them to setup instead of
+    # showing a useless login form.
+    if not auth_mgr.is_configured():
+        return RedirectResponse("/auth/setup", status_code=303)
+    err_text = "Incorrect username or password." if error else ""
+    return HTMLResponse(_login_page(err_text, multi_user=auth_mgr.is_multi_user()))
+
+
+@router.get("/setup", response_class=HTMLResponse)
+async def setup_page(request: Request, error: str = ""):
+    """Server-rendered first-run setup page. Same robustness rationale as
+    /auth/login. Once a user exists this page redirects to login."""
+    auth_mgr = request.app.state.auth
+    if auth_mgr.is_configured():
+        return RedirectResponse("/auth/login", status_code=303)
+    err_text = ""
     if error:
-        error_html = '<p class="error-msg">Invalid password. Please try again.</p>'
-    return HTMLResponse(LOGIN_PAGE_HTML.replace("{error}", error_html))
+        err_text = {
+            "username": "Username is required.",
+            "password": "Password must be at least 4 characters.",
+        }.get(error, "Setup failed. Please try again.")
+    return HTMLResponse(_setup_page(err_text))
 
 
 @router.post("/login")
@@ -137,15 +324,35 @@ async def login(request: Request):
             resp.set_cookie("taos_session", token, httponly=True, samesite="lax")
         return resp
 
-    # Legacy form-encoded path
+    # Form-encoded path — used by the no-JS HTML login page.
     form = await request.form()
+    username = (form.get("username") or "").strip() or None
     password = form.get("password", "")
-    ok, _ = auth_mgr.check_password(password)
+    long_lived = bool(form.get("auto_login"))
+
+    ok, user_record = auth_mgr.check_password(password, username=username)
     if not ok:
         return RedirectResponse("/auth/login?error=1", status_code=303)
-    token = auth_mgr.create_session()
-    response = RedirectResponse("/", status_code=303)
-    response.set_cookie("taos_session", token, httponly=True, samesite="lax", max_age=auth_mgr.session_ttl)
+
+    if user_record and user_record.get("pending_invite"):
+        # Pending user — create their session, then send to /desktop. The
+        # SPA's LoginGate will see needs_onboarding via /auth/status and
+        # render the invite-completion screen.
+        token = auth_mgr.create_session(user_id=user_record["id"], long_lived=long_lived)
+    else:
+        user_id = user_record["id"] if user_record else ""
+        if user_record:
+            auth_mgr.update_last_login(user_id)
+        token = auth_mgr.create_session(user_id=user_id, long_lived=long_lived)
+
+    response = RedirectResponse("/desktop", status_code=303)
+    if long_lived:
+        response.set_cookie(
+            "taos_session", token, httponly=True, samesite="lax",
+            max_age=auth_mgr.session_ttl_for(True),
+        )
+    else:
+        response.set_cookie("taos_session", token, httponly=True, samesite="lax")
     return response
 
 
@@ -221,17 +428,37 @@ async def auth_setup(request: Request):
             resp.set_cookie("taos_session", token, httponly=True, samesite="lax")
         return resp
 
-    # Legacy password-only form setup
+    # Form-encoded path — used by the no-JS HTML setup page.
     if auth_mgr.is_configured():
-        return JSONResponse({"error": "Password already configured"}, status_code=400)
+        return RedirectResponse("/auth/login", status_code=303)
     form = await request.form()
+    username = (form.get("username") or "").strip()
+    full_name = (form.get("full_name") or "").strip()
+    email = (form.get("email") or "").strip()
     password = form.get("password", "")
-    if not password:
-        return JSONResponse({"error": "Password is required"}, status_code=400)
-    auth_mgr.set_password(password)
-    token = auth_mgr.create_session()
-    response = RedirectResponse("/", status_code=303)
-    response.set_cookie("taos_session", token, httponly=True, samesite="lax", max_age=auth_mgr.session_ttl)
+    long_lived = bool(form.get("auto_login"))
+
+    if not username:
+        return RedirectResponse("/auth/setup?error=username", status_code=303)
+    if not password or len(password) < 4:
+        return RedirectResponse("/auth/setup?error=password", status_code=303)
+    try:
+        auth_mgr.setup_user(username, full_name, email, password)
+    except ValueError:
+        return RedirectResponse("/auth/setup?error=conflict", status_code=303)
+
+    record = auth_mgr.find_user(username)
+    user_id = record["id"] if record else ""
+    auth_mgr.update_last_login(user_id)
+    token = auth_mgr.create_session(user_id=user_id, long_lived=long_lived)
+    response = RedirectResponse("/desktop", status_code=303)
+    if long_lived:
+        response.set_cookie(
+            "taos_session", token, httponly=True, samesite="lax",
+            max_age=auth_mgr.session_ttl_for(True),
+        )
+    else:
+        response.set_cookie("taos_session", token, httponly=True, samesite="lax")
     return response
 
 

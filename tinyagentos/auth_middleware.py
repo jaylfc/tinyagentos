@@ -6,7 +6,12 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import RedirectResponse
 
 EXEMPT_PATHS = {"/auth/login", "/auth/setup", "/auth/status", "/auth/me", "/auth/complete", "/auth/lock", "/api/health", "/api/cluster/workers", "/api/cluster/heartbeat", "/setup", "/setup/complete"}
-EXEMPT_PREFIXES = ("/static/", "/desktop", "/chat-pwa")
+# Bundle assets must be reachable without auth so the SPA can paint the
+# login screen. The SPA shell itself (/desktop and /chat-pwa) goes
+# through the normal auth gate so an unauthenticated request hits a
+# server-side redirect instead of rendering whatever stale bundle the
+# browser cached.
+EXEMPT_PREFIXES = ("/static/", "/desktop/assets/", "/chat-pwa/assets/")
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -21,12 +26,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if path in EXEMPT_PATHS or any(path.startswith(p) for p in EXEMPT_PREFIXES):
             return await call_next(request)
 
-        # First boot: no user yet. /api/* must hard-fail so the SPA falls
-        # through to its onboarding flow instead of acting on stale state.
+        # First boot: no user yet. Browsers go to the setup page; APIs
+        # hard-fail so a stale cached client knows to refresh.
         if not auth_mgr.is_configured():
             accept = request.headers.get("accept", "")
             if "text/html" in accept:
-                return RedirectResponse("/desktop", status_code=303)
+                return RedirectResponse("/auth/setup", status_code=303)
             return JSONResponse(
                 {"error": "onboarding_required", "needs_onboarding": True},
                 status_code=401,
