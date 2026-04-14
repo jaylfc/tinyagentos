@@ -74,6 +74,34 @@ async def save_widgets(request: Request):
     return JSONResponse({"ok": True})
 
 
+# ---------------------------------------------------------------------------
+# Generic preferences — namespaced JSON blobs that follow the user across
+# devices. Use this for any cross-session setting (weather home location,
+# temperature units, quick notes content, etc.) so the experience resumes
+# on any device the user signs into.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/preferences/{namespace}")
+async def get_preference(request: Request, namespace: str):
+    store = request.app.state.desktop_settings
+    data = await store.get_preference("user", namespace)
+    return JSONResponse(data)
+
+
+@router.put("/api/preferences/{namespace}")
+async def save_preference(request: Request, namespace: str):
+    store = request.app.state.desktop_settings
+    body = await request.json()
+    if not isinstance(body, dict):
+        return JSONResponse(
+            {"error": "preference body must be a JSON object"},
+            status_code=400,
+        )
+    await store.save_preference("user", namespace, body)
+    return JSONResponse({"ok": True})
+
+
 @router.get("/api/desktop/proxy")
 async def browser_proxy(url: str):
     """Proxy web pages for the browser app — strips frame headers, rewrites URLs."""

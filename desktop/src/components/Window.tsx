@@ -33,7 +33,11 @@ export function Window({ win, onDrag, onDragStop }: Props) {
   let displaySize = win.size;
 
   if (win.maximized) {
-    displayPos = { x: 0, y: viewport.topBarH };
+    // Window renders INSIDE the Desktop container, which already sits
+    // below the top bar. So y=0 here means "flush with the top bar".
+    // Height subtracts the top bar (already removed by Desktop's flex-1)
+    // and the dock reservation so the window bottom stops above the dock.
+    displayPos = { x: 0, y: 0 };
     displaySize = {
       w: viewport.width,
       h: viewport.height - viewport.topBarH - viewport.dockH,
@@ -111,24 +115,67 @@ export function Window({ win, onDrag, onDragStop }: Props) {
         }`}
         style={{ backgroundColor: "var(--color-shell-bg)" }}
       >
-        {/* Titlebar */}
+        {/* Titlebar — macOS-style traffic lights. Icons appear inside each
+            button when the user hovers anywhere on the group (matches the
+            macOS pattern where hover state is shared across all three). */}
         <div className="window-titlebar flex items-center h-8 px-3 shrink-0 bg-shell-surface select-none cursor-default">
-          <div className="flex gap-1.5 items-center group">
+          <div className="flex gap-1.5 items-center group/traffic">
             <button
-              className="w-3 h-3 rounded-full bg-traffic-close hover:brightness-110"
+              className="w-3 h-3 rounded-full bg-traffic-close hover:brightness-110 flex items-center justify-center"
               onClick={(e) => { e.stopPropagation(); closeWindow(win.id); }}
               aria-label="Close window"
-            />
+              title="Close"
+            >
+              <svg
+                className="opacity-0 group-hover/traffic:opacity-100 transition-opacity duration-100"
+                width="7" height="7" viewBox="0 0 7 7"
+                style={{ color: "rgba(0,0,0,0.55)" }}
+              >
+                <path d="M1.5 1.5L5.5 5.5M5.5 1.5L1.5 5.5" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" />
+              </svg>
+            </button>
             <button
-              className="w-3 h-3 rounded-full bg-traffic-minimize hover:brightness-110"
+              className="w-3 h-3 rounded-full bg-traffic-minimize hover:brightness-110 flex items-center justify-center"
               onClick={(e) => { e.stopPropagation(); minimizeWindow(win.id); }}
               aria-label="Minimize window"
-            />
+              title="Minimize"
+            >
+              <svg
+                className="opacity-0 group-hover/traffic:opacity-100 transition-opacity duration-100"
+                width="7" height="7" viewBox="0 0 7 7"
+                style={{ color: "rgba(0,0,0,0.55)" }}
+              >
+                <path d="M1 3.5H6" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" />
+              </svg>
+            </button>
             <button
-              className="w-3 h-3 rounded-full bg-traffic-maximize hover:brightness-110"
+              className="w-3 h-3 rounded-full bg-traffic-maximize hover:brightness-110 flex items-center justify-center"
               onClick={(e) => { e.stopPropagation(); maximizeWindow(win.id); }}
-              aria-label="Maximize window"
-            />
+              aria-label={win.maximized ? "Restore window" : "Maximize window"}
+              title={win.maximized ? "Restore" : "Maximize"}
+            >
+              {win.maximized ? (
+                /* Inward arrows = restore */
+                <svg
+                  className="opacity-0 group-hover/traffic:opacity-100 transition-opacity duration-100"
+                  width="7" height="7" viewBox="0 0 7 7"
+                  style={{ color: "rgba(0,0,0,0.55)" }}
+                >
+                  <path d="M4.5 1V2.5H6M6 2.5L4 4.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                  <path d="M2.5 6V4.5H1M1 4.5L3 2.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                </svg>
+              ) : (
+                /* Outward arrows = maximize */
+                <svg
+                  className="opacity-0 group-hover/traffic:opacity-100 transition-opacity duration-100"
+                  width="7" height="7" viewBox="0 0 7 7"
+                  style={{ color: "rgba(0,0,0,0.55)" }}
+                >
+                  <path d="M1 3V1H3M1 1L3 3" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                  <path d="M6 4V6H4M6 6L4 4" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                </svg>
+              )}
+            </button>
           </div>
           <div className="flex-1 text-center text-xs text-shell-text-secondary truncate">
             {app?.name ?? win.appId}

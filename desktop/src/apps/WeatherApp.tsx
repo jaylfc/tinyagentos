@@ -60,28 +60,41 @@ function codeInfo(code: number, isDay = true) {
   return info;
 }
 
-const HOME_LOCATION_KEY = "taos-weather-home";
-const TEMP_UNIT_KEY = "taos-weather-temp-unit";
-const WIND_UNIT_KEY = "taos-weather-wind-unit";
+// Weather preferences live under /api/preferences/weather so they
+// follow the user across devices. The local-cache keys below are only
+// used to avoid a flash of empty weather on first paint before the
+// server fetch completes; the server is authoritative.
+const WEATHER_PREF_NAMESPACE = "weather";
+const WEATHER_PREF_CACHE = "taos-pref:weather";
 
 export type TempUnit = "C" | "F";
 export type WindUnit = "kmh" | "mph";
 
-export function getHomeLocation(): Location | null {
+interface WeatherPrefs {
+  home?: Location | null;
+  tempUnit?: TempUnit;
+  windUnit?: WindUnit;
+}
+
+function readCachedPrefs(): WeatherPrefs {
   try {
-    const raw = localStorage.getItem(HOME_LOCATION_KEY);
-    return raw ? JSON.parse(raw) : null;
+    const raw = localStorage.getItem(WEATHER_PREF_CACHE);
+    return raw ? (JSON.parse(raw) as WeatherPrefs) : {};
   } catch {
-    return null;
+    return {};
   }
 }
 
+export function getHomeLocation(): Location | null {
+  return readCachedPrefs().home ?? null;
+}
+
 export function getTempUnit(): TempUnit {
-  return (localStorage.getItem(TEMP_UNIT_KEY) as TempUnit) === "F" ? "F" : "C";
+  return readCachedPrefs().tempUnit === "F" ? "F" : "C";
 }
 
 export function getWindUnit(): WindUnit {
-  return (localStorage.getItem(WIND_UNIT_KEY) as WindUnit) === "mph" ? "mph" : "kmh";
+  return readCachedPrefs().windUnit === "mph" ? "mph" : "kmh";
 }
 
 export function cToF(c: number): number {
@@ -150,6 +163,25 @@ async function fetchForecast(loc: Location) {
   return { current, daily };
 }
 
+// Sync preferences to the server so the same location / units follow the
+// user across devices. localStorage is only an immediate-paint cache.
+async function saveWeatherPrefs(prefs: WeatherPrefs): Promise<void> {
+  try {
+    localStorage.setItem(WEATHER_PREF_CACHE, JSON.stringify(prefs));
+  } catch {
+    // quota or disabled — fine, server is still authoritative
+  }
+  try {
+    await fetch(`/api/preferences/${WEATHER_PREF_NAMESPACE}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(prefs),
+    });
+  } catch {
+    // network error — cached locally, will sync when next mutation runs
+  }
+}
+
 export function WeatherApp() {
   const [home, setHome] = useState<Location | null>(getHomeLocation);
   const [viewing, setViewing] = useState<Location | null>(home);
@@ -161,19 +193,44 @@ export function WeatherApp() {
   const [tempUnit, setTempUnit] = useState<TempUnit>(getTempUnit);
   const [windUnit, setWindUnit] = useState<WindUnit>(getWindUnit);
 
+  // Hydrate from server on mount — overrides any stale local cache so a
+  // fresh device shows the location the user set on their phone.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await fetch(`/api/preferences/${WEATHER_PREF_NAMESPACE}`);
+        if (!resp.ok) return;
+        const data = (await resp.json()) as WeatherPrefs;
+        if (cancelled || !data || Object.keys(data).length === 0) return;
+        if (data.home) {
+          setHome(data.home);
+          setViewing((cur) => cur ?? data.home ?? null);
+        }
+        if (data.tempUnit === "C" || data.tempUnit === "F") setTempUnit(data.tempUnit);
+        if (data.windUnit === "kmh" || data.windUnit === "mph") setWindUnit(data.windUnit);
+        localStorage.setItem(WEATHER_PREF_CACHE, JSON.stringify(data));
+        emitUnitChange();
+      } catch {
+        // ignore — local cache is already loaded
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   const toggleTempUnit = useCallback(() => {
     const next: TempUnit = tempUnit === "C" ? "F" : "C";
     setTempUnit(next);
-    localStorage.setItem(TEMP_UNIT_KEY, next);
+    saveWeatherPrefs({ home, tempUnit: next, windUnit });
     emitUnitChange();
-  }, [tempUnit]);
+  }, [tempUnit, home, windUnit]);
 
   const toggleWindUnit = useCallback(() => {
     const next: WindUnit = windUnit === "kmh" ? "mph" : "kmh";
     setWindUnit(next);
-    localStorage.setItem(WIND_UNIT_KEY, next);
+    saveWeatherPrefs({ home, tempUnit, windUnit: next });
     emitUnitChange();
-  }, [windUnit]);
+  }, [windUnit, home, tempUnit]);
 
 
   const loadForecast = useCallback(async (loc: Location) => {
@@ -211,8 +268,8 @@ export function WeatherApp() {
   };
 
   const setAsHome = (loc: Location) => {
-    localStorage.setItem(HOME_LOCATION_KEY, JSON.stringify(loc));
     setHome(loc);
+    saveWeatherPrefs({ home: loc, tempUnit, windUnit });
   };
 
   const info = forecast ? codeInfo(forecast.current.weatherCode, forecast.current.isDay) : null;

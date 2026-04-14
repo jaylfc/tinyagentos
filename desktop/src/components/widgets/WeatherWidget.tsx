@@ -81,7 +81,24 @@ export function WeatherWidget() {
       setNoHome(!home);
       if (home) fetchWeather().then(setWeather);
     };
-    load();
+    // Hydrate server-side prefs first so a fresh device (that just signed
+    // in and has no local cache yet) picks up the phone-set home location.
+    const hydrate = async () => {
+      try {
+        const resp = await fetch("/api/preferences/weather");
+        if (!resp.ok) { load(); return; }
+        const data = await resp.json();
+        if (data && typeof data === "object" && Object.keys(data).length > 0) {
+          localStorage.setItem("taos-pref:weather", JSON.stringify(data));
+          if (data.tempUnit === "C" || data.tempUnit === "F") setTempUnit(data.tempUnit);
+          if (data.windUnit === "kmh" || data.windUnit === "mph") setWindUnit(data.windUnit);
+        }
+      } catch {
+        // fall through to local cache
+      }
+      load();
+    };
+    hydrate();
     const timer = setInterval(load, 600_000); // 10 min
     // Refresh when home location changes (from another window) or when
     // the user toggles units in the Weather app (same window).

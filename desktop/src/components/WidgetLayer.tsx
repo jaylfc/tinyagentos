@@ -184,8 +184,8 @@ export function WidgetLayer() {
       <div
         style={{
           position: "absolute",
-          bottom: 80,
-          right: 20,
+          bottom: 16,
+          right: 16,
           pointerEvents: "auto",
           zIndex: 10,
         }}

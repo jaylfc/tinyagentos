@@ -29,23 +29,27 @@ export function detectSnapZone(x: number, y: number, vp: Viewport): SnapPosition
 export function getSnapBounds(snap: SnapPosition, vp: Viewport): { x: number; y: number; w: number; h: number } | null {
   if (!snap) return null;
 
+  // Window coords are relative to the Desktop container, which already
+  // sits below the top bar. y=0 means "top of Desktop = flush with top
+  // bar bottom". Useable height = full viewport height minus top bar
+  // (already excluded by Desktop) minus dock reservation.
   const usableH = vp.height - vp.topBarH - vp.dockH;
   const halfW = Math.floor(vp.width / 2);
   const halfH = Math.floor(usableH / 2);
 
   switch (snap) {
     case "left":
-      return { x: 0, y: vp.topBarH, w: halfW, h: usableH };
+      return { x: 0, y: 0, w: halfW, h: usableH };
     case "right":
-      return { x: halfW, y: vp.topBarH, w: halfW, h: usableH };
+      return { x: halfW, y: 0, w: halfW, h: usableH };
     case "top-left":
-      return { x: 0, y: vp.topBarH, w: halfW, h: halfH };
+      return { x: 0, y: 0, w: halfW, h: halfH };
     case "top-right":
-      return { x: halfW, y: vp.topBarH, w: halfW, h: halfH };
+      return { x: halfW, y: 0, w: halfW, h: halfH };
     case "bottom-left":
-      return { x: 0, y: vp.topBarH + halfH, w: halfW, h: halfH };
+      return { x: 0, y: halfH, w: halfW, h: halfH };
     case "bottom-right":
-      return { x: halfW, y: vp.topBarH + halfH, w: halfW, h: halfH };
+      return { x: halfW, y: halfH, w: halfW, h: halfH };
   }
 }
 

@@ -80,3 +80,23 @@ class DesktopSettingsStore(BaseStore):
 
     async def save_widgets(self, user_id: str, widgets: list) -> None:
         await self._set(user_id, "widgets", {"widgets": widgets})
+
+    async def get_preference(self, user_id: str, namespace: str) -> dict:
+        """Get a namespaced preference blob.
+
+        Used for any user-facing setting that should follow the user across
+        devices — weather location, temperature units, app-specific
+        defaults, etc. Returns an empty dict when nothing has been saved
+        for this namespace yet; callers layer their own defaults on top.
+        """
+        safe_key = f"pref:{namespace}"
+        return await self._get(user_id, safe_key, {})
+
+    async def save_preference(self, user_id: str, namespace: str, value: dict) -> None:
+        """Replace the full preference blob for a namespace.
+
+        Callers that only want to patch one field should read + merge
+        client-side before calling this, or use a narrower endpoint.
+        """
+        safe_key = f"pref:{namespace}"
+        await self._set(user_id, safe_key, value)
