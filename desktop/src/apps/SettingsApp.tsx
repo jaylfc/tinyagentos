@@ -637,7 +637,131 @@ interface UpdateInfo {
 interface AutoUpdatePrefs {
   check_enabled?: boolean;
   auto_apply?: boolean;
+  auto_restart?: boolean;
   last_notified_commit?: string | null;
+}
+
+interface UpdateStatus {
+  current_sha: string;
+  pending_restart_sha: string | null;
+  auto_check: boolean;
+  auto_apply: boolean;
+  auto_restart: boolean;
+}
+
+interface RestartOrchestratorStatus {
+  phase: string;
+  reason: string;
+  started_at: number;
+  agents: Record<string, { status: string; duration_s: number; note_path: string | null }>;
+}
+
+function RestartProgressModal({
+  onClose,
+}: {
+  onClose: () => void;
+}) {
+  const [orchStatus, setOrchStatus] = useState<RestartOrchestratorStatus | null>(null);
+  const [serverBack, setServerBack] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let pollOrch: ReturnType<typeof setInterval> | null = null;
+    let pollServer: ReturnType<typeof setInterval> | null = null;
+
+    pollOrch = setInterval(async () => {
+      if (cancelled) return;
+      try {
+        const r = await fetch("/api/system/restart/status");
+        if (r.ok) {
+          const data: RestartOrchestratorStatus = await r.json();
+          setOrchStatus(data);
+          if (data.phase === "restarting") {
+            if (pollOrch) clearInterval(pollOrch);
+            pollServer = setInterval(async () => {
+              if (cancelled) return;
+              try {
+                const r2 = await fetch("/api/settings/update-status");
+                if (r2.ok) {
+                  setServerBack(true);
+                  if (pollServer) clearInterval(pollServer);
+                  setTimeout(() => {
+                    if (!cancelled) window.location.reload();
+                  }, 500);
+                }
+              } catch { /* server still restarting */ }
+            }, 2000);
+          }
+        }
+      } catch { /* ignore */ }
+    }, 1000);
+
+    return () => {
+      cancelled = true;
+      if (pollOrch) clearInterval(pollOrch);
+      if (pollServer) clearInterval(pollServer);
+    };
+  }, []);
+
+  const agentEntries = orchStatus ? Object.entries(orchStatus.agents) : [];
+
+  function agentChip(s: string) {
+    if (s === "ready") return <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">ready</span>;
+    if (s === "timeout") return <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">timeout</span>;
+    if (s === "error") return <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-300">error</span>;
+    return (
+      <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 flex items-center gap-1">
+        <RefreshCw size={10} className="animate-spin" />
+        {s}
+      </span>
+    );
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Restart progress"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+    >
+      <div className="bg-shell-surface border border-white/10 rounded-xl p-6 w-full max-w-md shadow-xl space-y-4">
+        <h3 className="text-base font-semibold">
+          {serverBack
+            ? "Restarted — reloading…"
+            : orchStatus?.phase === "restarting"
+            ? "Restarting server…"
+            : "Preparing agents for restart"}
+        </h3>
+
+        {agentEntries.length > 0 && (
+          <ul className="space-y-1" aria-label="Agent preparation status">
+            {agentEntries.map(([name, info]) => (
+              <li key={name} className="flex items-center justify-between text-sm">
+                <span className="text-shell-text-secondary">{name}</span>
+                {agentChip(info.status)}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {orchStatus?.phase === "restarting" && !serverBack && (
+          <p className="text-xs text-shell-text-tertiary">Waiting for server to come back…</p>
+        )}
+
+        {!orchStatus && (
+          <p className="text-xs text-shell-text-tertiary flex items-center gap-1">
+            <RefreshCw size={12} className="animate-spin" /> Connecting…
+          </p>
+        )}
+
+        <div className="flex justify-end">
+          <Button variant="outline" size="sm" onClick={onClose} aria-label="Cancel restart progress dialog">
+            Cancel
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function UpdatesSection() {
@@ -645,7 +769,9 @@ function UpdatesSection() {
   const [applying, setApplying] = useState(false);
   const [info, setInfo] = useState<UpdateInfo | null>(null);
   const [status, setStatus] = useState<string | null>(null);
-  const [prefs, setPrefs] = useState<AutoUpdatePrefs>({ check_enabled: true, auto_apply: false });
+  const [prefs, setPrefs] = useState<AutoUpdatePrefs>({ check_enabled: true, auto_apply: false, auto_restart: false });
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
+  const [showRestartModal, setShowRestartModal] = useState(false);
 
   // Load current prefs + info on mount
   useEffect(() => {
@@ -655,13 +781,21 @@ function UpdatesSection() {
         if (r.ok) {
           const data = await r.json();
           if (data && typeof data === "object") {
-            setPrefs({ check_enabled: data.check_enabled ?? true, auto_apply: data.auto_apply ?? false });
+            setPrefs({
+              check_enabled: data.check_enabled ?? true,
+              auto_apply: data.auto_apply ?? false,
+              auto_restart: data.auto_restart ?? false,
+            });
           }
         }
       } catch { /* ignore */ }
       try {
         const r2 = await fetch("/api/settings/update-check");
         if (r2.ok) setInfo(await r2.json());
+      } catch { /* ignore */ }
+      try {
+        const r3 = await fetch("/api/settings/update-status");
+        if (r3.ok) setUpdateStatus(await r3.json());
       } catch { /* ignore */ }
     })();
   }, []);
@@ -704,9 +838,11 @@ function UpdatesSection() {
         setStatus("Update applied. Restart the server to finish.");
         const r2 = await fetch("/api/settings/update-check");
         if (r2.ok) setInfo(await r2.json());
+        const r3 = await fetch("/api/settings/update-status");
+        if (r3.ok) setUpdateStatus(await r3.json());
       } else {
         const err = await res.json().catch(() => ({}));
-        setStatus(err.error ?? "Update failed.");
+        setStatus((err as { error?: string }).error ?? "Update failed.");
       }
     } catch {
       setStatus("Could not apply update.");
@@ -714,9 +850,31 @@ function UpdatesSection() {
     setApplying(false);
   };
 
+  const triggerRestart = async () => {
+    setShowRestartModal(true);
+    try {
+      await fetch("/api/system/restart/prepare", { method: "POST" });
+    } catch { /* ignore — modal polls status */ }
+  };
+
+  const hasPendingRestart = !!updateStatus?.pending_restart_sha;
+
   return (
     <section aria-label="System updates">
       <h2 className="text-lg font-semibold mb-5">Updates</h2>
+
+      {hasPendingRestart && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+          <div className="flex items-center gap-2 text-sm text-amber-200">
+            <AlertCircle size={16} className="shrink-0" />
+            <span>Update pulled — restart to finish applying ({updateStatus!.pending_restart_sha!.slice(0, 7)})</span>
+          </div>
+          <Button size="sm" onClick={triggerRestart} aria-label="Restart server to apply update">
+            Restart now
+          </Button>
+        </div>
+      )}
+
       <Card className="p-4 space-y-4">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-lg bg-white/5 text-sky-400">
@@ -785,8 +943,29 @@ function UpdatesSection() {
               disabled={!(prefs.check_enabled ?? true)}
             />
           </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <Label className="text-sm">Automatically restart after update</Label>
+              <p className="text-[11px] text-shell-text-tertiary mt-0.5">
+                {prefs.auto_restart
+                  ? "Server will restart automatically once an update is pulled."
+                  : "We'll remind you every 6 hours when a restart is pending."}
+              </p>
+            </div>
+            <Switch
+              checked={prefs.auto_restart ?? false}
+              onCheckedChange={(v) => savePrefs({ ...prefs, auto_restart: v })}
+              disabled={!(prefs.auto_apply ?? false)}
+              aria-label="Automatically restart after update"
+            />
+          </div>
         </div>
       </Card>
+
+      {showRestartModal && (
+        <RestartProgressModal onClose={() => setShowRestartModal(false)} />
+      )}
     </section>
   );
 }
