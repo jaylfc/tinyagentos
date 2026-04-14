@@ -28,7 +28,9 @@ PREF_NAMESPACE = "auto-update"
 DEFAULT_PREFS = {
     "check_enabled": True,
     "auto_apply": False,
+    "auto_restart": False,
     "last_notified_commit": None,
+    "last_reminder_at": None,
 }
 
 
@@ -107,26 +109,36 @@ class AutoUpdateService:
         # Fetch latest from origin/master
         new_commit = await self._probe_remote()
         if new_commit is None:
-            return
-
-        current = await self._current_commit()
-        if new_commit == current:
-            return  # already up to date
-
-        # Skip re-notifying for a commit we've already flagged.
-        if prefs.get("last_notified_commit") == new_commit:
-            if prefs.get("auto_apply"):
-                await self._auto_apply(new_commit)
-            return
-
-        if prefs.get("auto_apply"):
-            await self._auto_apply(new_commit)
+            pass
         else:
-            await self._notify_available(current, new_commit)
+            current = await self._current_commit()
+            if new_commit != current:
+                # Skip re-notifying for a commit we've already flagged.
+                if prefs.get("last_notified_commit") == new_commit:
+                    if prefs.get("auto_apply"):
+                        await self._auto_apply(new_commit)
+                else:
+                    if prefs.get("auto_apply"):
+                        await self._auto_apply(new_commit)
+                    else:
+                        await self._notify_available(current, new_commit)
 
-        # Remember so we don't re-notify next hour.
-        prefs["last_notified_commit"] = new_commit
-        await self._save_prefs(prefs)
+                    # Remember so we don't re-notify next hour.
+                    prefs["last_notified_commit"] = new_commit
+                    await self._save_prefs(prefs)
+
+        # If a restart is pending and auto_restart is off, re-emit the
+        # reminder at most once every 6 hours.
+        if not prefs.get("auto_restart"):
+            from tinyagentos.restart_orchestrator import read_pending_restart
+            import time as _time
+            pending = read_pending_restart()
+            if pending is not None:
+                last_reminder = prefs.get("last_reminder_at") or 0
+                if _time.time() - last_reminder >= 6 * 3600:
+                    await notify_restart_pending(self._notif, self._settings)
+                    prefs["last_reminder_at"] = int(_time.time())
+                    await self._save_prefs(prefs)
 
     async def _probe_remote(self) -> Optional[str]:
         """Return the current HEAD commit of origin/master, or None on failure."""
@@ -169,12 +181,22 @@ class AutoUpdateService:
         pip_cmd = str(Path(sys.executable).parent / "pip")
         await _run([pip_cmd, "install", "-e", ".", "-q"], self._project_dir)
 
-        await self._notif.emit_event(
-            event_type="system.update",
-            title="taOS updated automatically",
-            message=f"Pulled {new_commit[:7]}. Restart the server to finish applying.",
-            level="info",
-        )
+        from tinyagentos.restart_orchestrator import write_pending_restart
+        write_pending_restart(new_commit)
+
+        prefs = await self._get_prefs()
+        if prefs.get("auto_restart"):
+            from tinyagentos.routes.system import _do_restart
+            import asyncio
+            # Pass a minimal stub — _do_restart only needs notifications
+            asyncio.create_task(_do_restart(type("_S", (), {"notifications": self._notif})()))
+        else:
+            await self._notif.emit_event(
+                event_type="system.update",
+                title="taOS updated automatically",
+                message=f"Pulled {new_commit[:7]}. Restart the server to finish applying.",
+                level="info",
+            )
 
     async def _get_prefs(self) -> dict:
         try:
@@ -188,3 +210,18 @@ class AutoUpdateService:
             await self._settings.save_preference("user", PREF_NAMESPACE, prefs)
         except Exception:
             logger.exception("failed to save auto-update prefs")
+
+
+async def notify_restart_pending(notif_store, settings_store) -> None:
+    """Emit a restart-pending reminder notification."""
+    from tinyagentos.restart_orchestrator import read_pending_restart
+    pending = read_pending_restart()
+    if pending is None:
+        return
+    short = pending.get("target_sha", "")[:7]
+    await notif_store.emit_event(
+        event_type="system.update",
+        title="Restart to apply update",
+        message=f"Update {short} was pulled and is ready. Open Settings and click Restart now.",
+        level="info",
+    )
