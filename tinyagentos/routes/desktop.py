@@ -238,24 +238,46 @@ async def browser_agent_command(request: Request):
     })
 
 
+# index.html points at hashed bundle filenames that change every build.
+# Caching it would lock browsers (especially installed PWAs on iOS) onto
+# stale script tags pointing at bundles that no longer exist on disk.
+# Hashed assets themselves are safe to cache aggressively because the
+# filename is the cache key.
+_HTML_NO_CACHE = {
+    "Cache-Control": "no-cache, no-store, must-revalidate",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
+
+
 @router.get("/desktop")
 async def serve_spa_root():
     """Serve the SPA index.html at /desktop."""
     index = SPA_DIR / "index.html"
     if index.exists():
-        return FileResponse(index, media_type="text/html")
+        return FileResponse(index, media_type="text/html", headers=_HTML_NO_CACHE)
     return JSONResponse({"error": "Desktop shell not built. Run: cd desktop && npm run build"}, status_code=404)
 
 
 @router.get("/desktop/{rest:path}")
 async def serve_spa(rest: str = ""):
     """Serve static assets from the SPA build, fall back to index.html for client-side routes."""
-    # Try to serve the exact file first (CSS, JS, images)
+    # Try to serve the exact file first (CSS, JS, images). Hashed asset
+    # filenames are safe to cache for a long time — the filename changes
+    # every build, so a cache hit on /assets/main-XXX.js is by definition
+    # the right content.
     file_path = SPA_DIR / rest
     if file_path.is_file() and SPA_DIR in file_path.resolve().parents:
-        return FileResponse(file_path)
+        if rest.startswith("assets/"):
+            return FileResponse(
+                file_path,
+                headers={"Cache-Control": "public, max-age=31536000, immutable"},
+            )
+        # Anything else under /desktop/ (manifest, sw registration shim,
+        # etc.) shouldn't be aggressively cached.
+        return FileResponse(file_path, headers=_HTML_NO_CACHE)
     # Fall back to index.html for client-side routing
     index = SPA_DIR / "index.html"
     if index.exists():
-        return FileResponse(index, media_type="text/html")
+        return FileResponse(index, media_type="text/html", headers=_HTML_NO_CACHE)
     return JSONResponse({"error": "Desktop shell not built. Run: cd desktop && npm run build"}, status_code=404)
