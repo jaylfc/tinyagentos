@@ -158,13 +158,239 @@ const TYPE_ICON_GRADIENTS: Record<string, string> = {
 };
 
 /* ------------------------------------------------------------------ */
+/*  App-specific icons                                                 */
+/*                                                                     */
+/*  URLs point at Simple Icons (SPDX CC0, curated brand assets) or    */
+/*  GitHub org/repo avatars. Every entry is an official logo from     */
+/*  the project's own canonical source — no third-party redraws.     */
+/*                                                                     */
+/*  Loading rules (resolveIconUrl below):                              */
+/*  1. Exact id match in APP_ICONS                                    */
+/*  2. Derived Simple Icons match for well-known models/services      */
+/*  3. Fallback to the Package placeholder icon                       */
+/* ------------------------------------------------------------------ */
+
+// Simple Icons CDN returns a white-on-transparent SVG so it blends with
+// the dark gunmetal card surface. Colour variants available via
+// /{slug}/{hex} but we stick to white for consistency.
+const si = (slug: string): string => `https://cdn.simpleicons.org/${slug}/ffffff`;
+
+// GitHub org/user avatar — used for projects without a Simple Icons
+// entry. `?size=96` keeps the transfer small; we render at 40px.
+const gh = (owner: string): string => `https://github.com/${owner}.png?size=96`;
+
+const APP_ICONS: Record<string, string> = {
+  // ---- Agent frameworks (GitHub org avatars) ----
+  "smolagents": gh("huggingface"),
+  "pocketflow": gh("The-Pocket"),
+  "openclaw": gh("jaylfc"),
+  "nanoclaw": gh("jaylfc"),
+  "picoclaw": gh("jaylfc"),
+  "zeroclaw": gh("jaylfc"),
+  "microclaw": gh("jaylfc"),
+  "ironclaw": gh("jaylfc"),
+  "nullclaw": gh("jaylfc"),
+  "shibaclaw": gh("jaylfc"),
+  "moltis": gh("jaylfc"),
+  "hermes": gh("NousResearch"),
+  "agent-zero": gh("frdel"),
+  "openai-agents-sdk": si("openai"),
+  "langroid": gh("langroid"),
+
+  // ---- Model providers (Simple Icons / GitHub) ----
+  "qwen2.5-0.5b": gh("QwenLM"), "qwen2.5-1.5b": gh("QwenLM"), "qwen2.5-3b": gh("QwenLM"),
+  "qwen2.5-7b": gh("QwenLM"), "qwen2.5-14b": gh("QwenLM"), "qwen2.5-32b": gh("QwenLM"),
+  "qwen2.5-72b": gh("QwenLM"), "qwen2.5-1.5b-rkllm": gh("QwenLM"), "qwen2.5-3b-rkllm": gh("QwenLM"),
+  "qwen2.5-7b-rkllm": gh("QwenLM"), "qwen2.5-14b-rkllm": gh("QwenLM"),
+  "qwen2.5-coder-7b": gh("QwenLM"), "qwen2.5-coder-14b": gh("QwenLM"),
+  "qwen2.5-vl-7b": gh("QwenLM"), "qwen2-vl-7b": gh("QwenLM"),
+  "qwen3-1.7b": gh("QwenLM"), "qwen3-4b": gh("QwenLM"), "qwen3-8b": gh("QwenLM"),
+  "qwen3-14b": gh("QwenLM"), "qwen3-30b-a3b": gh("QwenLM"), "qwen3-32b": gh("QwenLM"),
+  "qwen3-embedding-0.6b": gh("QwenLM"), "qwen3-reranker-0.6b": gh("QwenLM"),
+  "llama-3.1-8b": si("meta"), "llama-3.2-1b": si("meta"), "llama-3.2-3b": si("meta"),
+  "llama-3.3-70b": si("meta"), "llama-3-70b": si("meta"),
+  "gemma-2-2b": si("googlegemini"), "gemma-2-9b": si("googlegemini"),
+  "gemma-3-1b": si("googlegemini"), "gemma-3-4b": si("googlegemini"), "gemma-3-12b": si("googlegemini"),
+  "phi-3.5-mini": gh("microsoft"), "phi-4": gh("microsoft"), "phi-4-mini": gh("microsoft"),
+  "mistral-7b-v0.3": gh("mistralai"), "mistral-nemo-12b": gh("mistralai"),
+  "mixtral-8x7b": gh("mistralai"), "ministral-3b": gh("mistralai"),
+  "deepseek-r1-14b": gh("deepseek-ai"), "deepseek-coder-v2-lite": gh("deepseek-ai"),
+  "granite-3.1-2b": gh("ibm-granite"), "granite-3.1-8b": gh("ibm-granite"),
+  "command-r-35b": gh("cohere"),
+  "smollm2": gh("huggingface"), "smollm2-135m": gh("huggingface"), "smollm2-360m": gh("huggingface"),
+  "tinyllama-1.1b": gh("jzhang38"),
+  "nemotron-mini-4b": gh("NVIDIA"),
+  "pelochus-qwen-1.8b-rkllm": gh("pelochus"),
+
+  // Vision / multimodal
+  "llava-1.6-mistral-7b": gh("haotian-liu"), "llava-phi-3-mini": gh("haotian-liu"),
+  "minicpm-v-2.6": gh("OpenBMB"),
+  "moondream2": gh("vikhyat"),
+  "florence-2-base": gh("microsoft"),
+
+  // Embeddings / rerankers
+  "bge-large-en-v1.5": gh("FlagOpen"), "bge-small-en-v1.5": gh("FlagOpen"),
+  "bge-m3": gh("FlagOpen"), "bge-reranker-v2-m3": gh("FlagOpen"),
+  "nomic-embed-text-v1.5": gh("nomic-ai"),
+  "mxbai-embed-large": gh("mixedbread-ai"),
+  "snowflake-arctic-embed-m": gh("Snowflake-Labs"),
+
+  // Speech
+  "whisper-tiny": si("openai"), "whisper-base": si("openai"), "whisper-small": si("openai"),
+  "whisper-medium": si("openai"), "whisper-large-v3": si("openai"), "whisper-large-v3-turbo": si("openai"),
+  "kokoro-tts": gh("hexgrad"),
+  "piper-en-lessac": gh("rhasspy"),
+  "parakeet-tdt-0.6b": gh("NVIDIA"),
+
+  // Image models
+  "sd-v1.5-lcm": gh("Stability-AI"),
+  "dreamshaper-8-lcm": gh("Lykon"),
+  "lcm-dreamshaper-v7": gh("Lykon"),
+  "sdxl-turbo": gh("Stability-AI"), "sdxl-lightning": gh("ByteDance"),
+  "sd3.5-large-turbo-gguf": gh("Stability-AI"),
+  "flux-dev-gguf": gh("black-forest-labs"), "flux-schnell-gguf": gh("black-forest-labs"),
+  "flux-schnell-unsloth": gh("black-forest-labs"),
+  "pixart-sigma-512": gh("PixArt-alpha"),
+  "sdxs-512": gh("IDKiro"),
+  "playground-v2.5": gh("playgroundai"),
+  "kolors": gh("Kwai-Kolors"),
+  "auraflow-v0.3": gh("cloneofsimo"),
+  "stable-cascade": gh("Stability-AI"),
+  "rmbg-1.4": gh("briaai"),
+  "birefnet": gh("ZhengPeng7"),
+  "real-esrgan-x4": gh("xinntao"),
+  "4x-ultrasharp": gh("xinntao"),
+  "gfpgan-v1.4": gh("TencentARC"),
+  "codeformer": gh("sczhou"),
+  "controlnet-canny": gh("lllyasviel"), "controlnet-depth": gh("lllyasviel"),
+  "controlnet-openpose": gh("lllyasviel"), "controlnet-openpose-sdxl": gh("lllyasviel"),
+
+  // ---- Services ----
+  "comfyui": gh("comfyanonymous"),
+  "fooocus": gh("lllyasviel"),
+  "stable-diffusion-webui": gh("AUTOMATIC1111"),
+  "stable-diffusion-cpp": gh("leejet"),
+  "fastsdcpu": gh("rupeshs"),
+  "rk-llama-cpp": gh("marty1885"),
+  "rk3588-sd-gpu": gh("happyme531"),
+  "rknn-stable-diffusion": gh("happyme531"),
+  "lcm-dreamshaper-rknn": gh("happyme531"),
+  "ltx-video": gh("Lightricks"),
+  "wan2gp": gh("alibaba"),
+  "musicgpt": gh("gabotechs"),
+  "searxng": si("searxng"),
+  "gitea": si("gitea"),
+  "code-server": gh("coder"),
+  "n8n": si("n8n"),
+  "home-assistant": si("homeassistant"),
+  "uptime-kuma": si("uptimekuma"),
+  "filebrowser": gh("filebrowser"),
+  "excalidraw": si("excalidraw"),
+  "memos": gh("usememos"),
+  "linkwarden": gh("linkwarden"),
+  "open-webui": gh("open-webui"),
+  "dify": gh("langgenius"),
+  "perplexica": gh("ItzCrazyKns"),
+  "litellm": gh("BerriAI"),
+  "stirling-pdf": gh("Stirling-Tools"),
+  "paperless-ngx": gh("paperless-ngx"),
+  "docling": gh("DS4SD"),
+  "libretranslate": gh("LibreTranslate"),
+  "mailserver": gh("docker-mailserver"),
+  "chatterbox-tts": gh("resemble-ai"),
+  "piper-tts": gh("rhasspy"),
+  "kokoro-tts-server": gh("remsky"),
+  "tailscale": si("tailscale"),
+  "ddns": gh("ddclient"),
+  "exo": gh("exo-explore"),
+
+  // ---- Plugins / MCP ----
+  "github-mcp-server": si("github"),
+  "git-mcp": si("git"), "mcp-git": si("git"),
+  "mcp-filesystem": gh("modelcontextprotocol"),
+  "mcp-fetch": gh("modelcontextprotocol"),
+  "mcp-memory": gh("modelcontextprotocol"),
+  "mcp-time": gh("modelcontextprotocol"),
+  "mcp-sequential-thinking": gh("modelcontextprotocol"),
+  "playwright-mcp": si("playwright"),
+  "mcp-server-docker": si("docker"),
+  "mcp-server-kubernetes": si("kubernetes"),
+  "mongodb-mcp-server": si("mongodb"),
+  "mcp-redis": si("redis"),
+  "chroma-mcp": gh("chroma-core"),
+  "supabase-mcp": si("supabase"),
+  "dbhub": si("postgresql"),
+  "mcp-toolbox-databases": gh("googleapis"),
+  "notion-mcp-server": si("notion"),
+  "mcp-obsidian": si("obsidian"),
+  "mcp-atlassian": si("atlassian"),
+  "google-workspace-mcp": si("google"),
+  "slack-mcp-server": si("slack"),
+  "whatsapp-mcp": si("whatsapp"),
+  "ha-mcp": si("homeassistant"),
+  "mcp-email-server": gh("modelcontextprotocol"),
+  "aws-mcp": si("amazonaws"),
+  "cloudflare-mcp": si("cloudflare"),
+  "mcp-grafana": si("grafana"),
+  "arxiv-mcp-server": si("arxiv"),
+  "firecrawl-mcp": gh("mendableai"),
+  "exa-mcp-server": gh("exa-labs"),
+  "context7-mcp": gh("upstash"),
+  "supergateway": gh("supercorp-ai"),
+  "browser-use-mcp": gh("browser-use"),
+  "camoufox": gh("daijro"),
+  "engram": gh("engramhq"),
+  "mcp-pandoc": gh("jgeorgeson"),
+  "mcp-server-office": gh("GongRzhe"),
+  "mcp-server-spreadsheet": gh("GongRzhe"),
+  "excel-mcp-server": gh("haris-musa"),
+  "markdownify-mcp": gh("zcaceres"),
+  "desktop-commander-mcp": gh("wonderwhy-er"),
+  "mcpo": gh("open-webui"),
+  "youtube-transcript-mcp": si("youtube"),
+  "todoist-mcp-server": si("todoist"),
+  "playwriter": si("playwright"),
+  "image-generation-tool": gh("comfyanonymous"),
+
+  // ---- Streaming apps (legacy MOCK_APPS entries) ----
+  "code-server-kasm": gh("coder"),
+  "blender": si("blender"),
+  "libreoffice": si("libreoffice"),
+  "jupyter-lab": si("jupyter"),
+  "caddy": gh("caddyserver"),
+  "animatediff": gh("guoyww"),
+  "corridorkey": gh("comfyanonymous"),
+  "whisper-stt": si("openai"),
+};
+
+/** Resolve the best icon URL for an app id, falling back through derived matches. */
+function resolveIconUrl(appId: string): string | null {
+  if (APP_ICONS[appId]) return APP_ICONS[appId];
+  // Derived fallbacks for families we haven't enumerated every member of.
+  if (appId.startsWith("qwen")) return gh("QwenLM");
+  if (appId.startsWith("llama")) return si("meta");
+  if (appId.startsWith("gemma")) return si("googlegemini");
+  if (appId.startsWith("phi-")) return gh("microsoft");
+  if (appId.startsWith("whisper")) return si("openai");
+  if (appId.startsWith("deepseek")) return gh("deepseek-ai");
+  if (appId.startsWith("mistral") || appId.startsWith("mixtral")) return gh("mistralai");
+  if (appId.startsWith("bge-")) return gh("FlagOpen");
+  if (appId.startsWith("controlnet")) return gh("lllyasviel");
+  if (appId.startsWith("flux-")) return gh("black-forest-labs");
+  if (appId.startsWith("sd-") || appId.startsWith("sdxl") || appId.startsWith("sd3")) return gh("Stability-AI");
+  return null;
+}
+
+/* ------------------------------------------------------------------ */
 /*  AppCard                                                            */
 /* ------------------------------------------------------------------ */
 
 function AppCard({ app, onInstall, onUninstall }: { app: CatalogApp; onInstall: (id: string) => void; onUninstall: (id: string) => void }) {
   const [busy, setBusy] = useState(false);
+  const [iconFailed, setIconFailed] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
+  const iconUrl = resolveIconUrl(app.id);
 
   const handleAction = async () => {
     setBusy(true);
@@ -199,10 +425,20 @@ function AppCard({ app, onInstall, onUninstall }: { app: CatalogApp; onInstall: 
       <CardHeader className="p-5 pb-2">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
+            <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 overflow-hidden"
               style={{ background: TYPE_ICON_GRADIENTS[app.type] ?? "rgba(255,255,255,0.06)" }}
             >
-              <Package className="w-5 h-5 text-white/60" />
+              {iconUrl && !iconFailed ? (
+                <img
+                  src={iconUrl}
+                  alt=""
+                  className="w-7 h-7 object-contain"
+                  onError={() => setIconFailed(true)}
+                  loading="lazy"
+                />
+              ) : (
+                <Package className="w-5 h-5 text-white/60" />
+              )}
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
