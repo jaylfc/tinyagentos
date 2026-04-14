@@ -457,6 +457,20 @@ async def check_for_updates(request: Request):
     }
 
 
+@router.post("/api/settings/update-check-now")
+async def force_update_check(request: Request):
+    """Run the auto-updater now. Honours user auto_apply pref."""
+    updater = getattr(request.app.state, "auto_updater", None)
+    if updater is None:
+        return JSONResponse({"error": "auto-updater not running"}, status_code=503)
+    try:
+        await updater._run_once()
+        return {"status": "checked"}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+
 @router.post("/api/settings/update")
 async def apply_update(request: Request):
     """Pull latest TinyAgentOS code from GitHub and restart."""

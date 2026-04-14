@@ -628,25 +628,90 @@ function BackupSection() {
 /*  Updates                                                            */
 /* ------------------------------------------------------------------ */
 
+interface UpdateInfo {
+  has_updates: boolean;
+  current_version: string;
+  current_commit: string;
+}
+
+interface AutoUpdatePrefs {
+  check_enabled?: boolean;
+  auto_apply?: boolean;
+  last_notified_commit?: string | null;
+}
+
 function UpdatesSection() {
   const [checking, setChecking] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [info, setInfo] = useState<UpdateInfo | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [prefs, setPrefs] = useState<AutoUpdatePrefs>({ check_enabled: true, auto_apply: false });
+
+  // Load current prefs + info on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch("/api/preferences/auto-update");
+        if (r.ok) {
+          const data = await r.json();
+          if (data && typeof data === "object") {
+            setPrefs({ check_enabled: data.check_enabled ?? true, auto_apply: data.auto_apply ?? false });
+          }
+        }
+      } catch { /* ignore */ }
+      try {
+        const r2 = await fetch("/api/settings/update-check");
+        if (r2.ok) setInfo(await r2.json());
+      } catch { /* ignore */ }
+    })();
+  }, []);
+
+  const savePrefs = useCallback(async (next: AutoUpdatePrefs) => {
+    setPrefs(next);
+    try {
+      await fetch("/api/preferences/auto-update", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(next),
+      });
+    } catch { /* ignore network */ }
+  }, []);
 
   const checkUpdates = async () => {
     setChecking(true);
     setStatus(null);
     try {
-      const res = await fetch("/api/settings/updates");
+      const res = await fetch("/api/settings/update-check");
       if (res.ok) {
-        const data = await res.json();
-        setStatus(data.message ?? "You are up to date.");
+        const data = (await res.json()) as UpdateInfo;
+        setInfo(data);
+        setStatus(data.has_updates ? "A new version is available." : "You are up to date.");
       } else {
-        setStatus("Update check not available yet.");
+        setStatus("Update check not available.");
       }
     } catch {
       setStatus("Could not reach update server.");
     }
     setChecking(false);
+  };
+
+  const applyUpdate = async () => {
+    setApplying(true);
+    setStatus(null);
+    try {
+      const res = await fetch("/api/settings/update", { method: "POST" });
+      if (res.ok) {
+        setStatus("Update applied. Restart the server to finish.");
+        const r2 = await fetch("/api/settings/update-check");
+        if (r2.ok) setInfo(await r2.json());
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setStatus(err.error ?? "Update failed.");
+      }
+    } catch {
+      setStatus("Could not apply update.");
+    }
+    setApplying(false);
   };
 
   return (
@@ -657,20 +722,34 @@ function UpdatesSection() {
           <div className="p-2 rounded-lg bg-white/5 text-sky-400">
             <Settings size={20} />
           </div>
-          <div>
+          <div className="flex-1 min-w-0">
             <p className="text-sm font-medium">taOS</p>
-            <p className="text-xs text-shell-text-tertiary tabular-nums">v0.1.0-dev</p>
+            <p className="text-xs text-shell-text-tertiary tabular-nums">
+              {info?.current_commit ?? "v0.1.0-dev"}
+            </p>
           </div>
+          {info?.has_updates && (
+            <span className="text-[10px] px-2 py-1 rounded-full font-semibold bg-amber-500/20 text-amber-300">
+              Update available
+            </span>
+          )}
         </div>
 
-        <Button variant="outline" size="sm" onClick={checkUpdates} disabled={checking}>
-          <RefreshCw size={14} className={checking ? "animate-spin" : ""} />
-          {checking ? "Checking..." : "Check for Updates"}
-        </Button>
+        <div className="flex gap-2 flex-wrap">
+          <Button variant="outline" size="sm" onClick={checkUpdates} disabled={checking}>
+            <RefreshCw size={14} className={checking ? "animate-spin" : ""} />
+            {checking ? "Checking..." : "Check Now"}
+          </Button>
+          {info?.has_updates && (
+            <Button size="sm" onClick={applyUpdate} disabled={applying}>
+              {applying ? "Installing..." : "Install Update"}
+            </Button>
+          )}
+        </div>
 
         {status && (
           <div className="flex items-start gap-2 text-xs">
-            {status.includes("up to date") ? (
+            {status.includes("up to date") || status.includes("applied") ? (
               <Check size={14} className="text-emerald-400 shrink-0 mt-0.5" />
             ) : (
               <AlertCircle size={14} className="text-amber-400 shrink-0 mt-0.5" />
@@ -678,6 +757,35 @@ function UpdatesSection() {
             <span className="text-shell-text-secondary">{status}</span>
           </div>
         )}
+
+        <div className="border-t border-white/5 pt-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <Label className="text-sm">Check for updates automatically</Label>
+              <p className="text-[11px] text-shell-text-tertiary mt-0.5">
+                Polls GitHub hourly and notifies when a new version is available.
+              </p>
+            </div>
+            <Switch
+              checked={prefs.check_enabled ?? true}
+              onCheckedChange={(v) => savePrefs({ ...prefs, check_enabled: v })}
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <Label className="text-sm">Install updates automatically</Label>
+              <p className="text-[11px] text-shell-text-tertiary mt-0.5">
+                Pulls + installs new versions as soon as they're detected. You'll still need to restart the server manually.
+              </p>
+            </div>
+            <Switch
+              checked={prefs.auto_apply ?? false}
+              onCheckedChange={(v) => savePrefs({ ...prefs, auto_apply: v })}
+              disabled={!(prefs.check_enabled ?? true)}
+            />
+          </div>
+        </div>
       </Card>
     </section>
   );

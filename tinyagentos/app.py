@@ -40,6 +40,7 @@ from tinyagentos.app_orchestrator import AppOrchestrator
 from tinyagentos.computer_use import ComputerUseManager
 from tinyagentos.webhook_notifier import WebhookNotifier
 from tinyagentos.llm_proxy import LLMProxy
+from tinyagentos.auto_update import AutoUpdateService
 from tinyagentos.channel_hub.router import MessageRouter
 from tinyagentos.channel_hub.adapter_manager import AdapterManager
 from tinyagentos.chat.message_store import ChatMessageStore
@@ -259,6 +260,20 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.hardware_profile = hardware_profile
         app.state.health_monitor = monitor
         await monitor.start()
+
+        # Hourly auto-update checker. Polls the git remote, notifies the
+        # user on new commits, optionally applies automatically (user
+        # toggle via /api/preferences/auto-update).
+        auto_updater = AutoUpdateService(
+            project_dir=PROJECT_DIR,
+            notif_store=notif_store,
+            settings_store=desktop_settings,
+        )
+        app.state.auto_updater = auto_updater
+        try:
+            await auto_updater.start()
+        except Exception:
+            logger.exception("auto-update service failed to start")
         await cluster_manager.start()
         # Start the live backend catalog — everything that asks "what's
         # available?" reads from this rather than the filesystem.
@@ -330,6 +345,10 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         await cluster_manager.stop()
         llm_proxy.stop()
         await monitor.stop()
+        try:
+            await auto_updater.stop()
+        except Exception:
+            pass
         await scheduler_history_store.close()
         await benchmark_store.close()
         await skills.close()
