@@ -133,10 +133,33 @@ export const useWidgetStore = create<WidgetStore>((set, get) => ({
   },
 }));
 
-// Hydrate from the server once on module load. If the server has a saved
-// layout it wins over the localStorage mirror (the user may have changed
-// things on another device). If it has nothing saved, the local/default
-// stays and the next change push will seed the server.
+// Hydrate from the server once on module load. The localStorage mirror
+// renders instantly; the server fetch only patches state if the server
+// genuinely has different data (e.g. the user changed things on another
+// device). Replacing the array reference unnecessarily makes the grid
+// re-layout visibly — every reload looked like a "reload" of the
+// widgets, even when nothing had changed.
+function shapesEqual(a: PersistedShape | null, b: Partial<PersistedShape>): boolean {
+  if (!a || !Array.isArray(b.widgets)) return false;
+  if (a.showWidgets !== b.showWidgets) return false;
+  if (a.widgets.length !== b.widgets.length) return false;
+  // Order-sensitive deep compare on the fields the grid uses for layout.
+  for (let i = 0; i < a.widgets.length; i++) {
+    const x = a.widgets[i];
+    const y = b.widgets[i];
+    if (!x || !y) return false;
+    if (
+      x.id !== y.id ||
+      x.type !== y.type ||
+      x.x !== y.x || x.y !== y.y ||
+      x.w !== y.w || x.h !== y.h
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 (async () => {
   try {
     const resp = await fetch(`/api/preferences/${PREF_KEY}`);
@@ -145,17 +168,30 @@ export const useWidgetStore = create<WidgetStore>((set, get) => ({
       return;
     }
     const blob = (await resp.json()) as Partial<PersistedShape>;
-    if (
-      blob &&
-      Array.isArray(blob.widgets) &&
-      typeof blob.showWidgets === "boolean"
-    ) {
-      useWidgetStore.setState({
-        widgets: blob.widgets,
-        showWidgets: blob.showWidgets,
-        hydrated: true,
-      });
-      writeCache({ widgets: blob.widgets, showWidgets: blob.showWidgets });
+    const hasServerLayout =
+      blob && Array.isArray(blob.widgets) && typeof blob.showWidgets === "boolean";
+    if (hasServerLayout) {
+      const serverShape: PersistedShape = {
+        widgets: blob.widgets!,
+        showWidgets: blob.showWidgets!,
+      };
+      // Compare against whatever's currently in the store (cache OR
+      // defaults). Only setState if the server actually differs — same
+      // data should not trigger a grid re-layout.
+      const current: PersistedShape = {
+        widgets: useWidgetStore.getState().widgets,
+        showWidgets: useWidgetStore.getState().showWidgets,
+      };
+      if (shapesEqual(current, serverShape)) {
+        useWidgetStore.setState({ hydrated: true });
+      } else {
+        useWidgetStore.setState({
+          widgets: serverShape.widgets,
+          showWidgets: serverShape.showWidgets,
+          hydrated: true,
+        });
+      }
+      writeCache(serverShape);
     } else {
       useWidgetStore.setState({ hydrated: true });
     }
