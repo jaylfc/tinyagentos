@@ -1,7 +1,8 @@
 import { create } from "zustand";
 
 const WALLPAPERS = [
-  { id: "default", label: "Deep Indigo", style: "linear-gradient(160deg, #1a1b2e 0%, #1e2140 40%, #252848 100%)" },
+  { id: "default", label: "Default", style: "url('/static/wallpaper.png') center/cover no-repeat, #1a1b2e" },
+  { id: "deep-indigo", label: "Deep Indigo", style: "linear-gradient(160deg, #1a1b2e 0%, #1e2140 40%, #252848 100%)" },
   { id: "midnight", label: "Midnight Blue", style: "linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%)" },
   { id: "aurora", label: "Aurora", style: "linear-gradient(135deg, #0f2027 0%, #203a43 40%, #2c5364 100%)" },
   { id: "sunset", label: "Sunset", style: "linear-gradient(135deg, #1a1a2e 0%, #16213e 30%, #0f3460 60%, #533483 100%)" },
