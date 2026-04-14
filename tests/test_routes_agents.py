@@ -32,11 +32,21 @@ class TestAgentsPage:
         config = load_config(tmp_data_dir / "config.yaml")
         assert len(config.agents) == 0
 
-    async def test_add_duplicate_agent_fails(self, client):
+    async def test_add_duplicate_name_gets_suffixed(self, client):
+        """POSTing with an already-taken name succeeds; the slug is auto-suffixed.
+
+        The UI-facing display_name is preserved verbatim, so the user sees
+        both copies by their original name — the suffix is only on the
+        internal slug used for paths, containers, and URLs.
+        """
         resp = await client.post("/api/agents", json={
             "name": "test-agent", "host": "10.0.0.1", "qmd_index": "dup", "color": "#000",
         })
-        assert resp.status_code == 409
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "created"
+        assert data["display_name"] == "test-agent"
+        assert data["name"] == "test-agent-2"
 
 
 @pytest.mark.asyncio

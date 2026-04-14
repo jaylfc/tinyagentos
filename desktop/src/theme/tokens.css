@@ -60,11 +60,13 @@
   background-size: cover;
 }
 @media (max-width: 767px), (orientation: portrait) {
-  /* Fill vertical height, let width preserve aspect. Whatever overflows
-     horizontally is cropped rather than leaving empty bands above/below
-     the image — better fit for narrow portrait viewports. */
+  /* The wallpaper is landscape (1920x1200 ≈ 1.6:1). On a portrait phone
+     (9:19.5 ≈ 0.46:1) we pick 100% width / auto height so the full
+     horizontal composition — including the 'taOS' letters at the edges —
+     stays visible. The vertical gap above/below is filled with
+     wallpaperFallback which matches the image's dark background. */
   .taos-wallpaper {
-    background-size: auto 100%;
+    background-size: 100% auto;
   }
 }
 
