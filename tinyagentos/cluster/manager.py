@@ -33,6 +33,9 @@ class ClusterManager:
         self._monitor_task: asyncio.Task | None = None
         self._notifications = notifications  # NotificationStore, optional
         self._capabilities = capabilities    # CapabilityChecker, optional
+        # Track worker names seen at least once so we only fire worker.join
+        # on the very first appearance within this process lifetime.
+        self._ever_seen: set[str] = set()
 
     async def start(self):
         self._monitor_task = asyncio.create_task(self._monitor_loop())
@@ -47,13 +50,17 @@ class ClusterManager:
         if self._capabilities:
             caps_before = {k for k, v in self._capabilities.get_all_capabilities().items() if v["available"]}
 
+        is_first_time = info.name not in self._ever_seen
+        self._ever_seen.add(info.name)
+
+        prev_status = self._workers[info.name].status if info.name in self._workers else None
+
         info.registered_at = time.time()
         info.last_heartbeat = time.time()
         info.status = "online"
         self._workers[info.name] = info
         logger.info(f"Worker registered: {info.name} ({info.platform}, {len(info.capabilities)} capabilities)")
 
-        # Check what capabilities were unlocked by this worker
         if self._notifications:
             newly_unlocked = []
             if self._capabilities:
@@ -61,17 +68,30 @@ class ClusterManager:
                 newly_unlocked = sorted(caps_after - caps_before)
 
             hw_summary = _format_hw(info.hardware)
-            msg = f"Platform: {info.platform}, {hw_summary}"
-            if newly_unlocked:
-                msg += f"\n\nNewly unlocked: {', '.join(newly_unlocked)}"
-                msg += "\n\nConsider running cluster optimisation to redistribute workloads."
 
-            await self._notifications.emit_event(
-                "worker.join",
-                f"Worker '{info.name}' joined the cluster",
-                msg,
-                level="info",
-            )
+            if is_first_time:
+                # Brand-new worker — never seen before this process started
+                msg = f"Platform: {info.platform}, {hw_summary}"
+                if newly_unlocked:
+                    msg += f"\n\nNewly unlocked: {', '.join(newly_unlocked)}"
+                    msg += "\n\nConsider running cluster optimisation to redistribute workloads."
+                await self._notifications.emit_event(
+                    "worker.join",
+                    f"Worker '{info.name}' joined the cluster",
+                    msg,
+                    level="info",
+                )
+            elif prev_status in ("offline", "stale"):
+                # Known worker re-registering after being offline
+                msg = f"Platform: {info.platform}, {hw_summary}"
+                if newly_unlocked:
+                    msg += f"\n\nNewly unlocked: {', '.join(newly_unlocked)}"
+                await self._notifications.emit_event(
+                    "worker.online",
+                    f"Worker '{info.name}' came back online",
+                    msg,
+                    level="info",
+                )
 
     def kv_quant_union(self) -> list[str]:
         """Return the set-union of KV cache quant types across all online workers.
@@ -139,6 +159,7 @@ class ClusterManager:
         worker = self._workers.get(name)
         if not worker:
             return False
+        prev_status = worker.status
         worker.last_heartbeat = time.time()
         worker.load = load
         worker.status = "online"
@@ -165,6 +186,20 @@ class ClusterManager:
             worker.kv_cache_quant_v_support = list(kv_cache_quant_v_support)
         if kv_cache_quant_boundary_layer_protect is not None:
             worker.kv_cache_quant_boundary_layer_protect = bool(kv_cache_quant_boundary_layer_protect)
+        # Fire worker.online notification when a previously-offline worker recovers.
+        # heartbeat() is sync, so schedule the async emit as a background task.
+        if self._notifications and prev_status in ("offline", "stale"):
+            try:
+                asyncio.get_running_loop().create_task(
+                    self._notifications.emit_event(
+                        "worker.online",
+                        f"Worker '{worker.name}' came back online",
+                        f"Resumed after being {prev_status}.",
+                        level="info",
+                    )
+                )
+            except RuntimeError:
+                pass  # No running loop (e.g. in sync tests) — skip gracefully
         return True
 
     def unregister_worker(self, name: str) -> bool:

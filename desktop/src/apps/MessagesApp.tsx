@@ -12,7 +12,7 @@ import {
   AtSign,
   Wifi,
   WifiOff,
-  ChevronLeft,
+  ChevronRight,
   PanelRight,
 } from "lucide-react";
 import {
@@ -25,6 +25,8 @@ import {
   Textarea,
   Label,
 } from "@/components/ui";
+import { MobileSplitView } from "@/components/mobile/MobileSplitView";
+import { useIsMobile } from "@/hooks/use-is-mobile";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -103,6 +105,8 @@ const EMOJI_PICKER = ["👍", "❤️", "😂", "🎉", "🤔", "👀", "🚀", 
 /* ------------------------------------------------------------------ */
 
 export function MessagesApp({ windowId: _windowId }: { windowId: string }) {
+  const isMobile = useIsMobile();
+
   const [channels, setChannels] = useState<Channel[]>([]);
   const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -418,31 +422,89 @@ export function MessagesApp({ windowId: _windowId }: { windowId: string }) {
   const currentChannel = channels.find((c) => c.id === selectedChannel);
 
   /* ---------------------------------------------------------------- */
-  /*  Render                                                           */
+  /*  Sections definition (shared between mobile + desktop lists)     */
   /* ---------------------------------------------------------------- */
 
-  const isMobile = typeof window !== "undefined" && window.innerWidth < 640;
+  const SECTIONS = [
+    { label: "Direct Messages", icon: <AtSign size={13} />, items: grouped.dm },
+    { label: "Topics", icon: <Hash size={13} />, items: grouped.topic },
+    { label: "Groups", icon: <Users size={13} />, items: grouped.group },
+  ];
 
-  /* ---- Shared UI fragments ---- */
-  const channelListUI = (
-    <div className={isMobile ? "w-full flex flex-col h-full" : "w-60 shrink-0 bg-black/30 border-r border-white/[0.06] flex flex-col"}>
-      {/* header */}
-      <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/[0.06]">
-        <div className="flex items-center gap-2 text-sm font-medium text-white/80">
-          <MessageCircle size={15} />
-          Messages
-        </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setShowCreate(true)}
-          className="h-7 w-7"
-          aria-label="New channel"
-        >
-          <Plus size={15} />
-        </Button>
+  /* ---------------------------------------------------------------- */
+  /*  Channel list — iOS 26 grouped on mobile, flat sidebar on desktop */
+  /* ---------------------------------------------------------------- */
+
+  const channelListUI = isMobile ? (
+    /* Mobile: iOS 26 grouped list */
+    <div style={{ padding: "8px 0 16px" }}>
+      {/* connection status */}
+      <div style={{ padding: "0 20px 8px", fontSize: 11, display: "flex", alignItems: "center", gap: 6 }}>
+        {wsStatus === "connected" ? (
+          <><Wifi size={11} style={{ color: "#34d399" }} /><span style={{ color: "rgba(52,211,153,0.8)" }}>Connected</span></>
+        ) : wsStatus === "connecting" ? (
+          <><Wifi size={11} style={{ color: "#fbbf24" }} /><span style={{ color: "rgba(251,191,36,0.8)" }}>Connecting…</span></>
+        ) : (
+          <><WifiOff size={11} style={{ color: "#f87171" }} /><span style={{ color: "rgba(248,113,113,0.8)" }}>Offline</span></>
+        )}
       </div>
 
+      {SECTIONS.map((section) => (
+        <div key={section.label} style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5, color: "rgba(255,255,255,0.45)", padding: "0 20px 6px", fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+            {section.icon} {section.label}
+          </div>
+          {section.items.length === 0 ? (
+            <div style={{ padding: "0 20px", fontSize: 12, color: "rgba(255,255,255,0.2)", fontStyle: "italic" }}>None yet</div>
+          ) : (
+            <div
+              style={{
+                margin: "0 12px",
+                borderRadius: 16,
+                background: "rgba(255,255,255,0.05)",
+                border: "1px solid rgba(255,255,255,0.08)",
+                overflow: "hidden",
+              }}
+            >
+              {section.items.map((ch, idx, arr) => (
+                <button
+                  key={ch.id}
+                  type="button"
+                  onClick={() => setSelectedChannel(ch.id)}
+                  aria-label={`Channel ${ch.name}`}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    width: "100%",
+                    padding: "14px 16px",
+                    background: selectedChannel === ch.id ? "rgba(59,130,246,0.15)" : "none",
+                    border: "none",
+                    borderBottom: idx === arr.length - 1 ? "none" : "1px solid rgba(255,255,255,0.06)",
+                    cursor: "pointer",
+                    color: "inherit",
+                    textAlign: "left",
+                  }}
+                >
+                  <span style={{ flex: 1, fontSize: 15, fontWeight: 400, color: "rgba(255,255,255,0.9)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {ch.name}
+                  </span>
+                  {(unread[ch.id] ?? 0) > 0 && (
+                    <span style={{ background: "#3b82f6", color: "#fff", fontSize: 10, fontWeight: 700, borderRadius: 9999, minWidth: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px" }}>
+                      {unread[ch.id]}
+                    </span>
+                  )}
+                  <ChevronRight size={16} style={{ color: "rgba(255,255,255,0.25)", flexShrink: 0 }} />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  ) : (
+    /* Desktop: compact sidebar */
+    <div className="w-full flex flex-col h-full">
       {/* connection status */}
       <div className="px-3 py-1.5 text-[11px] flex items-center gap-1.5">
         {wsStatus === "connected" ? (
@@ -456,11 +518,7 @@ export function MessagesApp({ windowId: _windowId }: { windowId: string }) {
 
       {/* channel list */}
       <div className="flex-1 overflow-y-auto py-1">
-        {[
-          { label: "Direct Messages", icon: <AtSign size={13} />, items: grouped.dm },
-          { label: "Topics", icon: <Hash size={13} />, items: grouped.topic },
-          { label: "Groups", icon: <Users size={13} />, items: grouped.group },
-        ].map((section) => (
+        {SECTIONS.map((section) => (
           <div key={section.label}>
             <div className="px-3 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-white/30 flex items-center gap-1.5">
               {section.icon} {section.label}
@@ -490,8 +548,12 @@ export function MessagesApp({ windowId: _windowId }: { windowId: string }) {
     </div>
   );
 
+  /* ---------------------------------------------------------------- */
+  /*  Message area                                                     */
+  /* ---------------------------------------------------------------- */
+
   const messageAreaUI = (
-    <div className="flex-1 flex flex-col min-w-0">
+    <div className="flex-1 flex flex-col min-w-0 h-full">
       {!selectedChannel ? (
         /* empty state */
         <div className="flex-1 flex items-center justify-center text-white/20">
@@ -502,13 +564,8 @@ export function MessagesApp({ windowId: _windowId }: { windowId: string }) {
         </div>
       ) : (
         <>
-          {/* channel header */}
+          {/* channel header — MobileSplitView owns back nav on mobile */}
           <div className="px-4 py-2.5 border-b border-white/[0.06] flex items-center gap-3 shrink-0">
-            {isMobile && (
-              <button onClick={() => setSelectedChannel(null)} className="flex items-center gap-1 text-xs text-white/50 hover:text-white/80 shrink-0">
-                <ChevronLeft size={14} /> Back
-              </button>
-            )}
             {currentChannel?.type === "topic" ? <Hash size={16} className="text-white/40" /> :
              currentChannel?.type === "group" ? <Users size={16} className="text-white/40" /> :
              <AtSign size={16} className="text-white/40" />}
@@ -694,16 +751,49 @@ export function MessagesApp({ windowId: _windowId }: { windowId: string }) {
     </div>
   );
 
+  /* ---------------------------------------------------------------- */
+  /*  Toolbar — hide on mobile when in chat                           */
+  /* ---------------------------------------------------------------- */
+
+  const showToolbar = !isMobile || selectedChannel === null;
+
+  /* ---------------------------------------------------------------- */
+  /*  Render                                                           */
+  /* ---------------------------------------------------------------- */
+
   return (
-    <div className="flex h-full bg-shell-base text-white overflow-hidden">
-      {isMobile ? (
-        selectedChannel ? messageAreaUI : channelListUI
-      ) : (
-        <>
-          {channelListUI}
-          {messageAreaUI}
-        </>
+    <div className="flex flex-col h-full bg-shell-base text-white overflow-hidden">
+      {/* Toolbar — hidden on mobile when a channel is selected */}
+      {showToolbar && (
+        <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/[0.06] shrink-0">
+          <div className="flex items-center gap-2 text-sm font-medium text-white/80">
+            <MessageCircle size={15} />
+            {!isMobile && "Messages"}
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setShowCreate(true)}
+            className="h-7 w-7"
+            aria-label="New channel"
+          >
+            <Plus size={15} />
+          </Button>
+        </div>
       )}
+
+      {/* Master-detail — MobileSplitView handles mobile single-pane + desktop split */}
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <MobileSplitView
+          selectedId={selectedChannel}
+          onBack={() => setSelectedChannel(null)}
+          listTitle="Messages"
+          detailTitle={currentChannel?.name}
+          listWidth={240}
+          list={channelListUI}
+          detail={messageAreaUI}
+        />
+      </div>
 
       {/* ---- Canvas Viewer ---- */}
       {viewingCanvas && (
@@ -742,27 +832,30 @@ export function MessagesApp({ windowId: _windowId }: { windowId: string }) {
         </div>
       )}
 
-      {/* ---- Create Channel Dialog ---- */}
+      {/* ---- Create Channel — bottom sheet on mobile, centred modal on desktop ---- */}
       {showCreate && (
-        <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-[380px] max-h-full flex flex-col shadow-2xl bg-zinc-900">
-            <CardHeader className="flex flex-row items-center justify-between gap-2 p-0 px-4 py-3 border-b border-white/[0.06]">
-              <CardTitle className="text-sm font-medium">New Channel</CardTitle>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setShowCreate(false)}
-                className="h-7 w-7"
-                aria-label="Close"
-              >
-                <X size={15} />
-              </Button>
-            </CardHeader>
-            <CardContent className="p-4 pt-4 space-y-3">
+        isMobile ? (
+          <div
+            className="fixed inset-0 z-50"
+            onClick={() => setShowCreate(false)}
+            role="dialog"
+            aria-modal="true"
+            aria-label="New channel"
+          >
+            <div
+              className="absolute bottom-0 left-0 right-0 bg-zinc-900 border-t border-white/[0.08] rounded-t-2xl p-4 space-y-3"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-sm font-semibold">New Channel</span>
+                <Button variant="ghost" size="icon" onClick={() => setShowCreate(false)} className="h-7 w-7" aria-label="Close">
+                  <X size={15} />
+                </Button>
+              </div>
               <div className="space-y-1">
-                <Label htmlFor="new-channel-name" className="block uppercase tracking-wider">Name</Label>
+                <Label htmlFor="new-channel-name-mobile" className="block uppercase tracking-wider">Name</Label>
                 <Input
-                  id="new-channel-name"
+                  id="new-channel-name-mobile"
                   value={newChannel.name}
                   onChange={(e) => setNewChannel((s) => ({ ...s, name: e.target.value }))}
                   placeholder="general"
@@ -770,9 +863,9 @@ export function MessagesApp({ windowId: _windowId }: { windowId: string }) {
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="new-channel-type" className="block uppercase tracking-wider">Type</Label>
+                <Label htmlFor="new-channel-type-mobile" className="block uppercase tracking-wider">Type</Label>
                 <select
-                  id="new-channel-type"
+                  id="new-channel-type-mobile"
                   value={newChannel.type}
                   onChange={(e) => setNewChannel((s) => ({ ...s, type: e.target.value as "topic" | "group" }))}
                   className="w-full bg-white/[0.06] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500/50"
@@ -783,25 +876,80 @@ export function MessagesApp({ windowId: _windowId }: { windowId: string }) {
                 </select>
               </div>
               <div className="space-y-1">
-                <Label htmlFor="new-channel-description" className="block uppercase tracking-wider">Description</Label>
+                <Label htmlFor="new-channel-description-mobile" className="block uppercase tracking-wider">Description</Label>
                 <Input
-                  id="new-channel-description"
+                  id="new-channel-description-mobile"
                   value={newChannel.description}
                   onChange={(e) => setNewChannel((s) => ({ ...s, description: e.target.value }))}
                   placeholder="What's this channel about?"
                   aria-label="Channel description"
                 />
               </div>
-              <Button
-                onClick={createChannel}
-                disabled={!newChannel.name.trim()}
-                className="w-full"
-              >
+              <Button onClick={createChannel} disabled={!newChannel.name.trim()} className="w-full">
                 Create Channel
               </Button>
-            </CardContent>
-          </Card>
-        </div>
+            </div>
+          </div>
+        ) : (
+          <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+            <Card className="w-full max-w-[380px] max-h-full flex flex-col shadow-2xl bg-zinc-900">
+              <CardHeader className="flex flex-row items-center justify-between gap-2 p-0 px-4 py-3 border-b border-white/[0.06]">
+                <CardTitle className="text-sm font-medium">New Channel</CardTitle>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setShowCreate(false)}
+                  className="h-7 w-7"
+                  aria-label="Close"
+                >
+                  <X size={15} />
+                </Button>
+              </CardHeader>
+              <CardContent className="p-4 pt-4 space-y-3">
+                <div className="space-y-1">
+                  <Label htmlFor="new-channel-name" className="block uppercase tracking-wider">Name</Label>
+                  <Input
+                    id="new-channel-name"
+                    value={newChannel.name}
+                    onChange={(e) => setNewChannel((s) => ({ ...s, name: e.target.value }))}
+                    placeholder="general"
+                    aria-label="Channel name"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="new-channel-type" className="block uppercase tracking-wider">Type</Label>
+                  <select
+                    id="new-channel-type"
+                    value={newChannel.type}
+                    onChange={(e) => setNewChannel((s) => ({ ...s, type: e.target.value as "topic" | "group" }))}
+                    className="w-full bg-white/[0.06] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500/50"
+                    aria-label="Channel type"
+                  >
+                    <option value="topic">Topic</option>
+                    <option value="group">Group</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="new-channel-description" className="block uppercase tracking-wider">Description</Label>
+                  <Input
+                    id="new-channel-description"
+                    value={newChannel.description}
+                    onChange={(e) => setNewChannel((s) => ({ ...s, description: e.target.value }))}
+                    placeholder="What's this channel about?"
+                    aria-label="Channel description"
+                  />
+                </div>
+                <Button
+                  onClick={createChannel}
+                  disabled={!newChannel.name.trim()}
+                  className="w-full"
+                >
+                  Create Channel
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        )
       )}
     </div>
   );

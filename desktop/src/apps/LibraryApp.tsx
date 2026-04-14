@@ -13,6 +13,8 @@ import {
   Clock,
   AlertCircle,
 } from "lucide-react";
+import { MobileSplitView } from "@/components/mobile/MobileSplitView";
+import { useIsMobile } from "@/hooks/use-is-mobile";
 import {
   Button,
   Card,
@@ -51,7 +53,6 @@ import { useFocusTrap } from "@/hooks/use-focus-trap";
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
-type View = "list" | "detail";
 type SearchMode = "keyword" | "semantic";
 type SortMode = "newest" | "updated" | "alpha";
 type MonitorFilter = "recent" | "active" | "slow" | null;
@@ -120,7 +121,6 @@ const statusColor = (status: string): string => {
 
 export function LibraryApp({ windowId: _windowId }: { windowId: string }) {
   /* ---------- view state ---------- */
-  const [view, setView] = useState<View>("list");
   const [selectedItem, setSelectedItem] = useState<KnowledgeItem | null>(null);
 
   /* ---------- list state ---------- */
@@ -164,7 +164,8 @@ export function LibraryApp({ windowId: _windowId }: { windowId: string }) {
   });
 
   /* ---------- mobile ---------- */
-  const isMobile = typeof window !== "undefined" && window.innerWidth < 640;
+  const isMobile = useIsMobile();
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   /* ---------------------------------------------------------------- */
   /*  Data fetching                                                    */
@@ -239,7 +240,6 @@ export function LibraryApp({ windowId: _windowId }: { windowId: string }) {
   const openDetail = useCallback(
     async (item: KnowledgeItem) => {
       setSelectedItem(item);
-      setView("detail");
       setConfirmDelete(false);
       setAgentPickerOpen(false);
 
@@ -267,7 +267,6 @@ export function LibraryApp({ windowId: _windowId }: { windowId: string }) {
   );
 
   const goBackToList = useCallback(() => {
-    setView("list");
     setSelectedItem(null);
     setSnapshots([]);
     setConfirmDelete(false);
@@ -408,18 +407,16 @@ export function LibraryApp({ windowId: _windowId }: { windowId: string }) {
 
   const sidebarUI = (
     <nav
-      className={
-        isMobile
-          ? "w-full flex flex-col overflow-hidden h-full"
-          : "w-52 shrink-0 border-r border-white/5 bg-shell-surface/30 flex flex-col overflow-hidden"
-      }
+      className="w-52 shrink-0 border-r border-white/5 bg-shell-surface/30 flex flex-col overflow-hidden"
       aria-label="Library filters"
     >
-      {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-3 border-b border-white/5 shrink-0">
-        <BookOpen size={15} className="text-accent" />
-        <h1 className="text-sm font-semibold">Library</h1>
-      </div>
+      {/* Header — desktop only; on mobile MobileSplitView provides the title bar */}
+      {!isMobile && (
+        <div className="flex items-center gap-2 px-3 py-3 border-b border-white/5 shrink-0">
+          <BookOpen size={15} className="text-accent" />
+          <h1 className="text-sm font-semibold">Library</h1>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto p-2 space-y-4">
         {/* --- Sources --- */}
@@ -547,23 +544,17 @@ export function LibraryApp({ windowId: _windowId }: { windowId: string }) {
   /*  List View UI                                                     */
   /* ---------------------------------------------------------------- */
 
+  const hasActiveFilter =
+    filters.source_type != null ||
+    filters.category != null ||
+    filters.status != null ||
+    filters.monitor != null;
+
   const listViewUI = (
     <main className="flex-1 flex flex-col overflow-hidden">
       {/* Search + controls */}
       <div className="flex flex-col gap-2 px-4 py-3 border-b border-white/5 shrink-0">
         <div className="flex items-center gap-2">
-          {isMobile && (filters.source_type || filters.category || filters.status || filters.monitor) && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() =>
-                setFilters({ source_type: null, category: null, status: null, monitor: null })
-              }
-              className="text-xs shrink-0"
-            >
-              <ChevronLeft size={14} /> Filters
-            </Button>
-          )}
           <div className="relative flex-1">
             <Search
               size={14}
@@ -578,22 +569,147 @@ export function LibraryApp({ windowId: _windowId }: { windowId: string }) {
               aria-label="Search knowledge base"
             />
           </div>
-          <div className="flex items-center gap-1 shrink-0" role="radiogroup" aria-label="Search mode">
-            {(["keyword", "semantic"] as const).map((m) => (
-              <Button
-                key={m}
-                variant={searchMode === m ? "secondary" : "outline"}
-                size="sm"
-                role="radio"
-                aria-checked={searchMode === m}
-                onClick={() => setSearchMode(m)}
-                className="capitalize text-xs"
-              >
-                {m}
-              </Button>
-            ))}
-          </div>
+          {isMobile && (
+            <Button
+              variant={hasActiveFilter ? "secondary" : "outline"}
+              size="sm"
+              aria-pressed={mobileFiltersOpen}
+              onClick={() => setMobileFiltersOpen((v) => !v)}
+              className="text-xs shrink-0"
+              aria-label="Toggle filters"
+            >
+              Filters{hasActiveFilter ? " •" : ""}
+            </Button>
+          )}
+          {!isMobile && (
+            <div className="flex items-center gap-1 shrink-0" role="radiogroup" aria-label="Search mode">
+              {(["keyword", "semantic"] as const).map((m) => (
+                <Button
+                  key={m}
+                  variant={searchMode === m ? "secondary" : "outline"}
+                  size="sm"
+                  role="radio"
+                  aria-checked={searchMode === m}
+                  onClick={() => setSearchMode(m)}
+                  className="capitalize text-xs"
+                >
+                  {m}
+                </Button>
+              ))}
+            </div>
+          )}
         </div>
+
+        {/* Mobile: search mode + filters inline panel */}
+        {isMobile && (
+          <>
+            <div className="flex items-center gap-1" role="radiogroup" aria-label="Search mode">
+              {(["keyword", "semantic"] as const).map((m) => (
+                <Button
+                  key={m}
+                  variant={searchMode === m ? "secondary" : "outline"}
+                  size="sm"
+                  role="radio"
+                  aria-checked={searchMode === m}
+                  onClick={() => setSearchMode(m)}
+                  className="capitalize text-xs"
+                >
+                  {m}
+                </Button>
+              ))}
+            </div>
+            {mobileFiltersOpen && (
+              <div className="border-t border-white/5 pt-2 space-y-3">
+                {/* Source filter chips */}
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-shell-text-tertiary mb-1.5">Sources</p>
+                  <div className="flex flex-wrap gap-1">
+                    {SOURCE_TYPES.map((src) => {
+                      const active = filters.source_type === src;
+                      return (
+                        <button
+                          key={src}
+                          type="button"
+                          onClick={() => toggleFilter("source_type", src)}
+                          aria-pressed={active}
+                          className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                            active
+                              ? "bg-accent/20 border-accent/40 text-accent"
+                              : "bg-white/5 border-white/10 text-shell-text-secondary"
+                          }`}
+                        >
+                          {SOURCE_LABELS[src] ?? src}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                {/* Category filter chips */}
+                {Object.keys(allCategories).length > 0 && (
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wider text-shell-text-tertiary mb-1.5">Categories</p>
+                    <div className="flex flex-wrap gap-1">
+                      {Object.entries(allCategories).map(([cat]) => {
+                        const active = filters.category === cat;
+                        return (
+                          <button
+                            key={cat}
+                            type="button"
+                            onClick={() => toggleFilter("category", cat)}
+                            aria-pressed={active}
+                            className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                              active
+                                ? "bg-accent/20 border-accent/40 text-accent"
+                                : "bg-white/5 border-white/10 text-shell-text-secondary"
+                            }`}
+                          >
+                            {cat}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                {/* Status filter chips */}
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-shell-text-tertiary mb-1.5">Status</p>
+                  <div className="flex flex-wrap gap-1">
+                    {STATUS_OPTIONS.map((s) => {
+                      const active = filters.status === s;
+                      return (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => toggleFilter("status", s)}
+                          aria-pressed={active}
+                          className={`text-xs px-2.5 py-1 rounded-full border capitalize transition-colors ${
+                            active
+                              ? "bg-accent/20 border-accent/40 text-accent"
+                              : "bg-white/5 border-white/10 text-shell-text-secondary"
+                          }`}
+                        >
+                          {s}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                {hasActiveFilter && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFilters({ source_type: null, category: null, status: null, monitor: null });
+                      setMobileFiltersOpen(false);
+                    }}
+                    className="text-xs text-shell-text-tertiary underline"
+                  >
+                    Clear all filters
+                  </button>
+                )}
+              </div>
+            )}
+          </>
+        )}
 
         {/* Sort + count */}
         <div className="flex items-center gap-2">
@@ -625,7 +741,7 @@ export function LibraryApp({ windowId: _windowId }: { windowId: string }) {
       </div>
 
       {/* Items */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-2">
+      <div className={isMobile ? "flex-1 overflow-y-auto" : "flex-1 overflow-y-auto p-3 space-y-2"}>
         {loading ? (
           <div className="flex items-center justify-center h-full text-shell-text-tertiary text-sm">
             Loading library...
@@ -637,7 +753,70 @@ export function LibraryApp({ windowId: _windowId }: { windowId: string }) {
               {search ? "No results for your search" : "No items in library"}
             </p>
           </div>
+        ) : isMobile ? (
+          /* iOS 26 grouped list on mobile */
+          <div style={{ padding: "8px 0 16px" }}>
+            <div
+              style={{
+                margin: "0 12px",
+                borderRadius: 16,
+                background: "rgba(255,255,255,0.05)",
+                border: "1px solid rgba(255,255,255,0.08)",
+                overflow: "hidden",
+              }}
+            >
+              {filteredItems.map((item, idx, arr) => {
+                const sharedWith = getItemSubscribedAgents(item);
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => openDetail(item)}
+                    aria-label={`Open ${item.title}`}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      width: "100%",
+                      padding: "14px 16px",
+                      background: "none",
+                      border: "none",
+                      borderBottom: idx === arr.length - 1 ? "none" : "1px solid rgba(255,255,255,0.06)",
+                      cursor: "pointer",
+                      color: "inherit",
+                      textAlign: "left",
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 15, fontWeight: 600, color: "rgba(255,255,255,0.95)", marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {item.title || "Untitled"}
+                      </div>
+                      <div style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", marginBottom: sharedWith.length > 0 ? 4 : 0 }}>
+                        {[item.author, SOURCE_LABELS[item.source_type] ?? item.source_type, timeAgo(item.created_at)]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </div>
+                      {sharedWith.length > 0 && (
+                        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>
+                          Shared: {sharedWith.join(", ")}
+                        </div>
+                      )}
+                    </div>
+                    <span
+                      className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded border mr-2 ${statusColor(item.status)}`}
+                    >
+                      {item.status}
+                    </span>
+                    <svg width="8" height="14" viewBox="0 0 8 14" fill="none" style={{ color: "rgba(255,255,255,0.3)", flexShrink: 0 }}>
+                      <path d="M1 1L7 7L1 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         ) : (
+          /* Desktop card list */
           filteredItems.map((item) => {
             const sharedWith = getItemSubscribedAgents(item);
             return (
@@ -713,16 +892,19 @@ export function LibraryApp({ windowId: _windowId }: { windowId: string }) {
       {/* Back + header */}
       <div className="flex-1 overflow-y-auto">
         <div className="px-5 pt-4 pb-3 border-b border-white/5">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={goBackToList}
-            className="text-xs mb-3 -ml-1 text-shell-text-secondary"
-            aria-label="Back to library"
-          >
-            <ChevronLeft size={14} />
-            Back to library
-          </Button>
+          {/* Back button — desktop only; MobileSplitView nav bar handles mobile */}
+          {!isMobile && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={goBackToList}
+              className="text-xs mb-3 -ml-1 text-shell-text-secondary"
+              aria-label="Back to library"
+            >
+              <ChevronLeft size={14} />
+              Back to library
+            </Button>
+          )}
 
           <h2 className="text-lg font-semibold leading-snug mb-1">
             {detailLoading ? "Loading..." : selectedItem.title || "Untitled"}
@@ -1057,7 +1239,11 @@ export function LibraryApp({ windowId: _windowId }: { windowId: string }) {
 
   const categoryManagerUI = categoryManagerOpen ? (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      className={
+        isMobile
+          ? "fixed inset-0 z-50 flex items-end bg-black/50 backdrop-blur-sm"
+          : "fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      }
       role="dialog"
       aria-modal="true"
       aria-label="Category manager"
@@ -1065,7 +1251,15 @@ export function LibraryApp({ windowId: _windowId }: { windowId: string }) {
         if (e.target === e.currentTarget) setCategoryManagerOpen(false);
       }}
     >
-      <div ref={categoryManagerRef} className="bg-shell-surface border border-white/10 rounded-xl shadow-2xl w-[560px] max-w-[90vw] max-h-[80vh] flex flex-col">
+      <div
+        ref={categoryManagerRef}
+        className="bg-shell-surface border border-white/10 shadow-2xl flex flex-col"
+        style={
+          isMobile
+            ? { borderRadius: "20px 20px 0 0", width: "100%", maxHeight: "92%", overflowY: "auto" }
+            : { borderRadius: 12, width: 560, maxWidth: "90vw", maxHeight: "80vh" }
+        }
+      >
         {/* Dialog header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
           <div className="flex items-center gap-2">
@@ -1257,28 +1451,33 @@ export function LibraryApp({ windowId: _windowId }: { windowId: string }) {
   /*  Root render                                                      */
   /* ---------------------------------------------------------------- */
 
-  const hasActiveFilter =
-    filters.source_type != null ||
-    filters.category != null ||
-    filters.status != null ||
-    filters.monitor != null;
-
   return (
-    <div className="flex h-full bg-shell-bg text-shell-text select-none">
-      {isMobile ? (
-        view === "detail" ? (
-          detailViewUI
-        ) : hasActiveFilter ? (
-          listViewUI
-        ) : (
-          sidebarUI
-        )
-      ) : (
-        <>
-          {view === "list" && sidebarUI}
-          {view === "list" ? listViewUI : detailViewUI}
-        </>
-      )}
+    <div className="flex flex-col h-full min-h-0 overflow-hidden bg-shell-bg text-shell-text select-none relative">
+      <MobileSplitView
+        selectedId={selectedItem?.id ?? null}
+        onBack={goBackToList}
+        listTitle="Library"
+        detailTitle={selectedItem ? (selectedItem.title || "Untitled") : undefined}
+        listWidth={700}
+        list={
+          /* List pane: sidebar filters + item list side by side on desktop,
+             stacked (filters embedded above list) on mobile */
+          <div className="flex h-full min-h-0 overflow-hidden">
+            {/* Sidebar — always visible on desktop; hidden on mobile */}
+            {!isMobile && sidebarUI}
+            {listViewUI}
+          </div>
+        }
+        detail={
+          detailViewUI ?? (
+            !isMobile ? (
+              <div className="flex items-center justify-center h-full text-shell-text-tertiary text-sm">
+                {loading ? "Loading..." : items.length === 0 ? "Add items to get started" : "Select an item"}
+              </div>
+            ) : null
+          )
+        }
+      />
       {categoryManagerUI}
     </div>
   );

@@ -5,6 +5,7 @@ import {
   GitFork,
   Bell,
   ChevronLeft,
+  ChevronRight,
   ExternalLink,
   Search,
   Tag,
@@ -45,6 +46,8 @@ import type {
   GitHubComment,
   GitHubAuthStatus,
 } from "@/lib/github";
+import { MobileSplitView } from "@/components/mobile/MobileSplitView";
+import { useIsMobile } from "@/hooks/use-is-mobile";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -147,7 +150,8 @@ function CommentNode({ comment, depth = 0 }: { comment: GitHubComment; depth?: n
 
 export function GitHubBrowserApp({ windowId: _windowId }: { windowId: string }) {
   /* ---------- view state ---------- */
-  const [view, setView] = useState<View>("list");
+  // view is kept for legacy section-switch effect below; navigation is now driven by selectedId/MobileSplitView
+  const [, setView] = useState<View>("list");
   const [detail, setDetail] = useState<DetailTarget | null>(null);
 
   /* ---------- sidebar state ---------- */
@@ -174,7 +178,7 @@ export function GitHubBrowserApp({ windowId: _windowId }: { windowId: string }) 
   const [authStatus, setAuthStatus] = useState<GitHubAuthStatus>({ authenticated: false });
 
   /* ---------- mobile ---------- */
-  const isMobile = typeof window !== "undefined" && window.innerWidth < 640;
+  const isMobile = useIsMobile();
 
   /* ---------------------------------------------------------------- */
   /*  Initial data loading                                             */
@@ -267,6 +271,15 @@ export function GitHubBrowserApp({ windowId: _windowId }: { windowId: string }) 
     setDetailReleases([]);
   }, []);
 
+  /* ---------- selectedId for MobileSplitView ---------- */
+  const selectedId = useMemo((): string | null => {
+    if (!detail) return null;
+    if (detail.type === "repo" && detail.repo) return `repo:${detail.repo.owner}/${detail.repo.name}`;
+    if (detail.type === "issue" && detail.issue) return `issue:${detail.issue.repo}#${detail.issue.number}`;
+    if (detail.type === "release" && detail.release) return `release:${detail.release.tag}`;
+    return null;
+  }, [detail]);
+
   /* ---------------------------------------------------------------- */
   /*  Save to library                                                  */
   /* ---------------------------------------------------------------- */
@@ -311,11 +324,7 @@ export function GitHubBrowserApp({ windowId: _windowId }: { windowId: string }) 
 
   const sidebarUI = (
     <nav
-      className={
-        isMobile
-          ? "w-full flex flex-col overflow-hidden h-full"
-          : "w-52 shrink-0 border-r border-white/5 bg-shell-surface/30 flex flex-col overflow-hidden"
-      }
+      className="w-52 shrink-0 border-r border-white/5 bg-shell-surface/30 flex flex-col overflow-hidden"
       aria-label="GitHub Browser navigation"
     >
       {/* Header */}
@@ -703,17 +712,20 @@ export function GitHubBrowserApp({ windowId: _windowId }: { windowId: string }) 
         <div className="flex-1 overflow-y-auto">
           {/* Back + header */}
           <div className="px-5 pt-4 pb-3 border-b border-white/5">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={goBack}
-              className="text-xs mb-3 -ml-1 text-shell-text-secondary"
-              aria-label="Back to list"
-              onKeyDown={(e) => e.key === "Escape" && goBack()}
-            >
-              <ChevronLeft size={14} aria-hidden="true" />
-              Back
-            </Button>
+            {/* Hide back button on mobile — MobileSplitView nav bar handles back */}
+            {!isMobile && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={goBack}
+                className="text-xs mb-3 -ml-1 text-shell-text-secondary"
+                aria-label="Back to list"
+                onKeyDown={(e) => e.key === "Escape" && goBack()}
+              >
+                <ChevronLeft size={14} aria-hidden="true" />
+                Back
+              </Button>
+            )}
 
             <h2 className="text-lg font-semibold leading-snug mb-1">
               <span className="text-shell-text-tertiary">{repo.owner}/</span>
@@ -847,17 +859,20 @@ export function GitHubBrowserApp({ windowId: _windowId }: { windowId: string }) 
         <div className="flex-1 overflow-y-auto">
           {/* Back + header */}
           <div className="px-5 pt-4 pb-3 border-b border-white/5">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={goBack}
-              className="text-xs mb-3 -ml-1 text-shell-text-secondary"
-              aria-label="Back to list"
-              onKeyDown={(e) => e.key === "Escape" && goBack()}
-            >
-              <ChevronLeft size={14} aria-hidden="true" />
-              Back
-            </Button>
+            {/* Hide back button on mobile — MobileSplitView nav bar handles back */}
+            {!isMobile && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={goBack}
+                className="text-xs mb-3 -ml-1 text-shell-text-secondary"
+                aria-label="Back to list"
+                onKeyDown={(e) => e.key === "Escape" && goBack()}
+              >
+                <ChevronLeft size={14} aria-hidden="true" />
+                Back
+              </Button>
+            )}
 
             <div className="flex items-start gap-2 mb-2">
               {issue.is_pull_request ? (
@@ -997,17 +1012,20 @@ export function GitHubBrowserApp({ windowId: _windowId }: { windowId: string }) 
         <div className="flex-1 overflow-y-auto">
           {/* Back + header */}
           <div className="px-5 pt-4 pb-3 border-b border-white/5">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={goBack}
-              className="text-xs mb-3 -ml-1 text-shell-text-secondary"
-              aria-label="Back to list"
-              onKeyDown={(e) => e.key === "Escape" && goBack()}
-            >
-              <ChevronLeft size={14} aria-hidden="true" />
-              Back
-            </Button>
+            {/* Hide back button on mobile — MobileSplitView nav bar handles back */}
+            {!isMobile && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={goBack}
+                className="text-xs mb-3 -ml-1 text-shell-text-secondary"
+                aria-label="Back to list"
+                onKeyDown={(e) => e.key === "Escape" && goBack()}
+              >
+                <ChevronLeft size={14} aria-hidden="true" />
+                Back
+              </Button>
+            )}
 
             <div className="flex items-start gap-2 mb-1">
               <Tag size={16} className="mt-0.5 shrink-0 text-accent" aria-hidden="true" />
@@ -1112,34 +1130,287 @@ export function GitHubBrowserApp({ windowId: _windowId }: { windowId: string }) 
   })() : null;
 
   /* ---------------------------------------------------------------- */
+  /*  Detail title for mobile nav bar                                  */
+  /* ---------------------------------------------------------------- */
+
+  const detailTitle = useMemo(() => {
+    if (!detail) return "";
+    if (detail.type === "repo" && detail.repo) return `${detail.repo.owner}/${detail.repo.name}`;
+    if (detail.type === "issue" && detail.issue) return detail.issue.title;
+    if (detail.type === "release" && detail.release) return detail.release.tag;
+    return "";
+  }, [detail]);
+
+  // Hide toolbar on mobile when detail is open — MobileSplitView nav bar is shown instead
+  const showToolbar = !isMobile || selectedId === null;
+
+  /* ---------------------------------------------------------------- */
+  /*  Mobile iOS-style list pane (sidebar sections + item list)        */
+  /* ---------------------------------------------------------------- */
+
+  const mobileListPane = (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      {authBanner}
+      {/* Sections */}
+      <div style={{ padding: "8px 0 4px", borderBottom: "1px solid rgba(255,255,255,0.05)", flexShrink: 0 }}>
+        <div style={{ margin: "0 12px", borderRadius: 16, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", overflow: "hidden" }}>
+          {(
+            [
+              { id: "starred" as SidebarSection, label: "Starred Repos", icon: Star, badge: null as number | null },
+              { id: "notifications" as SidebarSection, label: "Notifications", icon: Bell, badge: unreadCount as number | null },
+              { id: "watched" as SidebarSection, label: "Watched", icon: Eye, badge: null as number | null },
+            ]
+          ).map(({ id, label, icon: Icon, badge }, idx, arr) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setActiveSection(id)}
+              aria-pressed={activeSection === id}
+              aria-label={label}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                width: "100%",
+                padding: "14px 16px",
+                background: activeSection === id ? "rgba(255,255,255,0.08)" : "none",
+                border: "none",
+                borderBottom: idx === arr.length - 1 ? "none" : "1px solid rgba(255,255,255,0.06)",
+                cursor: "pointer",
+                color: "inherit",
+                textAlign: "left",
+              }}
+            >
+              <Icon size={15} style={{ color: "rgba(255,255,255,0.6)", flexShrink: 0 }} aria-hidden="true" />
+              <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: "rgba(255,255,255,0.9)" }}>{label}</span>
+              {badge != null && badge > 0 && (
+                <span style={{ fontSize: 11, padding: "1px 7px", borderRadius: 20, background: "var(--accent, #7c6be8)", color: "#fff", fontWeight: 600 }} aria-label={`${badge} unread`}>
+                  {badge}
+                </span>
+              )}
+              <ChevronRight size={14} style={{ color: "rgba(255,255,255,0.3)", flexShrink: 0 }} aria-hidden="true" />
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Content type filter */}
+      <div style={{ padding: "8px 0 4px", borderBottom: "1px solid rgba(255,255,255,0.05)", flexShrink: 0 }}>
+        <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5, color: "rgba(255,255,255,0.45)", padding: "0 20px 6px", fontWeight: 600 }}>
+          Content
+        </div>
+        <div style={{ margin: "0 12px", borderRadius: 16, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", overflow: "hidden" }}>
+          {(
+            [
+              { id: "repos" as ContentType, label: "Repos", icon: Github },
+              { id: "issues" as ContentType, label: "Issues", icon: CircleDot },
+              { id: "prs" as ContentType, label: "Pull Requests", icon: GitPullRequest },
+              { id: "releases" as ContentType, label: "Releases", icon: Package },
+            ] as const
+          ).map(({ id, label, icon: Icon }, idx, arr) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setContentType(id)}
+              aria-pressed={contentType === id}
+              aria-label={label}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                width: "100%",
+                padding: "12px 16px",
+                background: contentType === id ? "rgba(255,255,255,0.08)" : "none",
+                border: "none",
+                borderBottom: idx === arr.length - 1 ? "none" : "1px solid rgba(255,255,255,0.06)",
+                cursor: "pointer",
+                color: "inherit",
+                textAlign: "left",
+              }}
+            >
+              <Icon size={14} style={{ color: "rgba(255,255,255,0.6)", flexShrink: 0 }} aria-hidden="true" />
+              <span style={{ flex: 1, fontSize: 14, color: "rgba(255,255,255,0.85)" }}>{label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Items list */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "8px 0 16px" }}>
+        <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5, color: "rgba(255,255,255,0.45)", padding: "4px 20px 8px", fontWeight: 600 }}>
+          {activeSection === "notifications" ? "Notifications" : activeSection === "watched" ? "Watched" : "Starred"}
+        </div>
+
+        {/* Search */}
+        <div style={{ padding: "0 12px 8px" }}>
+          <div style={{ position: "relative" }}>
+            <Search size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "rgba(255,255,255,0.4)", pointerEvents: "none" }} aria-hidden="true" />
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search…"
+              aria-label="Search GitHub content"
+              style={{
+                width: "100%",
+                padding: "8px 12px 8px 30px",
+                borderRadius: 10,
+                background: "rgba(255,255,255,0.06)",
+                border: "1px solid rgba(255,255,255,0.1)",
+                color: "inherit",
+                fontSize: 13,
+                outline: "none",
+                boxSizing: "border-box",
+              }}
+            />
+          </div>
+        </div>
+
+        {loading ? (
+          <div style={{ padding: "24px 20px", textAlign: "center", fontSize: 13, color: "rgba(255,255,255,0.4)" }} role="status" aria-live="polite">
+            Loading…
+          </div>
+        ) : activeItems.length === 0 ? (
+          <div style={{ padding: "32px 20px", textAlign: "center", fontSize: 13, color: "rgba(255,255,255,0.4)" }}>
+            {search ? "No results for your search" : "Nothing here yet"}
+          </div>
+        ) : (
+          <div
+            style={{ margin: "0 12px", borderRadius: 16, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", overflow: "hidden" }}
+            role="list"
+            aria-label="GitHub items"
+          >
+            {activeSection === "notifications"
+              ? (activeItems as GitHubIssue[]).map((item, idx, arr) => (
+                  <button
+                    key={`${item.repo}#${item.number}`}
+                    type="button"
+                    role="listitem"
+                    onClick={() => openIssueDetail(item)}
+                    aria-label={`Open ${item.is_pull_request ? "PR" : "issue"}: ${item.title}`}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      width: "100%",
+                      padding: "14px 16px",
+                      background: "none",
+                      border: "none",
+                      borderBottom: idx === arr.length - 1 ? "none" : "1px solid rgba(255,255,255,0.06)",
+                      cursor: "pointer",
+                      color: "inherit",
+                      textAlign: "left",
+                    }}
+                  >
+                    {item.is_pull_request
+                      ? <GitPullRequest size={13} style={{ flexShrink: 0, color: "rgba(130,140,255,0.9)" }} aria-hidden="true" />
+                      : <CircleDot size={13} style={{ flexShrink: 0, color: "rgba(80,200,120,0.9)" }} aria-hidden="true" />
+                    }
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,0.9)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginBottom: 2 }}>
+                        {item.title}
+                      </div>
+                      <div style={{ fontSize: 12, color: "rgba(255,255,255,0.45)" }}>{item.repo}</div>
+                    </div>
+                    <ChevronRight size={14} style={{ color: "rgba(255,255,255,0.3)", flexShrink: 0 }} aria-hidden="true" />
+                  </button>
+                ))
+              : (activeItems as GitHubRepo[]).map((item, idx, arr) => (
+                  <button
+                    key={`${item.owner}/${item.name}`}
+                    type="button"
+                    role="listitem"
+                    onClick={() => openRepoDetail(item)}
+                    aria-label={`Open ${item.owner}/${item.name}`}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      width: "100%",
+                      padding: "14px 16px",
+                      background: "none",
+                      border: "none",
+                      borderBottom: idx === arr.length - 1 ? "none" : "1px solid rgba(255,255,255,0.06)",
+                      cursor: "pointer",
+                      color: "inherit",
+                      textAlign: "left",
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: "rgba(255,255,255,0.95)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginBottom: 2 }}>
+                        <span style={{ color: "rgba(255,255,255,0.5)" }}>{item.owner}/</span>{item.name}
+                      </div>
+                      {item.description && (
+                        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {item.description}
+                        </div>
+                      )}
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4, fontSize: 11, color: "rgba(255,255,255,0.35)" }}>
+                        <span style={{ display: "flex", alignItems: "center", gap: 3 }} aria-label={`${item.stars} stars`}>
+                          <Star size={9} aria-hidden="true" /> {item.stars.toLocaleString()}
+                        </span>
+                        <span style={{ display: "flex", alignItems: "center", gap: 3 }} aria-label={`${item.forks} forks`}>
+                          <GitFork size={9} aria-hidden="true" /> {item.forks.toLocaleString()}
+                        </span>
+                        {item.language && <span>{item.language}</span>}
+                      </div>
+                    </div>
+                    <ChevronRight size={14} style={{ color: "rgba(255,255,255,0.3)", flexShrink: 0 }} aria-hidden="true" />
+                  </button>
+                ))
+            }
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  /* ---------------------------------------------------------------- */
   /*  Root layout                                                      */
   /* ---------------------------------------------------------------- */
 
-  if (isMobile) {
-    if (view === "detail" && detailUI) {
-      return (
-        <div className="flex flex-col h-full bg-shell-surface overflow-hidden">
-          {authBanner}
-          {detailUI}
-        </div>
-      );
-    }
-    return (
-      <div className="flex flex-col h-full bg-shell-surface overflow-hidden">
-        {authBanner}
-        {sidebarUI}
-        {listViewUI}
-      </div>
-    );
-  }
-
   return (
-    <div className="flex h-full bg-shell-surface overflow-hidden">
-      {sidebarUI}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {authBanner}
-        {view === "detail" && detailUI ? detailUI : listViewUI}
-      </div>
+    <div className="flex flex-col h-full min-h-0 overflow-hidden bg-shell-surface text-shell-text select-none relative">
+      {/* Toolbar — hidden on mobile when detail is shown */}
+      {showToolbar && (
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/5 shrink-0">
+          <div className="flex items-center gap-2">
+            <Github size={15} className="text-accent shrink-0" aria-hidden="true" />
+            <h1 className="text-sm font-semibold">GitHub</h1>
+          </div>
+        </div>
+      )}
+
+      {/* MobileSplitView — stacks on mobile, splits on desktop */}
+      <MobileSplitView
+        selectedId={selectedId}
+        onBack={goBack}
+        listTitle="GitHub"
+        detailTitle={detailTitle}
+        listWidth={208}
+        list={
+          isMobile
+            ? mobileListPane
+            : (
+              <div className="flex h-full overflow-hidden">
+                {sidebarUI}
+                <div className="flex-1 flex flex-col overflow-hidden">
+                  {authBanner}
+                  {listViewUI}
+                </div>
+              </div>
+            )
+        }
+        detail={
+          detailUI ?? (
+            !isMobile ? (
+              <div className="flex items-center justify-center h-full text-shell-text-tertiary text-sm">
+                Select an item to view details
+              </div>
+            ) : null
+          )
+        }
+      />
     </div>
   );
 }

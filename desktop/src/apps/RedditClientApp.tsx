@@ -32,6 +32,8 @@ import type {
 } from "@/lib/reddit";
 import { listItems, deleteItem, ingestUrl } from "@/lib/knowledge";
 import type { KnowledgeItem } from "@/lib/knowledge";
+import { MobileSplitView } from "@/components/mobile/MobileSplitView";
+import { useIsMobile } from "@/hooks/use-is-mobile";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -325,7 +327,7 @@ export function RedditClientApp({ windowId: _windowId }: { windowId: string }) {
   const [_monitorEnabled, setMonitorEnabled] = useState(false);
 
   /* ---------- mobile ---------- */
-  const isMobile = typeof window !== "undefined" && window.innerWidth < 640;
+  const isMobile = useIsMobile();
 
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -499,179 +501,329 @@ export function RedditClientApp({ windowId: _windowId }: { windowId: string }) {
 
   const sidebarUI = (
     <nav
-      className={
-        isMobile
-          ? "w-full flex flex-col overflow-hidden h-full"
-          : "w-52 shrink-0 border-r border-white/5 bg-shell-surface/30 flex flex-col overflow-hidden"
-      }
+      className="flex flex-col overflow-hidden h-full"
       aria-label="Reddit navigation"
     >
-      {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-3 border-b border-white/5 shrink-0">
-        <ScrollText size={15} className="text-orange-400" />
-        <h1 className="text-sm font-semibold">Reddit</h1>
-      </div>
+      {/* Header — shown on desktop only; MobileSplitView provides its own nav bar on mobile */}
+      {!isMobile && (
+        <div className="flex items-center gap-2 px-3 py-3 border-b border-white/5 shrink-0">
+          <ScrollText size={15} className="text-orange-400" />
+          <h1 className="text-sm font-semibold">Reddit</h1>
+        </div>
+      )}
 
-      <div className="flex-1 overflow-y-auto p-2 space-y-4">
+      <div className="flex-1 overflow-y-auto space-y-4" style={isMobile ? { padding: "8px 0 16px" } : { padding: "0.5rem" }}>
         {/* Subreddits */}
-        <section>
-          <div className="flex items-center justify-between px-2 mb-1.5">
-            <p className="text-[10px] uppercase tracking-wider text-shell-text-tertiary">
-              Subreddits
-            </p>
-            <button
-              aria-label="Add subreddit"
-              onClick={() => setAddSubOpen((v) => !v)}
-              className="text-shell-text-tertiary hover:text-accent transition-colors"
-            >
-              <Plus size={12} />
-            </button>
-          </div>
-
-          {/* Add sub input */}
-          {addSubOpen && (
-            <div className="flex gap-1 mb-1 px-1">
-              <Input
-                value={newSub}
-                onChange={(e) => setNewSub(e.target.value)}
-                placeholder="r/subreddit"
-                className="h-6 text-xs flex-1"
-                aria-label="New subreddit name"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") addSub();
-                  if (e.key === "Escape") setAddSubOpen(false);
+        {isMobile ? (
+          <>
+            {/* Mobile: iOS 26 grouped container */}
+            <div>
+              <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5, color: "rgba(255,255,255,0.45)", padding: "8px 20px 6px", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span>Subreddits</span>
+                <button
+                  aria-label="Add subreddit"
+                  onClick={() => setAddSubOpen((v) => !v)}
+                  style={{ color: "rgba(255,255,255,0.45)", background: "none", border: "none", cursor: "pointer", padding: "0 4px" }}
+                >
+                  <Plus size={14} />
+                </button>
+              </div>
+              <div
+                style={{
+                  margin: "0 12px",
+                  borderRadius: 16,
+                  background: "rgba(255,255,255,0.05)",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  overflow: "hidden",
                 }}
-                autoFocus
-              />
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-6 px-1.5 text-xs"
-                onClick={addSub}
-                aria-label="Confirm add subreddit"
               >
-                <Check size={11} />
-              </Button>
+                {subs.map((sub, idx, arr) => {
+                  const active = activeSection === "subreddits" && activeSub === sub;
+                  return (
+                    <button
+                      key={sub}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => {
+                        setActiveSub(sub);
+                        setActiveSection("subreddits");
+                        setSearchQuery("");
+                        setSearchInput("");
+                      }}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        width: "100%",
+                        padding: "14px 16px",
+                        background: active ? "rgba(255,255,255,0.08)" : "none",
+                        border: "none",
+                        borderBottom: idx === arr.length - 1 ? "none" : "1px solid rgba(255,255,255,0.06)",
+                        cursor: "pointer",
+                        color: "inherit",
+                        textAlign: "left",
+                      }}
+                    >
+                      <span style={{ color: "#fb923c", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>r/</span>
+                      <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: "rgba(255,255,255,0.9)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub}</span>
+                      <svg width="8" height="14" viewBox="0 0 8 14" fill="none" style={{ color: "rgba(255,255,255,0.3)", flexShrink: 0 }}>
+                        <path d="M1 1L7 7L1 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          )}
 
-          <div className="space-y-0.5">
-            {subs.map((sub) => {
-              const active =
-                activeSection === "subreddits" && activeSub === sub;
-              return (
-                <Button
-                  key={sub}
-                  variant={active ? "secondary" : "ghost"}
-                  size="sm"
-                  aria-pressed={active}
-                  onClick={() => {
-                    setActiveSub(sub);
-                    setActiveSection("subreddits");
-                    setSearchQuery("");
-                    setSearchInput("");
+            {/* Mobile: Saved Posts */}
+            <div>
+              <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5, color: "rgba(255,255,255,0.45)", padding: "0 20px 6px", fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+                <span>Saved Posts</span>
+                {!authStatus.authenticated && <Lock size={10} />}
+              </div>
+              <div
+                style={{
+                  margin: "0 12px",
+                  borderRadius: 16,
+                  background: "rgba(255,255,255,0.05)",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  overflow: "hidden",
+                }}
+              >
+                {authStatus.authenticated ? (
+                  <button
+                    type="button"
+                    aria-pressed={activeSection === "saved"}
+                    onClick={() => { setActiveSection("saved"); setActiveSub(null); }}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 10, width: "100%",
+                      padding: "14px 16px", background: activeSection === "saved" ? "rgba(255,255,255,0.08)" : "none",
+                      border: "none", cursor: "pointer", color: "inherit", textAlign: "left",
+                    }}
+                  >
+                    <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: "rgba(255,255,255,0.9)" }}>Reddit Saved</span>
+                    <svg width="8" height="14" viewBox="0 0 8 14" fill="none" style={{ color: "rgba(255,255,255,0.3)", flexShrink: 0 }}>
+                      <path d="M1 1L7 7L1 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </button>
+                ) : (
+                  <div style={{ padding: "14px 16px", fontSize: 14, color: "rgba(255,255,255,0.4)", fontStyle: "italic" }}>Not connected</div>
+                )}
+              </div>
+            </div>
+
+            {/* Mobile: Monitored */}
+            {monitoredItems.length > 0 && (
+              <div>
+                <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5, color: "rgba(255,255,255,0.45)", padding: "0 20px 6px", fontWeight: 600 }}>
+                  Monitored
+                </div>
+                <div
+                  style={{
+                    margin: "0 12px",
+                    borderRadius: 16,
+                    background: "rgba(255,255,255,0.05)",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    overflow: "hidden",
                   }}
-                  className="w-full justify-start text-xs h-7 px-2 gap-1.5"
                 >
-                  <span className="text-orange-400 text-[10px] font-bold">r/</span>
-                  {sub}
-                </Button>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* Saved Posts */}
-        <section>
-          <div className="flex items-center gap-1.5 px-2 mb-1.5">
-            <p className="text-[10px] uppercase tracking-wider text-shell-text-tertiary">
-              Saved Posts
-            </p>
-            {!authStatus.authenticated && (
-              <Lock size={10} className="text-shell-text-tertiary" />
+                  {monitoredItems.map((item, idx, arr) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setActiveSection("monitored")}
+                      aria-label={`Monitored: ${item.title}`}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 10, width: "100%",
+                        padding: "14px 16px", background: "none", border: "none",
+                        borderBottom: idx === arr.length - 1 ? "none" : "1px solid rgba(255,255,255,0.06)",
+                        cursor: "pointer", color: "inherit", textAlign: "left",
+                      }}
+                    >
+                      <Eye size={13} style={{ flexShrink: 0, color: "rgba(255,255,255,0.5)" }} />
+                      <span style={{ flex: 1, fontSize: 14, color: "rgba(255,255,255,0.85)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.title}</span>
+                      <svg width="8" height="14" viewBox="0 0 8 14" fill="none" style={{ color: "rgba(255,255,255,0.3)", flexShrink: 0 }}>
+                        <path d="M1 1L7 7L1 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </button>
+                  ))}
+                </div>
+              </div>
             )}
-          </div>
-          {authStatus.authenticated ? (
-            <Button
-              variant={activeSection === "saved" ? "secondary" : "ghost"}
-              size="sm"
-              aria-pressed={activeSection === "saved"}
-              onClick={() => {
-                setActiveSection("saved");
-                setActiveSub(null);
-              }}
-              className="w-full justify-start text-xs h-7 px-2"
-            >
-              Reddit Saved
-            </Button>
-          ) : (
-            <p className="text-[11px] text-shell-text-tertiary px-2 italic">
-              Not connected
-            </p>
-          )}
-        </section>
 
-        {/* Monitored */}
-        <section>
-          <p className="text-[10px] uppercase tracking-wider text-shell-text-tertiary px-2 mb-1.5">
-            Monitored
-          </p>
-          <div className="space-y-0.5">
-            {monitoredItems.length === 0 ? (
-              <p className="text-[11px] text-shell-text-tertiary px-2 italic">
-                None yet
-              </p>
-            ) : (
-              monitoredItems.map((item) => (
-                <Button
-                  key={item.id}
-                  variant={activeSection === "monitored" && activeSub === item.id ? "secondary" : "ghost"}
-                  size="sm"
-                  onClick={() => {
-                    setActiveSection("monitored");
-                  }}
-                  className="w-full justify-start text-xs h-7 px-2 truncate"
-                  aria-label={`Monitored: ${item.title}`}
-                >
-                  <Eye size={11} className="shrink-0 mr-1" />
-                  <span className="truncate">{item.title}</span>
-                </Button>
-              ))
-            )}
-          </div>
-        </section>
-
-        {/* History (placeholder) */}
-        <section>
-          <p className="text-[10px] uppercase tracking-wider text-shell-text-tertiary px-2 mb-1.5">
-            History
-          </p>
-          <p className="text-[11px] text-shell-text-tertiary px-2 italic">
-            Coming soon
-          </p>
-        </section>
-      </div>
-
-      {/* Auth status at bottom */}
-      <div className="border-t border-white/5 px-3 py-2 shrink-0">
-        {authStatus.authenticated ? (
-          <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
-            <span className="text-xs text-shell-text-secondary truncate">
-              u/{authStatus.username}
-            </span>
-          </div>
+            {/* Auth status footer */}
+            <div style={{ padding: "4px 20px 8px" }}>
+              {authStatus.authenticated ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#22c55e", flexShrink: 0 }} />
+                  <span style={{ fontSize: 12, color: "rgba(255,255,255,0.5)" }}>u/{authStatus.username}</span>
+                </div>
+              ) : (
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "rgba(255,255,255,0.3)", flexShrink: 0 }} />
+                  <a href="/api/reddit/auth/login" style={{ fontSize: 12, color: "rgb(100,180,255)" }} aria-label="Connect Reddit account">
+                    Not connected
+                  </a>
+                </div>
+              )}
+            </div>
+          </>
         ) : (
-          <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-shell-text-tertiary shrink-0" />
-            <a
-              href="/api/reddit/auth/login"
-              className="text-xs text-accent hover:underline"
-              aria-label="Connect Reddit account"
-            >
-              Not connected
-            </a>
-          </div>
+          <>
+            {/* Desktop: compact button list */}
+            <section>
+              <div className="flex items-center justify-between px-2 mb-1.5">
+                <p className="text-[10px] uppercase tracking-wider text-shell-text-tertiary">
+                  Subreddits
+                </p>
+                <button
+                  aria-label="Add subreddit"
+                  onClick={() => setAddSubOpen((v) => !v)}
+                  className="text-shell-text-tertiary hover:text-accent transition-colors"
+                >
+                  <Plus size={12} />
+                </button>
+              </div>
+
+              {addSubOpen && (
+                <div className="flex gap-1 mb-1 px-1">
+                  <Input
+                    value={newSub}
+                    onChange={(e) => setNewSub(e.target.value)}
+                    placeholder="r/subreddit"
+                    className="h-6 text-xs flex-1"
+                    aria-label="New subreddit name"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") addSub();
+                      if (e.key === "Escape") setAddSubOpen(false);
+                    }}
+                    autoFocus
+                  />
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-1.5 text-xs"
+                    onClick={addSub}
+                    aria-label="Confirm add subreddit"
+                  >
+                    <Check size={11} />
+                  </Button>
+                </div>
+              )}
+
+              <div className="space-y-0.5">
+                {subs.map((sub) => {
+                  const active = activeSection === "subreddits" && activeSub === sub;
+                  return (
+                    <Button
+                      key={sub}
+                      variant={active ? "secondary" : "ghost"}
+                      size="sm"
+                      aria-pressed={active}
+                      onClick={() => {
+                        setActiveSub(sub);
+                        setActiveSection("subreddits");
+                        setSearchQuery("");
+                        setSearchInput("");
+                      }}
+                      className="w-full justify-start text-xs h-7 px-2 gap-1.5"
+                    >
+                      <span className="text-orange-400 text-[10px] font-bold">r/</span>
+                      {sub}
+                    </Button>
+                  );
+                })}
+              </div>
+            </section>
+
+            <section>
+              <div className="flex items-center gap-1.5 px-2 mb-1.5">
+                <p className="text-[10px] uppercase tracking-wider text-shell-text-tertiary">
+                  Saved Posts
+                </p>
+                {!authStatus.authenticated && (
+                  <Lock size={10} className="text-shell-text-tertiary" />
+                )}
+              </div>
+              {authStatus.authenticated ? (
+                <Button
+                  variant={activeSection === "saved" ? "secondary" : "ghost"}
+                  size="sm"
+                  aria-pressed={activeSection === "saved"}
+                  onClick={() => {
+                    setActiveSection("saved");
+                    setActiveSub(null);
+                  }}
+                  className="w-full justify-start text-xs h-7 px-2"
+                >
+                  Reddit Saved
+                </Button>
+              ) : (
+                <p className="text-[11px] text-shell-text-tertiary px-2 italic">
+                  Not connected
+                </p>
+              )}
+            </section>
+
+            <section>
+              <p className="text-[10px] uppercase tracking-wider text-shell-text-tertiary px-2 mb-1.5">
+                Monitored
+              </p>
+              <div className="space-y-0.5">
+                {monitoredItems.length === 0 ? (
+                  <p className="text-[11px] text-shell-text-tertiary px-2 italic">
+                    None yet
+                  </p>
+                ) : (
+                  monitoredItems.map((item) => (
+                    <Button
+                      key={item.id}
+                      variant={activeSection === "monitored" && activeSub === item.id ? "secondary" : "ghost"}
+                      size="sm"
+                      onClick={() => { setActiveSection("monitored"); }}
+                      className="w-full justify-start text-xs h-7 px-2 truncate"
+                      aria-label={`Monitored: ${item.title}`}
+                    >
+                      <Eye size={11} className="shrink-0 mr-1" />
+                      <span className="truncate">{item.title}</span>
+                    </Button>
+                  ))
+                )}
+              </div>
+            </section>
+
+            <section>
+              <p className="text-[10px] uppercase tracking-wider text-shell-text-tertiary px-2 mb-1.5">
+                History
+              </p>
+              <p className="text-[11px] text-shell-text-tertiary px-2 italic">
+                Coming soon
+              </p>
+            </section>
+
+            {/* Auth status at bottom */}
+            <div className="border-t border-white/5 px-3 py-2 shrink-0 mt-auto">
+              {authStatus.authenticated ? (
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
+                  <span className="text-xs text-shell-text-secondary truncate">
+                    u/{authStatus.username}
+                  </span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-shell-text-tertiary shrink-0" />
+                  <a
+                    href="/api/reddit/auth/login"
+                    className="text-xs text-accent hover:underline"
+                    aria-label="Connect Reddit account"
+                  >
+                    Not connected
+                  </a>
+                </div>
+              )}
+            </div>
+          </>
         )}
       </div>
     </nav>
@@ -1057,27 +1209,78 @@ export function RedditClientApp({ windowId: _windowId }: { windowId: string }) {
   /*  Layout                                                           */
   /* ---------------------------------------------------------------- */
 
-  // Mobile: show sidebar in feed view, thread view replaces everything
-  if (isMobile) {
-    if (view === "thread") {
-      return (
-        <div className="flex flex-col h-full overflow-hidden bg-shell-base text-shell-text">
-          {threadViewUI}
-        </div>
-      );
-    }
-    return (
-      <div className="flex flex-col h-full overflow-hidden bg-shell-base text-shell-text">
-        {sidebarUI}
-        {feedViewUI}
-      </div>
-    );
-  }
+  // On mobile, only slide to detail pane when a subreddit is actively selected.
+  // On desktop, keep existing behaviour (activeSub drives the detail pane).
+  const splitSelectedId = activeSub;
+
+  const handleSplitBack = useCallback(() => {
+    setActiveSub(null);
+    setView("feed");
+    setThread(null);
+    setConfirmDeleteThread(false);
+  }, []);
+
+  // Detail content: when in thread view show threadViewUI, otherwise feedViewUI
+  const detailContent = view === "thread" ? threadViewUI : feedViewUI;
 
   return (
-    <div className="flex h-full overflow-hidden bg-shell-base text-shell-text">
-      {sidebarUI}
-      {view === "feed" ? feedViewUI : threadViewUI}
+    <div className="flex flex-col h-full min-h-0 overflow-hidden bg-shell-base text-shell-text relative">
+      <MobileSplitView
+        selectedId={splitSelectedId}
+        onBack={handleSplitBack}
+        listTitle="Reddit"
+        detailTitle={activeSub ? `r/${activeSub}` : undefined}
+        listWidth={208}
+        list={sidebarUI}
+        detail={
+          splitSelectedId !== null
+            ? detailContent
+            : !isMobile
+            ? (
+              <div className="flex flex-col items-center justify-center h-full text-shell-text-tertiary">
+                <ScrollText size={36} className="mb-3 opacity-20" />
+                <p className="text-sm">Select a subreddit</p>
+              </div>
+            )
+            : null
+        }
+      />
+
+      {/* Add subreddit modal — bottom sheet on mobile, centred on desktop */}
+      {isMobile && addSubOpen && (
+        <div
+          className="absolute inset-0 z-50 flex items-end bg-black/50 backdrop-blur-sm"
+          onClick={() => setAddSubOpen(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Add subreddit"
+        >
+          <div
+            style={{ borderRadius: "20px 20px 0 0", width: "100%", background: "var(--shell-surface, #1a1a2e)", padding: "20px 16px 32px" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-sm font-semibold mb-3">Add Subreddit</p>
+            <div className="flex gap-2">
+              <Input
+                value={newSub}
+                onChange={(e) => setNewSub(e.target.value)}
+                placeholder="r/subreddit"
+                className="flex-1"
+                aria-label="New subreddit name"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") addSub();
+                  if (e.key === "Escape") setAddSubOpen(false);
+                }}
+                autoFocus
+              />
+              <Button onClick={addSub} aria-label="Confirm add subreddit">
+                <Check size={14} />
+                Add
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

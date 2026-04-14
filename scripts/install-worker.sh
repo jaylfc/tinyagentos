@@ -45,6 +45,18 @@ die() { printf '\033[1;31m[worker-install]\033[0m %s\n' "$*" >&2; exit 1; }
 log "os=$os_name arch=$arch controller=$CONTROLLER_URL name=$WORKER_NAME"
 log "install_dir=$INSTALL_DIR branch=$BRANCH"
 
+# --- helpers (defined early so later stages can use them) ----------------
+
+have_root_or_sudo() {
+    if [[ "$(id -u)" = "0" ]]; then
+        return 0
+    fi
+    if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+        return 0
+    fi
+    return 1
+}
+
 # --- system dependencies --------------------------------------------------
 
 ensure_linux_deps() {
@@ -56,8 +68,13 @@ ensure_linux_deps() {
             libtorrent-rasterbar-dev libboost-python-dev
     elif command -v dnf >/dev/null 2>&1; then
         log "installing dnf deps (python3, git, curl, libtorrent)"
-        sudo dnf install -y -q python3 python3-pip python3-virtualenv git curl \
-            libtorrent-rasterbar-devel boost-python3-devel
+        # Fedora 42+ dropped libtorrent-rasterbar-devel from the default
+        # repos. Torrent is optional for the worker (only used for model
+        # distribution) so we install it with --skip-unavailable and
+        # fall back to the core deps on failure.
+        sudo dnf install -y -q --skip-unavailable python3 python3-pip python3-virtualenv git curl \
+            libtorrent-rasterbar-devel boost-python3-devel || \
+        sudo dnf install -y -q python3 python3-pip python3-virtualenv git curl
     elif command -v pacman >/dev/null 2>&1; then
         log "installing pacman deps"
         sudo pacman -Sy --noconfirm --needed python python-pip git curl \
@@ -429,13 +446,19 @@ EOF
     fi
 }
 
-install_taos_ollama
-
 # --- clone / update the repo ---------------------------------------------
+# Must happen BEFORE install_taos_ollama so git clone gets an empty
+# directory to work with. install_taos_ollama then drops its bundled
+# Ollama into $INSTALL_DIR/backends/ollama inside the cloned repo.
 
 if [[ ! -d "$INSTALL_DIR/.git" ]]; then
     log "cloning $REPO into $INSTALL_DIR"
     mkdir -p "$(dirname "$INSTALL_DIR")"
+    # If INSTALL_DIR already exists but isn't a git repo (e.g. a previous
+    # partial install), move it aside so the clone can proceed.
+    if [[ -d "$INSTALL_DIR" ]]; then
+        mv "$INSTALL_DIR" "${INSTALL_DIR}.old.$(date +%s)"
+    fi
     git clone --depth 1 --branch "$BRANCH" "$REPO" "$INSTALL_DIR"
 else
     log "updating existing checkout"
@@ -443,6 +466,8 @@ else
 fi
 
 cd "$INSTALL_DIR"
+
+install_taos_ollama
 
 # --- python venv + worker-only deps --------------------------------------
 
@@ -460,8 +485,14 @@ log "installing worker python deps into .venv"
     fastapi \
     uvicorn \
     pyyaml \
-    pillow \
-    libtorrent
+    pillow
+
+# libtorrent is optional (only used for model torrent mesh). It isn't on
+# PyPI as a wheel for most platforms — it ships as the distro's
+# libtorrent-rasterbar package. Try pip in case a wheel is available;
+# silently skip if not. Worker still functions without it.
+./.venv/bin/pip install --quiet libtorrent 2>/dev/null || \
+    warn "libtorrent python bindings not available — torrent model mesh disabled (worker still functional)"
 
 # --- first-boot benchmark -----------------------------------------------
 
@@ -485,7 +516,10 @@ fi
 # The user-mode path is kept as a fallback for the rare environment
 # where sudo is genuinely unavailable.
 
-have_root_or_sudo() {
+# have_root_or_sudo is defined at the top of the script so early stages
+# (ollama systemd install) can use it too. The stanza below is retained
+# as a no-op so the original code structure stays intact.
+_unused_have_root_or_sudo() {
     if [[ "$(id -u)" = "0" ]]; then
         return 0
     fi

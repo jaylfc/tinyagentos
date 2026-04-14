@@ -30,7 +30,7 @@ class NotificationStore(BaseStore):
     SCHEMA = NOTIF_SCHEMA
 
     EVENT_TYPES = [
-        "worker.join", "worker.leave", "backend.up", "backend.down",
+        "worker.join", "worker.online", "worker.leave", "backend.up", "backend.down",
         "training.complete", "training.failed", "app.installed", "app.failed",
     ]
 
