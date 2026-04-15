@@ -28,8 +28,19 @@ async def knowledge_client(tmp_path):
     await app.state.qmd_client.init()
     await app.state.knowledge_store.init()
 
+    # Auth middleware requires a configured user — set up a test admin so
+    # all routes respond normally instead of returning 401.
+    app.state.auth.setup_user("admin", "Test Admin", "", "testpass")
+    _record = app.state.auth.find_user("admin")
+    _uid = _record["id"] if _record else ""
+    _token = app.state.auth.create_session(user_id=_uid, long_lived=True)
+
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        cookies={"taos_session": _token},
+    ) as c:
         yield c
 
     await app.state.knowledge_store.close()
