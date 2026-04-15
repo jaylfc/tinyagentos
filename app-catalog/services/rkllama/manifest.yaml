@@ -1,0 +1,32 @@
+id: rkllama
+name: rkllama (RK3588 NPU LLM)
+type: service
+version: 0.1.0
+description: "Ollama-compatible LLM server on Rockchip NPU — run RKNN models natively on RK3588"
+homepage: https://github.com/NotByAI/rkllama
+license: Apache-2.0
+
+requires:
+  ram_mb: 512
+  disk_mb: 500
+  ports: [8080]
+
+install:
+  method: script
+  script: scripts/install-rkllama.sh
+
+hardware_tiers:
+  arm-npu-16gb: full
+  arm-npu-32gb: full
+  arm-npu-64gb: full
+  x86-cuda-12gb: unsupported
+  cpu-only: unsupported
+
+lifecycle:
+  backend_type: rkllama
+  default_url: http://localhost:8080
+  auto_manage: true
+  keep_alive_minutes: 0
+  start_cmd: "systemctl start rkllama"
+  stop_cmd: "systemctl stop rkllama"
+  startup_timeout_seconds: 60
