@@ -8,7 +8,7 @@ from typing import Literal
 
 import yaml
 
-VALID_BACKEND_TYPES = {"rkllama", "ollama", "llama-cpp", "vllm", "exo", "mlx", "openai", "anthropic"}
+VALID_BACKEND_TYPES = {"rkllama", "ollama", "llama-cpp", "vllm", "exo", "mlx", "openai", "anthropic", "sd-cpp"}
 
 VALID_ON_WORKER_FAILURE = {"pause", "fallback", "escalate-immediately"}
 
