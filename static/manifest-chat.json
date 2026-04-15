@@ -1,6 +1,6 @@
 {
-  "name": "taOS Chat",
-  "short_name": "taOS Chat",
+  "name": "taOS talk",
+  "short_name": "taOS talk",
   "description": "Chat with your AI agents",
   "start_url": "/chat-pwa",
   "scope": "/chat-pwa",
