@@ -215,7 +215,12 @@ class BackendCatalog:
         return self._lifecycle_states.get(name, "running")
 
     def backends_startable_for_capability(self, capability: str) -> list[BackendEntry]:
-        """Backends that are stopped+auto_manage=true and could serve this capability."""
+        """Backends that are stopped+auto_manage=true and could serve this capability.
+
+        Returns a BackendEntry for each matching backend. If a backend has never
+        been successfully probed (no entry in _entries), a synthetic entry is
+        constructed from config so cold-start backends are not silently dropped.
+        """
         out = []
         for b in self._backends_config:
             if not b.get("enabled", True):
@@ -226,10 +231,24 @@ class BackendCatalog:
             if state != "stopped":
                 continue
             caps = self._capabilities_for_type(b["type"])
-            if capability in caps:
-                entry = self._entries.get(b["name"])
-                if entry:
-                    out.append(entry)
+            if capability not in caps:
+                continue
+            entry = self._entries.get(b["name"])
+            if entry is None:
+                entry = BackendEntry(
+                    name=b["name"],
+                    type=b["type"],
+                    url=b["url"],
+                    status="error",
+                    capabilities=caps,
+                    models=[],
+                    priority=b.get("priority", 99),
+                    lifecycle_state="stopped",
+                    auto_manage=True,
+                    keep_alive_minutes=b.get("keep_alive_minutes", 10),
+                    enabled=b.get("enabled", True),
+                )
+            out.append(entry)
         return out
 
     def find_backend_for_model(

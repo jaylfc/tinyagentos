@@ -74,6 +74,40 @@ async def test_stopped_backend_in_backends_startable():
 
 
 @pytest.mark.asyncio
+async def test_backends_startable_cold_start():
+    """A stopped+auto_manage backend with no probe entry (cold start) must still
+    appear in backends_startable_for_capability via a synthetic BackendEntry."""
+    probed = []
+
+    async def probe(backend: dict) -> dict:
+        probed.append(backend["name"])
+        # Simulate a backend that has never been reachable — no entry will
+        # exist in _entries after the first poll.
+        return {"status": "error", "response_ms": 0, "models": []}
+
+    backends = [
+        {
+            "name": "cold-sd", "type": "rknn-sd", "url": "http://cold-sd",
+            "priority": 1, "enabled": True, "auto_manage": True, "keep_alive_minutes": 5,
+        }
+    ]
+    catalog = BackendCatalog(backends=backends, probe_fn=probe, interval_seconds=3600)
+    # Mark stopped BEFORE start so the poll sees the state but the probe fails
+    catalog._lifecycle_states["cold-sd"] = "stopped"
+    await catalog.start()
+    try:
+        startable = catalog.backends_startable_for_capability("image-generation")
+        assert len(startable) == 1
+        entry = startable[0]
+        assert entry.name == "cold-sd"
+        assert entry.lifecycle_state == "stopped"
+        assert entry.auto_manage is True
+        assert entry.keep_alive_minutes == 5
+    finally:
+        await catalog.stop()
+
+
+@pytest.mark.asyncio
 async def test_set_and_get_lifecycle_state():
     """set_lifecycle_state and get_lifecycle_state round-trip correctly."""
     async def probe(backend: dict) -> dict:
