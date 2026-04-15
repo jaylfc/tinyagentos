@@ -45,11 +45,15 @@ log "install_dir=$INSTALL_DIR branch=$BRANCH port=$TAOS_PORT qmd_port=$TAOS_QMD_
 
 ensure_linux_deps() {
     if command -v apt-get >/dev/null 2>&1; then
-        log "installing apt deps (python3, venv, git, curl, libtorrent, nodejs, sqlite3)"
+        log "installing apt deps (python3, venv, git, curl, libtorrent, sqlite3)"
+        # nodejs/npm are intentionally excluded here: ensure_node22() installs
+        # Node 22 via NodeSource immediately after. Including apt's nodejs/npm
+        # causes "held broken packages" when NodeSource's nodejs is already
+        # present, because apt's npm conflicts with NodeSource's bundled npm.
         sudo apt-get update -qq
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
             python3 python3-venv python3-pip git curl ca-certificates \
-            libtorrent-rasterbar-dev libboost-python-dev sqlite3 nodejs npm
+            libtorrent-rasterbar-dev libboost-python-dev sqlite3
     elif command -v dnf >/dev/null 2>&1; then
         log "installing dnf deps (python3, git, curl, libtorrent, nodejs)"
         sudo dnf install -y -q python3 python3-pip python3-virtualenv git curl \
