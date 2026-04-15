@@ -874,12 +874,18 @@ function UpdatesSection() {
     try {
       const res = await fetch("/api/settings/update", { method: "POST" });
       if (res.ok) {
-        setStatus("Update applied. Restart the server to finish.");
-        setPendingRestart(true);
-        const r2 = await fetch("/api/settings/update-check");
-        if (r2.ok) setInfo(await r2.json());
-        const r3 = await fetch("/api/settings/update-status");
-        if (r3.ok) setUpdateStatus(await r3.json());
+        const data = await res.json().catch(() => ({})) as { status?: string; message?: string };
+        if (data.status === "restarting") {
+          // auto_restart is on — server will restart itself; show modal
+          setShowRestartModal(true);
+        } else {
+          setStatus(data.message ?? "Update applied. Restart the server to finish.");
+          setPendingRestart(true);
+          const r2 = await fetch("/api/settings/update-check");
+          if (r2.ok) setInfo(await r2.json());
+          const r3 = await fetch("/api/settings/update-status");
+          if (r3.ok) setUpdateStatus(await r3.json());
+        }
       } else {
         const err = await res.json().catch(() => ({}));
         setStatus((err as { error?: string }).error ?? "Update failed.");

@@ -572,6 +572,28 @@ async def apply_update(request: Request):
     if new_sha:
         write_pending_restart(new_sha)
 
+    # Check if the user wants auto-restart after update
+    auto_restart = False
+    settings_store = getattr(request.app.state, "desktop_settings", None)
+    if settings_store:
+        try:
+            from tinyagentos.auto_update import PREF_NAMESPACE as _PREF_NS
+            saved_prefs = await settings_store.get_preference("user", _PREF_NS)
+            if saved_prefs:
+                auto_restart = bool(saved_prefs.get("auto_restart", False))
+        except Exception:
+            pass
+
+    if auto_restart:
+        import asyncio as _asyncio
+        from tinyagentos.routes.system import _do_restart
+        _asyncio.create_task(_do_restart(request.app.state))
+        return {
+            "status": "restarting",
+            "output": output.strip(),
+            "message": "Update applied. Restarting now…",
+        }
+
     if hasattr(request.app.state, "notifications") and request.app.state.notifications:
         await request.app.state.notifications.add(
             "System updated",

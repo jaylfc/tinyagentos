@@ -287,6 +287,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
             project_dir=PROJECT_DIR,
             notif_store=notif_store,
             settings_store=desktop_settings,
+            app_state=app.state,
         )
         app.state.auto_updater = auto_updater
         try:

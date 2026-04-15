@@ -57,10 +57,11 @@ class AutoUpdateService:
     Start with ``start()`` during app lifespan, stop with ``stop()``.
     """
 
-    def __init__(self, project_dir: Path, notif_store, settings_store):
+    def __init__(self, project_dir: Path, notif_store, settings_store, app_state=None):
         self._project_dir = project_dir
         self._notif = notif_store
         self._settings = settings_store
+        self._app_state = app_state
         self._task: Optional[asyncio.Task] = None
         self._stop_event = asyncio.Event()
 
@@ -187,9 +188,8 @@ class AutoUpdateService:
         prefs = await self._get_prefs()
         if prefs.get("auto_restart"):
             from tinyagentos.routes.system import _do_restart
-            import asyncio
-            # Pass a minimal stub — _do_restart only needs notifications
-            asyncio.create_task(_do_restart(type("_S", (), {"notifications": self._notif})()))
+            app_state = self._app_state or type("_S", (), {"notifications": self._notif})()
+            asyncio.create_task(_do_restart(app_state))
         else:
             await self._notif.emit_event(
                 event_type="system.update",
