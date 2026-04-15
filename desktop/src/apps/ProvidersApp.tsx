@@ -538,6 +538,7 @@ function ProviderDetail({
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<TestResult>(null);
   const [lifecycleLoading, setLifecycleLoading] = useState(false);
+  const [keepAliveInput, setKeepAliveInput] = useState(provider.keep_alive_minutes ?? 10);
 
   const lifecycleState = provider.lifecycle_state ?? "running";
   const isLocal = !provider.source?.startsWith("worker:");
@@ -603,11 +604,13 @@ function ProviderDetail({
   }
 
   async function handlePatch(patch: { enabled?: boolean; auto_manage?: boolean; keep_alive_minutes?: number }) {
-    await fetch(`/api/providers/${encodeURIComponent(provider.name)}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(patch),
-    });
+    try {
+      await fetch(`/api/providers/${encodeURIComponent(provider.name)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+    } catch { /* ignore — onRefresh will re-sync state from server */ }
     onRefresh();
   }
 
@@ -881,8 +884,9 @@ function ProviderDetail({
                     type="number"
                     min={0}
                     max={60}
-                    value={provider.keep_alive_minutes ?? 10}
-                    onChange={(e) => handlePatch({ keep_alive_minutes: Number(e.target.value) })}
+                    value={keepAliveInput}
+                    onChange={(e) => setKeepAliveInput(Number(e.target.value))}
+                    onBlur={(e) => handlePatch({ keep_alive_minutes: Number(e.target.value) })}
                     className="w-14 text-[12px] bg-white/5 border border-white/10 rounded px-2 py-1 text-right text-shell-text"
                     aria-label="Keep alive minutes (0 = always on)"
                   />
@@ -934,7 +938,7 @@ export function ProvidersApp({ windowId: _windowId }: { windowId: string }) {
       }
     } catch { /* ignore */ }
     setLoading(false);
-  }, []);
+  }, [isMobile]);
 
   useEffect(() => {
     fetchProviders();
