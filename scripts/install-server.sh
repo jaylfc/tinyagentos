@@ -96,6 +96,53 @@ case "$os_name" in
     *)      die "unsupported OS: $os_name" ;;
 esac
 
+# --- node.js version guard ---------------------------------------------------
+# qmd requires Node >=22. Debian/Ubuntu (and Armbian vendor-kernel images) ship
+# Node 18 from apt, which causes node-llama-cpp to attempt a multi-hour native
+# compile from source instead of downloading a prebuilt binary. Detect this and
+# upgrade via NodeSource (ARM64 + x86_64 binaries, no kernel changes required).
+
+ensure_node22() {
+    local node_major=0
+    if command -v node >/dev/null 2>&1; then
+        node_major="$(node --version 2>/dev/null | sed 's/v//' | cut -d. -f1)"
+    fi
+
+    if [[ "$node_major" -ge 22 ]]; then
+        log "node $(node --version) — ok (>=22 required)"
+        return 0
+    fi
+
+    log "node ${node_major:-not found} is too old (need >=22) — upgrading to Node 22 LTS via NodeSource"
+
+    if command -v apt-get >/dev/null 2>&1; then
+        curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - \
+            || die "NodeSource setup script failed"
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs \
+            || die "apt-get install nodejs (22) failed"
+    elif command -v dnf >/dev/null 2>&1; then
+        curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo -E bash - \
+            || die "NodeSource setup script failed"
+        sudo dnf install -y nodejs \
+            || die "dnf install nodejs (22) failed"
+    elif command -v pacman >/dev/null 2>&1; then
+        # Arch ships a current node in extra — just upgrade whatever is installed
+        sudo pacman -Sy --noconfirm nodejs npm \
+            || warn "pacman upgrade of nodejs failed — qmd install may fail on old Node"
+    else
+        warn "cannot auto-upgrade Node $node_major — unsupported package manager"
+        warn "  install Node 22 manually then re-run this script"
+        warn "  see: https://nodejs.org/en/download"
+    fi
+
+    # Re-check after upgrade
+    if command -v node >/dev/null 2>&1; then
+        log "node now at $(node --version)"
+    fi
+}
+
+[[ "$os_name" == "Linux" ]] && ensure_node22
+
 # --- accelerator detection (advisory only — never auto-installs drivers) ----
 #
 # We never apt/dnf/pacman a GPU driver: most boxes don't have an
