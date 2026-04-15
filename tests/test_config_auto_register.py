@@ -22,14 +22,20 @@ lifecycle:
   startup_timeout_seconds: 90
 """)
     config = AppConfig()
-    auto_register_from_manifest(manifest, config)
+    added = auto_register_from_manifest(manifest, config)
+    assert added is True
     assert len(config.backends) == 1
     b = config.backends[0]
     assert b["name"] == "local-rknn-sd"
     assert b["type"] == "rknn-sd"
     assert b["url"] == "http://localhost:7863"
+    assert b["priority"] == 99
+    assert b["enabled"] is True
     assert b["auto_manage"] is True
     assert b["keep_alive_minutes"] == 10
+    assert b["start_cmd"] == "systemctl start tinyagentos-rknn-sd"
+    assert b["stop_cmd"] == "systemctl stop tinyagentos-rknn-sd"
+    assert b["startup_timeout_seconds"] == 90
 
 
 def test_auto_register_idempotent(tmp_path: Path):
@@ -48,8 +54,8 @@ lifecycle:
   startup_timeout_seconds: 90
 """)
     config = AppConfig()
-    auto_register_from_manifest(manifest, config)
-    auto_register_from_manifest(manifest, config)
+    assert auto_register_from_manifest(manifest, config) is True
+    assert auto_register_from_manifest(manifest, config) is False
     assert len(config.backends) == 1
 
 
@@ -71,8 +77,33 @@ lifecycle:
   startup_timeout_seconds: 90
 """)
     config = AppConfig()
-    auto_register_from_manifest(manifest, config)
+    added = auto_register_from_manifest(manifest, config)
+    assert added is True
     assert len(config.backends) == 1
     b = config.backends[0]
+    assert b["name"] == "local-rknn-stable-diffusion"
     assert b["type"] == "rknn-sd"
     assert b["url"] == "http://localhost:7863"
+    assert b["auto_manage"] is True
+    assert b["start_cmd"] == "systemctl start tinyagentos-rknn-sd"
+    assert b["stop_cmd"] == "systemctl stop tinyagentos-rknn-sd"
+
+
+def test_auto_register_keep_alive_zero(tmp_path: Path):
+    """keep_alive_minutes: 0 (always on) must be preserved — not treated as falsy."""
+    manifest = tmp_path / "rkllama.yaml"
+    manifest.write_text("""
+id: rkllama
+name: rkllama
+type: rkllama
+default_url: http://localhost:8080
+lifecycle:
+  auto_manage: true
+  keep_alive_minutes: 0
+  start_cmd: "systemctl start rkllama"
+  stop_cmd: "systemctl stop rkllama"
+""")
+    config = AppConfig()
+    auto_register_from_manifest(manifest, config)
+    b = config.backends[0]
+    assert b["keep_alive_minutes"] == 0, "0 means always-on; must not fall back to 10"

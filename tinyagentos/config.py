@@ -186,16 +186,21 @@ def auto_register_from_manifest(manifest_path: Path, config: "AppConfig") -> boo
     data = yaml.safe_load(manifest_path.read_text())
     lifecycle = data.get("lifecycle", {})
 
-    # Resolve backend_type: prefer lifecycle.backend_type for catalog manifests
-    # where the top-level type is "service" (catalog entry type, not backend type).
+    # Resolve backend_type and default_url: for catalog manifests (type: service)
+    # the actual backend type and URL live under the lifecycle block.
+    # For flat manifests the top-level fields are used directly.
     top_type = data.get("type", "")
-    backend_type = lifecycle.get("backend_type") or (top_type if top_type != "service" else "")
-    default_url = data.get("default_url") or lifecycle.get("default_url", "")
+    is_catalog = top_type == "service"
+    backend_type = lifecycle.get("backend_type") or (top_type if not is_catalog else "")
+    default_url = (lifecycle.get("default_url") if is_catalog else None) or data.get("default_url", "")
     name = f"local-{data.get('id', backend_type)}"
 
     if any(b.get("name") == name for b in config.backends):
         return False
 
+    # keep_alive_minutes: 0 means "never auto-stop" (always on).
+    # Downstream consumers must check `== 0` or `is not None`, NOT truthiness,
+    # because 0 is a valid and intentional value.
     entry: dict = {
         "name": name,
         "type": backend_type,
