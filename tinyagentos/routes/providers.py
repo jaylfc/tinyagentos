@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from tinyagentos.backend_adapters import get_adapter
 from tinyagentos.config import save_config_locked, VALID_BACKEND_TYPES
+from tinyagentos.lifecycle_manager import LifecycleManager
 
 router = APIRouter()
 
@@ -38,6 +39,14 @@ class ProviderTest(BaseModel):
     type: str
     url: str
 
+class ProviderPatch(BaseModel):
+    enabled: bool | None = None
+    auto_manage: bool | None = None
+    keep_alive_minutes: int | None = None
+
+class ProviderStop(BaseModel):
+    force: bool = False
+
 @router.get("/api/providers")
 async def list_providers(request: Request):
     """List every provider the controller knows about.
@@ -61,6 +70,7 @@ async def list_providers(request: Request):
     providers = []
 
     # 1) Controller-local providers (live health probe)
+    catalog = getattr(request.app.state, "backend_catalog", None)
     for backend in config.backends:
         status = "unknown"
         response_ms = 0
@@ -73,12 +83,17 @@ async def list_providers(request: Request):
             models = result.get("models", [])
         except Exception:
             status = "error"
+        lifecycle_state = catalog.get_lifecycle_state(backend["name"]) if catalog else "running"
         entry = {
             **backend,
             "status": status,
             "response_ms": response_ms,
             "models": models,
             "source": "local",
+            "lifecycle_state": lifecycle_state,
+            "auto_manage": backend.get("auto_manage", False),
+            "keep_alive_minutes": backend.get("keep_alive_minutes", 10),
+            "enabled": backend.get("enabled", True),
         }
         entry["category"] = _categorise(entry)
         providers.append(entry)
@@ -116,11 +131,28 @@ async def list_providers(request: Request):
 
 @router.post("/api/providers/test")
 async def test_provider(request: Request, body: ProviderTest):
-    """Test connectivity to a provider before saving."""
+    """Test connectivity to a provider. Auto-starts if stopped and auto_manage is on."""
     if not body.url:
         return JSONResponse({"error": "URL required"}, status_code=400)
     if body.type not in VALID_BACKEND_TYPES:
         return JSONResponse({"error": f"Invalid type. Must be one of: {sorted(VALID_BACKEND_TYPES)}"}, status_code=400)
+
+    # Auto-start if the provider is stopped and auto_manage is enabled
+    config = request.app.state.config
+    backend = next(
+        (b for b in config.backends if b.get("url") == body.url and b.get("type") == body.type),
+        None,
+    )
+    if backend and backend.get("auto_manage") and backend.get("enabled", True):
+        _catalog = getattr(request.app.state, "backend_catalog", None)
+        _lifecycle = getattr(request.app.state, "lifecycle_manager", None)
+        if _catalog and _lifecycle:
+            if _catalog.get_lifecycle_state(backend["name"]) == "stopped":
+                try:
+                    await _lifecycle.start(backend["name"])
+                except Exception as e:
+                    return JSONResponse({"reachable": False, "error": f"Auto-start failed: {e}"})
+
     try:
         adapter = get_adapter(body.type)
         http_client = request.app.state.http_client
@@ -151,6 +183,54 @@ async def add_provider(request: Request, body: ProviderCreate):
     if proxy and proxy.is_running():
         proxy.write_config(config.backends)
     return {"status": "added", "name": body.name}
+
+@router.patch("/api/providers/{name}")
+async def patch_provider(request: Request, name: str, body: ProviderPatch):
+    """Update lifecycle settings for a local provider."""
+    config = request.app.state.config
+    backend = next((b for b in config.backends if b.get("name") == name), None)
+    if backend is None:
+        return JSONResponse({"error": f"Provider '{name}' not found"}, status_code=404)
+    if body.enabled is not None:
+        backend["enabled"] = body.enabled
+    if body.auto_manage is not None:
+        backend["auto_manage"] = body.auto_manage
+    if body.keep_alive_minutes is not None:
+        backend["keep_alive_minutes"] = body.keep_alive_minutes
+    await save_config_locked(config, config.config_path)
+    return {"status": "updated", "name": name}
+
+
+@router.post("/api/providers/{name}/start")
+async def start_provider(request: Request, name: str):
+    """Manually start a stopped provider."""
+    config = request.app.state.config
+    if not any(b.get("name") == name for b in config.backends):
+        return JSONResponse({"error": f"Provider '{name}' not found"}, status_code=404)
+    lifecycle: LifecycleManager = getattr(request.app.state, "lifecycle_manager", None)
+    if lifecycle is None:
+        return JSONResponse({"error": "Lifecycle manager not available"}, status_code=503)
+    try:
+        await lifecycle.start(name)
+        return {"status": "started", "name": name}
+    except TimeoutError as e:
+        return JSONResponse({"error": str(e)}, status_code=504)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@router.post("/api/providers/{name}/stop")
+async def stop_provider(request: Request, name: str, body: ProviderStop):
+    """Gracefully stop (or force-kill) a running provider."""
+    config = request.app.state.config
+    if not any(b.get("name") == name for b in config.backends):
+        return JSONResponse({"error": f"Provider '{name}' not found"}, status_code=404)
+    lifecycle: LifecycleManager = getattr(request.app.state, "lifecycle_manager", None)
+    if lifecycle is None:
+        return JSONResponse({"error": "Lifecycle manager not available"}, status_code=503)
+    await lifecycle.drain_and_stop(name, force=body.force)
+    return {"status": "stopped", "name": name}
+
 
 @router.delete("/api/providers/{name}")
 async def delete_provider(request: Request, name: str):
