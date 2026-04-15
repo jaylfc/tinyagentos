@@ -154,6 +154,7 @@ function ProgressBar({ value, max }: { value: number; max: number }) {
 function SystemInfoSection() {
   const [info, setInfo] = useState<SystemInfo>(PLACEHOLDER_SYSTEM);
   const [loading, setLoading] = useState(false);
+  const [showRestartModal, setShowRestartModal] = useState(false);
 
   const detect = useCallback(async () => {
     setLoading(true);
@@ -244,16 +245,37 @@ function SystemInfoSection() {
           </tbody>
         </table>
       </div>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={detect}
-        disabled={loading}
-        className="mt-3"
-      >
-        <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-        Re-detect Hardware
-      </Button>
+      <div className="mt-3 flex items-center gap-2 flex-wrap">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={detect}
+          disabled={loading}
+        >
+          <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+          Re-detect Hardware
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={async () => {
+            setShowRestartModal(true);
+            try {
+              await fetch("/api/system/restart/prepare", { method: "POST" });
+            } catch { /* modal polls status */ }
+          }}
+          aria-label="Restart taOS server"
+        >
+          <RefreshCw size={14} />
+          Restart Server
+        </Button>
+      </div>
+      <p className="mt-2 text-xs text-shell-text-tertiary">
+        Restart the server to apply settings changes that require a reload.
+      </p>
+      {showRestartModal && (
+        <RestartProgressModal onClose={() => setShowRestartModal(false)} />
+      )}
     </section>
   );
 }
@@ -735,9 +757,9 @@ function RestartProgressModal({
         <h3 className="text-base font-semibold">
           {serverBack
             ? "Restarted — reloading…"
-            : orchStatus?.phase === "restarting"
-            ? "Restarting server…"
-            : "Preparing agents for restart"}
+            : agentEntries.length > 0
+            ? "Preparing agents for restart"
+            : "Restarting server…"}
         </h3>
 
         {agentEntries.length > 0 && (
