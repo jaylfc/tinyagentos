@@ -132,6 +132,7 @@ function StatusPill({ status }: { status: string }) {
 const LIFECYCLE_PILL: Record<string, string> = {
   running:  "bg-emerald-500/20 text-emerald-400",
   stopped:  "bg-zinc-500/20 text-zinc-400",
+  error:    "bg-red-500/20 text-red-400",
   starting: "bg-blue-500/20 text-blue-400",
   draining: "bg-amber-500/20 text-amber-400",
   stopping: "bg-amber-500/20 text-amber-400",
@@ -140,6 +141,7 @@ const LIFECYCLE_PILL: Record<string, string> = {
 const LIFECYCLE_LABEL: Record<string, string> = {
   running:  "Running",
   stopped:  "Stopped",
+  error:    "Error",
   starting: "Starting…",
   draining: "Draining…",
   stopping: "Stopping…",
@@ -634,23 +636,23 @@ function ProviderDetail({
           </div>
           {/* Action buttons — lifecycle state aware */}
           <div className="flex items-center gap-1 shrink-0">
-            {isLocal && lifecycleState === "stopped" && (
+            {isLocal && provider.auto_manage && lifecycleState === "stopped" && (
               <Button size="sm" variant="outline" onClick={handleStart} disabled={lifecycleLoading}
                 aria-label={`Start provider ${provider.name}`}>
                 {lifecycleLoading ? "Starting…" : "Start"}
               </Button>
             )}
-            {isLocal && lifecycleState === "running" && (
+            {isLocal && provider.auto_manage && lifecycleState === "running" && (
+              <Button size="sm" variant="outline" onClick={() => handleStop(false)} disabled={lifecycleLoading}
+                aria-label={`Stop provider ${provider.name}`}>
+                Stop
+              </Button>
+            )}
+            {isLocal && provider.auto_manage && isTransitional && (
               <>
-                <Button size="sm" variant="outline" onClick={handleTest} disabled={testing}
-                  aria-label={`Test connection for ${provider.name}`}>
-                  <RefreshCw size={13} className={testing ? "animate-spin" : ""} />
-                  {testing ? "Testing..." : "Test"}
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => handleStop(false)} disabled={lifecycleLoading}
-                  aria-label={`Stop provider ${provider.name}`}>
-                  Stop
-                </Button>
+                <span className="text-[11px] text-shell-text-tertiary px-2">
+                  {LIFECYCLE_LABEL[lifecycleState]}
+                </span>
                 <button
                   onClick={() => handleStop(true)}
                   disabled={lifecycleLoading}
@@ -661,20 +663,13 @@ function ProviderDetail({
                 </button>
               </>
             )}
-            {isLocal && isTransitional && (
-              <span className="text-[11px] text-shell-text-tertiary px-2">
-                {LIFECYCLE_LABEL[lifecycleState]}
-              </span>
-            )}
+            <Button size="sm" variant="outline" onClick={handleTest} disabled={testing}
+              aria-label={`Test connection for ${provider.name}`}>
+              <RefreshCw size={13} className={testing ? "animate-spin" : ""} />
+              {testing ? "Testing..." : "Test"}
+            </Button>
             {(!isLocal || lifecycleState === "running" || !provider.lifecycle_state) && (
               <>
-                {!isLocal && (
-                  <Button size="sm" variant="outline" onClick={handleTest} disabled={testing}
-                    aria-label={`Test connection for ${provider.name}`}>
-                    <RefreshCw size={13} className={testing ? "animate-spin" : ""} />
-                    {testing ? "Testing..." : "Test"}
-                  </Button>
-                )}
                 <Button size="sm" variant="outline" onClick={onEdit} aria-label={`Edit provider ${provider.name}`}>
                   <Edit size={13} />
                   Edit
@@ -739,6 +734,8 @@ function ProviderDetail({
           >
             {testResult.reachable
               ? `Connected — ${testResult.response_ms ?? 0} ms · ${testResult.models?.length ?? 0} models found`
+              : (lifecycleState === "stopping" || lifecycleState === "draining")
+              ? "Provider is shutting down. Wait for it to stop before testing."
               : lifecycleState === "stopped" && (provider.auto_manage ?? false)
               ? "Starting service…"
               : lifecycleState === "stopped"
