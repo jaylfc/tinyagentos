@@ -810,6 +810,7 @@ function UpdatesSection() {
   const [prefs, setPrefs] = useState<AutoUpdatePrefs>({ check_enabled: true, auto_apply: false, auto_restart: false });
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
   const [showRestartModal, setShowRestartModal] = useState(false);
+  const [pendingRestart, setPendingRestart] = useState(false);
 
   // Load current prefs + info on mount
   useEffect(() => {
@@ -874,6 +875,7 @@ function UpdatesSection() {
       const res = await fetch("/api/settings/update", { method: "POST" });
       if (res.ok) {
         setStatus("Update applied. Restart the server to finish.");
+        setPendingRestart(true);
         const r2 = await fetch("/api/settings/update-check");
         if (r2.ok) setInfo(await r2.json());
         const r3 = await fetch("/api/settings/update-status");
@@ -936,11 +938,15 @@ function UpdatesSection() {
             <RefreshCw size={14} className={checking ? "animate-spin" : ""} />
             {checking ? "Checking..." : "Check Now"}
           </Button>
-          {info?.has_updates && (
+          {pendingRestart ? (
+            <Button size="sm" onClick={triggerRestart} aria-label="Restart server to apply update">
+              Restart Now
+            </Button>
+          ) : info?.has_updates ? (
             <Button size="sm" onClick={applyUpdate} disabled={applying}>
               {applying ? "Installing..." : "Install Update"}
             </Button>
-          )}
+          ) : null}
         </div>
 
         {status && (
@@ -994,7 +1000,6 @@ function UpdatesSection() {
             <Switch
               checked={prefs.auto_restart ?? false}
               onCheckedChange={(v) => savePrefs({ ...prefs, auto_restart: v })}
-              disabled={!(prefs.auto_apply ?? false)}
               aria-label="Automatically restart after update"
             />
           </div>

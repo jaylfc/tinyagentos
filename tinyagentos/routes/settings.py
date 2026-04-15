@@ -432,22 +432,38 @@ async def set_container_runtime(request: Request):
 async def check_for_updates(request: Request):
     """Check if a newer version of TinyAgentOS is available on GitHub."""
     import asyncio
-    proc = await asyncio.create_subprocess_exec(
-        "git", "fetch", "--dry-run", "origin", "master",
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
-        cwd=str(Path(__file__).parent.parent.parent),
-    )
-    stdout, _ = await proc.communicate()
-    output = stdout.decode() if stdout else ""
-    has_updates = bool(output.strip())
+    project_dir = str(Path(__file__).parent.parent.parent)
 
-    # Get current commit
-    proc2 = await asyncio.create_subprocess_exec(
+    # Fetch remote refs so origin/master is current, then compare SHAs.
+    # Parsing dry-run output is unreliable on shallow clones / no tracking branch.
+    fetch_proc = await asyncio.create_subprocess_exec(
+        "git", "fetch", "origin", "master",
+        stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+        cwd=project_dir,
+    )
+    await fetch_proc.communicate()
+
+    async def _rev_parse(ref: str) -> str:
+        p = await asyncio.create_subprocess_exec(
+            "git", "rev-parse", ref,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+            cwd=project_dir,
+        )
+        out, _ = await p.communicate()
+        return out.decode().strip() if out else ""
+
+    local_sha, remote_sha = await asyncio.gather(
+        _rev_parse("HEAD"),
+        _rev_parse("origin/master"),
+    )
+    has_updates = bool(local_sha and remote_sha and local_sha != remote_sha)
+
+    log_proc = await asyncio.create_subprocess_exec(
         "git", "log", "-1", "--format=%h %s",
         stdout=asyncio.subprocess.PIPE,
-        cwd=str(Path(__file__).parent.parent.parent),
+        cwd=project_dir,
     )
-    stdout2, _ = await proc2.communicate()
+    stdout2, _ = await log_proc.communicate()
     current = stdout2.decode().strip() if stdout2 else "unknown"
 
     return {
@@ -513,8 +529,9 @@ async def force_update_check(request: Request):
 
 @router.post("/api/settings/update")
 async def apply_update(request: Request):
-    """Pull latest TinyAgentOS code from GitHub and restart."""
+    """Pull latest TinyAgentOS code from GitHub."""
     import asyncio
+    from tinyagentos.restart_orchestrator import write_pending_restart
     project_dir = Path(__file__).parent.parent.parent
 
     # Git pull
@@ -529,17 +546,32 @@ async def apply_update(request: Request):
     if proc.returncode != 0:
         return JSONResponse({"error": f"Update failed: {output}"}, status_code=500)
 
-    # Pip install to pick up new deps
-    venv_pip = project_dir / "venv" / "bin" / "pip"
-    pip_cmd = str(venv_pip) if venv_pip.exists() else "pip"
+    # Pip install to pick up new deps — prefer .venv then venv, fall back to system pip
+    for candidate in (project_dir / ".venv" / "bin" / "pip", project_dir / "venv" / "bin" / "pip"):
+        if candidate.exists():
+            pip_cmd = str(candidate)
+            break
+    else:
+        pip_cmd = "pip"
     proc2 = await asyncio.create_subprocess_exec(
         pip_cmd, "install", "-e", ".", "-q",
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+        stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
         cwd=str(project_dir),
     )
     await proc2.communicate()
 
-    # Notify
+    # Record the new SHA so the restart modal can confirm the update was applied
+    # and the Updates section can show the pending-restart banner.
+    sha_proc = await asyncio.create_subprocess_exec(
+        "git", "rev-parse", "HEAD",
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+        cwd=str(project_dir),
+    )
+    sha_out, _ = await sha_proc.communicate()
+    new_sha = sha_out.decode().strip() if sha_out else ""
+    if new_sha:
+        write_pending_restart(new_sha)
+
     if hasattr(request.app.state, "notifications") and request.app.state.notifications:
         await request.app.state.notifications.add(
             "System updated",
