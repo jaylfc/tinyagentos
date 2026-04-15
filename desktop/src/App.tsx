@@ -253,15 +253,20 @@ export function App() {
         />
         {/* Main content area */}
         <div className="flex-1 relative overflow-hidden">
-          {activeWindowId && activeWindow ? (
-            <MobileAppWindow
-              appId={activeWindow.appId}
-              windowId={activeWindowId}
-              onClose={handleMobileClose}
-              onMinimise={handleMobileMinimise}
-            />
-          ) : (
+          {/* Home pages — always mounted so widgets never re-initialise on return */}
+          <div style={{ position: "absolute", inset: 0, display: activeWindowId && activeWindow ? "none" : "flex", flexDirection: "column" }}>
             <MobileHomePages onOpenApp={handleMobileOpenApp} />
+          </div>
+          {/* App window — mounted only while open */}
+          {activeWindowId && activeWindow && (
+            <div style={{ position: "absolute", inset: 0 }}>
+              <MobileAppWindow
+                appId={activeWindow.appId}
+                windowId={activeWindowId}
+                onClose={handleMobileClose}
+                onMinimise={handleMobileMinimise}
+              />
+            </div>
           )}
         </div>
       </div>

@@ -99,8 +99,18 @@ async def client(app):
     if canvas_store._db is not None:
         await canvas_store.close()
     await canvas_store.init()
+    # Auth middleware requires a configured user — set up a test admin so all
+    # routes respond normally instead of returning 401 needs_onboarding.
+    app.state.auth.setup_user("admin", "Test Admin", "", "testpass")
+    _record = app.state.auth.find_user("admin")
+    _uid = _record["id"] if _record else ""
+    _token = app.state.auth.create_session(user_id=_uid, long_lived=True)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        cookies={"taos_session": _token},
+    ) as c:
         yield c
     await canvas_store.close()
     await chat_channels.close()
@@ -242,8 +252,16 @@ async def client_with_qmd(app_with_qmd):
     if canvas_store._db is not None:
         await canvas_store.close()
     await canvas_store.init()
+    app_with_qmd.state.auth.setup_user("admin", "Test Admin", "", "testpass")
+    _record = app_with_qmd.state.auth.find_user("admin")
+    _uid = _record["id"] if _record else ""
+    _token = app_with_qmd.state.auth.create_session(user_id=_uid, long_lived=True)
     transport = ASGITransport(app=app_with_qmd)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        cookies={"taos_session": _token},
+    ) as c:
         yield c
     await canvas_store.close()
     await chat_channels.close()

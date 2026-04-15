@@ -150,10 +150,13 @@ async def auth_client(app):
 
 class TestAuthRoutes:
     @pytest.mark.asyncio
-    async def test_login_page_accessible(self, auth_client):
+    async def test_login_page_accessible(self, app, auth_client):
+        # Auth must be configured so the route renders the login form instead
+        # of redirecting to /auth/setup.
+        app.state.auth.setup_user("admin", "Admin", "", "adminpass")
         resp = await auth_client.get("/auth/login")
         assert resp.status_code == 200
-        assert "Sign In" in resp.text
+        assert "Sign in" in resp.text
 
     @pytest.mark.asyncio
     async def test_login_wrong_password(self, app, auth_client):
@@ -175,7 +178,7 @@ class TestAuthRoutes:
             follow_redirects=False,
         )
         assert resp.status_code == 303
-        assert resp.headers["location"] == "/"
+        assert resp.headers["location"] == "/desktop"
         assert "taos_session" in resp.headers.get("set-cookie", "")
 
     @pytest.mark.asyncio
@@ -198,28 +201,28 @@ class TestAuthRoutes:
         assert app.state.auth.is_configured() is False
         resp = await auth_client.post(
             "/auth/setup",
-            data={"password": "newpass"},
+            data={"username": "admin", "full_name": "Admin", "email": "", "password": "newpass"},
             follow_redirects=False,
         )
         assert resp.status_code == 303
         assert app.state.auth.is_configured() is True
-        ok, _ = app.state.auth.check_password("newpass")
+        ok, _ = app.state.auth.check_password("newpass", username="admin")
         assert ok is True
 
     @pytest.mark.asyncio
     async def test_auth_setup_rejects_if_already_configured(self, app, auth_client):
-        app.state.auth.set_password("existing")
+        app.state.auth.setup_user("admin", "Admin", "", "existing")
         resp = await auth_client.post(
             "/auth/setup",
-            data={"password": "newpass"},
+            json={"username": "other", "full_name": "", "email": "", "password": "newpass"},
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 409
 
     @pytest.mark.asyncio
     async def test_auth_setup_rejects_empty_password(self, app, auth_client):
         resp = await auth_client.post(
             "/auth/setup",
-            data={"password": ""},
+            json={"username": "admin", "full_name": "", "email": "", "password": ""},
         )
         assert resp.status_code == 400
 

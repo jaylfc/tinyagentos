@@ -393,7 +393,7 @@ class AuthManager:
         if not caller or not caller.get("is_admin"):
             raise ValueError("caller is not an admin")
         if username == by_admin_username:
-            raise ValueError("cannot delete your own account")
+            raise ValueError("cannot delete yourself")
         data = self._read_users()
         users = data.get("users", [])
         target = None
