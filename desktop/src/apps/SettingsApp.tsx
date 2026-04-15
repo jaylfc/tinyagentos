@@ -661,6 +661,7 @@ interface UpdateInfo {
   has_updates: boolean;
   current_version: string;
   current_commit: string;
+  new_commit?: string | null;
 }
 
 interface AutoUpdatePrefs {
@@ -928,9 +929,20 @@ function UpdatesSection() {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium">taOS</p>
-            <p className="text-xs text-shell-text-tertiary tabular-nums">
-              {info?.current_commit ?? "v0.1.0-dev"}
-            </p>
+            {info?.has_updates && info.new_commit ? (
+              <div className="flex flex-col gap-0.5">
+                <p className="text-xs text-shell-text-tertiary tabular-nums">
+                  <span className="text-white/40">installed </span>{info.current_commit}
+                </p>
+                <p className="text-xs text-amber-300/90 tabular-nums">
+                  <span className="text-amber-300/50">available </span>{info.new_commit}
+                </p>
+              </div>
+            ) : (
+              <p className="text-xs text-shell-text-tertiary tabular-nums">
+                {info?.current_commit ?? "v0.1.0-dev"}
+              </p>
+            )}
           </div>
           {info?.has_updates && (
             <span className="text-[10px] px-2 py-1 rounded-full font-semibold bg-amber-500/20 text-amber-300">

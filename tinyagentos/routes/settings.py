@@ -458,18 +458,23 @@ async def check_for_updates(request: Request):
     )
     has_updates = bool(local_sha and remote_sha and local_sha != remote_sha)
 
-    log_proc = await asyncio.create_subprocess_exec(
-        "git", "log", "-1", "--format=%h %s",
-        stdout=asyncio.subprocess.PIPE,
-        cwd=project_dir,
-    )
-    stdout2, _ = await log_proc.communicate()
-    current = stdout2.decode().strip() if stdout2 else "unknown"
+    async def _log1(ref: str) -> str:
+        p = await asyncio.create_subprocess_exec(
+            "git", "log", "-1", "--format=%h %s", ref,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+            cwd=project_dir,
+        )
+        out, _ = await p.communicate()
+        return out.decode().strip() if out else "unknown"
+
+    current = await _log1("HEAD")
+    new_commit = await _log1("origin/master") if has_updates else None
 
     return {
         "has_updates": has_updates,
         "current_version": "0.1.0",
         "current_commit": current,
+        "new_commit": new_commit,
     }
 
 
