@@ -11,7 +11,7 @@ EXEMPT_PATHS = {"/auth/login", "/auth/setup", "/auth/status", "/auth/me", "/auth
 # through the normal auth gate so an unauthenticated request hits a
 # server-side redirect instead of rendering whatever stale bundle the
 # browser cached.
-EXEMPT_PREFIXES = ("/static/", "/desktop/assets/", "/chat-pwa/assets/")
+EXEMPT_PREFIXES = ("/static/", "/desktop/assets/", "/chat-pwa/assets/", "/ws/")
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -45,6 +45,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # Redirect to login for browsers, 401 for API calls
         accept = request.headers.get("accept", "")
         if "text/html" in accept:
-            return RedirectResponse("/auth/login", status_code=303)
+            next_param = f"?next={path}" if path != "/" else ""
+            return RedirectResponse(f"/auth/login{next_param}", status_code=303)
 
         return JSONResponse({"error": "Authentication required"}, status_code=401)
