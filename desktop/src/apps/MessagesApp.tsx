@@ -104,7 +104,7 @@ const EMOJI_PICKER = ["👍", "❤️", "😂", "🎉", "🤔", "👀", "🚀", 
 /*  MessagesApp                                                        */
 /* ------------------------------------------------------------------ */
 
-export function MessagesApp({ windowId: _windowId }: { windowId: string }) {
+export function MessagesApp({ windowId: _windowId, title }: { windowId: string; title?: string }) {
   const isMobile = useIsMobile();
 
   const [channels, setChannels] = useState<Channel[]>([]);
@@ -765,20 +765,41 @@ export function MessagesApp({ windowId: _windowId }: { windowId: string }) {
     <div className="flex flex-col h-full bg-shell-base text-white overflow-hidden">
       {/* Toolbar — hidden on mobile when a channel is selected */}
       {showToolbar && (
-        <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/[0.06] shrink-0">
-          <div className="flex items-center gap-2 text-sm font-medium text-white/80">
-            <MessageCircle size={15} />
-            {!isMobile && "Messages"}
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setShowCreate(true)}
-            className="h-7 w-7"
-            aria-label="New channel"
-          >
-            <Plus size={15} />
-          </Button>
+        <div className="relative flex items-center px-3 py-2.5 border-b border-white/[0.06] shrink-0">
+          {title ? (
+            <>
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <span className="text-sm font-semibold text-white/90">{title}</span>
+              </div>
+              <div className="ml-auto">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setShowCreate(true)}
+                  className="h-7 w-7"
+                  aria-label="New channel"
+                >
+                  <Plus size={15} />
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 text-sm font-medium text-white/80">
+                <MessageCircle size={15} />
+                {!isMobile && "Messages"}
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setShowCreate(true)}
+                className="h-7 w-7 ml-auto"
+                aria-label="New channel"
+              >
+                <Plus size={15} />
+              </Button>
+            </>
+          )}
         </div>
       )}
 
