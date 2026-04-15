@@ -697,6 +697,26 @@ function RestartProgressModal({
     let cancelled = false;
     let pollOrch: ReturnType<typeof setInterval> | null = null;
     let pollServer: ReturnType<typeof setInterval> | null = null;
+    let serverPollingStarted = false;
+
+    const startServerPoll = () => {
+      if (serverPollingStarted || cancelled) return;
+      serverPollingStarted = true;
+      if (pollOrch) clearInterval(pollOrch);
+      pollServer = setInterval(async () => {
+        if (cancelled) return;
+        try {
+          const r2 = await fetch("/api/settings/update-status");
+          if (r2.ok) {
+            setServerBack(true);
+            if (pollServer) clearInterval(pollServer);
+            setTimeout(() => {
+              if (!cancelled) window.location.reload();
+            }, 500);
+          }
+        } catch { /* server still restarting */ }
+      }, 2000);
+    };
 
     pollOrch = setInterval(async () => {
       if (cancelled) return;
@@ -705,24 +725,13 @@ function RestartProgressModal({
         if (r.ok) {
           const data: RestartOrchestratorStatus = await r.json();
           setOrchStatus(data);
-          if (data.phase === "restarting") {
-            if (pollOrch) clearInterval(pollOrch);
-            pollServer = setInterval(async () => {
-              if (cancelled) return;
-              try {
-                const r2 = await fetch("/api/settings/update-status");
-                if (r2.ok) {
-                  setServerBack(true);
-                  if (pollServer) clearInterval(pollServer);
-                  setTimeout(() => {
-                    if (!cancelled) window.location.reload();
-                  }, 500);
-                }
-              } catch { /* server still restarting */ }
-            }, 2000);
-          }
+          // Switch to server-up polling once the restart is in flight.
+          if (data.phase === "restarting") startServerPoll();
         }
-      } catch { /* ignore */ }
+      } catch {
+        // Fetch failed — server has gone down. Start polling for it to come back.
+        startServerPoll();
+      }
     }, 1000);
 
     return () => {

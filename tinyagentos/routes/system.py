@@ -96,18 +96,22 @@ async def _do_restart(app_state) -> None:
                         )
                         await restart_proc.wait()
                         if restart_proc.returncode == 0:
-                            sys.exit(0)
+                            # systemctl restart succeeded — it will kill and
+                            # relaunch us; exit cleanly so the new invocation
+                            # starts fresh under the same systemd unit.
+                            os._exit(0)
                         # systemctl restart failed (e.g. interactive auth required).
-                        # Fall through to os.execv — systemd keeps tracking the
-                        # same PID and the new process picks up the updated code.
+                        # Fall through to os._exit so systemd's Restart=always
+                        # picks us back up with the updated code on disk.
+                        os._exit(1)
                 except Exception:
                     pass
 
     # 2. Docker
     if os.path.exists("/.dockerenv"):
-        sys.exit(0)
+        os._exit(0)
 
-    # 3. execv
+    # 3. execv (no service manager — replace ourselves in-place)
     try:
         os.execv(sys.executable, [sys.executable] + sys.argv)
     except Exception as exc:
