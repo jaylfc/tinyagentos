@@ -228,8 +228,11 @@ async def stop_provider(request: Request, name: str, body: ProviderStop):
     lifecycle: LifecycleManager = getattr(request.app.state, "lifecycle_manager", None)
     if lifecycle is None:
         return JSONResponse({"error": "Lifecycle manager not available"}, status_code=503)
-    await lifecycle.drain_and_stop(name, force=body.force)
-    return {"status": "stopped", "name": name}
+    try:
+        await lifecycle.drain_and_stop(name, force=body.force)
+        return {"status": "stopped", "name": name}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 
 @router.delete("/api/providers/{name}")

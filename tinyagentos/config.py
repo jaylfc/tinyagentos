@@ -214,7 +214,7 @@ def auto_register_from_manifest(manifest_path: Path, config: "AppConfig") -> boo
         entry["start_cmd"] = lifecycle["start_cmd"]
     if lifecycle.get("stop_cmd"):
         entry["stop_cmd"] = lifecycle["stop_cmd"]
-    if lifecycle.get("startup_timeout_seconds"):
+    if lifecycle.get("startup_timeout_seconds") is not None:
         entry["startup_timeout_seconds"] = lifecycle["startup_timeout_seconds"]
 
     config.backends.append(entry)
