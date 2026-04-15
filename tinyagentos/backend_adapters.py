@@ -71,18 +71,28 @@ class StableDiffusionCppAdapter(BackendAdapter):
         start = time.monotonic()
         base = url.rstrip("/")
         try:
-            resp = await client.get(f"{base}/sdapi/v1/sd-models", timeout=10)
+            # Probe /sdapi/v1/options — responds even with no model loaded.
+            resp = await client.get(f"{base}/sdapi/v1/options", timeout=10)
             elapsed_ms = int((time.monotonic() - start) * 1000)
             resp.raise_for_status()
-            data = resp.json()
-            models = [
-                {"name": m.get("title", m.get("model_name", "")), "size_mb": 0}
-                for m in (data if isinstance(data, list) else [])
-            ]
-            return {"status": "ok", "response_ms": elapsed_ms, "models": models}
         except Exception:
             elapsed_ms = int((time.monotonic() - start) * 1000)
             return {"status": "error", "response_ms": elapsed_ms, "models": []}
+
+        # Server is alive — fetch model list best-effort; empty list is fine.
+        models = []
+        try:
+            mr = await client.get(f"{base}/sdapi/v1/sd-models", timeout=10)
+            if mr.status_code == 200:
+                data = mr.json()
+                models = [
+                    {"name": m.get("title", m.get("model_name", "")), "size_mb": 0}
+                    for m in (data if isinstance(data, list) else [])
+                ]
+        except Exception:
+            pass
+
+        return {"status": "ok", "response_ms": elapsed_ms, "models": models}
 
 
 class OpenAICompatAdapter(BackendAdapter):
