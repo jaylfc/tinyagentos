@@ -76,8 +76,9 @@ Type=simple
 User=root
 WorkingDirectory=$INSTALL_DIR
 ExecStart=$INSTALL_DIR/venv/bin/python -m uvicorn tinyagentos.app:create_app --factory --host 0.0.0.0 --port 6969
-Restart=on-failure
-RestartSec=5
+ExecReload=/bin/kill -HUP \$MAINPID
+Restart=always
+RestartSec=3
 Environment=PYTHONUNBUFFERED=1
 
 [Install]

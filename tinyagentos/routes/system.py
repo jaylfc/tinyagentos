@@ -89,8 +89,17 @@ async def _do_restart(app_state) -> None:
                             if "--user" in scope_args
                             else ["systemctl", "restart", svc]
                         )
-                        await asyncio.create_subprocess_exec(*restart_args)
-                        sys.exit(0)
+                        restart_proc = await asyncio.create_subprocess_exec(
+                            *restart_args,
+                            stdout=asyncio.subprocess.DEVNULL,
+                            stderr=asyncio.subprocess.DEVNULL,
+                        )
+                        await restart_proc.wait()
+                        if restart_proc.returncode == 0:
+                            sys.exit(0)
+                        # systemctl restart failed (e.g. interactive auth required).
+                        # Fall through to os.execv — systemd keeps tracking the
+                        # same PID and the new process picks up the updated code.
                 except Exception:
                     pass
 

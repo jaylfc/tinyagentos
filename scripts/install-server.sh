@@ -445,27 +445,16 @@ install_linux_systemd_system() {
     $sudo_cmd install -m 0755 "$INSTALL_DIR/scripts/taos-graceful-stop.sh" /usr/local/bin/taos-graceful-stop
     log "installed /usr/local/bin/taos-graceful-stop"
 
-    $sudo_cmd tee "$unit" > /dev/null <<EOF
-[Unit]
-Description=TinyAgentOS Controller
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=$USER
-Group=$(id -gn)
-WorkingDirectory=$INSTALL_DIR
-ExecStart=$INSTALL_DIR/.venv/bin/python -m uvicorn tinyagentos.app:create_app --factory --host 0.0.0.0 --port $TAOS_PORT
-ExecStop=/usr/local/bin/taos-graceful-stop
-Restart=on-failure
-RestartSec=5
-TimeoutStopSec=360
-Environment=PYTHONUNBUFFERED=1
-
-[Install]
-WantedBy=multi-user.target
-EOF
+    # Stamp the template from the repo, substituting install-time variables.
+    sed \
+        -e "s|TAOS_USER|$USER|g" \
+        -e "s|TAOS_GROUP|$(id -gn)|g" \
+        -e "s|TAOS_INSTALL_DIR|$INSTALL_DIR|g" \
+        -e "s|TAOS_PYTHON|$INSTALL_DIR/.venv/bin/python|g" \
+        -e "s|TAOS_PORT|$TAOS_PORT|g" \
+        -e "s|TAOS_STOP_SCRIPT|/usr/local/bin/taos-graceful-stop|g" \
+        "$INSTALL_DIR/scripts/systemd/tinyagentos.service" \
+        | $sudo_cmd tee "$unit" > /dev/null
     log "installed $unit (system unit, runs as $USER)"
 
     # Install pre-shutdown hook
@@ -492,24 +481,21 @@ install_linux_systemd_user() {
     mkdir -p "$HOME/.local/bin"
     install -m 0755 "$INSTALL_DIR/scripts/taos-graceful-stop.sh" "$HOME/.local/bin/taos-graceful-stop"
 
-    cat > "$unit" <<EOF
-[Unit]
-Description=TinyAgentOS Controller
-After=network-online.target
-
-[Service]
-Type=simple
-WorkingDirectory=$INSTALL_DIR
-ExecStart=$INSTALL_DIR/.venv/bin/python -m uvicorn tinyagentos.app:create_app --factory --host 0.0.0.0 --port $TAOS_PORT
-ExecStop=$HOME/.local/bin/taos-graceful-stop
-Restart=on-failure
-RestartSec=5
-TimeoutStopSec=360
-Environment=PYTHONUNBUFFERED=1
-
-[Install]
-WantedBy=default.target
-EOF
+    # User unit: no User=/Group= (inherits the running user), no ExecStartPre
+    # for debugfs (that needs root). ExecReload/Restart=always still apply.
+    sed \
+        -e "s|TAOS_USER|$USER|g" \
+        -e "s|TAOS_GROUP|$(id -gn)|g" \
+        -e "s|TAOS_INSTALL_DIR|$INSTALL_DIR|g" \
+        -e "s|TAOS_PYTHON|$INSTALL_DIR/.venv/bin/python|g" \
+        -e "s|TAOS_PORT|$TAOS_PORT|g" \
+        -e "s|TAOS_STOP_SCRIPT|$HOME/.local/bin/taos-graceful-stop|g" \
+        -e "/^User=/d" \
+        -e "/^Group=/d" \
+        -e "s|WantedBy=multi-user.target|WantedBy=default.target|g" \
+        -e "/ExecStartPre/,/|| true'$/d" \
+        "$INSTALL_DIR/scripts/systemd/tinyagentos.service" \
+        > "$unit"
     log "installed $unit (user unit fallback — sudo unavailable)"
 
     # Make the user manager start on boot without an active login. Must

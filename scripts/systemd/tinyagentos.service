@@ -1,0 +1,35 @@
+[Unit]
+Description=TinyAgentOS Controller
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# User/WorkingDirectory/ExecStart are rewritten by install-server.sh at install time.
+User=TAOS_USER
+Group=TAOS_GROUP
+WorkingDirectory=TAOS_INSTALL_DIR
+# Grant read access to Rockchip debugfs files (NPU, RGA, Mali) so the controller
+# can report hardware stats without running as root. The `+` prefix runs this
+# ExecStartPre as root regardless of User= above.
+ExecStartPre=+/bin/sh -c '\
+  chmod o+x /sys/kernel/debug 2>/dev/null || true; \
+  chmod o+rx /sys/kernel/debug/rknpu 2>/dev/null || true; \
+  chmod o+r /sys/kernel/debug/rknpu/load 2>/dev/null || true; \
+  chmod o+r /sys/kernel/debug/rknpu/version 2>/dev/null || true; \
+  chmod o+rx /sys/kernel/debug/rkrga 2>/dev/null || true; \
+  chmod o+r /sys/kernel/debug/rkrga/load 2>/dev/null || true; \
+  chmod o+rx /sys/kernel/debug/mali0 2>/dev/null || true; \
+  chmod o+r /sys/kernel/debug/mali0/dvfs_utilization 2>/dev/null || true'
+ExecStart=TAOS_PYTHON -m uvicorn tinyagentos.app:create_app --factory --host 0.0.0.0 --port TAOS_PORT
+ExecStop=TAOS_STOP_SCRIPT
+# Reload sends SIGHUP to the main process, causing uvicorn to re-exec in-place.
+# Used by the in-app "Restart Server" button when systemctl restart requires auth.
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=3
+TimeoutStopSec=360
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
