@@ -333,7 +333,7 @@ class BackendCatalog:
                     lifecycle_state=lifecycle_state,
                     auto_manage=auto_manage,
                     keep_alive_minutes=keep_alive_minutes,
-                    enabled=True,
+                    enabled=backend.get("enabled", True),
                 )
             else:
                 self._mark_error(name, backend, result.get("error"), now)
