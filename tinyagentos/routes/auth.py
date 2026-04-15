@@ -115,7 +115,7 @@ button[type="submit"]:disabled { opacity: 0.4; cursor: not-allowed; }
 """
 
 
-def _login_page(error: str = "", multi_user: bool = False) -> str:
+def _login_page(error: str = "", multi_user: bool = False, next_url: str = "") -> str:
     err = f'<p class="error" role="alert">{error}</p>' if error else ""
     pwd_placeholder = "Password or invite code" if multi_user else "Password"
     autologin_default = "" if multi_user else "checked"
@@ -125,6 +125,7 @@ def _login_page(error: str = "", multi_user: bool = False) -> str:
           <input type="text" name="username" autocomplete="username" autofocus required>
         </label>
         ''' if multi_user else ""
+    next_field = f'<input type="hidden" name="next" value="{next_url}">' if next_url else ""
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -142,6 +143,7 @@ def _login_page(error: str = "", multi_user: bool = False) -> str:
     </div>
     {err}
     {username_field}
+    {next_field}
     <label class="field">
       <span>Password</span>
       <input type="password" name="password" autocomplete="current-password" placeholder="{pwd_placeholder}" {'' if multi_user else 'autofocus'} required>
@@ -229,7 +231,7 @@ def _require_self(request: Request, username: str) -> tuple[bool, JSONResponse |
 
 
 @router.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request, error: str = ""):
+async def login_page(request: Request, error: str = "", next: str = ""):
     """Server-rendered login page. Works without JavaScript — the SPA
     takes over once the user is signed in and lands on /desktop."""
     auth_mgr = request.app.state.auth
@@ -238,7 +240,9 @@ async def login_page(request: Request, error: str = ""):
     if not auth_mgr.is_configured():
         return RedirectResponse("/auth/setup", status_code=303)
     err_text = "Incorrect username or password." if error else ""
-    return HTMLResponse(_login_page(err_text, multi_user=auth_mgr.is_multi_user()))
+    # Only allow relative paths starting with / to prevent open redirect
+    safe_next = next if (next.startswith("/") and not next.startswith("//")) else ""
+    return HTMLResponse(_login_page(err_text, multi_user=auth_mgr.is_multi_user(), next_url=safe_next))
 
 
 @router.get("/setup", response_class=HTMLResponse)
@@ -329,10 +333,15 @@ async def login(request: Request):
     username = (form.get("username") or "").strip() or None
     password = form.get("password", "")
     long_lived = bool(form.get("auto_login"))
+    next_url = str(form.get("next", "") or "")
+    # Validate next_url to prevent open redirect
+    if not (next_url.startswith("/") and not next_url.startswith("//")):
+        next_url = ""
 
     ok, user_record = auth_mgr.check_password(password, username=username)
     if not ok:
-        return RedirectResponse("/auth/login?error=1", status_code=303)
+        next_qs = f"&next={next_url}" if next_url else ""
+        return RedirectResponse(f"/auth/login?error=1{next_qs}", status_code=303)
 
     if user_record and user_record.get("pending_invite"):
         # Pending user — create their session, then send to /desktop. The
@@ -345,7 +354,8 @@ async def login(request: Request):
             auth_mgr.update_last_login(user_id)
         token = auth_mgr.create_session(user_id=user_id, long_lived=long_lived)
 
-    response = RedirectResponse("/desktop", status_code=303)
+    destination = next_url or "/desktop"
+    response = RedirectResponse(destination, status_code=303)
     if long_lived:
         response.set_cookie(
             "taos_session", token, httponly=True, samesite="lax",
