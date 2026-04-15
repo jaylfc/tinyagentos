@@ -36,24 +36,29 @@ class OllamaCompatAdapter(BackendAdapter):
 
 
 class RknnSdAdapter(BackendAdapter):
-    """Adapter for the darkbit1001-style RKNN Stable Diffusion server.
+    """Adapter for the taOS RKNN Stable Diffusion server (RK3588 NPU).
 
-    Exposes POST /generate returning a raw image/png body. Health is proven
-    by the presence of /openapi.json (the server uses no explicit /health).
+    Exposes GET /health, GET /v1/models, POST /v1/images/generations.
     """
 
     async def health(self, client: httpx.AsyncClient, url: str) -> dict:
         start = time.monotonic()
         base = url.rstrip("/")
         try:
-            resp = await client.get(f"{base}/openapi.json", timeout=10)
+            resp = await client.get(f"{base}/health", timeout=10)
             elapsed_ms = int((time.monotonic() - start) * 1000)
             resp.raise_for_status()
-            return {
-                "status": "ok",
-                "response_ms": elapsed_ms,
-                "models": [{"name": "lcm-dreamshaper-v7-rknn", "size_mb": 0}],
-            }
+            models = []
+            try:
+                mr = await client.get(f"{base}/v1/models", timeout=10)
+                if mr.status_code == 200:
+                    models = [
+                        {"name": m.get("id", m.get("name", "")), "size_mb": 0}
+                        for m in mr.json().get("data", mr.json() if isinstance(mr.json(), list) else [])
+                    ]
+            except Exception:
+                pass
+            return {"status": "ok", "response_ms": elapsed_ms, "models": models}
         except Exception:
             elapsed_ms = int((time.monotonic() - start) * 1000)
             return {"status": "error", "response_ms": elapsed_ms, "models": []}
