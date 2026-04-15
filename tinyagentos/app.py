@@ -16,7 +16,8 @@ from tinyagentos.backend_fallback import BackendFallback
 from tinyagentos.capabilities import CapabilityChecker
 from tinyagentos.cluster.manager import ClusterManager
 from tinyagentos.cluster.router import TaskRouter
-from tinyagentos.config import load_config
+from tinyagentos.config import auto_register_from_manifest, load_config, save_config
+from tinyagentos.lifecycle_manager import LifecycleManager
 from tinyagentos.channels import ChannelStore
 from tinyagentos.download_manager import DownloadManager
 from tinyagentos.metrics import MetricsStore
@@ -74,6 +75,26 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
             import shutil
             shutil.copy2(example, config_path)
     config = load_config(config_path)
+
+    # Auto-register any taOS-managed services that have a lifecycle block
+    # in their app-catalog manifest but are not yet in config.backends.
+    # This runs synchronously at create_app time (before the lifespan starts)
+    # so the BackendCatalog is built with complete backend list.
+    _services_dir = (PROJECT_DIR / "app-catalog" / "services")
+    if _services_dir.exists():
+        _any_added = False
+        for _manifest in _services_dir.glob("*/manifest.yaml"):
+            try:
+                added = auto_register_from_manifest(_manifest, config)
+                if added:
+                    logger.info("auto-registered backend from manifest: %s", _manifest)
+                    _any_added = True
+            except Exception:
+                logger.exception("failed to auto-register from manifest %s", _manifest)
+        if _any_added and config.config_path and config.config_path.exists():
+            # Persist newly registered backends to config.yaml synchronously
+            # (lifespan hasn't started yet so we use the sync save).
+            save_config(config, config.config_path)
 
     catalog_dir = catalog_dir or PROJECT_DIR / "app-catalog"
     hardware_path = data_dir / "hardware.json"
@@ -302,6 +323,20 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         except Exception:
             logger.exception("backend catalog failed to start — routes will fall back to static config")
         app.state.backend_catalog = backend_catalog
+
+        # LifecycleManager — on-demand start/stop for auto-managed backends.
+        lifecycle_manager = LifecycleManager(backend_catalog)
+        app.state.lifecycle_manager = lifecycle_manager
+
+        # After the first probe, mark auto-managed backends that are not
+        # currently reachable as "stopped" so the scheduler knows to start
+        # them on demand rather than treating them as permanently broken.
+        for _entry in backend_catalog.backends():
+            _b_conf = next(
+                (b for b in config.backends if b["name"] == _entry.name), {}
+            )
+            if _b_conf.get("auto_manage") and _entry.status != "ok":
+                backend_catalog.set_lifecycle_state(_entry.name, "stopped")
 
         # Joined view of the registry cache + live catalog probes.
         # Used by the Store / Dashboard / Models routes instead of
