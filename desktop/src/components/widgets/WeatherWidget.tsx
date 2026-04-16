@@ -151,12 +151,18 @@ export function WeatherWidget() {
       role="region"
     >
       {tier === "s" && (
-        /* Small: icon + temperature only, centred */
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", gap: 8 }}>
-          <span style={{ fontSize: "1.8rem", lineHeight: 1 }}>{weather.icon}</span>
-          <span style={{ fontSize: "1.6rem", fontWeight: 600, color: "rgba(255,255,255,0.95)", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
-            {displayTemp(weather.temp)}°
-          </span>
+        /* Small: icon + temp + compact wind/humidity row */
+        <div style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", height: "100%", padding: "4px 2px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: "1.8rem", lineHeight: 1 }}>{weather.icon}</span>
+            <span style={{ fontSize: "1.6rem", fontWeight: 600, color: "rgba(255,255,255,0.95)", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+              {displayTemp(weather.temp)}°
+            </span>
+          </div>
+          <div style={{ display: "flex", gap: 8, fontSize: "0.65rem", color: "rgba(255,255,255,0.4)" }}>
+            <span>💧 {weather.humidity}%</span>
+            <span>💨 {displayWind(weather.wind)}</span>
+          </div>
         </div>
       )}
 
