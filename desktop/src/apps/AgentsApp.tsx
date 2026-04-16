@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Bot, Plus, Trash2, ScrollText, Play, Server, X, ChevronRight, ChevronLeft, Check, Wrench, MessageSquare, Download, PauseCircle, RotateCcw } from "lucide-react";
+import { Bot, Plus, Trash2, ScrollText, Play, Server, X, ChevronRight, ChevronLeft, Check, Wrench, MessageSquare, PauseCircle, RotateCcw } from "lucide-react";
 import { AgentSkillsPanel } from "./AgentSkillsPanel";
 import { AgentMessagesPanel } from "./AgentMessagesPanel";
 import {
@@ -10,7 +10,6 @@ import {
 } from "@/lib/models";
 import { availableKvQuantOptions, type KvQuantOptions } from "@/lib/cluster";
 import { useProcessStore } from "@/stores/process-store";
-import { getApp } from "@/registry/app-registry";
 import {
   Button,
   Card,
@@ -328,12 +327,6 @@ function DeployWizard({
   const [selectedModel, setSelectedModel] = useState<string>("");
 
   const openWindow = useProcessStore((s) => s.openWindow);
-  const openModelsApp = useCallback(() => {
-    const app = getApp("models");
-    if (app) openWindow("models", app.defaultSize);
-    onClose();
-  }, [openWindow, onClose]);
-
   // Step 4
   const [memory, setMemory] = useState("512");
   const [cpus, setCpus] = useState("1");
