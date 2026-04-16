@@ -185,7 +185,7 @@ async def add_provider(request: Request, body: ProviderCreate):
     # Reconfigure LLM proxy if running
     proxy = getattr(request.app.state, "llm_proxy", None)
     if proxy and proxy.is_running():
-        proxy.write_config(config.backends)
+        await proxy.reload_config(config.backends)
     return {"status": "added", "name": body.name}
 
 @router.patch("/api/providers/{name}")
@@ -202,6 +202,9 @@ async def patch_provider(request: Request, name: str, body: ProviderPatch):
     if body.keep_alive_minutes is not None:
         backend["keep_alive_minutes"] = body.keep_alive_minutes
     await save_config_locked(config, config.config_path)
+    proxy = getattr(request.app.state, "llm_proxy", None)
+    if proxy and proxy.is_running():
+        await proxy.reload_config(config.backends)
     return {"status": "updated", "name": name}
 
 
@@ -253,4 +256,7 @@ async def delete_provider(request: Request, name: str):
         )
     config.backends = [b for b in config.backends if b.get("name") != name]
     await save_config_locked(config, config.config_path)
+    proxy = getattr(request.app.state, "llm_proxy", None)
+    if proxy and proxy.is_running():
+        await proxy.reload_config(config.backends)
     return {"status": "deleted", "name": name}

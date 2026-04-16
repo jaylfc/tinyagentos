@@ -27,6 +27,8 @@ BACKEND_TYPE_MAP = {
     "mlx": "openai",
     "openai": "openai",
     "anthropic": "anthropic",
+    "openrouter": "openrouter",
+    "kilocode": "openai",  # kilocode is OpenAI-compatible; api_base set explicitly
 }
 
 # Chat prefix is different from the embedding prefix for ollama-compat
@@ -37,6 +39,10 @@ CHAT_BACKEND_TYPE_MAP = {
     "ollama": "ollama_chat",
     "rkllama": "ollama_chat",
 }
+
+# Cloud provider types that may serve multiple named models and require
+# per-model model_list entries so agents can route by exact model id.
+CLOUD_BACKEND_TYPES = {"openai", "anthropic", "openrouter", "kilocode"}
 
 # Canonical alias the deployer injects into agent containers as
 # TAOS_EMBEDDING_MODEL. Agents that want an embedding call this name and
@@ -132,6 +138,43 @@ def generate_litellm_config(backends: list[dict], default_model: str = "default"
             litellm_params["api_key"] = f"os.environ/{backend['api_key_secret']}"
         elif backend.get("api_key"):
             litellm_params["api_key"] = backend["api_key"]
+
+        # For cloud backends with a declared models list, register each model
+        # by its exact id so agents can route requests to a specific model.
+        if backend_type in CLOUD_BACKEND_TYPES:
+            declared_models: list[str] = []
+            for m in backend.get("models") or []:
+                if isinstance(m, dict):
+                    mid = m.get("id") or m.get("name") or ""
+                else:
+                    mid = str(m)
+                if mid:
+                    declared_models.append(mid)
+
+            for model_id in declared_models:
+                per_model_params: dict = {
+                    "model": f"{prefix}/{model_id}",
+                }
+                # kilocode isn't a native LiteLLM provider — must set api_base
+                if backend_type == "kilocode":
+                    per_model_params["api_base"] = url
+                elif url and backend_type not in ("openai", "anthropic"):
+                    # For openrouter and other pass-through types, set api_base
+                    # when an explicit url is provided
+                    per_model_params["api_base"] = url
+                # API key resolution
+                if backend.get("api_key_secret"):
+                    per_model_params["api_key"] = f"os.environ/{backend['api_key_secret']}"
+                elif backend.get("api_key"):
+                    per_model_params["api_key"] = backend["api_key"]
+                model_list.append({
+                    "model_name": model_id,
+                    "litellm_params": per_model_params,
+                    "metadata": {
+                        "priority": backend.get("priority", 99),
+                        "backend_name": backend.get("name", ""),
+                    },
+                })
 
         model_list.append({
             "model_name": default_model,

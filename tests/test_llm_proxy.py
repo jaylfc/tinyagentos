@@ -121,6 +121,64 @@ class TestEmbeddingDiscovery:
         assert "nomic-embed-text-v1.5" in names
 
 
+class TestCloudBackends:
+    def test_generate_config_kilocode_backend(self):
+        backends = [{
+            "name": "kilo-free",
+            "type": "kilocode",
+            "url": "https://kilocode.ai/api/v1",
+            "priority": 10,
+            "api_key_secret": "KILOCODE_API_KEY",
+            "models": ["kilo/free/claude-3.5-sonnet", "kilo/free/gpt-4o"],
+        }]
+        cfg = generate_litellm_config(backends)
+        names = [e["model_name"] for e in cfg["model_list"]]
+        assert "default" in names
+        assert "kilo/free/claude-3.5-sonnet" in names
+        assert "kilo/free/gpt-4o" in names
+        kilo_entry = next(e for e in cfg["model_list"] if e["model_name"] == "kilo/free/claude-3.5-sonnet")
+        assert kilo_entry["litellm_params"]["model"].startswith("openai/")
+        assert kilo_entry["litellm_params"]["api_base"] == "https://kilocode.ai/api/v1"
+        assert kilo_entry["litellm_params"]["api_key"] == "os.environ/KILOCODE_API_KEY"
+
+    def test_generate_config_openrouter_backend(self):
+        backends = [{
+            "name": "or",
+            "type": "openrouter",
+            "url": "https://openrouter.ai/api/v1",
+            "priority": 5,
+            "api_key": "or-test-key",
+            "models": [{"id": "meta-llama/llama-3-70b"}],
+        }]
+        cfg = generate_litellm_config(backends)
+        model_entry = next(e for e in cfg["model_list"] if e["model_name"] == "meta-llama/llama-3-70b")
+        assert model_entry["litellm_params"]["model"].startswith("openrouter/")
+        assert model_entry["litellm_params"]["api_key"] == "or-test-key"
+
+    def test_generate_config_cloud_without_models_only_default(self):
+        backends = [{
+            "name": "blank",
+            "type": "openrouter",
+            "url": "https://openrouter.ai/api/v1",
+            "api_key": "x",
+        }]
+        cfg = generate_litellm_config(backends)
+        assert [e["model_name"] for e in cfg["model_list"]] == ["default"]
+
+    def test_generate_config_ollama_backend_unchanged(self):
+        backends = [{
+            "name": "pi",
+            "type": "ollama",
+            "url": "http://localhost:11434",
+            "priority": 10,
+            "model": "llama3.2",
+        }]
+        cfg = generate_litellm_config(backends)
+        chat = next(e for e in cfg["model_list"] if e["model_name"] == "default")
+        assert chat["litellm_params"]["model"] == "ollama_chat/llama3.2"
+        assert chat["litellm_params"]["api_base"] == "http://localhost:11434"
+
+
 class TestLLMProxy:
     def test_proxy_not_running_initially(self):
         proxy = LLMProxy(port=14000)
