@@ -258,6 +258,11 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.app_orchestrator = app_orchestrator
         app.state.computer_use = computer_use
         app.state.auth = auth_manager
+        # Ensure the local token file exists before any request can arrive.
+        # Logs the path at INFO so the user can find it.
+        _local_token_path = auth_manager.local_token_path()
+        auth_manager.get_local_token()
+        logger.info("local auth token path: %s", _local_token_path)
         app.state.webhook_notifier = webhook_notifier
         app.state.llm_proxy = llm_proxy
         app.state.channel_hub_router = channel_hub_router

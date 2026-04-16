@@ -1,10 +1,14 @@
 from __future__ import annotations
 import hashlib
 import json
+import logging
+import os
 import secrets
 import time
 from collections.abc import Iterator
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 class _PersistentSessions:
@@ -490,6 +494,45 @@ class AuthManager:
                 expired.append(token)
         for t in expired:
             del self._sessions[t]
+
+    # ------------------------------------------------------------------ #
+    #  Local token (programmatic / script access)                         #
+    # ------------------------------------------------------------------ #
+
+    def local_token_path(self) -> Path:
+        """Return the path to the persistent local auth token file."""
+        return self.data_dir / ".auth_local_token"
+
+    def get_local_token(self) -> str:
+        """Return the local auth token, creating the file if it does not exist.
+
+        The file is written with 0600 permissions so only the owner can read
+        it. Possession of the file is treated as same-user-on-the-host trust.
+        Never rotated automatically — delete the file to force regeneration.
+        """
+        path = self.local_token_path()
+        if path.exists():
+            return path.read_text().strip()
+        token = secrets.token_urlsafe(32)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(token)
+        os.chmod(path, 0o600)
+        logger.info("local auth token written to %s", path)
+        return token
+
+    def validate_local_token(self, presented: str) -> bool:
+        """Return True if *presented* matches the on-disk local token.
+
+        Always re-reads the file so rotating the file takes effect on the
+        next request. Uses ``secrets.compare_digest`` to avoid timing leaks.
+        """
+        if not presented:
+            return False
+        path = self.local_token_path()
+        if not path.exists():
+            return False
+        stored = path.read_text().strip()
+        return secrets.compare_digest(presented, stored)
 
     def update_last_login(self, user_id: str) -> None:
         data = self._read_users()
