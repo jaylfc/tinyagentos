@@ -1,15 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Bot, Plus, Trash2, ScrollText, Play, Server, X, ChevronRight, ChevronLeft, Check, Wrench, MessageSquare, Download, PauseCircle, RotateCcw } from "lucide-react";
+import { Bot, Plus, Trash2, ScrollText, Play, Server, X, ChevronRight, ChevronLeft, Check, Wrench, MessageSquare, PauseCircle, RotateCcw } from "lucide-react";
 import { AgentSkillsPanel } from "./AgentSkillsPanel";
 import { AgentMessagesPanel } from "./AgentMessagesPanel";
 import {
   fetchClusterWorkers,
   workersToAggregated,
   HOST_BADGE_CLASS,
+  CLOUD_PROVIDER_TYPES,
 } from "@/lib/models";
 import { availableKvQuantOptions, type KvQuantOptions } from "@/lib/cluster";
-import { useProcessStore } from "@/stores/process-store";
-import { getApp } from "@/registry/app-registry";
 import {
   Button,
   Card,
@@ -20,6 +19,8 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui";
+import { ModelPickerFlow, type AgentModel } from "@/components/ModelPickerFlow";
+import { ModelPickerModal } from "@/components/ModelPickerModal";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -48,12 +49,8 @@ interface Framework {
   verification_status: "tested" | "beta" | "experimental" | "broken";
 }
 
-interface Model {
-  id: string;
-  name: string;
-  host?: string;
-  hostKind?: "controller" | "worker" | "cloud";
-}
+// AgentModel is defined and exported from ModelPickerFlow
+type Model = AgentModel;
 
 /* ------------------------------------------------------------------ */
 /*  Fallback data                                                      */
@@ -328,13 +325,6 @@ function DeployWizard({
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [selectedModel, setSelectedModel] = useState<string>("");
 
-  const openWindow = useProcessStore((s) => s.openWindow);
-  const openModelsApp = useCallback(() => {
-    const app = getApp("models");
-    if (app) openWindow("models", app.defaultSize);
-    onClose();
-  }, [openWindow, onClose]);
-
   // Step 4
   const [memory, setMemory] = useState("512");
   const [cpus, setCpus] = useState("1");
@@ -345,6 +335,7 @@ function DeployWizard({
   // Step 5b — Worker failure policy
   const [onWorkerFailure, setOnWorkerFailure] = useState<"pause" | "fallback" | "escalate-immediately">("pause");
   const [fallbackModels, setFallbackModels] = useState<string[]>([]);
+  const [fallbackModelOpen, setFallbackModelOpen] = useState(false);
 
   // KV cache quantization — split K / V / boundary controls.  Visible only
   // when the cluster advertises more than fp16 for the respective axis.
@@ -492,9 +483,8 @@ function DeployWizard({
         const ct = res.headers.get("content-type") ?? "";
         if (res.ok && ct.includes("application/json")) {
           const providers = await res.json();
-          const CLOUD_TYPES = ["openai", "anthropic"];
           for (const p of (Array.isArray(providers) ? providers : [])) {
-            if (!CLOUD_TYPES.includes(p.type)) continue;
+            if (!(CLOUD_PROVIDER_TYPES as readonly string[]).includes(p.type)) continue;
             const pModels: { id?: string; name?: string }[] = Array.isArray(p.models) ? p.models : [];
             if (pModels.length === 0) {
               cloudModels.push({
@@ -794,65 +784,41 @@ function DeployWizard({
           {/* Step 2: Model */}
           {step === 2 && (
             <div className="space-y-2">
-              <span className="block text-xs text-shell-text-secondary mb-2">Select Model</span>
-              {modelsLoaded && models.length === 0 ? (
-                <div className="flex flex-col items-center justify-center gap-3 py-8 px-4 text-center rounded-lg border border-white/5 bg-shell-bg-deep">
-                  <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-accent/10">
-                    <Download size={20} className="text-accent" />
+              {selectedModel ? (
+                /* Summary card — shown after a model is picked */
+                <div>
+                  <span className="block text-xs text-shell-text-secondary mb-2">Selected Model</span>
+                  <div className="px-4 py-3 rounded-lg border border-accent/30 bg-accent/5 flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <div className="text-sm font-medium truncate">
+                          {models.find(m => m.id === selectedModel)?.name ?? selectedModel}
+                        </div>
+                        {(() => {
+                          const m = models.find(mo => mo.id === selectedModel);
+                          return m?.host && m.hostKind !== "controller" ? (
+                            <span className={HOST_BADGE_CLASS}>{m.host}</span>
+                          ) : null;
+                        })()}
+                      </div>
+                      <div className="text-xs text-shell-text-tertiary mt-0.5">{selectedModel}</div>
+                    </div>
+                    <button
+                      onClick={() => setSelectedModel("")}
+                      className="text-xs text-shell-text-tertiary hover:text-shell-text shrink-0 mt-0.5 transition-colors"
+                    >
+                      Change
+                    </button>
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-shell-text">No models available.</p>
-                    <p className="text-xs text-shell-text-tertiary mt-1">
-                      No models downloaded on the controller, hosted on cluster workers, or provided by cloud providers.
-                    </p>
-                  </div>
-                  <Button size="sm" onClick={openModelsApp}>
-                    <Download size={13} />
-                    Get more models
-                  </Button>
                 </div>
               ) : (
-                <>
-                  {models.map((m) => {
-                    const showHost = m.host && m.hostKind !== "controller";
-                    const key = `${m.hostKind ?? "?"}:${m.host ?? "?"}:${m.id}`;
-                    return (
-                      <button
-                        key={key}
-                        onClick={() => setSelectedModel(m.id)}
-                        className={`w-full text-left px-4 py-3 rounded-lg border transition-colors ${
-                          selectedModel === m.id
-                            ? "border-accent bg-accent/10"
-                            : "border-white/5 bg-shell-bg-deep hover:bg-white/5"
-                        }`}
-                      >
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <div className="text-sm font-medium truncate">{m.name}</div>
-                          {showHost && (
-                            <span
-                              className={HOST_BADGE_CLASS}
-                              title={`Hosted on ${m.host}`}
-                            >
-                              {m.host}
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-xs text-shell-text-tertiary">{m.id}</div>
-                      </button>
-                    );
-                  })}
-                  {models.length > 0 && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={openModelsApp}
-                      className="w-full mt-2"
-                    >
-                      <Download size={13} />
-                      Get more models
-                    </Button>
-                  )}
-                </>
+                /* Tiered picker — source → provider → list */
+                <ModelPickerFlow
+                  models={models}
+                  modelsLoaded={modelsLoaded}
+                  onSelect={(id) => setSelectedModel(id)}
+                  onBack={() => setStep(1)}
+                />
               )}
             </div>
           )}
@@ -959,25 +925,13 @@ function DeployWizard({
                   <span className="font-normal text-shell-text-tertiary">(optional, in priority order)</span>
                 </Label>
                 <div className="space-y-1.5">
-                  {fallbackModels.map((m, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <select
-                        value={m}
-                        onChange={(e) => {
-                          const updated = [...fallbackModels];
-                          updated[i] = e.target.value;
-                          setFallbackModels(updated);
-                        }}
-                        className="flex-1 h-8 rounded-lg border border-white/10 bg-shell-bg-deep px-2 text-sm text-shell-text"
-                        aria-label={`Fallback model ${i + 1}`}
-                      >
-                        <option value="">-- pick a model --</option>
-                        {models.filter((mo) => mo.id !== selectedModel).map((mo) => (
-                          <option key={mo.id} value={mo.id}>{mo.name}</option>
-                        ))}
-                      </select>
+                  {fallbackModels.filter(Boolean).map((m, i) => (
+                    <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-white/5 bg-shell-bg-deep">
+                      <span className="flex-1 text-sm truncate">
+                        {models.find(mo => mo.id === m)?.name ?? m}
+                      </span>
                       <button
-                        onClick={() => setFallbackModels(fallbackModels.filter((_, j) => j !== i))}
+                        onClick={() => setFallbackModels(prev => prev.filter((_, j) => j !== i))}
                         className="text-shell-text-tertiary hover:text-red-400 transition-colors"
                         aria-label={`Remove fallback model ${i + 1}`}
                       >
@@ -985,11 +939,11 @@ function DeployWizard({
                       </button>
                     </div>
                   ))}
-                  {modelsLoaded && models.length > 1 && (
+                  {modelsLoaded && models.filter(mo => mo.id !== selectedModel && !fallbackModels.includes(mo.id)).length > 0 && (
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => setFallbackModels([...fallbackModels, ""])}
+                      onClick={() => setFallbackModelOpen(true)}
                       className="w-full"
                     >
                       <Plus size={13} />
@@ -997,6 +951,14 @@ function DeployWizard({
                     </Button>
                   )}
                 </div>
+                <ModelPickerModal
+                  open={fallbackModelOpen}
+                  onClose={() => setFallbackModelOpen(false)}
+                  models={models.filter(mo => mo.id !== selectedModel && !fallbackModels.includes(mo.id))}
+                  modelsLoaded={modelsLoaded}
+                  title="Add Fallback Model"
+                  onSelect={(id) => setFallbackModels(prev => [...prev, id])}
+                />
               </div>
               {/* KV cache quant — split K / V / boundary controls.
                   Each sub-control is only rendered when its axis has more than
@@ -1122,7 +1084,8 @@ function DeployWizard({
           </div>
         )}
 
-        {/* Footer */}
+        {/* Footer — hidden while the inline model picker is active (has its own nav) */}
+        {!(step === 2 && !selectedModel) && (
         <div className="flex items-center justify-between px-5 py-3 border-t border-white/5 shrink-0">
           <Button
             variant="outline"
@@ -1154,6 +1117,7 @@ function DeployWizard({
             </Button>
           )}
         </div>
+        )}
       </div>
     </div>
   );
