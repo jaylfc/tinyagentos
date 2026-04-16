@@ -136,6 +136,9 @@ class CloudAPIAdapter(BackendAdapter):
     - 2xx  = online (public model list)
     - 401/403 = online (API is responding, just needs a key)
     - anything else = error
+
+    ``url`` must include the versioned path prefix (e.g. ``https://api.openai.com/v1``).
+    The wizard pre-fills correct URLs from ``DEFAULT_URLS``; bare base URLs will 404.
     """
 
     async def health(self, client: httpx.AsyncClient, url: str) -> dict:

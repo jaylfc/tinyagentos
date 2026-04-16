@@ -73,6 +73,7 @@ class TestCloudAPIAdapter:
         resp.json.return_value = {"data": [{"id": "gpt-4o"}, {"id": "gpt-4o-mini"}]}
         mock_client.get.return_value = resp
         result = await adapter.health(mock_client, "https://api.openai.com/v1")
+        mock_client.get.assert_called_once_with("https://api.openai.com/v1/models", timeout=10)
         assert result["status"] == "ok"
         assert result["models"] == [{"name": "gpt-4o", "size_mb": 0}, {"name": "gpt-4o-mini", "size_mb": 0}]
         assert "response_ms" in result
@@ -116,6 +117,7 @@ class TestCloudAPIAdapter:
         mock_client = AsyncMock(spec=httpx.AsyncClient)
         mock_client.get.side_effect = httpx.ConnectError("Connection refused")
         result = await adapter.health(mock_client, "https://api.openai.com/v1")
+        mock_client.get.assert_called_once_with("https://api.openai.com/v1/models", timeout=10)
         assert result["status"] == "error"
         assert result["models"] == []
 
