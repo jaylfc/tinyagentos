@@ -6,6 +6,7 @@ import {
   fetchClusterWorkers,
   workersToAggregated,
   HOST_BADGE_CLASS,
+  CLOUD_PROVIDER_TYPES,
 } from "@/lib/models";
 import { availableKvQuantOptions, type KvQuantOptions } from "@/lib/cluster";
 import { useProcessStore } from "@/stores/process-store";
@@ -20,6 +21,8 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui";
+import { ModelPickerFlow, type AgentModel } from "@/components/ModelPickerFlow";
+import { ModelPickerModal } from "@/components/ModelPickerModal";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -48,12 +51,8 @@ interface Framework {
   verification_status: "tested" | "beta" | "experimental" | "broken";
 }
 
-interface Model {
-  id: string;
-  name: string;
-  host?: string;
-  hostKind?: "controller" | "worker" | "cloud";
-}
+// AgentModel is defined and exported from ModelPickerFlow
+type Model = AgentModel;
 
 /* ------------------------------------------------------------------ */
 /*  Fallback data                                                      */
@@ -492,9 +491,8 @@ function DeployWizard({
         const ct = res.headers.get("content-type") ?? "";
         if (res.ok && ct.includes("application/json")) {
           const providers = await res.json();
-          const CLOUD_TYPES = ["openai", "anthropic"];
           for (const p of (Array.isArray(providers) ? providers : [])) {
-            if (!CLOUD_TYPES.includes(p.type)) continue;
+            if (!(CLOUD_PROVIDER_TYPES as readonly string[]).includes(p.type)) continue;
             const pModels: { id?: string; name?: string }[] = Array.isArray(p.models) ? p.models : [];
             if (pModels.length === 0) {
               cloudModels.push({
