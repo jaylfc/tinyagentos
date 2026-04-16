@@ -86,7 +86,7 @@ function formatSize(mb?: number): string {
   return `${mb} MB`;
 }
 
-const CLOUD_BACKEND_TYPES = ["openai", "anthropic"];
+const CLOUD_BACKEND_TYPES = ["openai", "anthropic", "openrouter", "kilocode"];
 
 export function ModelBrowser({
   open,
