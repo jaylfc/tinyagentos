@@ -325,9 +325,9 @@ function DeployWizard({
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [selectedModel, setSelectedModel] = useState<string>("");
 
-  // Advanced (no wizard step — sent to API with defaults)
-  const [memory, setMemory] = useState("512");
-  const [cpus, setCpus] = useState("1");
+  // Advanced (no wizard step — defaults to unlimited)
+  const [memory, setMemory] = useState("");
+  const [cpus, setCpus] = useState("");
 
   // Step 3 — Permissions
   const [canReadUserMemory, setCanReadUserMemory] = useState(false);
@@ -575,8 +575,8 @@ function DeployWizard({
     setDeploying(true);
     setDeployError(null);
     try {
-      const memMb = parseInt(memory);
-      const memoryLimit = memMb >= 1024 ? `${Math.round(memMb / 1024)}GB` : `${memMb}MB`;
+      const memMb = memory ? parseInt(memory) : null;
+      const memoryLimit = memMb === null ? null : memMb >= 1024 ? `${Math.round(memMb / 1024)}GB` : `${memMb}MB`;
       const res = await fetch("/api/agents/deploy", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -586,7 +586,7 @@ function DeployWizard({
           model: selectedModel,
           color,
           memory_limit: memoryLimit,
-          cpu_limit: parseInt(cpus),
+          cpu_limit: cpus ? parseInt(cpus) : null,
           can_read_user_memory: canReadUserMemory,
           on_worker_failure: onWorkerFailure,
           fallback_models: fallbackModels,
