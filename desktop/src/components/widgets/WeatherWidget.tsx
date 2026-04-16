@@ -161,7 +161,7 @@ export function WeatherWidget() {
       )}
 
       {tier === "m" && (
-        /* Medium: icon + temp left, condition + location right, fills height */
+        /* Medium: icon + temp, condition, location, + compact detail row */
         <div style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", height: "100%" }}>
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -173,6 +173,11 @@ export function WeatherWidget() {
                 <div style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.5)", marginTop: 2 }}>{weather.condition}</div>
               </div>
             </div>
+          </div>
+          <div style={{ display: "flex", gap: 10, fontSize: "0.7rem", color: "rgba(255,255,255,0.4)" }}>
+            <span>Feels {displayTemp(weather.feelsLike)}°</span>
+            <span>💧 {weather.humidity}%</span>
+            <span>💨 {displayWind(weather.wind)}</span>
           </div>
           <div style={{ fontSize: "0.68rem", color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.04em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {weather.location}
