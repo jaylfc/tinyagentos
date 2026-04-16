@@ -60,8 +60,12 @@ def _image_url_path(filename: str) -> str:
 
 def _get_image_backend(
     request: Request, model: str | None = None
-) -> tuple[str | None, str]:
-    """Find an image generation backend. Returns (url, backend_type).
+) -> tuple[str | None, str, str | None]:
+    """Find an image generation backend. Returns (url, backend_type, backend_name).
+
+    backend_name is the ``name`` field from config.backends, or None when the
+    backend came from the server.image_backend_url override (which is not a
+    registered catalog entry and therefore has no lifecycle state to manage).
 
     Backend-driven: if a model id is supplied, prefer a backend that is
     *right now* advertising that model via its own live API. Fall back to
@@ -79,7 +83,8 @@ def _get_image_backend(
 
     image_url = config.server.get("image_backend_url")
     if image_url:
-        return image_url, config.server.get("image_backend_type", "openai")
+        # Server-level override: no catalog entry, so name is None.
+        return image_url, config.server.get("image_backend_type", "openai"), None
 
     catalog = getattr(request.app.state, "backend_catalog", None)
     image_types = ("rknn-sd", "sd-cpp", "rkllama", "ollama")
@@ -90,7 +95,7 @@ def _get_image_backend(
             if backend.type not in image_types:
                 continue
             if backend.has_model(model):
-                return backend.url, backend.type
+                return backend.url, backend.type, backend.name
 
     # 2. Capability-only fallback: highest-priority healthy image-gen backend,
     #    respecting the NPU > CPU > generic preference within ties.
@@ -102,7 +107,7 @@ def _get_image_backend(
         ]
         healthy.sort(key=lambda b: (preference.get(b.type, 99), b.priority))
         if healthy:
-            return healthy[0].url, healthy[0].type
+            return healthy[0].url, healthy[0].type, healthy[0].name
 
     # 3. No live catalog (scheduler not started yet): use static config.
     npu = [b for b in config.backends if b.get("type") == "rknn-sd"]
@@ -113,9 +118,9 @@ def _get_image_backend(
         + sorted(sdcpp, key=lambda b: b.get("priority", 99))
         + sorted(generic, key=lambda b: b.get("priority", 99))
     ):
-        return backend["url"], backend["type"]
+        return backend["url"], backend["type"], backend.get("name")
 
-    return None, ""
+    return None, "", None
 
 
 def _list_images(images_dir: Path) -> list[dict]:
@@ -304,12 +309,14 @@ async def generate_image(request: Request, body: GenerateRequest):
 async def _legacy_generate(request: Request, body: GenerateRequest, seed: int):
     """Pre-scheduler direct-backend path. Only used when the scheduler is not
     available (e.g. during startup or in tests without lifespan)."""
-    backend_url, backend_type = _get_image_backend(request, model=body.model)
+    backend_url, backend_type, backend_name = _get_image_backend(request, model=body.model)
     if not backend_url:
         return JSONResponse(
             {"error": "No image generation backend configured."},
             status_code=503,
         )
+
+    lifecycle_mgr = getattr(request.app.state, "lifecycle_manager", None)
 
     if backend_type == "sd-cpp":
         try:
@@ -347,6 +354,17 @@ async def _legacy_generate(request: Request, body: GenerateRequest, seed: int):
         )
     except Exception as e:
         return JSONResponse({"error": f"Unexpected error: {e}"}, status_code=500)
+    finally:
+        # Notify lifecycle manager so the keep-alive timer resets/arms after
+        # each image generation attempt. This is a no-op when:
+        #   - backend_name is None (server-level override, not a catalog entry)
+        #   - lifecycle_manager is not wired on this app (tests, startup race)
+        #   - keep_alive_minutes == 0 (always-on backend)
+        # NOTE: chat / embedding traffic goes through LiteLLM and does not hit
+        # this route, so its keep-alive timer is NOT reset here. Fixing that
+        # requires a LiteLLM callback or proxy hook — tracked separately.
+        if backend_name and lifecycle_mgr is not None:
+            lifecycle_mgr.notify_task_complete(backend_name)
     image_data = data["images"][0] if backend_type == "sd-cpp" else data["data"][0]["b64_json"]
     images_dir = _images_dir(request)
     timestamp = int(time.time())
