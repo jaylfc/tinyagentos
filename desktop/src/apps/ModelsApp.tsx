@@ -436,8 +436,8 @@ export function ModelsApp({ windowId: _windowId }: { windowId: string }) {
           </div>
         ) : (
           <>
-            {/* Downloaded Models */}
-            <section aria-label="Downloaded models">
+            {/* Downloaded Models — hidden when browsing cloud-only */}
+            {source !== "cloud" && <section aria-label="Downloaded models">
               <div className="flex items-center gap-2 mb-3">
                 <HardDrive size={15} className="text-shell-text-tertiary" />
                 <h2 className="text-sm font-semibold">Downloaded Models</h2>
@@ -505,7 +505,7 @@ export function ModelsApp({ windowId: _windowId }: { windowId: string }) {
                   })}
                 </div>
               )}
-            </section>
+            </section>}
 
             {/* Cloud Models */}
             {filteredCloud.length > 0 && (
