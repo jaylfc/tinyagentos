@@ -173,6 +173,54 @@ async def save_config_locked(config: AppConfig, path: Path) -> None:
     async with _config_lock:
         save_config(config, path)
 
+def auto_register_from_manifest(manifest_path: Path, config: "AppConfig") -> bool:
+    """Read a service manifest and add a backend entry to config if not already present.
+
+    Returns True if a new entry was added, False if already registered.
+
+    Supports two manifest formats:
+    - Flat format: top-level ``type`` is the backend type, ``default_url`` is the URL.
+    - Catalog format: ``type: service`` with ``lifecycle.backend_type`` and
+      ``lifecycle.default_url`` (used by existing app-catalog manifests).
+    """
+    data = yaml.safe_load(manifest_path.read_text())
+    lifecycle = data.get("lifecycle", {})
+
+    # Resolve backend_type and default_url: for catalog manifests (type: service)
+    # the actual backend type and URL live under the lifecycle block.
+    # For flat manifests the top-level fields are used directly.
+    top_type = data.get("type", "")
+    is_catalog = top_type == "service"
+    backend_type = lifecycle.get("backend_type") or (top_type if not is_catalog else "")
+    default_url = (lifecycle.get("default_url") if is_catalog else None) or data.get("default_url", "")
+    name = f"local-{data.get('id', backend_type)}"
+
+    if any(b.get("name") == name for b in config.backends):
+        return False
+
+    # keep_alive_minutes: 0 means "never auto-stop" (always on).
+    # Downstream consumers must check `== 0` or `is not None`, NOT truthiness,
+    # because 0 is a valid and intentional value.
+    entry: dict = {
+        "name": name,
+        "type": backend_type,
+        "url": default_url,
+        "priority": 99,
+        "enabled": True,
+        "auto_manage": lifecycle.get("auto_manage", False),
+        "keep_alive_minutes": lifecycle.get("keep_alive_minutes", 10),
+    }
+    if lifecycle.get("start_cmd"):
+        entry["start_cmd"] = lifecycle["start_cmd"]
+    if lifecycle.get("stop_cmd"):
+        entry["stop_cmd"] = lifecycle["stop_cmd"]
+    if lifecycle.get("startup_timeout_seconds") is not None:
+        entry["startup_timeout_seconds"] = lifecycle["startup_timeout_seconds"]
+
+    config.backends.append(entry)
+    return True
+
+
 def validate_config(config: AppConfig) -> list[str]:
     errors = []
     for i, b in enumerate(config.backends):

@@ -22,3 +22,12 @@ hardware_tiers:
   x86-cuda-12gb: unsupported
   x86-vulkan-8gb: unsupported
   cpu-only: unsupported
+
+lifecycle:
+  backend_type: rknn-sd
+  default_url: http://localhost:7863
+  auto_manage: true
+  keep_alive_minutes: 10
+  start_cmd: "systemctl start tinyagentos-rknn-sd"
+  stop_cmd: "systemctl stop tinyagentos-rknn-sd"
+  startup_timeout_seconds: 90

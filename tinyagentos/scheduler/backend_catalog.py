@@ -57,6 +57,10 @@ class BackendEntry:
     last_healthy: Optional[float] = None
     last_probed: float = field(default_factory=time.time)
     error: Optional[str] = None
+    lifecycle_state: str = "running"    # "stopped"|"starting"|"running"|"draining"|"stopping"
+    auto_manage: bool = False
+    keep_alive_minutes: int = 10
+    enabled: bool = True
 
     def has_model(self, model_id: str) -> bool:
         """Fuzzy match against advertised model names, handles prefix/suffix
@@ -97,6 +101,10 @@ class BackendEntry:
             "last_healthy": self.last_healthy,
             "last_probed": self.last_probed,
             "error": self.error,
+            "lifecycle_state": self.lifecycle_state,
+            "auto_manage": self.auto_manage,
+            "keep_alive_minutes": self.keep_alive_minutes,
+            "enabled": self.enabled,
         }
 
 
@@ -137,6 +145,7 @@ class BackendCatalog:
         # isolated, one bad subscriber can't break the poll loop.
         self._subscribers: list[Callable[[], Awaitable[None]]] = []
         self._last_signature: str = ""
+        self._lifecycle_states: dict[str, str] = {}
 
     def subscribe(self, callback: Callable[[], Awaitable[None]]) -> None:
         """Register an async callback for backend state changes.
@@ -187,13 +196,60 @@ class BackendCatalog:
         return list(self._entries.values())
 
     def backends_with_capability(self, capability: str) -> list[BackendEntry]:
-        """All healthy backends advertising ``capability``, ordered by priority."""
+        """All healthy, enabled, running backends for this capability, ordered by priority."""
         matches = [
             e for e in self._entries.values()
-            if e.status == "ok" and capability in e.capabilities
+            if e.status == "ok"
+            and e.enabled
+            and e.lifecycle_state == "running"
+            and capability in e.capabilities
         ]
         matches.sort(key=lambda e: e.priority)
         return matches
+
+    def set_lifecycle_state(self, name: str, state: str) -> None:
+        """Called by LifecycleManager to update a backend's lifecycle state."""
+        self._lifecycle_states[name] = state
+
+    def get_lifecycle_state(self, name: str) -> str:
+        return self._lifecycle_states.get(name, "running")
+
+    def backends_startable_for_capability(self, capability: str) -> list[BackendEntry]:
+        """Backends that are stopped+auto_manage=true and could serve this capability.
+
+        Returns a BackendEntry for each matching backend. If a backend has never
+        been successfully probed (no entry in _entries), a synthetic entry is
+        constructed from config so cold-start backends are not silently dropped.
+        """
+        out = []
+        for b in self._backends_config:
+            if not b.get("enabled", True):
+                continue
+            if not b.get("auto_manage", False):
+                continue
+            state = self._lifecycle_states.get(b["name"], "running")
+            if state != "stopped":
+                continue
+            caps = self._capabilities_for_type(b["type"])
+            if capability not in caps:
+                continue
+            entry = self._entries.get(b["name"])
+            if entry is None:
+                entry = BackendEntry(
+                    name=b["name"],
+                    type=b["type"],
+                    url=b["url"],
+                    status="error",
+                    capabilities=caps,
+                    models=[],
+                    priority=b.get("priority", 99),
+                    lifecycle_state="stopped",
+                    auto_manage=True,
+                    keep_alive_minutes=b.get("keep_alive_minutes", 10),
+                    enabled=b.get("enabled", True),
+                )
+            out.append(entry)
+        return out
 
     def find_backend_for_model(
         self, capability: str, model_id: Optional[str] = None
@@ -268,12 +324,16 @@ class BackendCatalog:
 
     async def _probe_all(self) -> None:
         now = time.time()
+        active_backends = [b for b in self._backends_config if b.get("enabled", True)]
         results = await asyncio.gather(
-            *[self._probe_one(b) for b in self._backends_config],
+            *[self._probe_one(b) for b in active_backends],
             return_exceptions=True,
         )
-        for backend, result in zip(self._backends_config, results):
+        for backend, result in zip(active_backends, results):
             name = backend["name"]
+            auto_manage = backend.get("auto_manage", False)
+            keep_alive_minutes = backend.get("keep_alive_minutes", 10)
+            lifecycle_state = self._lifecycle_states.get(name, "running")
             if isinstance(result, Exception):
                 self._mark_error(name, backend, str(result), now)
                 continue
@@ -289,6 +349,10 @@ class BackendCatalog:
                     last_healthy=now,
                     last_probed=now,
                     error=None,
+                    lifecycle_state=lifecycle_state,
+                    auto_manage=auto_manage,
+                    keep_alive_minutes=keep_alive_minutes,
+                    enabled=backend.get("enabled", True),
                 )
             else:
                 self._mark_error(name, backend, result.get("error"), now)
@@ -312,6 +376,10 @@ class BackendCatalog:
             last_healthy=last_healthy,
             last_probed=now,
             error=err,
+            lifecycle_state=self._lifecycle_states.get(name, "running"),
+            auto_manage=backend.get("auto_manage", False),
+            keep_alive_minutes=backend.get("keep_alive_minutes", 10),
+            enabled=backend.get("enabled", True),
         )
 
     async def _probe_one(self, backend: dict) -> dict:

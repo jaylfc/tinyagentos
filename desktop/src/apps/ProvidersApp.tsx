@@ -72,6 +72,11 @@ interface Provider {
   worker_name?: string;
   worker_url?: string;
   worker_platform?: string;
+  // Lifecycle
+  lifecycle_state?: "stopped" | "starting" | "running" | "draining" | "stopping";
+  auto_manage?: boolean;
+  keep_alive_minutes?: number;
+  enabled?: boolean;
 }
 
 const CATEGORY_LABELS: Record<ProviderCategory, string> = {
@@ -119,6 +124,40 @@ function StatusPill({ status }: { status: string }) {
   const label = STATUS_LABEL[status] ?? "Unknown";
   return (
     <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${cls}`}>
+      {label}
+    </span>
+  );
+}
+
+const LIFECYCLE_PILL: Record<string, string> = {
+  running:  "bg-emerald-500/20 text-emerald-400",
+  stopped:  "bg-zinc-500/20 text-zinc-400",
+  error:    "bg-red-500/20 text-red-400",
+  starting: "bg-blue-500/20 text-blue-400",
+  draining: "bg-amber-500/20 text-amber-400",
+  stopping: "bg-amber-500/20 text-amber-400",
+};
+
+const LIFECYCLE_LABEL: Record<string, string> = {
+  running:  "Running",
+  stopped:  "Stopped",
+  error:    "Error",
+  starting: "Starting…",
+  draining: "Draining…",
+  stopping: "Stopping…",
+};
+
+function LifecycleStatePill({ state }: { state: string }) {
+  const cls = LIFECYCLE_PILL[state] ?? LIFECYCLE_PILL.stopped;
+  const label = LIFECYCLE_LABEL[state] ?? state;
+  const isTransitional = state === "starting" || state === "draining" || state === "stopping";
+  return (
+    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium inline-flex items-center gap-1 ${cls}`}>
+      {isTransitional && (
+        <svg className="animate-spin" width="8" height="8" viewBox="0 0 8 8" fill="none" aria-hidden="true">
+          <circle cx="4" cy="4" r="3" stroke="currentColor" strokeWidth="1.5" strokeDasharray="10" strokeDashoffset="5" />
+        </svg>
+      )}
       {label}
     </span>
   );
@@ -486,16 +525,24 @@ function ProviderDetail({
   onEdit,
   onDelete,
   onTestDone,
+  onRefresh,
 }: {
   provider: Provider;
   onEdit: () => void;
   onDelete: () => void;
   onTestDone: (result: TestResult) => void;
+  onRefresh: () => void;
 }) {
   const isMobile = useIsMobile();
   const [copied, setCopied] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<TestResult>(null);
+  const [lifecycleLoading, setLifecycleLoading] = useState(false);
+  const [keepAliveInput, setKeepAliveInput] = useState(provider.keep_alive_minutes ?? 10);
+
+  const lifecycleState = provider.lifecycle_state ?? "running";
+  const isLocal = !provider.source?.startsWith("worker:");
+  const isTransitional = lifecycleState === "starting" || lifecycleState === "draining" || lifecycleState === "stopping";
 
   const openWindow = useProcessStore((s) => s.openWindow);
 
@@ -532,6 +579,41 @@ function ProviderDetail({
     setTesting(false);
   }
 
+  async function handleStart() {
+    setLifecycleLoading(true);
+    try {
+      await fetch(`/api/providers/${encodeURIComponent(provider.name)}/start`, { method: "POST" });
+      onRefresh();
+    } finally {
+      setLifecycleLoading(false);
+    }
+  }
+
+  async function handleStop(force: boolean) {
+    setLifecycleLoading(true);
+    try {
+      await fetch(`/api/providers/${encodeURIComponent(provider.name)}/stop`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force }),
+      });
+      onRefresh();
+    } finally {
+      setLifecycleLoading(false);
+    }
+  }
+
+  async function handlePatch(patch: { enabled?: boolean; auto_manage?: boolean; keep_alive_minutes?: number }) {
+    try {
+      await fetch(`/api/providers/${encodeURIComponent(provider.name)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+    } catch { /* ignore — onRefresh will re-sync state from server */ }
+    onRefresh();
+  }
+
   const models = provider.models ?? [];
 
   return (
@@ -544,6 +626,9 @@ function ProviderDetail({
               <h2 className="text-sm font-semibold text-shell-text truncate">{provider.name}</h2>
               <TypePill type={provider.type} />
               <StatusPill status={provider.status} />
+              {isLocal && provider.lifecycle_state && (
+                <LifecycleStatePill state={lifecycleState} />
+              )}
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-shell-text-tertiary">
                 priority {provider.priority}
               </span>
@@ -552,31 +637,54 @@ function ProviderDetail({
               <p className="text-[11px] text-shell-text-tertiary mt-0.5">{provider.response_ms} ms</p>
             )}
           </div>
+          {/* Action buttons — lifecycle state aware */}
           <div className="flex items-center gap-1 shrink-0">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleTest}
-              disabled={testing}
-              aria-label={`Test connection for ${provider.name}`}
-            >
+            {isLocal && provider.auto_manage && lifecycleState === "stopped" && (
+              <Button size="sm" variant="outline" onClick={handleStart} disabled={lifecycleLoading}
+                aria-label={`Start provider ${provider.name}`}>
+                {lifecycleLoading ? "Starting…" : "Start"}
+              </Button>
+            )}
+            {isLocal && provider.auto_manage && lifecycleState === "running" && (
+              <Button size="sm" variant="outline" onClick={() => handleStop(false)} disabled={lifecycleLoading}
+                aria-label={`Stop provider ${provider.name}`}>
+                Stop
+              </Button>
+            )}
+            {isLocal && provider.auto_manage && isTransitional && (
+              <>
+                <span className="text-[11px] text-shell-text-tertiary px-2">
+                  {LIFECYCLE_LABEL[lifecycleState]}
+                </span>
+                <button
+                  onClick={() => handleStop(true)}
+                  disabled={lifecycleLoading}
+                  className="text-[11px] text-red-400 hover:text-red-300 px-1"
+                  aria-label={`Force kill provider ${provider.name}`}
+                >
+                  Kill
+                </button>
+              </>
+            )}
+            <Button size="sm" variant="outline" onClick={handleTest} disabled={testing}
+              aria-label={`Test connection for ${provider.name}`}>
               <RefreshCw size={13} className={testing ? "animate-spin" : ""} />
               {testing ? "Testing..." : "Test"}
             </Button>
-            <Button size="sm" variant="outline" onClick={onEdit} aria-label={`Edit provider ${provider.name}`}>
-              <Edit size={13} />
-              Edit
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={onDelete}
-              className="hover:bg-red-500/15 hover:text-red-300"
-              aria-label={`Delete provider ${provider.name}`}
-            >
-              <Trash2 size={13} />
-              Delete
-            </Button>
+            {(!isLocal || lifecycleState === "running" || !provider.lifecycle_state) && (
+              <>
+                <Button size="sm" variant="outline" onClick={onEdit} aria-label={`Edit provider ${provider.name}`}>
+                  <Edit size={13} />
+                  Edit
+                </Button>
+                <Button size="sm" variant="outline" onClick={onDelete}
+                  className="hover:bg-red-500/15 hover:text-red-300"
+                  aria-label={`Delete provider ${provider.name}`}>
+                  <Trash2 size={13} />
+                  Delete
+                </Button>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -629,6 +737,14 @@ function ProviderDetail({
           >
             {testResult.reachable
               ? `Connected — ${testResult.response_ms ?? 0} ms · ${testResult.models?.length ?? 0} models found`
+              : (lifecycleState === "stopping" || lifecycleState === "draining")
+              ? "Provider is shutting down. Wait for it to stop before testing."
+              : lifecycleState === "stopped" && (provider.auto_manage ?? false)
+              ? "Starting service…"
+              : lifecycleState === "stopped"
+              ? "Service is stopped. Start it manually or enable Auto manage."
+              : testResult.error?.includes("Cannot connect") || testResult.error?.includes("Connection refused") || testResult.error?.includes("connect")
+              ? `Cannot reach ${provider.url}. Check the service is running.`
               : `Connection failed: ${testResult.error ?? "unknown error"}`}
           </div>
         )}
@@ -709,6 +825,76 @@ function ProviderDetail({
             )}
           </CardContent>
         </Card>
+
+        {/* Lifecycle settings — only for local, auto-managed providers */}
+        {isLocal && provider.auto_manage !== undefined && (
+          <Card className="p-0 overflow-hidden">
+            <div className="px-3 py-2 border-b border-white/5">
+              <span className="text-[10px] font-medium text-shell-text-tertiary uppercase tracking-wider">
+                Lifecycle
+              </span>
+            </div>
+            <CardContent className="p-3 space-y-3">
+              {/* Enabled toggle */}
+              <div className="flex items-center justify-between">
+                <span className="text-[12px] text-shell-text-secondary">Enabled</span>
+                <button
+                  role="switch"
+                  aria-checked={provider.enabled ?? true}
+                  aria-label="Toggle provider enabled"
+                  onClick={() => handlePatch({ enabled: !(provider.enabled ?? true) })}
+                  className={`w-8 h-4 rounded-full transition-colors relative ${
+                    (provider.enabled ?? true) ? "bg-emerald-500" : "bg-zinc-600"
+                  }`}
+                >
+                  <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${
+                    (provider.enabled ?? true) ? "translate-x-4" : "translate-x-0.5"
+                  }`} />
+                </button>
+              </div>
+              {/* Auto manage toggle */}
+              <div className="flex items-center justify-between">
+                <span className="text-[12px] text-shell-text-secondary">Auto manage</span>
+                <button
+                  role="switch"
+                  aria-checked={provider.auto_manage ?? false}
+                  aria-label="Toggle auto manage"
+                  onClick={() => handlePatch({ auto_manage: !(provider.auto_manage ?? false) })}
+                  className={`w-8 h-4 rounded-full transition-colors relative ${
+                    (provider.auto_manage ?? false) ? "bg-emerald-500" : "bg-zinc-600"
+                  }`}
+                >
+                  <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${
+                    (provider.auto_manage ?? false) ? "translate-x-4" : "translate-x-0.5"
+                  }`} />
+                </button>
+              </div>
+              {/* Keep alive — only shown when auto manage is on */}
+              {(provider.auto_manage ?? false) && (
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <span className="text-[12px] text-shell-text-secondary">Keep alive</span>
+                    <p className="text-[10px] text-shell-text-tertiary">
+                      {(provider.keep_alive_minutes ?? 10) === 0
+                        ? "Always on"
+                        : `Stop after ${provider.keep_alive_minutes ?? 10} min idle`}
+                    </p>
+                  </div>
+                  <input
+                    type="number"
+                    min={0}
+                    max={60}
+                    value={keepAliveInput}
+                    onChange={(e) => setKeepAliveInput(Number(e.target.value))}
+                    onBlur={(e) => handlePatch({ keep_alive_minutes: Number(e.target.value) })}
+                    className="w-14 text-[12px] bg-white/5 border border-white/10 rounded px-2 py-1 text-right text-shell-text"
+                    aria-label="Keep alive minutes (0 = always on)"
+                  />
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );
@@ -752,7 +938,7 @@ export function ProvidersApp({ windowId: _windowId }: { windowId: string }) {
       }
     } catch { /* ignore */ }
     setLoading(false);
-  }, []);
+  }, [isMobile]);
 
   useEffect(() => {
     fetchProviders();
@@ -976,6 +1162,7 @@ export function ProvidersApp({ windowId: _windowId }: { windowId: string }) {
               onEdit={() => openEdit(selectedProvider)}
               onDelete={() => handleDelete(selectedProvider.name)}
               onTestDone={() => fetchProviders()}
+              onRefresh={fetchProviders}
             />
           ) : !isMobile ? (
             <div className="flex items-center justify-center h-full text-shell-text-tertiary text-sm">
