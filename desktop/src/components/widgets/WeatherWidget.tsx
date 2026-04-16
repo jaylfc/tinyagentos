@@ -152,7 +152,7 @@ export function WeatherWidget() {
     >
       {tier === "s" && (
         /* Small: icon + temp + compact wind/humidity row */
-        <div style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", height: "100%", padding: "4px 2px" }}>
+        <div style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", alignItems: "center", height: "100%", padding: "4px 2px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: "1.8rem", lineHeight: 1 }}>{weather.icon}</span>
             <span style={{ fontSize: "1.6rem", fontWeight: 600, color: "rgba(255,255,255,0.95)", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
