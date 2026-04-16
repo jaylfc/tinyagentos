@@ -335,7 +335,7 @@ export function ModelsApp({ windowId: _windowId }: { windowId: string }) {
           <Brain size={18} className="text-accent" />
           <h1 className="text-sm font-semibold">Models</h1>
           <span className="text-xs text-shell-text-tertiary">
-            {downloaded.filter(m => m.hostKind === "controller").length} downloaded
+            {downloaded.filter(m => m.hostKind !== "cloud").length} downloaded
           </span>
           {isFallback && (
             <span
