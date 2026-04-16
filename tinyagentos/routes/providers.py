@@ -33,7 +33,6 @@ class ProviderCreate(BaseModel):
     url: str
     priority: int = 99
     api_key_secret: str | None = None
-    model: str = "default"
 
 class ProviderTest(BaseModel):
     type: str

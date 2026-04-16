@@ -129,6 +129,38 @@ class OpenAICompatAdapter(BackendAdapter):
             return {"status": "error", "response_ms": elapsed_ms, "models": []}
 
 
+class CloudAPIAdapter(BackendAdapter):
+    """Adapter for hosted cloud AI APIs (OpenAI, Anthropic, OpenRouter, Kilo).
+
+    Cloud APIs have no /health endpoint. We probe GET /models without auth:
+    - 2xx  = online (public model list)
+    - 401/403 = online (API is responding, just needs a key)
+    - anything else = error
+    """
+
+    async def health(self, client: httpx.AsyncClient, url: str) -> dict:
+        start = time.monotonic()
+        base = url.rstrip("/")
+        try:
+            resp = await client.get(f"{base}/models", timeout=10)
+            elapsed_ms = int((time.monotonic() - start) * 1000)
+            if resp.status_code in (200, 401, 403):
+                models = []
+                if resp.status_code == 200:
+                    try:
+                        models = [
+                            {"name": m.get("id", ""), "size_mb": 0}
+                            for m in resp.json().get("data", [])
+                        ]
+                    except Exception:
+                        pass
+                return {"status": "ok", "response_ms": elapsed_ms, "models": models}
+            return {"status": "error", "response_ms": elapsed_ms, "models": []}
+        except Exception:
+            elapsed_ms = int((time.monotonic() - start) * 1000)
+            return {"status": "error", "response_ms": elapsed_ms, "models": []}
+
+
 # Type aliases for backwards compatibility with tests
 RkLlamaAdapter = OllamaCompatAdapter
 OllamaAdapter = OllamaCompatAdapter
@@ -142,12 +174,14 @@ _ADAPTERS: dict[str, BackendAdapter] = {
     "ollama": OllamaCompatAdapter(),
     "llama-cpp": OpenAICompatAdapter(),
     "vllm": OpenAICompatAdapter(),
-    "exo": OpenAICompatAdapter(),  # Exo distributed inference — OpenAI-compatible API
-    "mlx": OpenAICompatAdapter(),  # MLX via mlx-lm server — OpenAI-compatible
-    "openai": OpenAICompatAdapter(),  # OpenAI API
-    "anthropic": OpenAICompatAdapter(),  # Anthropic API (health check via OpenAI-compat endpoint)
-    "sd-cpp": StableDiffusionCppAdapter(),  # leejet/stable-diffusion.cpp sd-server
-    "rknn-sd": RknnSdAdapter(),  # darkbit1001 LCM Dreamshaper on RK3588 NPU
+    "exo": OpenAICompatAdapter(),
+    "mlx": OpenAICompatAdapter(),
+    "openai": CloudAPIAdapter(),
+    "anthropic": CloudAPIAdapter(),
+    "openrouter": CloudAPIAdapter(),
+    "kilocode": CloudAPIAdapter(),
+    "sd-cpp": StableDiffusionCppAdapter(),
+    "rknn-sd": RknnSdAdapter(),
 }
 
 

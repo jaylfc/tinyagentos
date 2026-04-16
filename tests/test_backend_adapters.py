@@ -3,6 +3,7 @@ import httpx
 from unittest.mock import AsyncMock, MagicMock
 from tinyagentos.backend_adapters import (
     check_backend_health, RkLlamaAdapter, OllamaAdapter, LlamaCppAdapter, VllmAdapter, get_adapter,
+    CloudAPIAdapter,
 )
 
 class TestGetAdapter:
@@ -61,3 +62,71 @@ class TestOllamaAdapter:
         result = await adapter.health(mock_client, "http://localhost:11434")
         assert result["status"] == "ok"
         assert len(result["models"]) == 1
+
+class TestCloudAPIAdapter:
+    @pytest.mark.asyncio
+    async def test_200_is_ok(self):
+        adapter = CloudAPIAdapter()
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {"data": [{"id": "gpt-4o"}, {"id": "gpt-4o-mini"}]}
+        mock_client.get.return_value = resp
+        result = await adapter.health(mock_client, "https://api.openai.com/v1")
+        assert result["status"] == "ok"
+        assert result["models"] == [{"name": "gpt-4o", "size_mb": 0}, {"name": "gpt-4o-mini", "size_mb": 0}]
+        assert "response_ms" in result
+
+    @pytest.mark.asyncio
+    async def test_401_is_ok(self):
+        """401 = server is reachable, just needs auth — count as online."""
+        adapter = CloudAPIAdapter()
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        resp = MagicMock()
+        resp.status_code = 401
+        mock_client.get.return_value = resp
+        result = await adapter.health(mock_client, "https://api.openai.com/v1")
+        assert result["status"] == "ok"
+        assert result["models"] == []
+
+    @pytest.mark.asyncio
+    async def test_403_is_ok(self):
+        adapter = CloudAPIAdapter()
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        resp = MagicMock()
+        resp.status_code = 403
+        mock_client.get.return_value = resp
+        result = await adapter.health(mock_client, "https://api.openai.com/v1")
+        assert result["status"] == "ok"
+        assert result["models"] == []
+
+    @pytest.mark.asyncio
+    async def test_500_is_error(self):
+        adapter = CloudAPIAdapter()
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        resp = MagicMock()
+        resp.status_code = 500
+        mock_client.get.return_value = resp
+        result = await adapter.health(mock_client, "https://api.openai.com/v1")
+        assert result["status"] == "error"
+
+    @pytest.mark.asyncio
+    async def test_connection_error_is_error(self):
+        adapter = CloudAPIAdapter()
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.get.side_effect = httpx.ConnectError("Connection refused")
+        result = await adapter.health(mock_client, "https://api.openai.com/v1")
+        assert result["status"] == "error"
+        assert result["models"] == []
+
+    def test_get_adapter_openai_uses_cloud(self):
+        assert isinstance(get_adapter("openai"), CloudAPIAdapter)
+
+    def test_get_adapter_anthropic_uses_cloud(self):
+        assert isinstance(get_adapter("anthropic"), CloudAPIAdapter)
+
+    def test_get_adapter_openrouter(self):
+        assert isinstance(get_adapter("openrouter"), CloudAPIAdapter)
+
+    def test_get_adapter_kilocode(self):
+        assert isinstance(get_adapter("kilocode"), CloudAPIAdapter)
