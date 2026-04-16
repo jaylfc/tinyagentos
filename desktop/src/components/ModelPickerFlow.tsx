@@ -83,8 +83,7 @@ export function ModelPickerFlow({ models, modelsLoaded, onSelect, onBack, onCanc
 
   const handleBack = () => {
     if (screen === "source") {
-      onBack?.();
-      onCancel?.();
+      onCancel ? onCancel() : onBack?.();
     } else if (screen === "provider") {
       setSelectedSource(null);
       setScreen("source");
