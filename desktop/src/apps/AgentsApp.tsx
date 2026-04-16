@@ -1049,7 +1049,7 @@ function DeployWizard({
                   onClick={() => {
                     if (!showAdvanced && !advancedLoaded) {
                       fetch("/api/activity", { headers: { Accept: "application/json" } })
-                        .then(r => r.json())
+                        .then(r => { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
                         .then(data => {
                           setSystemRamMb(data?.hardware?.ram_mb ?? null);
                           setSystemCpuCores(data?.hardware?.cpu?.cores ?? null);
@@ -1066,8 +1066,10 @@ function DeployWizard({
                   <ChevronRight size={14} className={`transition-transform ${showAdvanced ? "rotate-90" : ""}`} />
                   Advanced settings
                 </button>
-                {showAdvanced && (
-                  <div id="agent-advanced-settings" className="mt-3 space-y-3 px-4 py-3 rounded-lg bg-shell-bg-deep border border-white/5">
+                <div
+                  id="agent-advanced-settings"
+                  className={`mt-3 space-y-3 px-4 py-3 rounded-lg bg-shell-bg-deep border border-white/5 ${showAdvanced ? "" : "hidden"}`}
+                >
                     <div>
                       <Label htmlFor="agent-memory-adv" className="mb-1.5 block">Memory</Label>
                       <select
@@ -1078,7 +1080,7 @@ function DeployWizard({
                       >
                         <option value="">Unlimited (default)</option>
                         {MEMORY_STEPS_MB
-                          .filter(mb => systemRamMb === null || mb <= systemRamMb)
+                          .filter(mb => systemRamMb !== null ? mb <= systemRamMb : mb <= 4096)
                           .map(mb => (
                             <option key={mb} value={String(mb)}>
                               {mb >= 1024 ? `${Math.round(mb / 1024)} GB` : `${mb} MB`}
@@ -1104,7 +1106,6 @@ function DeployWizard({
                       </select>
                     </div>
                   </div>
-                )}
               </div>
             </div>
           )}
