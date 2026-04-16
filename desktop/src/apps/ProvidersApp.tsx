@@ -946,6 +946,35 @@ function ProviderDetail({
           </CardContent>
         </Card>
 
+        {/* Enabled toggle — cloud providers only */}
+        {isCloud(provider.type) && (
+          <Card className="p-3">
+            <CardContent className="p-0">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-[12px] text-shell-text-secondary">Enabled</span>
+                  {!(provider.enabled ?? true) && (
+                    <p className="text-[11px] text-amber-400 mt-0.5">Suspended — requests will be blocked</p>
+                  )}
+                </div>
+                <button
+                  role="switch"
+                  aria-checked={provider.enabled ?? true}
+                  aria-label="Toggle provider enabled"
+                  onClick={() => handlePatch({ enabled: !(provider.enabled ?? true) })}
+                  className={`w-8 h-4 rounded-full transition-colors relative ${
+                    (provider.enabled ?? true) ? "bg-emerald-500" : "bg-zinc-600"
+                  }`}
+                >
+                  <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${
+                    (provider.enabled ?? true) ? "translate-x-4" : "translate-x-0.5"
+                  }`} />
+                </button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Models */}
         <Card className="p-3">
           <CardContent className="p-0">
