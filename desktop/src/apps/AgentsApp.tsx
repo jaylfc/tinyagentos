@@ -559,7 +559,7 @@ function DeployWizard({
 
   if (!open) return null;
 
-  const STEPS = ["Name & Color", "Framework", "Model", "Resources", "Permissions", "Failure Policy", "Review"];
+  const STEPS = ["Name & Color", "Framework", "Model", "Permissions", "Failure Policy", "Review"];
 
   const canNext = () => {
     if (step === 0) return name.trim().length > 0;
@@ -823,46 +823,8 @@ function DeployWizard({
             </div>
           )}
 
-          {/* Step 3: Resources */}
+          {/* Step 3: Permissions */}
           {step === 3 && (
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="agent-memory" className="mb-1.5 block">
-                  Memory
-                </Label>
-                <select
-                  id="agent-memory"
-                  value={memory}
-                  onChange={(e) => setMemory(e.target.value)}
-                  className="flex h-9 w-full rounded-lg border border-white/10 bg-shell-bg-deep px-3 py-1 text-sm text-shell-text focus-visible:outline-none focus-visible:border-accent/40 focus-visible:ring-2 focus-visible:ring-accent/20 transition-colors"
-                >
-                  <option value="256">256 MB</option>
-                  <option value="512">512 MB</option>
-                  <option value="1024">1 GB</option>
-                  <option value="2048">2 GB</option>
-                  <option value="4096">4 GB</option>
-                </select>
-              </div>
-              <div>
-                <Label htmlFor="agent-cpus" className="mb-1.5 block">
-                  CPU Cores
-                </Label>
-                <select
-                  id="agent-cpus"
-                  value={cpus}
-                  onChange={(e) => setCpus(e.target.value)}
-                  className="flex h-9 w-full rounded-lg border border-white/10 bg-shell-bg-deep px-3 py-1 text-sm text-shell-text focus-visible:outline-none focus-visible:border-accent/40 focus-visible:ring-2 focus-visible:ring-accent/20 transition-colors"
-                >
-                  <option value="1">1 Core</option>
-                  <option value="2">2 Cores</option>
-                  <option value="4">4 Cores</option>
-                </select>
-              </div>
-            </div>
-          )}
-
-          {/* Step 4: Permissions */}
-          {step === 4 && (
             <div className="space-y-4">
               <span className="block text-xs text-shell-text-secondary mb-2">Permissions</span>
               <label
@@ -894,8 +856,8 @@ function DeployWizard({
             </div>
           )}
 
-          {/* Step 5: Failure Policy */}
-          {step === 5 && (
+          {/* Step 4: Failure Policy */}
+          {step === 4 && (
             <div className="space-y-4">
               <span className="block text-xs text-shell-text-secondary mb-2">Worker Failure Policy</span>
               <div>
@@ -1037,8 +999,8 @@ function DeployWizard({
             </div>
           )}
 
-          {/* Step 6: Review */}
-          {step === 6 && (
+          {/* Step 5: Review */}
+          {step === 5 && (
             <div className="space-y-3">
               <span className="block text-xs text-shell-text-secondary mb-2">Review Configuration</span>
               <div className="rounded-lg bg-shell-bg-deep border border-white/5 divide-y divide-white/5">
