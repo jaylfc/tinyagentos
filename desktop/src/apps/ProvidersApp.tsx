@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Cloud, Plus, Trash2, Copy, Check, RefreshCw, Edit, X, ExternalLink } from "lucide-react";
 import {
   Button,
@@ -73,7 +73,7 @@ interface Provider {
   worker_url?: string;
   worker_platform?: string;
   // Lifecycle
-  lifecycle_state?: "stopped" | "starting" | "running" | "draining" | "stopping";
+  lifecycle_state?: "stopped" | "starting" | "running" | "draining" | "stopping" | "error";
   auto_manage?: boolean;
   keep_alive_minutes?: number;
   enabled?: boolean;
@@ -906,6 +906,9 @@ function ProviderDetail({
 
 export function ProvidersApp({ windowId: _windowId }: { windowId: string }) {
   const isMobile = useIsMobile();
+  const isMobileRef = useRef(isMobile);
+  useEffect(() => { isMobileRef.current = isMobile; }, [isMobile]);
+
   const [providers, setProviders] = useState<Provider[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<string | null>(null);
@@ -930,7 +933,7 @@ export function ProvidersApp({ windowId: _windowId }: { windowId: string }) {
             setSelected((cur) => {
               if (cur && data.some((p: Provider) => p.name === cur)) return cur;
               // On mobile, let the user pick from the list — don't auto-select.
-              if (isMobile) return null;
+              if (isMobileRef.current) return null;
               return data.length > 0 ? (data[0] as Provider).name : null;
             });
           }
@@ -938,7 +941,7 @@ export function ProvidersApp({ windowId: _windowId }: { windowId: string }) {
       }
     } catch { /* ignore */ }
     setLoading(false);
-  }, [isMobile]);
+  }, []);
 
   useEffect(() => {
     fetchProviders();
