@@ -925,25 +925,13 @@ function DeployWizard({
                   <span className="font-normal text-shell-text-tertiary">(optional, in priority order)</span>
                 </Label>
                 <div className="space-y-1.5">
-                  {fallbackModels.map((m, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <select
-                        value={m}
-                        onChange={(e) => {
-                          const updated = [...fallbackModels];
-                          updated[i] = e.target.value;
-                          setFallbackModels(updated);
-                        }}
-                        className="flex-1 h-8 rounded-lg border border-white/10 bg-shell-bg-deep px-2 text-sm text-shell-text"
-                        aria-label={`Fallback model ${i + 1}`}
-                      >
-                        <option value="">-- pick a model --</option>
-                        {models.filter((mo) => mo.id !== selectedModel).map((mo) => (
-                          <option key={mo.id} value={mo.id}>{mo.name}</option>
-                        ))}
-                      </select>
+                  {fallbackModels.filter(Boolean).map((m, i) => (
+                    <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-white/5 bg-shell-bg-deep">
+                      <span className="flex-1 text-sm truncate">
+                        {models.find(mo => mo.id === m)?.name ?? m}
+                      </span>
                       <button
-                        onClick={() => setFallbackModels(fallbackModels.filter((_, j) => j !== i))}
+                        onClick={() => setFallbackModels(prev => prev.filter((_, j) => j !== i))}
                         className="text-shell-text-tertiary hover:text-red-400 transition-colors"
                         aria-label={`Remove fallback model ${i + 1}`}
                       >
@@ -955,7 +943,7 @@ function DeployWizard({
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => setFallbackModels([...fallbackModels, ""])}
+                      onClick={() => setFallbackModelOpen(true)}
                       className="w-full"
                     >
                       <Plus size={13} />
@@ -963,6 +951,14 @@ function DeployWizard({
                     </Button>
                   )}
                 </div>
+                <ModelPickerModal
+                  open={fallbackModelOpen}
+                  onClose={() => setFallbackModelOpen(false)}
+                  models={models}
+                  modelsLoaded={modelsLoaded}
+                  title="Add Fallback Model"
+                  onSelect={(id) => setFallbackModels(prev => [...prev, id])}
+                />
               </div>
               {/* KV cache quant — split K / V / boundary controls.
                   Each sub-control is only rendered when its axis has more than
