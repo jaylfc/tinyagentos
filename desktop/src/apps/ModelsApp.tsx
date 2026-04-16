@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Brain, Search, Download, Trash2, HardDrive, X } from "lucide-react";
 import {
   Button,
@@ -141,6 +141,7 @@ export function ModelsApp({ windowId: _windowId }: { windowId: string }) {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [source, setSource] = useState<SourceFilter>("all");
+  const [subFilter, setSubFilter] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<Set<string>>(new Set());
 
   const [isFallback, setIsFallback] = useState(false);
@@ -305,6 +306,14 @@ export function ModelsApp({ windowId: _windowId }: { windowId: string }) {
   };
 
   const q = search.toLowerCase();
+
+  // Derive sub-filter chips from actual data for the active source tier
+  const subFilterOptions: string[] = useMemo(() => {
+    if (source === "cloud") return [...new Set(downloaded.filter(m => m.hostKind === "cloud").map(m => m.host))];
+    if (source === "workers") return [...new Set(downloaded.filter(m => m.hostKind === "worker").map(m => m.host))];
+    return [];
+  }, [downloaded, source]);
+
   const filteredAvailable = available.filter((m) => {
     if (q && !m.name.toLowerCase().includes(q) && !m.description.toLowerCase().includes(q)) return false;
     return true;
@@ -314,6 +323,7 @@ export function ModelsApp({ windowId: _windowId }: { windowId: string }) {
     if (source === "local" && m.hostKind !== "controller") return false;
     if (source === "workers" && m.hostKind !== "worker") return false;
     if (source === "cloud" && m.hostKind !== "cloud") return false;
+    if (subFilter && m.host !== subFilter) return false;
     return true;
   });
 
@@ -381,7 +391,7 @@ export function ModelsApp({ windowId: _windowId }: { windowId: string }) {
                   key={src}
                   variant={active ? "default" : "outline"}
                   size="sm"
-                  onClick={() => setSource(src)}
+                  onClick={() => { setSource(src); setSubFilter(null); }}
                   aria-pressed={active}
                 >
                   {labels[src]}
@@ -390,6 +400,28 @@ export function ModelsApp({ windowId: _windowId }: { windowId: string }) {
             },
           )}
         </div>
+        {/* Sub-filter bar — individual cloud providers or workers */}
+        {subFilterOptions.length > 1 && (
+          <div className="flex items-center gap-1.5 flex-wrap" role="group" aria-label="Filter by host">
+            <span className="text-[10px] text-shell-text-tertiary uppercase tracking-wider mr-0.5">
+              {source === "cloud" ? "Provider" : "Worker"}
+            </span>
+            {subFilterOptions.map((opt) => (
+              <button
+                key={opt}
+                onClick={() => setSubFilter(subFilter === opt ? null : opt)}
+                aria-pressed={subFilter === opt}
+                className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors ${
+                  subFilter === opt
+                    ? "bg-violet-500/25 border-violet-500/40 text-violet-200"
+                    : "bg-white/5 border-white/10 text-shell-text-secondary hover:bg-white/10"
+                }`}
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Content */}
