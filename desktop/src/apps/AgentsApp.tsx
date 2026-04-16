@@ -939,7 +939,7 @@ function DeployWizard({
                       </button>
                     </div>
                   ))}
-                  {modelsLoaded && models.length > 1 && (
+                  {modelsLoaded && models.filter(mo => mo.id !== selectedModel && !fallbackModels.includes(mo.id)).length > 0 && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -954,7 +954,7 @@ function DeployWizard({
                 <ModelPickerModal
                   open={fallbackModelOpen}
                   onClose={() => setFallbackModelOpen(false)}
-                  models={models}
+                  models={models.filter(mo => mo.id !== selectedModel && !fallbackModels.includes(mo.id))}
                   modelsLoaded={modelsLoaded}
                   title="Add Fallback Model"
                   onSelect={(id) => setFallbackModels(prev => [...prev, id])}

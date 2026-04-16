@@ -29,16 +29,18 @@ export function ModelPickerModal({
         paddingBottom: "calc(1rem + env(safe-area-inset-bottom, 0px))",
       }}
       onClick={onClose}
+      onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
+      tabIndex={-1}
       role="dialog"
       aria-modal="true"
-      aria-label={title}
+      aria-labelledby="model-picker-modal-title"
     >
       <div
         className="w-full max-w-md max-h-full min-h-0 bg-shell-surface rounded-xl border border-white/10 shadow-2xl overflow-hidden flex flex-col"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/5 shrink-0">
-          <h2 className="text-sm font-semibold">{title}</h2>
+          <h2 id="model-picker-modal-title" className="text-sm font-semibold">{title}</h2>
           <Button
             variant="ghost"
             size="icon"
