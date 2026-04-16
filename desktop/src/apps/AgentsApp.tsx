@@ -9,7 +9,6 @@ import {
   CLOUD_PROVIDER_TYPES,
 } from "@/lib/models";
 import { availableKvQuantOptions, type KvQuantOptions } from "@/lib/cluster";
-import { useProcessStore } from "@/stores/process-store";
 import {
   Button,
   Card,
@@ -326,7 +325,6 @@ function DeployWizard({
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [selectedModel, setSelectedModel] = useState<string>("");
 
-  const openWindow = useProcessStore((s) => s.openWindow);
   // Step 4
   const [memory, setMemory] = useState("512");
   const [cpus, setCpus] = useState("1");
