@@ -29,7 +29,8 @@ class TestDeployAgent:
             return (0, "ok")
 
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
-             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec):
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
             mock_create.return_value = {"success": True, "name": "taos-agent-test"}
 
             result = await deploy_agent(req)
@@ -79,7 +80,8 @@ class TestDeployAgent:
             return (0, "ok")
 
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
-             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn):
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
             mock_create.return_value = {"success": True, "name": "taos-agent-proxy-test"}
 
             result = await deploy_agent(req)
@@ -102,7 +104,8 @@ class TestDeployAgent:
             return (0, "ok")
 
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
-             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn):
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
             mock_create.return_value = {"success": True, "name": "taos-agent-no-proxy"}
 
             result = await deploy_agent(req)
@@ -124,7 +127,8 @@ class TestDeployAgent:
             return (0, "ok")
 
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
-             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn):
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
             mock_create.return_value = {"success": True, "name": "taos-agent-with-model"}
             result = await deploy_agent(req)
             assert result["success"] is True
@@ -146,7 +150,8 @@ class TestDeployAgent:
             return (0, "ok")
 
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
-             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn):
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
             mock_create.return_value = {"success": True, "name": "taos-agent-deps"}
             await deploy_agent(req)
 
@@ -172,6 +177,7 @@ class TestDeployAgent:
 
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
              patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}), \
              patch("tinyagentos.deployer.destroy_container", new_callable=AsyncMock) as mock_destroy:
             mock_create.return_value = {"success": True, "name": "taos-agent-brokenfw"}
             mock_destroy.return_value = {"success": True}
@@ -203,7 +209,8 @@ class TestDeployAgent:
             return (0, "ok")
 
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
-             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn):
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
             mock_create.return_value = {"success": True, "name": "taos-agent-pip-install"}
             result = await deploy_agent(req)
             assert result["success"] is True
@@ -238,6 +245,7 @@ class TestDeployAgent:
 
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
              patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}), \
              patch("tinyagentos.deployer.push_file", new_callable=AsyncMock) as mock_push:
             mock_create.return_value = {"success": True, "name": "taos-agent-scripted"}
             mock_push.return_value = (0, "")
@@ -246,6 +254,37 @@ class TestDeployAgent:
             mock_push.assert_called_once()
             # verify the script was executed in the container
             assert any("bash /tmp/install.sh" in c for c in recorded_execs)
+
+    @pytest.mark.asyncio
+    async def test_agent_home_mount_and_env(self, tmp_path):
+        """Every agent gets a persistent /root home mount from the host
+        so framework configs and dotfiles survive container rebuilds."""
+        req = _req(name="homer", data_dir=tmp_path)
+
+        async def mock_exec_fn(name, cmd, **kwargs):
+            if "hostname -I" in " ".join(cmd):
+                return (0, "10.0.0.80")
+            return (0, "ok")
+
+        with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
+            mock_create.return_value = {"success": True, "name": "taos-agent-homer"}
+            result = await deploy_agent(req)
+            assert result["success"] is True
+
+            kwargs = mock_create.call_args.kwargs
+            mounts = kwargs["mounts"]
+            assert (str(tmp_path / "agent-home" / "homer"), "/root") in mounts
+            # pre-existing mounts still present
+            assert (str(tmp_path / "agent-workspaces" / "homer"), "/workspace") in mounts
+            assert (str(tmp_path / "agent-memory" / "homer"), "/memory") in mounts
+
+            env = kwargs["env"]
+            assert env["TAOS_AGENT_HOME"] == "/root"
+
+            # Host dir was created
+            assert (tmp_path / "agent-home" / "homer").is_dir()
 
     @pytest.mark.asyncio
     async def test_manifest_script_missing_file_fails(self, tmp_path):
@@ -267,12 +306,62 @@ class TestDeployAgent:
 
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
              patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}), \
              patch("tinyagentos.deployer.destroy_container", new_callable=AsyncMock) as mock_destroy:
             mock_create.return_value = {"success": True, "name": "taos-agent-missingscript"}
             mock_destroy.return_value = {"success": True}
             result = await deploy_agent(req)
             assert result["success"] is False
             assert "Install script missing" in result["error"]
+
+
+    @pytest.mark.asyncio
+    async def test_proxy_devices_attached(self, tmp_path):
+        """Container gets an incus proxy device per host service so
+        127.0.0.1:<port> inside reaches 127.0.0.1:<port> on the host."""
+        req = _req(name="proxied", data_dir=tmp_path)
+
+        async def mock_exec_fn(name, cmd, **kwargs):
+            if "hostname -I" in " ".join(cmd):
+                return (0, "10.0.0.90")
+            return (0, "ok")
+
+        with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock) as mock_proxy:
+            mock_create.return_value = {"success": True, "name": "taos-agent-proxied"}
+            mock_proxy.return_value = {"success": True, "output": ""}
+            result = await deploy_agent(req)
+            assert result["success"] is True
+
+            calls = mock_proxy.call_args_list
+            dev_names = {c.args[1] for c in calls}
+            listens = {c.kwargs["listen"] for c in calls}
+            assert "taos-proxy-litellm" in dev_names
+            assert "taos-proxy-taos" in dev_names
+            assert "tcp:127.0.0.1:4000" in listens
+            assert "tcp:127.0.0.1:6969" in listens
+
+    @pytest.mark.asyncio
+    async def test_proxy_device_failure_rolls_back(self, tmp_path):
+        req = _req(name="noproxy", data_dir=tmp_path)
+
+        async def mock_exec_fn(name, cmd, **kwargs):
+            if "hostname -I" in " ".join(cmd):
+                return (0, "10.0.0.91")
+            return (0, "ok")
+
+        with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock) as mock_proxy, \
+             patch("tinyagentos.deployer.destroy_container", new_callable=AsyncMock) as mock_destroy:
+            mock_create.return_value = {"success": True, "name": "taos-agent-noproxy"}
+            mock_proxy.return_value = {"success": False, "output": "device already exists"}
+            mock_destroy.return_value = {"success": True}
+            result = await deploy_agent(req)
+            assert result["success"] is False
+            assert "proxy device" in result["error"]
+            mock_destroy.assert_called_once()
 
 
 class TestBackgroundDeploy:

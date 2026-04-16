@@ -18,6 +18,7 @@ from pathlib import Path
 from tinyagentos.containers import (
     create_container, exec_in_container, push_file,
     start_container, stop_container, destroy_container,
+    add_proxy_device,
 )
 
 logger = logging.getLogger(__name__)
@@ -34,7 +35,10 @@ class DeployRequest:
     cpu_limit: int | None = None
     extra_config: dict | None = None
     can_read_user_memory: bool = False
-    taos_host: str = "host.docker.internal"
+    # Containers reach the host via incus proxy devices on the same port,
+    # so 127.0.0.1 inside the container transparently forwards to
+    # 127.0.0.1 on the host.
+    taos_host: str = "127.0.0.1"
     taos_port: int = 6969
 
 
@@ -53,16 +57,19 @@ async def deploy_agent(req: DeployRequest) -> dict:
     steps = []
 
     # Per-agent host-side state directories. These are the mounts the
-    # container sees at /workspace and /memory. Created if missing so the
-    # first deploy of a new agent just works.
+    # container sees at /workspace, /memory, and /root. Created if missing
+    # so the first deploy of a new agent just works.
     host_workspace = req.data_dir / "agent-workspaces" / req.name
     host_memory = req.data_dir / "agent-memory" / req.name
+    host_home = req.data_dir / "agent-home" / req.name
     host_workspace.mkdir(parents=True, exist_ok=True)
     host_memory.mkdir(parents=True, exist_ok=True)
+    host_home.mkdir(parents=True, exist_ok=True)
 
     mounts = [
         (str(host_workspace), "/workspace"),
         (str(host_memory), "/memory"),
+        (str(host_home), "/root"),
     ]
 
     # Env vars injected at container creation time — all point at host
@@ -106,6 +113,10 @@ async def deploy_agent(req: DeployRequest) -> dict:
         f"{skill_server_url}/tools?agent_name={req.name}"
     )
     env["TAOS_AGENT_NAME"] = req.name
+    # Agent's home folder is bind-mounted from the host so framework
+    # configs, dotfiles, caches, and cloned repos persist across
+    # container rebuilds and travel with the agent on archive / move.
+    env["TAOS_AGENT_HOME"] = "/root"
 
     # Selected model name — the in-container agent runtime reads this
     # and passes it as the ``model`` field on LLM calls so the host's
@@ -128,6 +139,29 @@ async def deploy_agent(req: DeployRequest) -> dict:
     steps.append("container_created")
 
     try:
+        # Incus proxy devices: let the container reach host services via
+        # its own 127.0.0.1. The openai SDK (pointed at OPENAI_BASE_URL)
+        # and the skills / user-memory clients all hit localhost:<port>
+        # inside the container — the deployer doesn't need to inject a
+        # host IP or rely on DNS. If either add fails, bail: without
+        # these the agent has no LLM and no host-side services.
+        proxy_ports = [
+            ("taos-proxy-litellm", 4000),
+            ("taos-proxy-taos", req.taos_port),
+        ]
+        for dev_name, port in proxy_ports:
+            res = await add_proxy_device(
+                container_name,
+                dev_name,
+                listen=f"tcp:127.0.0.1:{port}",
+                connect=f"tcp:127.0.0.1:{port}",
+            )
+            if not res.get("success"):
+                raise RuntimeError(
+                    f"failed to attach proxy device {dev_name}:{port}: {res.get('output', '')}"
+                )
+        steps.append("proxy_devices_attached")
+
         # Step 2: Wait for network
         for _ in range(10):
             code, output = await exec_in_container(container_name, ["hostname", "-I"])
