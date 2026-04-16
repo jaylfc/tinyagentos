@@ -70,8 +70,11 @@ async def list_providers(request: Request):
     providers = []
 
     # 1) Controller-local providers (live health probe)
+    # Only expose backends with a recognised AI type — entries with an empty
+    # or unrecognised type are auxiliary services (Home Assistant, Gitea, etc.)
+    # and belong in a future Services app, not here.
     catalog = getattr(request.app.state, "backend_catalog", None)
-    for backend in config.backends:
+    for backend in [b for b in config.backends if b.get("type") in VALID_BACKEND_TYPES]:
         status = "unknown"
         response_ms = 0
         models = []
