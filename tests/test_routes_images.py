@@ -27,8 +27,11 @@ async def images_client(images_app):
         await store.close()
     await store.init()
     await images_app.state.qmd_client.init()
+    images_app.state.auth.setup_user("admin", "Test Admin", "", "testpass")
+    _rec = images_app.state.auth.find_user("admin")
+    _token = images_app.state.auth.create_session(user_id=_rec["id"] if _rec else "", long_lived=True)
     transport = ASGITransport(app=images_app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
+    async with AsyncClient(transport=transport, base_url="http://test", cookies={"taos_session": _token}) as c:
         yield c
     await store.close()
     await images_app.state.qmd_client.close()
@@ -92,8 +95,11 @@ class TestImagesGenerate:
             await store.close()
         await store.init()
         await app.state.qmd_client.init()
+        app.state.auth.setup_user("admin", "Test Admin", "", "testpass")
+        _rec = app.state.auth.find_user("admin")
+        _token = app.state.auth.create_session(user_id=_rec["id"] if _rec else "", long_lived=True)
         transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as c:
+        async with AsyncClient(transport=transport, base_url="http://test", cookies={"taos_session": _token}) as c:
             resp = await c.post("/api/images/generate", json={"prompt": "test"})
         assert resp.status_code == 503
         assert "error" in resp.json()

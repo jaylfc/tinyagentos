@@ -33,8 +33,11 @@ async def training_client(training_app):
     if training._db is not None:
         await training.close()
     await training.init()
+    training_app.state.auth.setup_user("admin", "Test Admin", "", "testpass")
+    _rec = training_app.state.auth.find_user("admin")
+    _token = training_app.state.auth.create_session(user_id=_rec["id"] if _rec else "", long_lived=True)
     transport = ASGITransport(app=training_app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
+    async with AsyncClient(transport=transport, base_url="http://test", cookies={"taos_session": _token}) as c:
         yield c
     await training.close()
     await store.close()

@@ -39,8 +39,11 @@ async def browsers_client(tmp_path):
     from tinyagentos.routes.agent_browsers import router as agent_browsers_router
     app.include_router(agent_browsers_router)
 
+    app.state.auth.setup_user("admin", "Test Admin", "", "testpass")
+    _rec = app.state.auth.find_user("admin")
+    _token = app.state.auth.create_session(user_id=_rec["id"] if _rec else "", long_lived=True)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
+    async with AsyncClient(transport=transport, base_url="http://test", cookies={"taos_session": _token}) as c:
         yield c
 
     await browsers_mgr.close()

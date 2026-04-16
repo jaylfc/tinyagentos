@@ -195,6 +195,10 @@ def auto_register_from_manifest(manifest_path: Path, config: "AppConfig") -> boo
     default_url = (lifecycle.get("default_url") if is_catalog else None) or data.get("default_url", "")
     name = f"local-{data.get('id', backend_type)}"
 
+    # Infrastructure services (e.g. gitea, code-server) have no backend_type — skip them.
+    if not backend_type:
+        return False
+
     if any(b.get("name") == name for b in config.backends):
         return False
 

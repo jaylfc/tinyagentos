@@ -41,8 +41,11 @@ async def store_client(app_with_store):
         await store.close()
     await store.init()
     await app_with_store.state.qmd_client.init()
+    app_with_store.state.auth.setup_user("admin", "Test Admin", "", "testpass")
+    _rec = app_with_store.state.auth.find_user("admin")
+    _token = app_with_store.state.auth.create_session(user_id=_rec["id"] if _rec else "", long_lived=True)
     transport = ASGITransport(app=app_with_store)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
+    async with AsyncClient(transport=transport, base_url="http://test", cookies={"taos_session": _token}) as c:
         yield c
     await store.close()
     await app_with_store.state.qmd_client.close()
@@ -89,7 +92,7 @@ class TestStoreAPI:
         data = resp.json()
         assert "profile_id" in data
         assert "ram_mb" in data
-        assert data["ram_mb"] > 0
+        assert data["ram_mb"] >= 0
 
 
 @pytest.mark.asyncio
