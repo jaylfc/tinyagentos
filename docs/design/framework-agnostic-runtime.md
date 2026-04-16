@@ -172,6 +172,16 @@ Same idea, different runbook: `docs/runbooks/container-upgrade.md`. Rebuild the
 image from scratch, re-launch the container, assert zero state loss. Worth
 wiring into the fresh-install test (#2) once that's unblocked.
 
+## Per-agent home (new)
+
+Every container gets `/root` bind-mounted from `{data_dir}/agent-home/{slug}/` on the host. Framework configs (`~/.config/*`, `~/.local/share/*`), shell dotfiles, caches, and any code the agent clones live there, so:
+
+- Destroying and rebuilding the container from the image loses no user state.
+- Archiving the agent is just moving `agent-home/{slug}/` (plus the existing workspace and memory dirs) into an archive bucket.
+- Cross-agent file sharing in the future is a symlink or overlay mount from another agent's `agent-home/`, no new plumbing needed.
+
+The container also sees `TAOS_AGENT_HOME=/root` so runtimes can write to a well-known path.
+
 ## Rule application checklist (for future changes)
 
 When adding a new feature that touches an agent container, answer these
