@@ -67,12 +67,21 @@ export function controllerDownloadedToAggregated(
   };
 }
 
+/** Resolve a display name for a worker — prefer the registered name unless it's
+ *  generic ("localhost", "127.0.0.1"), in which case fall back to the URL hostname. */
+function workerDisplayName(w: ClusterWorker): string {
+  const name = (w.name ?? "").trim();
+  const generic = !name || name === "localhost" || name === "127.0.0.1";
+  if (!generic) return name;
+  try { return new URL(w.url).hostname || name || "worker"; } catch { return name || "worker"; }
+}
+
 /** Flatten worker.backends[].models[] into AggregatedModel entries.
  *  Falls back to top-level w.models[] for older workers that don't report backends. */
 export function workersToAggregated(workers: ClusterWorker[]): AggregatedModel[] {
   const out: AggregatedModel[] = [];
   for (const w of workers) {
-    const wname = w.name ?? "worker";
+    const wname = workerDisplayName(w);
 
     // Prefer nested backends[].models[] — more info (backend name/type)
     const backends = w.backends ?? [];
