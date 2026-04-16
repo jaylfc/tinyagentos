@@ -344,6 +344,7 @@ function DeployWizard({
   // Step 5b — Worker failure policy
   const [onWorkerFailure, setOnWorkerFailure] = useState<"pause" | "fallback" | "escalate-immediately">("pause");
   const [fallbackModels, setFallbackModels] = useState<string[]>([]);
+  const [fallbackModelOpen, setFallbackModelOpen] = useState(false);
 
   // KV cache quantization — split K / V / boundary controls.  Visible only
   // when the cluster advertises more than fp16 for the respective axis.
@@ -792,65 +793,41 @@ function DeployWizard({
           {/* Step 2: Model */}
           {step === 2 && (
             <div className="space-y-2">
-              <span className="block text-xs text-shell-text-secondary mb-2">Select Model</span>
-              {modelsLoaded && models.length === 0 ? (
-                <div className="flex flex-col items-center justify-center gap-3 py-8 px-4 text-center rounded-lg border border-white/5 bg-shell-bg-deep">
-                  <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-accent/10">
-                    <Download size={20} className="text-accent" />
+              {selectedModel ? (
+                /* Summary card — shown after a model is picked */
+                <div>
+                  <span className="block text-xs text-shell-text-secondary mb-2">Selected Model</span>
+                  <div className="px-4 py-3 rounded-lg border border-accent/30 bg-accent/5 flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <div className="text-sm font-medium truncate">
+                          {models.find(m => m.id === selectedModel)?.name ?? selectedModel}
+                        </div>
+                        {(() => {
+                          const m = models.find(mo => mo.id === selectedModel);
+                          return m?.host && m.hostKind !== "controller" ? (
+                            <span className={HOST_BADGE_CLASS}>{m.host}</span>
+                          ) : null;
+                        })()}
+                      </div>
+                      <div className="text-xs text-shell-text-tertiary mt-0.5">{selectedModel}</div>
+                    </div>
+                    <button
+                      onClick={() => setSelectedModel("")}
+                      className="text-xs text-shell-text-tertiary hover:text-shell-text shrink-0 mt-0.5 transition-colors"
+                    >
+                      Change
+                    </button>
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-shell-text">No models available.</p>
-                    <p className="text-xs text-shell-text-tertiary mt-1">
-                      No models downloaded on the controller, hosted on cluster workers, or provided by cloud providers.
-                    </p>
-                  </div>
-                  <Button size="sm" onClick={openModelsApp}>
-                    <Download size={13} />
-                    Get more models
-                  </Button>
                 </div>
               ) : (
-                <>
-                  {models.map((m) => {
-                    const showHost = m.host && m.hostKind !== "controller";
-                    const key = `${m.hostKind ?? "?"}:${m.host ?? "?"}:${m.id}`;
-                    return (
-                      <button
-                        key={key}
-                        onClick={() => setSelectedModel(m.id)}
-                        className={`w-full text-left px-4 py-3 rounded-lg border transition-colors ${
-                          selectedModel === m.id
-                            ? "border-accent bg-accent/10"
-                            : "border-white/5 bg-shell-bg-deep hover:bg-white/5"
-                        }`}
-                      >
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <div className="text-sm font-medium truncate">{m.name}</div>
-                          {showHost && (
-                            <span
-                              className={HOST_BADGE_CLASS}
-                              title={`Hosted on ${m.host}`}
-                            >
-                              {m.host}
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-xs text-shell-text-tertiary">{m.id}</div>
-                      </button>
-                    );
-                  })}
-                  {models.length > 0 && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={openModelsApp}
-                      className="w-full mt-2"
-                    >
-                      <Download size={13} />
-                      Get more models
-                    </Button>
-                  )}
-                </>
+                /* Tiered picker — source → provider → list */
+                <ModelPickerFlow
+                  models={models}
+                  modelsLoaded={modelsLoaded}
+                  onSelect={(id) => setSelectedModel(id)}
+                  onBack={() => setStep(1)}
+                />
               )}
             </div>
           )}
@@ -1120,7 +1097,8 @@ function DeployWizard({
           </div>
         )}
 
-        {/* Footer */}
+        {/* Footer — hidden while the inline model picker is active (has its own nav) */}
+        {!(step === 2 && !selectedModel) && (
         <div className="flex items-center justify-between px-5 py-3 border-t border-white/5 shrink-0">
           <Button
             variant="outline"
@@ -1152,6 +1130,7 @@ function DeployWizard({
             </Button>
           )}
         </div>
+        )}
       </div>
     </div>
   );
