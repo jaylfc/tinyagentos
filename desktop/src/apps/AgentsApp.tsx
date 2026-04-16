@@ -325,14 +325,14 @@ function DeployWizard({
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [selectedModel, setSelectedModel] = useState<string>("");
 
-  // Step 4
+  // Advanced (no wizard step — sent to API with defaults)
   const [memory, setMemory] = useState("512");
   const [cpus, setCpus] = useState("1");
 
-  // Step 5 — Permissions
+  // Step 3 — Permissions
   const [canReadUserMemory, setCanReadUserMemory] = useState(false);
 
-  // Step 5b — Worker failure policy
+  // Step 4 — Worker failure policy
   const [onWorkerFailure, setOnWorkerFailure] = useState<"pause" | "fallback" | "escalate-immediately">("pause");
   const [fallbackModels, setFallbackModels] = useState<string[]>([]);
   const [fallbackModelOpen, setFallbackModelOpen] = useState(false);
