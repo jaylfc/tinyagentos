@@ -974,8 +974,8 @@ function ProviderDetail({
           </CardContent>
         </Card>
 
-        {/* Lifecycle settings — only for local, auto-managed providers */}
-        {isLocal && provider.auto_manage !== undefined && (
+        {/* Lifecycle settings — only for local, non-cloud providers */}
+        {isLocal && !isCloud(provider.type) && provider.auto_manage !== undefined && (
           <Card className="p-0 overflow-hidden">
             <div className="px-3 py-2 border-b border-white/5">
               <span className="text-[10px] font-medium text-shell-text-tertiary uppercase tracking-wider">
