@@ -27,7 +27,7 @@ class TestAgentsPage:
         assert config.agents[0]["host"] == "10.0.0.99"
 
     async def test_delete_agent(self, client, tmp_data_dir, monkeypatch):
-        async def fake_stop(name):
+        async def fake_stop(name, force=False):
             return {"success": True, "output": ""}
 
         async def fake_rename(old, new):
@@ -392,7 +392,7 @@ class TestAgentArchiveLifecycle:
                     "llm_key": "sk-archive-test", "steps": ["deployment_complete"],
                     "container": f"taos-agent-{req.name}"}
 
-        async def fake_stop(name):
+        async def fake_stop(name, force=False):
             stopped.append(name)
             return {"success": True, "output": ""}
 
@@ -428,16 +428,21 @@ class TestAgentArchiveLifecycle:
         archived = (await client.get("/api/agents/archived")).json()
         assert any(a["original"]["name"] == "archiver" for a in archived)
 
-    async def test_restore_archived_agent_with_new_slug_on_collision(self, client, monkeypatch):
+    async def test_restore_archived_agent_with_new_slug_on_collision(self, client, app, monkeypatch):
         """Restoring when the original slug is taken by a new agent gets a
-        suffixed slug; the archived entry is removed."""
+        suffixed slug; the archived entry is removed. Also verifies the
+        env file is rewritten with the new LiteLLM key."""
         renames = []
+        data_dir = app.state.data_dir
 
         async def fake_deploy(req):
+            # Create the agent-home dir so the archive/restore cycle has
+            # something to move, and so the env-file rewrite can fire.
+            (req.data_dir / "agent-home" / req.name).mkdir(parents=True, exist_ok=True)
             return {"success": True, "name": req.name, "ip": "10.0.0.50",
                     "llm_key": "sk-x", "steps": [], "container": f"taos-agent-{req.name}"}
 
-        async def fake_stop(name):
+        async def fake_stop(name, force=False):
             return {"success": True, "output": ""}
 
         async def fake_rename(old, new):
@@ -447,6 +452,13 @@ class TestAgentArchiveLifecycle:
         monkeypatch.setattr("tinyagentos.deployer.deploy_agent", fake_deploy)
         monkeypatch.setattr("tinyagentos.containers.stop_container", fake_stop)
         monkeypatch.setattr("tinyagentos.containers.rename_container", fake_rename)
+
+        # Make llm_proxy appear running and return a fresh key on restore.
+        proxy = app.state.llm_proxy
+        monkeypatch.setattr(proxy, "is_running", lambda: True)
+        async def fake_create_agent_key(name, models=None, budget_duration=None):
+            return "sk-restored-key"
+        monkeypatch.setattr(proxy, "create_agent_key", fake_create_agent_key)
 
         await client.post("/api/agents/deploy", json={"name": "rest", "framework": "none"})
         import asyncio
@@ -474,6 +486,81 @@ class TestAgentArchiveLifecycle:
         live = {a["name"] for a in (await client.get("/api/agents")).json()}
         assert {"rest", "rest-2"} <= live
 
+        # The restore path writes the new key to the agent's env file so
+        # the container reads a fresh credential on next start.
+        from tinyagentos.agent_env import read_env_file
+        home_dir = data_dir / "agent-home" / data["name"]
+        env = read_env_file(home_dir)
+        assert env.get("OPENAI_API_KEY") == "sk-restored-key"
+
+    async def test_archive_moves_home_dir_too(self, client, app, monkeypatch):
+        """Archive sweeps workspace, memory, AND the new home dir into
+        the archive bucket."""
+        data_dir = app.state.data_dir
+
+        async def fake_deploy(req):
+            (req.data_dir / "agent-workspaces" / req.name).mkdir(parents=True, exist_ok=True)
+            (req.data_dir / "agent-memory" / req.name).mkdir(parents=True, exist_ok=True)
+            (req.data_dir / "agent-home" / req.name).mkdir(parents=True, exist_ok=True)
+            (req.data_dir / "agent-workspaces" / req.name / "w.txt").write_text("w")
+            (req.data_dir / "agent-memory" / req.name / "m.txt").write_text("m")
+            (req.data_dir / "agent-home" / req.name / "h.txt").write_text("h")
+            return {"success": True, "name": req.name, "ip": "10.0.0.81",
+                    "llm_key": None, "steps": [], "container": f"taos-agent-{req.name}"}
+
+        async def fake_stop(name, force=False): return {"success": True, "output": ""}
+        async def fake_rename(old, new): return {"success": True, "output": ""}
+
+        monkeypatch.setattr("tinyagentos.deployer.deploy_agent", fake_deploy)
+        monkeypatch.setattr("tinyagentos.containers.stop_container", fake_stop)
+        monkeypatch.setattr("tinyagentos.containers.rename_container", fake_rename)
+
+        await client.post("/api/agents/deploy", json={"name": "triad", "framework": "none"})
+        import asyncio
+        await asyncio.sleep(0.2)
+        resp = await client.delete("/api/agents/triad")
+        assert resp.status_code == 200
+
+        archived = (await client.get("/api/agents/archived")).json()
+        assert len(archived) == 1
+        archive_dir_rel = archived[0]["archive_dir"]
+
+        from pathlib import Path
+        archive_base = data_dir / archive_dir_rel
+        assert (archive_base / "workspace" / "w.txt").read_text() == "w"
+        assert (archive_base / "memory" / "m.txt").read_text() == "m"
+        assert (archive_base / "home" / "h.txt").read_text() == "h"
+
+    async def test_archive_aborts_when_rename_fails(self, client, app, monkeypatch):
+        """If rename fails for a container that exists, config must NOT
+        move to archived_agents — the user needs to fix state and retry."""
+        async def fake_deploy(req):
+            return {"success": True, "name": req.name, "ip": "10.0.0.82",
+                    "llm_key": None, "steps": [], "container": f"taos-agent-{req.name}"}
+
+        async def fake_stop(name, force=False): return {"success": True, "output": ""}
+
+        async def fake_rename(old, new):
+            return {"success": False, "output": "Error: Instance is still running"}
+
+        monkeypatch.setattr("tinyagentos.deployer.deploy_agent", fake_deploy)
+        monkeypatch.setattr("tinyagentos.containers.stop_container", fake_stop)
+        monkeypatch.setattr("tinyagentos.containers.rename_container", fake_rename)
+
+        await client.post("/api/agents/deploy", json={"name": "stuck", "framework": "none"})
+        import asyncio
+        await asyncio.sleep(0.2)
+
+        resp = await client.delete("/api/agents/stuck")
+        assert resp.status_code == 500
+        assert "could not rename" in resp.json()["error"]
+
+        # Still in live list, not in archived
+        live = (await client.get("/api/agents")).json()
+        assert any(a["name"] == "stuck" for a in live)
+        archived = (await client.get("/api/agents/archived")).json()
+        assert not any(a.get("archived_slug") == "stuck" for a in archived)
+
     async def test_purge_archived_destroys_for_real(self, client, monkeypatch, tmp_path):
         """DELETE /api/agents/archived/{id} destroys container + archive dir."""
         destroyed = []
@@ -482,7 +569,7 @@ class TestAgentArchiveLifecycle:
             return {"success": True, "name": req.name, "ip": "10.0.0.60",
                     "llm_key": None, "steps": [], "container": f"taos-agent-{req.name}"}
 
-        async def fake_stop(name):
+        async def fake_stop(name, force=False):
             return {"success": True, "output": ""}
 
         async def fake_rename(old, new):

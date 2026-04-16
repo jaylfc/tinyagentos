@@ -196,29 +196,55 @@ async def _archive_agent_fully(request: Request, name: str) -> dict:
     archive_subdir = f"{slug}-{ts}"
     archive_base = data_dir / "archive" / archive_subdir
 
-    # 1) Stop container (ignore failure — may not exist if deploy never
-    #    finished). Running containers can't be renamed.
+    # 1) Force-stop to make rename succeed regardless of prior container
+    #    state. Best-effort — if incus doesn't know the container (e.g. a
+    #    partial deploy that never created one), that's fine, we just
+    #    proceed. The rename below is the gate: if IT fails, we abort the
+    #    archive so we don't leave config state divorced from reality.
     try:
-        await stop_container(container)
-    except Exception:
-        pass
+        await stop_container(container, force=True)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("archive: stop failed for %s: %s", slug, exc)
 
-    # 2) Rename container. Not fatal if the container doesn't exist at
-    #    all (partial deploys, user manually destroyed via CLI, etc.);
-    #    log and keep going.
+    # 2) Rename container. Distinguish "container didn't exist" (fine —
+    #    partial deploy, user nuked it manually) from "container existed
+    #    but we couldn't move it" (bad — we'd leave an orphan running
+    #    after we update config). If rename fails for a known-present
+    #    container, abort and return 500 so the user can fix state and retry.
     rename_result = {"success": False, "output": ""}
+    container_exists = True
     try:
         rename_result = await rename_container(container, archive_container)
     except Exception as exc:  # noqa: BLE001
         logger.warning("archive: rename container failed for %s: %s", slug, exc)
 
+    if not rename_result.get("success"):
+        out = (rename_result.get("output") or "").lower()
+        # incus rename of a non-existent instance says "Instance not found"
+        if "not found" in out or "no such" in out:
+            container_exists = False
+        else:
+            return {
+                "error": (
+                    f"archive failed: could not rename container {container} "
+                    f"to {archive_container}: {rename_result.get('output', '').strip() or 'unknown error'}. "
+                    f"Agent left in live list — fix container state and retry."
+                ),
+                "status_code": 500,
+            }
+
     # 3) Move host dirs under archive/. We move whatever exists; missing
     #    dirs aren't fatal (deploy might not have created memory/ yet).
     archive_base.mkdir(parents=True, exist_ok=True)
-    for sub in ("agent-workspaces", "agent-memory"):
+    dir_map = {
+        "agent-workspaces": "workspace",
+        "agent-memory": "memory",
+        "agent-home": "home",
+    }
+    for sub, dst_name in dir_map.items():
         src = data_dir / sub / slug
         if src.exists():
-            dst = archive_base / ("workspace" if sub == "agent-workspaces" else "memory")
+            dst = archive_base / dst_name
             try:
                 shutil.move(str(src), str(dst))
             except Exception as exc:  # noqa: BLE001
@@ -768,7 +794,11 @@ async def restore_archived_agent(request: Request, archive_id: str):
         rename_ok = False
 
     # 2) Move dirs back.
-    for sub, host_dir in (("workspace", "agent-workspaces"), ("memory", "agent-memory")):
+    for sub, host_dir in (
+        ("workspace", "agent-workspaces"),
+        ("memory", "agent-memory"),
+        ("home", "agent-home"),
+    ):
         src = archive_base / sub
         dst = data_dir / host_dir / final_slug
         if src.exists():
@@ -787,7 +817,21 @@ async def restore_archived_agent(request: Request, archive_id: str):
         except Exception:
             pass
 
-    # 4) Unflag DM channel if present.
+    # 4) Rewrite the agent's env file with the new key so when the user
+    # starts the container, systemd loads the fresh credential rather
+    # than the revoked one left over from the pre-archive deploy.
+    # Other vars (base URLs, agent name) stay untouched -- we only
+    # replace what actually rotated.
+    if new_key is not None:
+        try:
+            from tinyagentos.agent_env import update_agent_env_file
+            host_home = data_dir / "agent-home" / final_slug
+            if host_home.exists():
+                update_agent_env_file(host_home, {"OPENAI_API_KEY": new_key})
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("restore: env file rewrite failed for %s: %s", final_slug, exc)
+
+    # 6) Unflag DM channel if present.
     channel_id = original.get("chat_channel_id")
     if channel_id:
         try:
@@ -796,7 +840,7 @@ async def restore_archived_agent(request: Request, archive_id: str):
         except Exception:
             pass
 
-    # 5) Restore the agent dict (possibly with new slug + new key).
+    # 7) Restore the agent dict (possibly with new slug + new key).
     restored = dict(original)
     restored["name"] = final_slug
     restored["status"] = "stopped"  # user must manually start after restore
