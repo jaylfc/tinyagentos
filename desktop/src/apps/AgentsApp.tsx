@@ -535,8 +535,8 @@ function DeployWizard({
       setSelectedModel("");
       setModels([]);
       setModelsLoaded(false);
-      setMemory("512");
-      setCpus("1");
+      setMemory("");
+      setCpus("");
       setCanReadUserMemory(false);
       setOnWorkerFailure("pause");
       setFallbackModels([]);
@@ -575,7 +575,7 @@ function DeployWizard({
     setDeploying(true);
     setDeployError(null);
     try {
-      const memMb = memory ? parseInt(memory) : null;
+      const memMb = memory ? parseInt(memory, 10) : null;
       const memoryLimit = memMb === null ? null : memMb >= 1024 ? `${Math.round(memMb / 1024)}GB` : `${memMb}MB`;
       const res = await fetch("/api/agents/deploy", {
         method: "POST",
@@ -586,7 +586,7 @@ function DeployWizard({
           model: selectedModel,
           color,
           memory_limit: memoryLimit,
-          cpu_limit: cpus ? parseInt(cpus) : null,
+          cpu_limit: cpus ? parseInt(cpus, 10) : null,
           can_read_user_memory: canReadUserMemory,
           on_worker_failure: onWorkerFailure,
           fallback_models: fallbackModels,

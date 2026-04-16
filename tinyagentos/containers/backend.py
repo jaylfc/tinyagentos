@@ -45,8 +45,8 @@ class ContainerBackend(ABC):
         self,
         name: str,
         image: str = "images:debian/bookworm",
-        memory_limit: str = "2GB",
-        cpu_limit: int = 2,
+        memory_limit: str | None = None,
+        cpu_limit: int | None = None,
         mounts: list[tuple[str, str]] | None = None,
         env: dict[str, str] | None = None,
     ) -> dict:

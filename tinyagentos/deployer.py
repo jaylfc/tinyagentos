@@ -30,8 +30,8 @@ class DeployRequest:
     model: str | None     # model app_id (optional)
     data_dir: Path        # host data dir — all per-agent state lives under here
     color: str = "#888888"
-    memory_limit: str = "2GB"
-    cpu_limit: int = 2
+    memory_limit: str | None = None
+    cpu_limit: int | None = None
     extra_config: dict | None = None
     can_read_user_memory: bool = False
     taos_host: str = "host.docker.internal"

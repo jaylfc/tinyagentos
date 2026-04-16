@@ -161,8 +161,8 @@ class DeployAgentRequest(BaseModel):
     framework: str = "none"
     model: str | None = None
     color: str = "#888888"
-    memory_limit: str = "2GB"
-    cpu_limit: int = 2
+    memory_limit: str | None = None
+    cpu_limit: int | None = None
     can_read_user_memory: bool = False
     # Optional pin: user explicitly picked a specific worker to run on.
     # None means "controller decides" (and for worker-hosted models the

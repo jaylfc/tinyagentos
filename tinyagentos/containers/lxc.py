@@ -67,8 +67,8 @@ class LXCBackend(ContainerBackend):
         self,
         name: str,
         image: str = "images:debian/bookworm",
-        memory_limit: str = "2GB",
-        cpu_limit: int = 2,
+        memory_limit: str | None = None,
+        cpu_limit: int | None = None,
         mounts: list[tuple[str, str]] | None = None,
         env: dict[str, str] | None = None,
     ) -> dict:
@@ -87,8 +87,10 @@ class LXCBackend(ContainerBackend):
         if code != 0:
             return {"success": False, "error": output}
 
-        await _run(["incus", "config", "set", name, "limits.memory", memory_limit])
-        await _run(["incus", "config", "set", name, "limits.cpu", str(cpu_limit)])
+        if memory_limit is not None:
+            await _run(["incus", "config", "set", name, "limits.memory", memory_limit])
+        if cpu_limit is not None:
+            await _run(["incus", "config", "set", name, "limits.cpu", str(cpu_limit)])
 
         for idx, (host_path, container_path) in enumerate(mounts or []):
             device_name = f"taos-mount-{idx}"

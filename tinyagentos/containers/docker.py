@@ -93,8 +93,8 @@ class DockerBackend(ContainerBackend):
         self,
         name: str,
         image: str = "ubuntu:22.04",
-        memory_limit: str = "2GB",
-        cpu_limit: int = 2,
+        memory_limit: str | None = None,
+        cpu_limit: int | None = None,
         mounts: list[tuple[str, str]] | None = None,
         env: dict[str, str] | None = None,
     ) -> dict:
@@ -107,9 +107,11 @@ class DockerBackend(ContainerBackend):
         args = [
             self.binary, "run", "-d",
             "--name", name,
-            "--memory", memory_limit,
-            "--cpus", str(cpu_limit),
         ]
+        if memory_limit is not None:
+            args += ["--memory", memory_limit]
+        if cpu_limit is not None:
+            args += ["--cpus", str(cpu_limit)]
         for host_path, container_path in mounts or []:
             args += ["-v", f"{host_path}:{container_path}"]
         for key, value in (env or {}).items():
