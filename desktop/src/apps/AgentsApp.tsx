@@ -57,6 +57,8 @@ type Model = AgentModel;
 /* ------------------------------------------------------------------ */
 
 
+const MEMORY_STEPS_MB = [256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072];
+
 const COLORS = [
   "#3b82f6", "#8b5cf6", "#ec4899", "#f59e0b",
   "#10b981", "#ef4444", "#06b6d4", "#f97316",
@@ -336,6 +338,10 @@ function DeployWizard({
   const [onWorkerFailure, setOnWorkerFailure] = useState<"pause" | "fallback" | "escalate-immediately">("pause");
   const [fallbackModels, setFallbackModels] = useState<string[]>([]);
   const [fallbackModelOpen, setFallbackModelOpen] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [advancedLoaded, setAdvancedLoaded] = useState(false);
+  const [systemRamMb, setSystemRamMb] = useState<number | null>(null);
+  const [systemCpuCores, setSystemCpuCores] = useState<number | null>(null);
 
   // KV cache quantization — split K / V / boundary controls.  Visible only
   // when the cluster advertises more than fp16 for the respective axis.
@@ -544,6 +550,10 @@ function DeployWizard({
       setKvCacheQuantK("fp16");
       setKvCacheQuantV("fp16");
       setKvCacheQuantBoundaryLayers(0);
+      setShowAdvanced(false);
+      setAdvancedLoaded(false);
+      setSystemRamMb(null);
+      setSystemCpuCores(null);
       setDeploying(false);
       setDeployError(null);
     }
@@ -1009,8 +1019,8 @@ function DeployWizard({
                   ["Color", color],
                   ["Framework", frameworks.find((f) => f.id === selectedFramework)?.name ?? selectedFramework],
                   ["Model", models.find((m) => m.id === selectedModel)?.name ?? selectedModel],
-                  ["Memory", `${memory} MB`],
-                  ["CPUs", `${cpus} Core${cpus !== "1" ? "s" : ""}`],
+                  ["Memory", memory ? (parseInt(memory, 10) >= 1024 ? `${Math.round(parseInt(memory, 10) / 1024)} GB` : `${memory} MB`) : "Unlimited"],
+                  ["CPUs", cpus ? `${cpus} Core${cpus !== "1" ? "s" : ""}` : "Unlimited"],
                   ["User Memory", canReadUserMemory ? "Allowed (read-only)" : "Denied"],
                   ["On failure", onWorkerFailure],
                   ["Fallbacks", fallbackModels.filter(Boolean).join(", ") || "none"],
@@ -1031,6 +1041,70 @@ function DeployWizard({
                     </span>
                   </div>
                 ))}
+              </div>
+
+              {/* Advanced settings collapsible */}
+              <div className="mt-1">
+                <button
+                  onClick={() => {
+                    if (!showAdvanced && !advancedLoaded) {
+                      fetch("/api/activity", { headers: { Accept: "application/json" } })
+                        .then(r => r.json())
+                        .then(data => {
+                          setSystemRamMb(data?.hardware?.ram_mb ?? null);
+                          setSystemCpuCores(data?.hardware?.cpu?.cores ?? null);
+                          setAdvancedLoaded(true);
+                        })
+                        .catch(() => setAdvancedLoaded(true));
+                    }
+                    setShowAdvanced(v => !v);
+                  }}
+                  className="flex items-center gap-1.5 text-xs text-shell-text-tertiary hover:text-shell-text transition-colors"
+                  aria-expanded={showAdvanced}
+                  aria-controls="agent-advanced-settings"
+                >
+                  <ChevronRight size={14} className={`transition-transform ${showAdvanced ? "rotate-90" : ""}`} />
+                  Advanced settings
+                </button>
+                {showAdvanced && (
+                  <div id="agent-advanced-settings" className="mt-3 space-y-3 px-4 py-3 rounded-lg bg-shell-bg-deep border border-white/5">
+                    <div>
+                      <Label htmlFor="agent-memory-adv" className="mb-1.5 block">Memory</Label>
+                      <select
+                        id="agent-memory-adv"
+                        value={memory}
+                        onChange={e => setMemory(e.target.value)}
+                        className="flex h-9 w-full rounded-lg border border-white/10 bg-shell-bg-deep px-3 py-1 text-sm text-shell-text focus-visible:outline-none focus-visible:border-accent/40 focus-visible:ring-2 focus-visible:ring-accent/20 transition-colors"
+                      >
+                        <option value="">Unlimited (default)</option>
+                        {MEMORY_STEPS_MB
+                          .filter(mb => systemRamMb === null || mb <= systemRamMb)
+                          .map(mb => (
+                            <option key={mb} value={String(mb)}>
+                              {mb >= 1024 ? `${Math.round(mb / 1024)} GB` : `${mb} MB`}
+                            </option>
+                          ))
+                        }
+                      </select>
+                    </div>
+                    <div>
+                      <Label htmlFor="agent-cpus-adv" className="mb-1.5 block">CPU Cores</Label>
+                      <select
+                        id="agent-cpus-adv"
+                        value={cpus}
+                        onChange={e => setCpus(e.target.value)}
+                        className="flex h-9 w-full rounded-lg border border-white/10 bg-shell-bg-deep px-3 py-1 text-sm text-shell-text focus-visible:outline-none focus-visible:border-accent/40 focus-visible:ring-2 focus-visible:ring-accent/20 transition-colors"
+                      >
+                        <option value="">Unlimited (default)</option>
+                        {Array.from({ length: systemCpuCores ?? 4 }, (_, i) => i + 1).map(n => (
+                          <option key={n} value={String(n)}>
+                            {n} {n === 1 ? "Core" : "Cores"}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
