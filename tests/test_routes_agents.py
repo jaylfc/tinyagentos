@@ -26,11 +26,20 @@ class TestAgentsPage:
         config = load_config(tmp_data_dir / "config.yaml")
         assert config.agents[0]["host"] == "10.0.0.99"
 
-    async def test_delete_agent(self, client, tmp_data_dir):
+    async def test_delete_agent(self, client, tmp_data_dir, monkeypatch):
+        async def fake_stop(name):
+            return {"success": True, "output": ""}
+
+        async def fake_rename(old, new):
+            return {"success": True, "output": ""}
+
+        monkeypatch.setattr("tinyagentos.containers.stop_container", fake_stop)
+        monkeypatch.setattr("tinyagentos.containers.rename_container", fake_rename)
         resp = await client.delete("/api/agents/test-agent")
         assert resp.status_code == 200
         config = load_config(tmp_data_dir / "config.yaml")
         assert len(config.agents) == 0
+        assert len(config.archived_agents) == 1
 
     async def test_add_duplicate_name_gets_suffixed(self, client):
         """POSTing with an already-taken name succeeds; the slug is auto-suffixed.
@@ -305,3 +314,201 @@ class TestModelUpdateRoute:
 
         resp = await client.post("/api/agents/test-agent/model", json={"model": "local-llm"})
         assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+class TestDeployPersistence:
+    async def test_deploy_persists_model_and_framework(self, client, app, monkeypatch):
+        """model + framework land on the agent row so later reads can see
+        what the agent is actually configured for."""
+        async def fake_deploy(req):
+            return {"success": True, "name": req.name, "ip": "10.0.0.42",
+                    "llm_key": "sk-test", "steps": ["deployment_complete"],
+                    "container": f"taos-agent-{req.name}"}
+        monkeypatch.setattr("tinyagentos.deployer.deploy_agent", fake_deploy)
+
+        # Make "test-model" resolvable on the controller so the route doesn't 404
+        class _FakeCatalog:
+            def all_models(self, capability=None):
+                return [{"name": "test-model", "id": "test-model"}]
+        app.state.backend_catalog = _FakeCatalog()
+        app.state.cluster_manager._workers.clear()
+
+        resp = await client.post("/api/agents/deploy", json={
+            "name": "persistent",
+            "framework": "none",
+            "model": "test-model",
+            "color": "#abcdef",
+        })
+        assert resp.status_code == 200
+        import asyncio
+        await asyncio.sleep(0.2)
+
+        detail = await client.get("/api/agents/persistent")
+        assert detail.status_code == 200
+        agent = detail.json()
+        assert agent["model"] == "test-model"
+        assert agent["framework"] == "none"
+        assert agent["llm_key"] == "sk-test"
+        assert agent["status"] == "running"
+        assert agent["id"]  # uuid assigned
+
+    async def test_deploy_creates_dm_channel(self, client, monkeypatch):
+        async def fake_deploy(req):
+            return {"success": True, "name": req.name, "ip": "10.0.0.43",
+                    "llm_key": None, "steps": ["deployment_complete"],
+                    "container": f"taos-agent-{req.name}"}
+        monkeypatch.setattr("tinyagentos.deployer.deploy_agent", fake_deploy)
+
+        resp = await client.post("/api/agents/deploy", json={
+            "name": "chatter",
+            "framework": "none",
+            "color": "#112233",
+        })
+        assert resp.status_code == 200
+        import asyncio
+        await asyncio.sleep(0.2)
+
+        detail = await client.get("/api/agents/chatter")
+        agent = detail.json()
+        channel_id = agent.get("chat_channel_id")
+        assert channel_id, "deploy should create a DM channel and save its id"
+
+        channels = await client.get("/api/chat/channels")
+        assert channels.status_code == 200
+        ch_list = channels.json().get("channels", [])
+        assert any(c.get("id") == channel_id and c.get("type") == "dm" for c in ch_list)
+
+
+@pytest.mark.asyncio
+class TestAgentArchiveLifecycle:
+    async def test_delete_archives_agent(self, client, monkeypatch):
+        """DELETE /api/agents/{name} archives instead of destroying."""
+        stopped = []
+        renames = []
+
+        async def fake_deploy(req):
+            return {"success": True, "name": req.name, "ip": "10.0.0.44",
+                    "llm_key": "sk-archive-test", "steps": ["deployment_complete"],
+                    "container": f"taos-agent-{req.name}"}
+
+        async def fake_stop(name):
+            stopped.append(name)
+            return {"success": True, "output": ""}
+
+        async def fake_rename(old, new):
+            renames.append((old, new))
+            return {"success": True, "output": ""}
+
+        monkeypatch.setattr("tinyagentos.deployer.deploy_agent", fake_deploy)
+        monkeypatch.setattr("tinyagentos.containers.stop_container", fake_stop)
+        monkeypatch.setattr("tinyagentos.containers.rename_container", fake_rename)
+
+        await client.post("/api/agents/deploy", json={"name": "archiver", "framework": "none"})
+        import asyncio
+        await asyncio.sleep(0.2)
+
+        resp = await client.delete("/api/agents/archiver")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "archived"
+        assert data["name"] == "archiver"
+        assert data["container"].startswith("taos-archived-archiver-")
+
+        assert stopped == ["taos-agent-archiver"]
+        assert len(renames) == 1
+        assert renames[0][0] == "taos-agent-archiver"
+        assert renames[0][1].startswith("taos-archived-archiver-")
+
+        # Agent gone from live list
+        live = (await client.get("/api/agents")).json()
+        assert not any(a["name"] == "archiver" for a in live)
+
+        # Agent present in archived list
+        archived = (await client.get("/api/agents/archived")).json()
+        assert any(a["original"]["name"] == "archiver" for a in archived)
+
+    async def test_restore_archived_agent_with_new_slug_on_collision(self, client, monkeypatch):
+        """Restoring when the original slug is taken by a new agent gets a
+        suffixed slug; the archived entry is removed."""
+        renames = []
+
+        async def fake_deploy(req):
+            return {"success": True, "name": req.name, "ip": "10.0.0.50",
+                    "llm_key": "sk-x", "steps": [], "container": f"taos-agent-{req.name}"}
+
+        async def fake_stop(name):
+            return {"success": True, "output": ""}
+
+        async def fake_rename(old, new):
+            renames.append((old, new))
+            return {"success": True, "output": ""}
+
+        monkeypatch.setattr("tinyagentos.deployer.deploy_agent", fake_deploy)
+        monkeypatch.setattr("tinyagentos.containers.stop_container", fake_stop)
+        monkeypatch.setattr("tinyagentos.containers.rename_container", fake_rename)
+
+        await client.post("/api/agents/deploy", json={"name": "rest", "framework": "none"})
+        import asyncio
+        await asyncio.sleep(0.2)
+        await client.delete("/api/agents/rest")
+        # Deploy a new agent that takes the slug
+        await client.post("/api/agents/deploy", json={"name": "rest", "framework": "none"})
+        await asyncio.sleep(0.2)
+
+        archived = (await client.get("/api/agents/archived")).json()
+        assert len(archived) == 1
+        archive_id = archived[0]["id"]
+
+        resp = await client.post(f"/api/agents/archived/{archive_id}/restore")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "restored"
+        assert data["name"] == "rest-2"
+
+        # Archive list now empty
+        archived2 = (await client.get("/api/agents/archived")).json()
+        assert archived2 == []
+
+        # Two live agents named rest + rest-2
+        live = {a["name"] for a in (await client.get("/api/agents")).json()}
+        assert {"rest", "rest-2"} <= live
+
+    async def test_purge_archived_destroys_for_real(self, client, monkeypatch, tmp_path):
+        """DELETE /api/agents/archived/{id} destroys container + archive dir."""
+        destroyed = []
+
+        async def fake_deploy(req):
+            return {"success": True, "name": req.name, "ip": "10.0.0.60",
+                    "llm_key": None, "steps": [], "container": f"taos-agent-{req.name}"}
+
+        async def fake_stop(name):
+            return {"success": True, "output": ""}
+
+        async def fake_rename(old, new):
+            return {"success": True, "output": ""}
+
+        async def fake_destroy(name):
+            destroyed.append(name)
+            return {"success": True, "output": ""}
+
+        monkeypatch.setattr("tinyagentos.deployer.deploy_agent", fake_deploy)
+        monkeypatch.setattr("tinyagentos.containers.stop_container", fake_stop)
+        monkeypatch.setattr("tinyagentos.containers.rename_container", fake_rename)
+        monkeypatch.setattr("tinyagentos.containers.destroy_container", fake_destroy)
+
+        await client.post("/api/agents/deploy", json={"name": "purgeable", "framework": "none"})
+        import asyncio
+        await asyncio.sleep(0.2)
+        await client.delete("/api/agents/purgeable")
+
+        archived = (await client.get("/api/agents/archived")).json()
+        archive_id = archived[0]["id"]
+
+        resp = await client.delete(f"/api/agents/archived/{archive_id}")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "purged"
+        assert any(n.startswith("taos-archived-purgeable-") for n in destroyed)
+
+        archived2 = (await client.get("/api/agents/archived")).json()
+        assert archived2 == []

@@ -31,6 +31,7 @@ class AppConfig:
     agents: list[dict] = field(default_factory=list)
     metrics: dict = field(default_factory=lambda: DEFAULT_CONFIG["metrics"].copy())
     webhooks: list[dict] = field(default_factory=list)
+    archived_agents: list[dict] = field(default_factory=list)
     config_path: Path | None = None
 
     def to_dict(self) -> dict:
@@ -43,6 +44,8 @@ class AppConfig:
         }
         if self.webhooks:
             d["webhooks"] = self.webhooks
+        if self.archived_agents:
+            d["archived_agents"] = self.archived_agents
         return d
 
 def load_config(path: Path) -> AppConfig:
@@ -67,6 +70,7 @@ def load_config(path: Path) -> AppConfig:
         agents=agents,
         metrics=data.get("metrics", DEFAULT_CONFIG["metrics"].copy()),
         webhooks=data.get("webhooks", []),
+        archived_agents=data.get("archived_agents", []),
         config_path=path,
     )
 
@@ -129,6 +133,9 @@ def normalize_agent(agent: dict) -> dict:
 
         agent = normalize_agent({...})
     """
+    import uuid as _uuid
+    if not agent.get("id"):
+        agent["id"] = _uuid.uuid4().hex[:12]
     if "fallback_models" not in agent:
         agent["fallback_models"] = []
     if "on_worker_failure" not in agent:
