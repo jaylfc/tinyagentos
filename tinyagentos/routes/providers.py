@@ -10,7 +10,7 @@ router = APIRouter()
 
 # Provider categories used by the UI to group entries. The backend
 # doesn't care about category for routing — it's purely display metadata.
-CLOUD_TYPES = {"openai", "anthropic"}
+CLOUD_TYPES = {"openai", "anthropic", "openrouter", "kilocode"}
 
 
 def _categorise(provider: dict) -> str:
@@ -93,11 +93,13 @@ async def list_providers(request: Request):
             "models": models,
             "source": "local",
             "lifecycle_state": lifecycle_state,
-            "auto_manage": backend.get("auto_manage", False),
-            "keep_alive_minutes": backend.get("keep_alive_minutes", 10),
             "enabled": backend.get("enabled", True),
         }
         entry["category"] = _categorise(entry)
+        # Cloud providers don't participate in lifecycle management
+        if entry["category"] != "cloud":
+            entry["auto_manage"] = backend.get("auto_manage", False)
+            entry["keep_alive_minutes"] = backend.get("keep_alive_minutes", 10)
         providers.append(entry)
 
     # 2) Worker-reported remote backends (from heartbeats — no extra
