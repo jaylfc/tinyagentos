@@ -298,6 +298,8 @@ function ProviderForm({
   function handleBack() {
     if (step === "config" && category === "cloud") { setStep("cloud-pick"); return; }
     if (step === "config" && category === "local") { setStep("category"); return; }
+    if (step === "config" && category === "cluster") { setStep("cluster-info"); return; }
+    if (step === "config" && category === null) { onClose(); return; }
     if (step === "cloud-pick") { setStep("category"); return; }
     if (step === "cluster-info") { setStep("category"); return; }
   }
@@ -353,6 +355,9 @@ function ProviderForm({
       };
       if (apiKeySecret) payload.api_key_secret = apiKeySecret;
 
+      // Edit: name field is disabled so the name never changes — delete first
+      // to avoid a 409 conflict on the POST, then re-create with updated fields.
+      // (POST-first-then-delete would work for rename, but name is locked in edit mode.)
       if (isEdit) {
         await fetch(`/api/providers/${encodeURIComponent(editing!.name)}`, {
           method: "DELETE",
@@ -379,7 +384,7 @@ function ProviderForm({
     }
   }
 
-  const canSave = (testResult?.reachable === true || forceEnabled) && form.name.trim().length > 0;
+  const canSave = (isEdit || testResult?.reachable === true || forceEnabled) && form.name.trim().length > 0;
   const cloudMeta = CLOUD_PROVIDER_META[form.type];
 
   return (
