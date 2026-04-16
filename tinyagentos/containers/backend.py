@@ -103,6 +103,11 @@ class ContainerBackend(ABC):
         """Get recent logs from a container."""
         ...
 
+    @abstractmethod
+    async def rename_container(self, old_name: str, new_name: str) -> dict:
+        """Rename a stopped container."""
+        ...
+
 
 def detect_runtime() -> str:
     """Detect the available container runtime.

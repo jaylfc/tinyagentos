@@ -157,3 +157,7 @@ class DockerBackend(ContainerBackend):
             self.binary, "logs", name, "--tail", str(lines),
         ])
         return output if code == 0 else f"Error getting logs: {output}"
+
+    async def rename_container(self, old_name: str, new_name: str) -> dict:
+        code, output = await self._run([self.binary, "rename", old_name, new_name])
+        return {"success": code == 0, "output": output}

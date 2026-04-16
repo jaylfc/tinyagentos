@@ -150,6 +150,16 @@ async def destroy_container(name: str) -> dict:
     return {"success": code == 0, "output": output}
 
 
+async def rename_container(old_name: str, new_name: str) -> dict:
+    """Rename a stopped container.
+
+    Container must already be stopped — incus/docker rename refuses to
+    rename a running instance.
+    """
+    code, output = await _run(["incus", "rename", old_name, new_name])
+    return {"success": code == 0, "output": output}
+
+
 async def get_container_logs(name: str, lines: int = 100) -> str:
     """Get recent logs from a container's journal."""
     code, output = await exec_in_container(
@@ -175,5 +185,6 @@ __all__ = [
     "stop_container",
     "restart_container",
     "destroy_container",
+    "rename_container",
     "get_container_logs",
 ]

@@ -146,3 +146,7 @@ class LXCBackend(ContainerBackend):
             name, ["journalctl", "--no-pager", "-n", str(lines)], timeout=30,
         )
         return output if code == 0 else f"Error getting logs: {output}"
+
+    async def rename_container(self, old_name: str, new_name: str) -> dict:
+        code, output = await _run(["incus", "rename", old_name, new_name])
+        return {"success": code == 0, "output": output}
