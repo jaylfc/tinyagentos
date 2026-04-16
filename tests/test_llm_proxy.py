@@ -187,3 +187,51 @@ class TestLLMProxy:
     def test_proxy_url(self):
         proxy = LLMProxy(port=14000)
         assert proxy.url == "http://localhost:14000"
+
+
+class TestLLMProxyAdoption:
+    def test_is_running_false_by_default(self):
+        from tinyagentos.llm_proxy import LLMProxy
+        p = LLMProxy(port=4000)
+        assert p.is_running() is False
+
+    def test_is_running_true_after_adoption_flag_set(self):
+        from tinyagentos.llm_proxy import LLMProxy
+        p = LLMProxy(port=4000)
+        p._adopted = True
+        assert p.is_running() is True
+
+    def test_stop_clears_adopted(self):
+        from tinyagentos.llm_proxy import LLMProxy
+        p = LLMProxy(port=4000)
+        p._adopted = True
+        p.stop()
+        assert p._adopted is False
+        assert p.is_running() is False
+
+    @pytest.mark.asyncio
+    async def test_start_adopts_existing_healthy_proxy(self, monkeypatch):
+        """When a LiteLLM proxy is already answering on the port, start()
+        adopts it instead of spawning a duplicate, and is_running() must
+        report True so downstream callers (deployer) will mint keys."""
+        import httpx
+        from tinyagentos.llm_proxy import LLMProxy
+
+        # Fake httpx so /health returns 200 without touching the network
+        class _FakeResp:
+            status_code = 200
+        class _FakeClient:
+            def __init__(self, *a, **kw): pass
+            async def __aenter__(self): return self
+            async def __aexit__(self, *exc): return False
+            async def get(self, url):
+                return _FakeResp()
+
+        monkeypatch.setattr("tinyagentos.llm_proxy.httpx.AsyncClient", _FakeClient)
+
+        p = LLMProxy(port=4000)
+        ok = await p.start(backends=[])
+        assert ok is True
+        assert p.is_running() is True
+        assert p._adopted is True
+        assert p._process is None
