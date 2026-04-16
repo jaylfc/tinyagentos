@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { Brain, Search, Download, Trash2, HardDrive, X } from "lucide-react";
+import { Brain, Search, Download, Trash2, HardDrive, X, Cloud } from "lucide-react";
 import {
   Button,
   Card,
@@ -327,6 +327,10 @@ export function ModelsApp({ windowId: _windowId }: { windowId: string }) {
     return true;
   });
 
+  // Cloud models are API endpoints not downloaded files — shown separately
+  const filteredCloud = filteredDownloaded.filter(m => m.hostKind === "cloud");
+  const filteredFiles = filteredDownloaded.filter(m => m.hostKind !== "cloud");
+
   return (
     <div className="flex flex-col h-full bg-shell-bg text-shell-text select-none">
       {/* Toolbar */}
@@ -437,17 +441,17 @@ export function ModelsApp({ windowId: _windowId }: { windowId: string }) {
               <div className="flex items-center gap-2 mb-3">
                 <HardDrive size={15} className="text-shell-text-tertiary" />
                 <h2 className="text-sm font-semibold">Downloaded Models</h2>
-                <span className="text-xs text-shell-text-tertiary">({filteredDownloaded.length})</span>
+                <span className="text-xs text-shell-text-tertiary">({filteredFiles.length})</span>
               </div>
 
-              {filteredDownloaded.length === 0 ? (
+              {filteredFiles.length === 0 ? (
                 <div className="p-6 rounded-xl bg-shell-surface/40 border border-white/5 text-center">
                   <HardDrive size={28} className="mx-auto text-shell-text-tertiary opacity-40 mb-2" />
                   <p className="text-sm text-shell-text-tertiary">No downloaded models</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {filteredDownloaded.map((model) => {
+                  {filteredFiles.map((model) => {
                     const isLocal = model.hostKind === "controller";
                     return (
                       <Card key={model.id}>
@@ -502,6 +506,34 @@ export function ModelsApp({ windowId: _windowId }: { windowId: string }) {
                 </div>
               )}
             </section>
+
+            {/* Cloud Models */}
+            {filteredCloud.length > 0 && (
+              <section aria-label="Cloud models">
+                <div className="flex items-center gap-2 mb-3">
+                  <Cloud size={15} className="text-violet-400" />
+                  <h2 className="text-sm font-semibold">Cloud Models</h2>
+                  <span className="text-xs text-shell-text-tertiary">({filteredCloud.length})</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {filteredCloud.map((model) => (
+                    <Card key={model.id}>
+                      <CardContent className="p-3.5 flex flex-col gap-2">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <p className="text-sm font-medium truncate" title={model.filename}>{model.filename}</p>
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-violet-500/15 text-violet-200 font-semibold whitespace-nowrap shrink-0">
+                            {model.host}
+                          </span>
+                        </div>
+                        {model.backend && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-shell-text-tertiary w-fit">{model.backend}</span>
+                        )}
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </section>
+            )}
 
             {/* Downloading */}
             {downloading.size > 0 && (
