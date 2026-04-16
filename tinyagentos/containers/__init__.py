@@ -133,8 +133,11 @@ async def start_container(name: str) -> dict:
     return {"success": code == 0, "output": output}
 
 
-async def stop_container(name: str) -> dict:
-    code, output = await _run(["incus", "stop", name])
+async def stop_container(name: str, force: bool = False) -> dict:
+    cmd = ["incus", "stop", name]
+    if force:
+        cmd.append("--force")
+    code, output = await _run(cmd)
     return {"success": code == 0, "output": output}
 
 
@@ -160,6 +163,25 @@ async def rename_container(old_name: str, new_name: str) -> dict:
     return {"success": code == 0, "output": output}
 
 
+async def add_proxy_device(
+    name: str, device_name: str, listen: str, connect: str
+) -> dict:
+    """Attach an incus proxy device so the container can reach a host
+    service via its own localhost.
+
+    `listen` is the container-side bind (e.g. ``tcp:127.0.0.1:4000``);
+    `connect` is where incus forwards to on the host (e.g. the same
+    host-local address). Stable device names let the deployer upgrade
+    the target port later without device-name collisions.
+    """
+    code, output = await _run([
+        "incus", "config", "device", "add", name, device_name, "proxy",
+        f"listen={listen}",
+        f"connect={connect}",
+    ])
+    return {"success": code == 0, "output": output}
+
+
 async def get_container_logs(name: str, lines: int = 100) -> str:
     """Get recent logs from a container's journal."""
     code, output = await exec_in_container(
@@ -181,6 +203,7 @@ __all__ = [
     "create_container",
     "exec_in_container",
     "push_file",
+    "add_proxy_device",
     "start_container",
     "stop_container",
     "restart_container",

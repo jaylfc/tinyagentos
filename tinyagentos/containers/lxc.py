@@ -126,8 +126,11 @@ class LXCBackend(ContainerBackend):
         code, output = await _run(["incus", "start", name])
         return {"success": code == 0, "output": output}
 
-    async def stop_container(self, name: str) -> dict:
-        code, output = await _run(["incus", "stop", name])
+    async def stop_container(self, name: str, force: bool = False) -> dict:
+        cmd = ["incus", "stop", name]
+        if force:
+            cmd.append("--force")
+        code, output = await _run(cmd)
         return {"success": code == 0, "output": output}
 
     async def restart_container(self, name: str) -> dict:
@@ -149,4 +152,14 @@ class LXCBackend(ContainerBackend):
 
     async def rename_container(self, old_name: str, new_name: str) -> dict:
         code, output = await _run(["incus", "rename", old_name, new_name])
+        return {"success": code == 0, "output": output}
+
+    async def add_proxy_device(
+        self, name: str, device_name: str, listen: str, connect: str
+    ) -> dict:
+        code, output = await _run([
+            "incus", "config", "device", "add", name, device_name, "proxy",
+            f"listen={listen}",
+            f"connect={connect}",
+        ])
         return {"success": code == 0, "output": output}

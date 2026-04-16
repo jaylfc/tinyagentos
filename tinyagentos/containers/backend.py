@@ -84,8 +84,8 @@ class ContainerBackend(ABC):
         ...
 
     @abstractmethod
-    async def stop_container(self, name: str) -> dict:
-        """Stop a running container."""
+    async def stop_container(self, name: str, force: bool = False) -> dict:
+        """Stop a running container. Pass force=True to kill immediately."""
         ...
 
     @abstractmethod
@@ -106,6 +106,14 @@ class ContainerBackend(ABC):
     @abstractmethod
     async def rename_container(self, old_name: str, new_name: str) -> dict:
         """Rename a stopped container."""
+        ...
+
+    @abstractmethod
+    async def add_proxy_device(
+        self, name: str, device_name: str, listen: str, connect: str
+    ) -> dict:
+        """Attach a TCP proxy device so the container's localhost:<port>
+        transparently reaches the host's localhost:<port>."""
         ...
 
 

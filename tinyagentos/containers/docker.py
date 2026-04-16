@@ -138,8 +138,9 @@ class DockerBackend(ContainerBackend):
         code, output = await self._run([self.binary, "start", name])
         return {"success": code == 0, "output": output}
 
-    async def stop_container(self, name: str) -> dict:
-        code, output = await self._run([self.binary, "stop", name])
+    async def stop_container(self, name: str, force: bool = False) -> dict:
+        cmd = [self.binary, "kill", name] if force else [self.binary, "stop", name]
+        code, output = await self._run(cmd)
         return {"success": code == 0, "output": output}
 
     async def restart_container(self, name: str) -> dict:
@@ -161,3 +162,13 @@ class DockerBackend(ContainerBackend):
     async def rename_container(self, old_name: str, new_name: str) -> dict:
         code, output = await self._run([self.binary, "rename", old_name, new_name])
         return {"success": code == 0, "output": output}
+
+    async def add_proxy_device(
+        self, name: str, device_name: str, listen: str, connect: str
+    ) -> dict:
+        # Docker containers reach the host via docker-provided networking
+        # (host.docker.internal on Mac/Windows, --add-host on Linux). No
+        # proxy device equivalent; the deployer's docker path is expected
+        # to choose a different TAOS_HOST default. Return success so the
+        # deploy doesn't stall.
+        return {"success": True, "output": "proxy devices not supported on docker"}
