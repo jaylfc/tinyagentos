@@ -16,17 +16,53 @@ import { useIsMobile } from "@/hooks/use-is-mobile";
 /*  Constants — matches VALID_BACKEND_TYPES in tinyagentos/config.py  */
 /* ------------------------------------------------------------------ */
 
-const CLOUD_TYPES = ["openai", "anthropic"] as const;
+const CLOUD_TYPES = ["openai", "anthropic", "openrouter", "kilocode"] as const;
 const LOCAL_TYPES = ["rkllama", "ollama", "llama-cpp", "vllm", "exo", "mlx"] as const;
 type ProviderType = typeof CLOUD_TYPES[number] | typeof LOCAL_TYPES[number];
 
 const DEFAULT_URLS: Partial<Record<ProviderType, string>> = {
   openai: "https://api.openai.com/v1",
   anthropic: "https://api.anthropic.com/v1",
+  openrouter: "https://openrouter.ai/api/v1",
+  kilocode: "https://api.kilo.ai/api/gateway",
   ollama: "http://localhost:11434",
   rkllama: "http://localhost:8080",
   "llama-cpp": "http://localhost:8080",
   vllm: "http://localhost:8000",
+};
+
+interface CloudProviderMeta {
+  label: string;
+  description: string;
+  url: string;
+  keyPlaceholder: string;
+}
+
+const CLOUD_PROVIDER_META: Record<string, CloudProviderMeta> = {
+  openai: {
+    label: "OpenAI",
+    description: "GPT-4o, o1, and more",
+    url: "https://api.openai.com/v1",
+    keyPlaceholder: "sk-...",
+  },
+  anthropic: {
+    label: "Anthropic",
+    description: "Claude Sonnet, Opus, Haiku",
+    url: "https://api.anthropic.com/v1",
+    keyPlaceholder: "sk-ant-...",
+  },
+  openrouter: {
+    label: "OpenRouter",
+    description: "300+ models via one API",
+    url: "https://openrouter.ai/api/v1",
+    keyPlaceholder: "sk-or-...",
+  },
+  kilocode: {
+    label: "Kilo",
+    description: "500+ models, smart routing",
+    url: "https://api.kilo.ai/api/gateway",
+    keyPlaceholder: "kilo-...",
+  },
 };
 
 const STATUS_PILL: Record<string, string> = {
@@ -92,7 +128,6 @@ interface FormState {
   type: ProviderType;
   url: string;
   apiKey: string;
-  model: string;
   priority: string;
 }
 
@@ -194,7 +229,6 @@ function defaultFormState(editingProvider?: Provider | null): FormState {
       type: editingProvider.type as ProviderType,
       url: editingProvider.url,
       apiKey: "",
-      model: editingProvider.model ?? "",
       priority: String(editingProvider.priority ?? 99),
     };
   }
@@ -203,7 +237,6 @@ function defaultFormState(editingProvider?: Provider | null): FormState {
     type: "openai",
     url: DEFAULT_URLS.openai ?? "",
     apiKey: "",
-    model: "",
     priority: "99",
   };
 }
@@ -221,15 +254,20 @@ function ProviderForm({
   onSave: () => void;
   onClose: () => void;
 }) {
+  type WizardCategory = "local" | "cluster" | "cloud";
+  type WizardStep = "category" | "cloud-pick" | "cluster-info" | "config";
+
   const isMobile = useIsMobile();
+  const isEdit = !!editing;
+
+  const [step, setStep] = useState<WizardStep>(isEdit ? "config" : "category");
+  const [category, setCategory] = useState<WizardCategory | null>(null);
   const [form, setForm] = useState<FormState>(() => defaultFormState(editing));
   const [testResult, setTestResult] = useState<TestResult>(null);
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [forceEnabled, setForceEnabled] = useState(false);
-
-  const isEdit = !!editing;
 
   function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -238,13 +276,32 @@ function ProviderForm({
   }
 
   function handleTypeChange(t: ProviderType) {
+    setForm((prev) => ({ ...prev, type: t, url: DEFAULT_URLS[t] ?? prev.url }));
+    setTestResult(null);
+    setForceEnabled(false);
+  }
+
+  function pickCloudProvider(type: string) {
+    const meta = CLOUD_PROVIDER_META[type];
+    if (!meta) return;
     setForm((prev) => ({
       ...prev,
-      type: t,
-      url: DEFAULT_URLS[t] ?? prev.url,
+      type: type as ProviderType,
+      url: meta.url,
+      name: prev.name || type,
     }));
     setTestResult(null);
     setForceEnabled(false);
+    setStep("config");
+  }
+
+  function handleBack() {
+    if (step === "config" && category === "cloud") { setStep("cloud-pick"); return; }
+    if (step === "config" && category === "local") { setStep("category"); return; }
+    if (step === "config" && category === "cluster") { setStep("cluster-info"); return; }
+    if (step === "config" && category === null) { onClose(); return; }
+    if (step === "cloud-pick") { setStep("category"); return; }
+    if (step === "cluster-info") { setStep("category"); return; }
   }
 
   async function handleTest() {
@@ -270,7 +327,6 @@ function ProviderForm({
     setSaving(true);
     setSaveError(null);
 
-    // If a new API key is provided, save it as a secret first
     let apiKeySecret: string | undefined = editing?.api_key_secret;
     if (form.apiKey.trim()) {
       const secretName = `provider-${form.name.trim()}-key`;
@@ -287,9 +343,7 @@ function ProviderForm({
           }),
         });
         apiKeySecret = secretName;
-      } catch {
-        /* continue even if secret save fails */
-      }
+      } catch { /* continue even if secret save fails */ }
     }
 
     try {
@@ -298,11 +352,12 @@ function ProviderForm({
         type: form.type,
         url: form.url.trim(),
         priority: parseInt(form.priority) || 99,
-        model: form.model.trim() || "default",
       };
       if (apiKeySecret) payload.api_key_secret = apiKeySecret;
 
-      // For edits, delete first then re-create
+      // Edit: name field is disabled so the name never changes — delete first
+      // to avoid a 409 conflict on the POST, then re-create with updated fields.
+      // (POST-first-then-delete would work for rename, but name is locked in edit mode.)
       if (isEdit) {
         await fetch(`/api/providers/${encodeURIComponent(editing!.name)}`, {
           method: "DELETE",
@@ -317,10 +372,7 @@ function ProviderForm({
       });
       if (!res.ok) {
         let msg = `Save failed (${res.status})`;
-        try {
-          const err = await res.json();
-          if (err?.error) msg = String(err.error);
-        } catch { /* ignore */ }
+        try { const err = await res.json(); if (err?.error) msg = String(err.error); } catch { /* ignore */ }
         setSaveError(msg);
         setSaving(false);
         return;
@@ -332,7 +384,8 @@ function ProviderForm({
     }
   }
 
-  const canSave = (testResult?.reachable === true || forceEnabled) && form.name.trim().length > 0;
+  const canSave = (isEdit || testResult?.reachable === true || forceEnabled) && form.name.trim().length > 0;
+  const cloudMeta = CLOUD_PROVIDER_META[form.type];
 
   return (
     <div
@@ -359,157 +412,252 @@ function ProviderForm({
           {/* Header */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
+              {step !== "category" && !isEdit && (
+                <button
+                  onClick={handleBack}
+                  className="text-shell-text-tertiary hover:text-shell-text mr-1"
+                  aria-label="Go back"
+                >
+                  ←
+                </button>
+              )}
               <Cloud size={16} className="text-accent" />
-              <h2 className="text-sm font-semibold">{isEdit ? "Edit Provider" : "Add Provider"}</h2>
+              <h2 className="text-sm font-semibold">
+                {isEdit ? "Edit Provider"
+                  : step === "category" ? "Add Provider"
+                  : step === "cloud-pick" ? "Choose Cloud Provider"
+                  : step === "cluster-info" ? "Add Cluster Worker"
+                  : "Configure Provider"}
+              </h2>
             </div>
             <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close form" className="h-7 w-7">
               <X size={16} />
             </Button>
           </div>
 
-          {/* Name */}
-          <div className="space-y-1.5">
-            <Label htmlFor="prov-name">Name</Label>
-            <Input
-              id="prov-name"
-              type="text"
-              value={form.name}
-              onChange={(e) => setField("name", e.target.value)}
-              placeholder="my-openai"
-              disabled={isEdit}
-              autoFocus={!isEdit}
-            />
-          </div>
+          {/* Step: category picker */}
+          {step === "category" && (
+            <div className="grid grid-cols-3 gap-3" role="group" aria-label="Provider category">
+              {(["local", "cluster", "cloud"] as WizardCategory[]).map((cat) => {
+                const meta: Record<WizardCategory, { icon: string; label: string; desc: string }> = {
+                  local: { icon: "🖥️", label: "Local", desc: "On-device AI" },
+                  cluster: { icon: "🌐", label: "Cluster", desc: "Linked workers" },
+                  cloud: { icon: "☁️", label: "Cloud", desc: "Hosted APIs" },
+                };
+                const m = meta[cat];
+                return (
+                  <button
+                    key={cat}
+                    onClick={() => {
+                      setCategory(cat);
+                      if (cat === "cloud") setStep("cloud-pick");
+                      else if (cat === "cluster") setStep("cluster-info");
+                      else { setForm((p) => ({ ...p, type: "rkllama", url: DEFAULT_URLS.rkllama ?? "" })); setStep("config"); }
+                    }}
+                    className="flex flex-col items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 p-4 hover:bg-white/10 hover:border-accent/40 transition-colors text-center"
+                    aria-label={`${m.label}: ${m.desc}`}
+                  >
+                    <span className="text-2xl" aria-hidden="true">{m.icon}</span>
+                    <span className="text-[12px] font-semibold text-shell-text">{m.label}</span>
+                    <span className="text-[10px] text-shell-text-tertiary">{m.desc}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
-          {/* Type */}
-          <div className="space-y-1.5">
-            <Label htmlFor="prov-type">Type</Label>
-            <select
-              id="prov-type"
-              value={form.type}
-              onChange={(e) => handleTypeChange(e.target.value as ProviderType)}
-              disabled={isEdit}
-              className="flex h-9 w-full rounded-lg border border-white/10 bg-shell-bg-deep px-3 py-1 text-sm text-shell-text focus-visible:outline-none focus-visible:border-accent/40 focus-visible:ring-2 focus-visible:ring-accent/20"
-            >
-              <optgroup label="Cloud">
-                {CLOUD_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-              </optgroup>
-              <optgroup label="Local">
-                {LOCAL_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-              </optgroup>
-            </select>
-          </div>
+          {/* Step: cloud provider picker */}
+          {step === "cloud-pick" && (
+            <div className="grid grid-cols-2 gap-3" role="group" aria-label="Cloud provider">
+              {Object.entries(CLOUD_PROVIDER_META).map(([type, meta]) => (
+                <button
+                  key={type}
+                  onClick={() => pickCloudProvider(type)}
+                  className="flex flex-col items-start gap-1 rounded-xl border border-white/10 bg-white/5 p-3.5 hover:bg-white/10 hover:border-accent/40 transition-colors text-left"
+                  aria-label={`${meta.label}: ${meta.description}`}
+                >
+                  <span className="text-[13px] font-semibold text-shell-text">{meta.label}</span>
+                  <span className="text-[10px] text-shell-text-tertiary">{meta.description}</span>
+                </button>
+              ))}
+            </div>
+          )}
 
-          {/* URL */}
-          <div className="space-y-1.5">
-            <Label htmlFor="prov-url">URL</Label>
-            <Input
-              id="prov-url"
-              type="url"
-              value={form.url}
-              onChange={(e) => setField("url", e.target.value)}
-              placeholder="https://api.openai.com/v1"
-            />
-          </div>
-
-          {/* API Key (cloud only) */}
-          {isCloud(form.type) && (
-            <div className="space-y-1.5">
-              <Label htmlFor="prov-apikey">
-                API Key{isEdit && " (leave blank to keep existing)"}
-              </Label>
-              <Input
-                id="prov-apikey"
-                type="password"
-                value={form.apiKey}
-                onChange={(e) => setField("apiKey", e.target.value)}
-                placeholder={isEdit ? "••••••••" : "sk-..."}
-                className="font-mono"
-              />
-              <p className="text-[10px] text-shell-text-tertiary">
-                Saved automatically as <code>provider-{form.name || "{name}"}-key</code>
+          {/* Step: cluster info */}
+          {step === "cluster-info" && (
+            <div className="space-y-3">
+              <p className="text-[12px] text-shell-text-secondary leading-relaxed">
+                Cluster workers auto-register when the taOS worker agent is installed and running on a remote machine. No manual entry needed — workers appear automatically in the Network section once connected.
               </p>
+              <div className="rounded-lg bg-black/30 border border-white/10 p-3">
+                <p className="text-[10px] text-shell-text-tertiary mb-1.5 uppercase tracking-wide">Install worker agent</p>
+                <code className="text-[11px] text-shell-text font-mono block">
+                  curl -fsSL https://get.tinyagentos.com/worker | bash
+                </code>
+              </div>
+              <p className="text-[10px] text-shell-text-tertiary">
+                Point the worker at this controller's address and it will appear here within a few seconds.
+              </p>
+              <Button variant="secondary" onClick={onClose} className="w-full">Close</Button>
             </div>
           )}
 
-          {/* Default model */}
-          <div className="space-y-1.5">
-            <Label htmlFor="prov-model">Default Model (optional)</Label>
-            <Input
-              id="prov-model"
-              type="text"
-              value={form.model}
-              onChange={(e) => setField("model", e.target.value)}
-              placeholder="default"
-            />
-          </div>
+          {/* Step: config form */}
+          {step === "config" && (
+            <>
+              {/* Name */}
+              <div className="space-y-1.5">
+                <Label htmlFor="prov-name">Name</Label>
+                <Input
+                  id="prov-name"
+                  type="text"
+                  value={form.name}
+                  onChange={(e) => setField("name", e.target.value)}
+                  placeholder={cloudMeta ? cloudMeta.label.toLowerCase() : "my-provider"}
+                  disabled={isEdit}
+                  autoFocus={!isEdit}
+                />
+              </div>
 
-          {/* Priority */}
-          <div className="space-y-1.5">
-            <Label htmlFor="prov-priority">Priority (lower wins)</Label>
-            <Input
-              id="prov-priority"
-              type="number"
-              value={form.priority}
-              onChange={(e) => setField("priority", e.target.value)}
-              placeholder="99"
-              min={0}
-            />
-          </div>
+              {/* Cloud: read-only URL chip */}
+              {category === "cloud" && cloudMeta && !isEdit && (
+                <div className="space-y-1.5">
+                  <Label>API Endpoint</Label>
+                  <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+                    <ExternalLink size={11} className="text-shell-text-tertiary shrink-0" />
+                    <code className="text-[11px] text-shell-text-tertiary font-mono truncate">{cloudMeta.url}</code>
+                  </div>
+                </div>
+              )}
 
-          {/* Test result */}
-          {testResult && (
-            <div
-              role="status"
-              className={`text-xs rounded-lg px-3 py-2 border ${
-                testResult.reachable
-                  ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-300"
-                  : "bg-red-500/10 border-red-500/20 text-red-300"
-              }`}
-            >
-              {testResult.reachable
-                ? `Connected — ${testResult.response_ms ?? 0} ms · ${testResult.models?.length ?? 0} models found`
-                : `Connection failed: ${testResult.error ?? "unknown error"}`}
-            </div>
+              {/* Local: type + URL */}
+              {category === "local" && !isEdit && (
+                <>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="prov-type">Type</Label>
+                    <select
+                      id="prov-type"
+                      value={form.type}
+                      onChange={(e) => handleTypeChange(e.target.value as ProviderType)}
+                      className="flex h-9 w-full rounded-lg border border-white/10 bg-shell-bg-deep px-3 py-1 text-sm text-shell-text focus-visible:outline-none focus-visible:border-accent/40 focus-visible:ring-2 focus-visible:ring-accent/20"
+                    >
+                      {LOCAL_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="prov-url">URL</Label>
+                    <Input
+                      id="prov-url"
+                      type="url"
+                      value={form.url}
+                      onChange={(e) => setField("url", e.target.value)}
+                      placeholder="http://localhost:8080"
+                    />
+                  </div>
+                </>
+              )}
+
+              {/* Edit mode: show URL for any type */}
+              {isEdit && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="prov-url">URL</Label>
+                  <Input
+                    id="prov-url"
+                    type="url"
+                    value={form.url}
+                    onChange={(e) => setField("url", e.target.value)}
+                    placeholder="http://localhost:8080"
+                  />
+                </div>
+              )}
+
+              {/* API Key (cloud only) */}
+              {isCloud(form.type) && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="prov-apikey">
+                    API Key{isEdit && " (leave blank to keep existing)"}
+                  </Label>
+                  <Input
+                    id="prov-apikey"
+                    type="password"
+                    value={form.apiKey}
+                    onChange={(e) => setField("apiKey", e.target.value)}
+                    placeholder={isEdit ? "••••••••" : (cloudMeta?.keyPlaceholder ?? "sk-...")}
+                    className="font-mono"
+                  />
+                  <p className="text-[10px] text-shell-text-tertiary">
+                    Saved as <code>provider-{form.name || "{name}"}-key</code>
+                  </p>
+                </div>
+              )}
+
+              {/* Priority */}
+              <div className="space-y-1.5">
+                <Label htmlFor="prov-priority">Priority (lower wins)</Label>
+                <Input
+                  id="prov-priority"
+                  type="number"
+                  value={form.priority}
+                  onChange={(e) => setField("priority", e.target.value)}
+                  placeholder="99"
+                  min={0}
+                />
+              </div>
+
+              {/* Test result */}
+              {testResult && (
+                <div
+                  role="status"
+                  className={`text-xs rounded-lg px-3 py-2 border ${
+                    testResult.reachable
+                      ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-300"
+                      : "bg-red-500/10 border-red-500/20 text-red-300"
+                  }`}
+                >
+                  {testResult.reachable
+                    ? `Connected — ${testResult.response_ms ?? 0} ms · ${testResult.models?.length ?? 0} models found`
+                    : `Connection failed: ${testResult.error ?? "unknown error"}`}
+                </div>
+              )}
+
+              {saveError && (
+                <div role="alert" className="text-xs text-red-300 bg-red-500/10 border border-red-500/20 rounded px-2 py-1.5">
+                  {saveError}
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 pt-1 flex-wrap">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleTest}
+                  disabled={testing || !form.url.trim()}
+                  aria-label="Test provider connection"
+                >
+                  <RefreshCw size={13} className={testing ? "animate-spin" : ""} />
+                  {testing ? "Testing..." : "Test connection"}
+                </Button>
+                <Button
+                  onClick={handleSave}
+                  disabled={!canSave || saving}
+                  aria-label={isEdit ? "Update provider" : "Save provider"}
+                >
+                  {saving ? "Saving..." : isEdit ? "Update" : "Save"}
+                </Button>
+                <Button variant="secondary" onClick={onClose}>Cancel</Button>
+                {testResult && !testResult.reachable && !forceEnabled && (
+                  <button
+                    type="button"
+                    onClick={() => setForceEnabled(true)}
+                    className="text-[11px] text-shell-text-tertiary underline hover:text-shell-text transition-colors ml-auto"
+                    aria-label="Save anyway despite connection failure"
+                  >
+                    Save anyway
+                  </button>
+                )}
+              </div>
+            </>
           )}
-
-          {saveError && (
-            <div role="alert" className="text-xs text-red-300 bg-red-500/10 border border-red-500/20 rounded px-2 py-1.5">
-              {saveError}
-            </div>
-          )}
-
-          {/* Actions */}
-          <div className="flex items-center gap-2 pt-1 flex-wrap">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleTest}
-              disabled={testing || !form.url.trim()}
-              aria-label="Test provider connection"
-            >
-              <RefreshCw size={13} className={testing ? "animate-spin" : ""} />
-              {testing ? "Testing..." : "Test connection"}
-            </Button>
-            <Button
-              onClick={handleSave}
-              disabled={!canSave || saving}
-              aria-label={isEdit ? "Update provider" : "Save provider"}
-            >
-              {saving ? "Saving..." : isEdit ? "Update" : "Save"}
-            </Button>
-            <Button variant="secondary" onClick={onClose}>Cancel</Button>
-            {testResult && !testResult.reachable && !forceEnabled && (
-              <button
-                type="button"
-                onClick={() => setForceEnabled(true)}
-                className="text-[11px] text-shell-text-tertiary underline hover:text-shell-text transition-colors ml-auto"
-                aria-label="Save anyway despite connection failure"
-              >
-                Save anyway
-              </button>
-            )}
-          </div>
         </CardContent>
       </Card>
     </div>
