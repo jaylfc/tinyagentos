@@ -120,7 +120,42 @@ if __name__ == "__main__":
 PYEOF
 
 # ---------------------------------------------------------------------------
-# 5. Write systemd unit
+# 5. Write /root/.openclaw/env from TAOS_* and OPENAI_* env vars
+# ---------------------------------------------------------------------------
+echo "openclaw: writing /root/.openclaw/env from TAOS_* and OPENAI_* env vars"
+# systemd services don't inherit the container's default environment;
+# they only see env from Environment= lines or EnvironmentFile= files.
+# incus sets env vars via `incus config set environment.KEY=VALUE` which
+# populates the container init's env (inherited by `incus exec`, which is
+# how THIS script was invoked). Capture the subset the runtime needs and
+# persist to /root/.openclaw/env so the systemd unit reads them on start.
+# /root is bind-mounted from the host data_dir so the file survives container
+# destroy+recreate and travels with the agent home directory on backup/archive.
+# Note: on archive+restore the per-agent LiteLLM key is regenerated,
+# so this file needs to be re-written before the service restarts.
+# Handled by the deployer's restore path (see routes/agents.py).
+mkdir -p /root/.openclaw
+chmod 700 /root/.openclaw
+{
+  # A missing var is skipped entirely so the file stays minimal.
+  for key in TAOS_AGENT_NAME TAOS_MODEL TAOS_AGENT_HOME \
+             OPENAI_API_KEY OPENAI_BASE_URL \
+             TAOS_EMBEDDING_URL TAOS_EMBEDDING_MODEL \
+             TAOS_SKILLS_URL TAOS_SKILLS_MCP_URL TAOS_SKILLS_TOOLS_URL \
+             TAOS_USER_MEMORY_URL; do
+    val="${!key-}"
+    if [ -n "${val}" ]; then
+      # systemd EnvironmentFile syntax: KEY=value, no shell expansion,
+      # no quoting required unless value contains newlines (none of ours do).
+      printf '%s=%s\n' "${key}" "${val}"
+    fi
+  done
+} > /root/.openclaw/env
+chmod 600 /root/.openclaw/env
+echo "openclaw: /root/.openclaw/env written ($(wc -l < /root/.openclaw/env) vars)"
+
+# ---------------------------------------------------------------------------
+# 6. Write systemd unit
 # ---------------------------------------------------------------------------
 echo "openclaw: writing systemd unit"
 cat > "${SERVICE_FILE}" << 'SVCEOF'
@@ -131,7 +166,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-EnvironmentFile=-/etc/openclaw.env
+EnvironmentFile=-/root/.openclaw/env
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/opt/openclaw/venv/bin/python /opt/openclaw/server.py
 Restart=on-failure
@@ -146,7 +181,7 @@ WantedBy=multi-user.target
 SVCEOF
 
 # ---------------------------------------------------------------------------
-# 6. Enable and start the service (systemd primary path; nohup fallback)
+# 7. Enable and start the service (systemd primary path; nohup fallback)
 # ---------------------------------------------------------------------------
 if command -v systemctl > /dev/null 2>&1; then
     echo "openclaw: enabling and starting openclaw.service via systemd"
@@ -159,7 +194,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 7. Wait up to 20s for the health endpoint to respond
+# 8. Wait up to 20s for the health endpoint to respond
 # ---------------------------------------------------------------------------
 echo "openclaw: waiting for health endpoint on port 8100"
 RETRIES=10
