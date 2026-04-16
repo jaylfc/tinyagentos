@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Bot, Plus, Trash2, ScrollText, Play, Server, X, ChevronRight, ChevronLeft, Check, Wrench, MessageSquare, PauseCircle, RotateCcw } from "lucide-react";
+import { Bot, Plus, Trash2, ScrollText, Play, Server, X, ChevronRight, ChevronLeft, Check, Wrench, MessageSquare, PauseCircle, RotateCcw, Archive } from "lucide-react";
 import { AgentSkillsPanel } from "./AgentSkillsPanel";
 import { AgentMessagesPanel } from "./AgentMessagesPanel";
 import {
@@ -40,6 +40,21 @@ interface Agent {
   kv_cache_quant_k?: string;
   kv_cache_quant_v?: string;
   kv_cache_quant_boundary_layers?: number;
+}
+
+interface ArchivedAgent {
+  id: string;
+  archived_at: string;             // "YYYYMMDDTHHMMSS"
+  archived_slug: string;
+  archive_container: string;
+  archive_dir: string;
+  original: {
+    name?: string;
+    display_name?: string;
+    color?: string;
+    model?: string;
+    framework?: string;
+  };
 }
 
 interface Framework {
@@ -1161,11 +1176,130 @@ function DeployWizard({
 }
 
 /* ------------------------------------------------------------------ */
+/*  Archived agents helpers + panel                                    */
+/* ------------------------------------------------------------------ */
+
+function parseArchiveTimestamp(ts: string): Date | null {
+  const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})$/.exec(ts);
+  if (!m) return null;
+  return new Date(Date.UTC(+m[1]!, +m[2]! - 1, +m[3]!, +m[4]!, +m[5]!, +m[6]!));
+}
+
+function relativeTimeFromTs(ts: string): string {
+  const d = parseArchiveTimestamp(ts);
+  if (!d) return ts;
+  const diff = Date.now() - d.getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return `${days}d ago`;
+  return d.toLocaleDateString();
+}
+
+function ArchivedAgentRow({
+  entry,
+  onRestore,
+  onPurge,
+}: {
+  entry: ArchivedAgent;
+  onRestore: (id: string, name: string) => void;
+  onPurge: (id: string, name: string) => void;
+}) {
+  const displayName = entry.original?.display_name || entry.original?.name || entry.archived_slug;
+  const color = entry.original?.color || "#6b7280";
+  const model = entry.original?.model;
+  const when = relativeTimeFromTs(entry.archived_at);
+
+  return (
+    <Card className="flex items-center gap-4 px-4 py-3 hover:bg-shell-surface/50 transition-colors opacity-80">
+      <div className="flex items-center gap-2.5 flex-1 min-w-0">
+        <span
+          className="w-2.5 h-2.5 rounded-full shrink-0"
+          style={{ backgroundColor: color }}
+          aria-hidden
+        />
+        <span className="font-medium text-sm truncate">{displayName}</span>
+        {model && (
+          <span className="text-[11px] text-shell-text-tertiary truncate">{model}</span>
+        )}
+      </div>
+      <span className="text-xs text-shell-text-tertiary shrink-0">archived {when}</span>
+      <div className="flex items-center gap-1">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 hover:bg-emerald-500/15 hover:text-emerald-400"
+          onClick={() => onRestore(entry.id, displayName)}
+          aria-label={`Restore ${displayName}`}
+          title="Restore agent"
+        >
+          <RotateCcw size={15} />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 hover:bg-red-500/15 hover:text-red-400"
+          onClick={() => onPurge(entry.id, displayName)}
+          aria-label={`Permanently delete ${displayName}`}
+          title="Delete permanently"
+        >
+          <Trash2 size={15} />
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+function ArchivedAgentsPanel({
+  archived,
+  onRestore,
+  onPurge,
+}: {
+  archived: ArchivedAgent[];
+  onRestore: (id: string, name: string) => void;
+  onPurge: (id: string, name: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  if (archived.length === 0) return null;
+  return (
+    <section className="mt-4" aria-label="Archived agents">
+      <button
+        onClick={() => setExpanded(v => !v)}
+        className="flex items-center gap-2 text-xs text-shell-text-secondary hover:text-shell-text transition-colors mb-2"
+        aria-expanded={expanded}
+        aria-controls="archived-agents-panel"
+      >
+        <ChevronRight size={14} className={`transition-transform ${expanded ? "rotate-90" : ""}`} />
+        <Archive size={13} />
+        Archived ({archived.length})
+      </button>
+      <div
+        id="archived-agents-panel"
+        className={`space-y-2 ${expanded ? "" : "hidden"}`}
+      >
+        {archived.map(entry => (
+          <ArchivedAgentRow
+            key={entry.id}
+            entry={entry}
+            onRestore={onRestore}
+            onPurge={onPurge}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  AgentsApp (main)                                                   */
 /* ------------------------------------------------------------------ */
 
 export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [archived, setArchived] = useState<ArchivedAgent[]>([]);
   const [loading, setLoading] = useState(true);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [detail, setDetail] = useState<{ name: string; tab: DetailTab } | null>(null);
@@ -1204,6 +1338,21 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
     setLoading(false);
   }, []);
 
+  const fetchArchived = useCallback(async () => {
+    try {
+      const res = await fetch("/api/agents/archived");
+      if (!res.ok) return;
+      const ct = res.headers.get("content-type") ?? "";
+      if (!ct.includes("application/json")) return;
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setArchived(data as ArchivedAgent[]);
+      }
+    } catch {
+      /* network error — leave prior state */
+    }
+  }, []);
+
   // Listen for agent-resumed events from the notification toast
   useEffect(() => {
     const handler = () => fetchAgents();
@@ -1234,10 +1383,11 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
 
   useEffect(() => {
     fetchAgents();
-  }, [fetchAgents]);
+    fetchArchived();
+  }, [fetchAgents, fetchArchived]);
 
   async function handleDelete(name: string) {
-    if (!window.confirm(`Delete agent "${name}"? This cannot be undone.`)) return;
+    if (!window.confirm(`Archive "${name}"? It can be restored later from the Archived section.`)) return;
     try {
       const res = await fetch(`/api/agents/${encodeURIComponent(name)}`, {
         method: "DELETE",
@@ -1254,14 +1404,49 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
       }
       if (detail?.name === name) setDetail(null);
       fetchAgents();
+      fetchArchived();
     } catch (e) {
       window.alert(e instanceof Error ? e.message : "Network error");
     }
   }
 
+  async function handleRestore(id: string, name: string) {
+    if (!window.confirm(`Restore "${name}"?`)) return;
+    try {
+      const res = await fetch(`/api/agents/archived/${id}/restore`, { method: "POST" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        window.alert(`Restore failed: ${(err as { error?: string }).error ?? res.status}`);
+        return;
+      }
+      await fetchAgents();
+      await fetchArchived();
+    } catch (e) {
+      window.alert(`Network error: ${String(e)}`);
+    }
+  }
+
+  async function handlePurge(id: string, name: string) {
+    if (!window.confirm(`Permanently delete "${name}"? This cannot be undone.`)) return;
+    try {
+      const res = await fetch(`/api/agents/archived/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        window.alert(`Permanent delete failed: ${(err as { error?: string }).error ?? res.status}`);
+        return;
+      }
+      await fetchArchived();
+    } catch (e) {
+      window.alert(`Network error: ${String(e)}`);
+    }
+  }
+
   function handleWizardClose(deployed?: boolean) {
     setWizardOpen(false);
-    if (deployed) fetchAgents();
+    if (deployed) {
+      fetchAgents();
+      fetchArchived();
+    }
   }
 
   return (
@@ -1293,7 +1478,7 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
           <div className="flex items-center justify-center h-full text-shell-text-tertiary text-sm">
             Loading agents...
           </div>
-        ) : agents.length === 0 ? (
+        ) : agents.length === 0 && archived.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-4 text-shell-text-tertiary">
             <div className="w-20 h-20 rounded-2xl flex items-center justify-center"
               style={{ background: "linear-gradient(135deg, rgba(139,146,163,0.15), rgba(91,97,112,0.08))" }}
@@ -1313,19 +1498,34 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
               Deploy your first agent
             </Button>
           </div>
+        ) : agents.length === 0 ? (
+          <div className="p-4">
+            <ArchivedAgentsPanel
+              archived={archived}
+              onRestore={handleRestore}
+              onPurge={handlePurge}
+            />
+          </div>
         ) : (
-          <div className="p-4 space-y-2" role="list" aria-label="Agent list">
-            {agents.map((agent) => (
-              <AgentRow
-                key={agent.name}
-                agent={agent}
-                onViewLogs={(name) => setDetail({ name, tab: "logs" })}
-                onViewSkills={(name) => setDetail({ name, tab: "skills" })}
-                onViewMessages={(name) => setDetail({ name, tab: "messages" })}
-                onDelete={handleDelete}
-                onResume={handleResume}
-              />
-            ))}
+          <div className="p-4">
+            <div className="space-y-2" role="list" aria-label="Agent list">
+              {agents.map((agent) => (
+                <AgentRow
+                  key={agent.name}
+                  agent={agent}
+                  onViewLogs={(name) => setDetail({ name, tab: "logs" })}
+                  onViewSkills={(name) => setDetail({ name, tab: "skills" })}
+                  onViewMessages={(name) => setDetail({ name, tab: "messages" })}
+                  onDelete={handleDelete}
+                  onResume={handleResume}
+                />
+              ))}
+            </div>
+            <ArchivedAgentsPanel
+              archived={archived}
+              onRestore={handleRestore}
+              onPurge={handlePurge}
+            />
           </div>
         )}
       </div>
