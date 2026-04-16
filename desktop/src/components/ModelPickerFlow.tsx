@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { ChevronLeft, Monitor, Server, Cloud, Search, X } from "lucide-react";
 import { HOST_BADGE_CLASS } from "@/lib/models";
 
@@ -33,9 +33,9 @@ export function ModelPickerFlow({ models, modelsLoaded, onSelect, onBack, onCanc
   const [search, setSearch]                   = useState("");
 
   // Partition by source
-  const localModels  = models.filter(m => m.hostKind === "controller" || !m.hostKind);
-  const workerModels = models.filter(m => m.hostKind === "worker");
-  const cloudModels  = models.filter(m => m.hostKind === "cloud");
+  const localModels  = useMemo(() => models.filter(m => m.hostKind === "controller" || !m.hostKind), [models]);
+  const workerModels = useMemo(() => models.filter(m => m.hostKind === "worker"), [models]);
+  const cloudModels  = useMemo(() => models.filter(m => m.hostKind === "cloud"), [models]);
 
   const availableSources: Source[] = [
     ...(localModels.length  > 0 ? ["local"  as Source] : []),
@@ -43,20 +43,26 @@ export function ModelPickerFlow({ models, modelsLoaded, onSelect, onBack, onCanc
     ...(cloudModels.length  > 0 ? ["cloud"  as Source] : []),
   ];
 
-  const workerProviders = [...new Set(workerModels.map(m => m.host ?? "unknown"))];
-  const cloudProviders  = [...new Set(cloudModels.map(m =>  m.host ?? "unknown"))];
+  const workerProviders = useMemo(
+    () => [...new Set(workerModels.map(m => m.host ?? "unknown"))],
+    [workerModels]
+  );
+  const cloudProviders = useMemo(
+    () => [...new Set(cloudModels.map(m => m.host ?? "unknown"))],
+    [cloudModels]
+  );
 
-  const goToProvider = useCallback((source: Source) => {
+  const goToProvider = (source: Source) => {
     const providers = source === "worker" ? workerProviders : cloudProviders;
-    if (providers.length === 1) {
+    if (providers.length <= 1) {
       setSelectedProvider(providers[0] ?? null);
       setScreen("list");
     } else {
       setScreen("provider");
     }
-  }, [workerProviders, cloudProviders]);
+  };
 
-  const handleSourceSelect = useCallback((source: Source) => {
+  const handleSourceSelect = (source: Source) => {
     setSelectedSource(source);
     setSearch("");
     if (source === "local") {
@@ -65,9 +71,10 @@ export function ModelPickerFlow({ models, modelsLoaded, onSelect, onBack, onCanc
     } else {
       goToProvider(source);
     }
-  }, [goToProvider]);
+  };
 
-  // Auto-select if only one source has models
+  // Auto-select if only one source has models. handleSourceSelect is intentionally
+  // excluded — this should only auto-advance when models first become available.
   useEffect(() => {
     if (modelsLoaded && availableSources.length === 1 && availableSources[0]) {
       handleSourceSelect(availableSources[0]);
@@ -142,6 +149,7 @@ export function ModelPickerFlow({ models, modelsLoaded, onSelect, onBack, onCanc
               <button
                 key={source}
                 onClick={() => handleSourceSelect(source)}
+                aria-label={`Select ${label} models`}
                 className="w-full text-left px-4 py-3 rounded-lg border border-white/5 bg-shell-bg-deep hover:bg-white/5 transition-colors flex items-center gap-3"
               >
                 <span className="text-accent shrink-0">{icon}</span>
@@ -176,6 +184,7 @@ export function ModelPickerFlow({ models, modelsLoaded, onSelect, onBack, onCanc
             <button
               key={provider}
               onClick={() => handleProviderSelect(provider)}
+              aria-label={`Select ${provider}`}
               className="w-full text-left px-4 py-3 rounded-lg border border-white/5 bg-shell-bg-deep hover:bg-white/5 transition-colors"
             >
               <div className="text-sm font-medium">{provider}</div>
