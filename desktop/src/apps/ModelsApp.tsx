@@ -42,7 +42,7 @@ interface AvailableModel {
   size: string;
 }
 
-type SourceFilter = "all" | "huggingface" | "ollama" | "catalog";
+type SourceFilter = "all" | "local" | "workers" | "cloud";
 
 /* ------------------------------------------------------------------ */
 /*  Fallback data                                                      */
@@ -311,6 +311,9 @@ export function ModelsApp({ windowId: _windowId }: { windowId: string }) {
   });
   const filteredDownloaded = downloaded.filter((m) => {
     if (q && !m.filename.toLowerCase().includes(q)) return false;
+    if (source === "local" && m.hostKind !== "controller") return false;
+    if (source === "workers" && m.hostKind !== "worker") return false;
+    if (source === "cloud" && m.hostKind !== "cloud") return false;
     return true;
   });
 
@@ -364,13 +367,13 @@ export function ModelsApp({ windowId: _windowId }: { windowId: string }) {
           role="group"
           aria-label="Filter by source"
         >
-          {(["all", "huggingface", "ollama", "catalog"] as SourceFilter[]).map(
+          {(["all", "local", "workers", "cloud"] as SourceFilter[]).map(
             (src) => {
               const labels: Record<SourceFilter, string> = {
                 all: "All Sources",
-                huggingface: "HuggingFace",
-                ollama: "Ollama",
-                catalog: "Catalog",
+                local: "Local",
+                workers: "Workers",
+                cloud: "Cloud",
               };
               const active = source === src;
               return (

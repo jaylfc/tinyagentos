@@ -15,6 +15,7 @@ import {
   Cloud,
 } from "lucide-react";
 import { Button, Card, CardContent, Input } from "@/components/ui";
+import { CLOUD_PROVIDER_TYPES } from "@/lib/models";
 
 interface ModelVariant {
   id: string;
@@ -86,7 +87,7 @@ function formatSize(mb?: number): string {
   return `${mb} MB`;
 }
 
-const CLOUD_BACKEND_TYPES = ["openai", "anthropic", "openrouter", "kilocode"];
+const CLOUD_BACKEND_TYPES: readonly string[] = CLOUD_PROVIDER_TYPES;
 
 export function ModelBrowser({
   open,

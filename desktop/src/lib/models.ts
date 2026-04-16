@@ -67,37 +67,33 @@ export function controllerDownloadedToAggregated(
   };
 }
 
-/** Flatten worker.backends[].models[] into AggregatedModel entries. */
+/** Flatten worker.backends[].models[] into AggregatedModel entries.
+ *  Falls back to top-level w.models[] for older workers that don't report backends. */
 export function workersToAggregated(workers: ClusterWorker[]): AggregatedModel[] {
   const out: AggregatedModel[] = [];
   for (const w of workers) {
     const wname = w.name ?? "worker";
-    for (const b of w.backends ?? []) {
-      const backendName = b.name ?? b.type ?? "backend";
-      for (const model of b.models ?? []) {
-        if (typeof model === "string") {
-          out.push({
-            key: `worker:${wname}:${backendName}:${model}`,
-            id: model,
-            name: model,
-            host: wname,
-            hostKind: "worker",
-            backend: backendName,
-          });
-        } else if (model && typeof model === "object") {
-          const id = (model.id ?? model.name ?? "unknown") as string;
-          const nm = (model.name ?? model.id ?? "unknown") as string;
-          const sz = typeof model.size_mb === "number" ? fmtSize(model.size_mb) : undefined;
-          out.push({
-            key: `worker:${wname}:${backendName}:${id}`,
-            id,
-            name: nm,
-            host: wname,
-            hostKind: "worker",
-            backend: backendName,
-            size: sz,
-          });
+
+    // Prefer nested backends[].models[] — more info (backend name/type)
+    const backends = w.backends ?? [];
+    if (backends.length > 0) {
+      for (const b of backends) {
+        const backendName = b.name ?? b.type ?? "backend";
+        for (const model of b.models ?? []) {
+          if (typeof model === "string") {
+            out.push({ key: `worker:${wname}:${backendName}:${model}`, id: model, name: model, host: wname, hostKind: "worker", backend: backendName });
+          } else if (model && typeof model === "object") {
+            const id = (model.id ?? model.name ?? "unknown") as string;
+            const nm = (model.name ?? model.id ?? "unknown") as string;
+            const sz = typeof model.size_mb === "number" ? fmtSize(model.size_mb) : undefined;
+            out.push({ key: `worker:${wname}:${backendName}:${id}`, id, name: nm, host: wname, hostKind: "worker", backend: backendName, size: sz });
+          }
         }
+      }
+    } else if (Array.isArray(w.models) && w.models.length > 0) {
+      // Fallback: flat model list with no backend detail
+      for (const model of w.models) {
+        out.push({ key: `worker:${wname}:${model}`, id: model, name: model, host: wname, hostKind: "worker" });
       }
     }
   }
@@ -111,13 +107,13 @@ export interface CloudProvider {
   models?: { id?: string; name?: string }[];
 }
 
-const CLOUD_TYPES = ["openai", "anthropic"];
+export const CLOUD_PROVIDER_TYPES = ["openai", "anthropic", "openrouter", "kilocode"] as const;
 
 /** Flatten /api/providers cloud providers into AggregatedModel entries. */
 export function cloudProvidersToAggregated(providers: CloudProvider[]): AggregatedModel[] {
   const out: AggregatedModel[] = [];
   for (const p of providers ?? []) {
-    if (!p || !p.type || !CLOUD_TYPES.includes(p.type)) continue;
+    if (!p || !p.type || !(CLOUD_PROVIDER_TYPES as readonly string[]).includes(p.type)) continue;
     const providerName = p.name ?? p.type;
     const list = Array.isArray(p.models) ? p.models : [];
     if (list.length === 0) {
