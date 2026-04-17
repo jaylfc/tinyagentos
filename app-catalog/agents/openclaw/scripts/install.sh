@@ -1,211 +1,73 @@
 #!/usr/bin/env bash
 # install.sh — openclaw agent runtime installer
 # Runs once inside a fresh Debian bookworm LXC container.
-# Pre-conditions: python3 python3-pip python3-venv python3-dev
-#                 nodejs npm build-essential ca-certificates git curl
-# are already installed by the deployer before this script is called.
+# Idempotent: safe to re-run on an already-provisioned container.
+#
+# Pinned to jaylfc/openclaw at upstream main (SHA: be7a415eb096)
+# Fork tracks upstream main; taos-fork branch carries the bridge patch.
 set -euo pipefail
 
-INSTALL_DIR=/opt/openclaw
-VENV_DIR=${INSTALL_DIR}/venv
-SERVICE_FILE=/etc/systemd/system/openclaw.service
-
-echo "openclaw: starting install in ${INSTALL_DIR}"
+echo "[openclaw] installing Node 22.x (NodeSource) + openclaw from jaylfc fork"
 
 # ---------------------------------------------------------------------------
-# 1. Create install directory (idempotent)
+# 1. Node 22.14+ via NodeSource (Debian bookworm default is Node 18, too old).
 # ---------------------------------------------------------------------------
-mkdir -p "${INSTALL_DIR}"
-
-# ---------------------------------------------------------------------------
-# 2. Python venv (idempotent — skip if already exists)
-# ---------------------------------------------------------------------------
-if [ ! -d "${VENV_DIR}" ]; then
-    echo "openclaw: creating Python venv at ${VENV_DIR}"
-    python3 -m venv "${VENV_DIR}"
+if ! command -v node >/dev/null 2>&1 || [ "$(node -v | sed 's/^v//; s/\..*//')" -lt 22 ]; then
+  curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nodejs
 fi
 
 # ---------------------------------------------------------------------------
-# 3. Install Python dependencies (pinned for reproducible arm64 builds)
+# 2. openclaw from our fork (taos-fork branch).
+# Fork baseline tracks upstream main; the taos-fork branch adds the bridge patch.
 # ---------------------------------------------------------------------------
-echo "openclaw: installing Python packages"
-"${VENV_DIR}/bin/pip" install --no-cache-dir \
-    "fastapi==0.115.0" \
-    "uvicorn[standard]==0.32.0" \
-    "httpx==0.27.2" \
-    "openai==1.54.0"
+npm install -g github:jaylfc/openclaw#taos-fork
 
 # ---------------------------------------------------------------------------
-# 4. Write runtime server
+# 3. Data dirs + .openclaw mount under /root (agent-home bind mount).
+# openclaw.json is written by the deployer, not here. We only ensure the dir.
 # ---------------------------------------------------------------------------
-echo "openclaw: writing server.py"
-cat > "${INSTALL_DIR}/server.py" << 'PYEOF'
-"""Minimal openclaw agent runtime — bridges the host chat router to the
-host LiteLLM proxy. Runs inside the agent's LXC container on port 8100.
-
-Reads env injected by the deployer:
-  TAOS_AGENT_NAME   — display label returned in every response
-  TAOS_MODEL        — model id to pass to LiteLLM (falls back to "default")
-  OPENAI_BASE_URL   — LiteLLM /v1 root on the host
-  OPENAI_API_KEY    — per-agent virtual key minted by LiteLLM
-
-No persistence, no tools, no retries beyond the OpenAI SDK's own defaults.
-The host owns memory and skills; the container is disposable.
-"""
-from __future__ import annotations
-
-import logging
-import os
-from typing import Any, Optional
-
-from fastapi import FastAPI
-from pydantic import BaseModel, ConfigDict, Field
-from openai import OpenAI
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-logger = logging.getLogger("openclaw")
-
-AGENT_NAME = os.environ.get("TAOS_AGENT_NAME", "openclaw")
-MODEL = os.environ.get("TAOS_MODEL") or "default"
-BASE_URL = os.environ.get("OPENAI_BASE_URL", "http://host.docker.internal:4000/v1")
-API_KEY = os.environ.get("OPENAI_API_KEY", "")
-
-client = OpenAI(base_url=BASE_URL, api_key=API_KEY or "sk-no-key")
-
-app = FastAPI(title=f"openclaw-{AGENT_NAME}")
-
-
-class MessageIn(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
-    text: str
-    from_name: Optional[str] = Field(default=None, alias="from")
-    thread_id: Optional[str] = None
-
-
-@app.get("/health")
-def health() -> dict[str, Any]:
-    return {
-        "status": "ok",
-        "agent": AGENT_NAME,
-        "model": MODEL,
-        "base_url": BASE_URL,
-        "has_key": bool(API_KEY),
-    }
-
-
-@app.post("/message")
-def handle_message(msg: MessageIn) -> dict[str, Any]:
-    sender = msg.from_name or "user"
-    logger.info("message from %s: %s", sender, msg.text[:120])
-    try:
-        resp = client.chat.completions.create(
-            model=MODEL,
-            messages=[
-                {"role": "system", "content": f"You are {AGENT_NAME}, a helpful assistant."},
-                {"role": "user", "content": msg.text},
-            ],
-            timeout=120,
-        )
-        content = (resp.choices[0].message.content or "").strip()
-        return {"content": content, "thread_id": msg.thread_id}
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("LLM call failed")
-        return {"content": f"[openclaw error] {exc}", "thread_id": msg.thread_id}
-
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8100, log_level="info")
-PYEOF
-
-# ---------------------------------------------------------------------------
-# 5. Write /root/.openclaw/env from TAOS_* and OPENAI_* env vars
-# ---------------------------------------------------------------------------
-echo "openclaw: writing /root/.openclaw/env from TAOS_* and OPENAI_* env vars"
-# systemd services don't inherit the container's default environment;
-# they only see env from Environment= lines or EnvironmentFile= files.
-# incus sets env vars via `incus config set environment.KEY=VALUE` which
-# populates the container init's env (inherited by `incus exec`, which is
-# how THIS script was invoked). Capture the subset the runtime needs and
-# persist to /root/.openclaw/env so the systemd unit reads them on start.
-# /root is bind-mounted from the host data_dir so the file survives container
-# destroy+recreate and travels with the agent home directory on backup/archive.
-# Note: on archive+restore the per-agent LiteLLM key is regenerated,
-# so this file needs to be re-written before the service restarts.
-# Handled by the deployer's restore path (see routes/agents.py).
 mkdir -p /root/.openclaw
 chmod 700 /root/.openclaw
-{
-  # A missing var is skipped entirely so the file stays minimal.
-  for key in TAOS_AGENT_NAME TAOS_MODEL TAOS_AGENT_HOME \
-             OPENAI_API_KEY OPENAI_BASE_URL \
-             TAOS_EMBEDDING_URL TAOS_EMBEDDING_MODEL \
-             TAOS_SKILLS_URL TAOS_SKILLS_MCP_URL TAOS_SKILLS_TOOLS_URL \
-             TAOS_USER_MEMORY_URL; do
-    val="${!key-}"
-    if [ -n "${val}" ]; then
-      # systemd EnvironmentFile syntax: KEY=value, no shell expansion,
-      # no quoting required unless value contains newlines (none of ours do).
-      printf '%s=%s\n' "${key}" "${val}"
-    fi
-  done
-} > /root/.openclaw/env
-chmod 600 /root/.openclaw/env
-echo "openclaw: /root/.openclaw/env written ($(wc -l < /root/.openclaw/env) vars)"
 
 # ---------------------------------------------------------------------------
-# 6. Write systemd unit
+# 4. systemd unit for the gateway.
 # ---------------------------------------------------------------------------
-echo "openclaw: writing systemd unit"
-cat > "${SERVICE_FILE}" << 'SVCEOF'
+cat > /etc/systemd/system/openclaw.service <<'UNIT'
 [Unit]
-Description=openclaw agent runtime
+Description=openclaw gateway
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 EnvironmentFile=-/root/.openclaw/env
-Environment=PYTHONUNBUFFERED=1
-ExecStart=/opt/openclaw/venv/bin/python /opt/openclaw/server.py
+ExecStart=/usr/bin/openclaw gateway
 Restart=on-failure
 RestartSec=3
-User=root
-WorkingDirectory=/opt/openclaw
-StandardOutput=journal
-StandardError=journal
+WorkingDirectory=/root
 
 [Install]
 WantedBy=multi-user.target
-SVCEOF
+UNIT
+
+systemctl daemon-reload
+systemctl enable --now openclaw.service
 
 # ---------------------------------------------------------------------------
-# 7. Enable and start the service (systemd primary path; nohup fallback)
+# 5. Wait for openclaw to be ready (health RPC).
 # ---------------------------------------------------------------------------
-if command -v systemctl > /dev/null 2>&1; then
-    echo "openclaw: enabling and starting openclaw.service via systemd"
-    systemctl daemon-reload
-    systemctl enable --now openclaw.service
-else
-    echo "openclaw: systemctl not found, falling back to nohup"
-    nohup "${VENV_DIR}/bin/python" "${INSTALL_DIR}/server.py" \
-        > /var/log/openclaw.log 2>&1 &
-fi
-
-# ---------------------------------------------------------------------------
-# 8. Wait up to 20s for the health endpoint to respond
-# ---------------------------------------------------------------------------
-echo "openclaw: waiting for health endpoint on port 8100"
-RETRIES=10
-for i in $(seq 1 ${RETRIES}); do
-    if curl -sf http://127.0.0.1:8100/health > /dev/null 2>&1; then
-        echo "openclaw: ready on port 8100"
-        exit 0
-    fi
-    echo "openclaw: not ready yet (attempt ${i}/${RETRIES}), retrying in 2s..."
-    sleep 2
+for i in $(seq 1 30); do
+  if openclaw health --timeout 2000 >/dev/null 2>&1; then
+    echo "[openclaw] ready"
+    break
+  fi
+  sleep 1
+  if [ "$i" -eq 30 ]; then
+    echo "[openclaw] FAILED to become ready in 30s"
+    journalctl -u openclaw.service --no-pager -n 50 || true
+    exit 1
+  fi
 done
 
-echo "openclaw: ERROR — health check failed after $((RETRIES * 2))s" >&2
-exit 1
+echo "[openclaw] install complete"

@@ -8,7 +8,7 @@ license: MIT
 
 requires:
   ram_mb: 512
-  disk_mb: 500
+  disk_mb: 2000
 
 install:
   method: script
