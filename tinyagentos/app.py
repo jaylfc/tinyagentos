@@ -41,6 +41,7 @@ from tinyagentos.app_orchestrator import AppOrchestrator
 from tinyagentos.computer_use import ComputerUseManager
 from tinyagentos.webhook_notifier import WebhookNotifier
 from tinyagentos.llm_proxy import LLMProxy
+from tinyagentos.litellm_migrate import migrate as _litellm_migrate
 from tinyagentos.auto_update import AutoUpdateService
 from tinyagentos.restart_orchestrator import RestartOrchestrator, apply_pending_restart_check, resume_agents_from_notes
 from tinyagentos.channel_hub.router import MessageRouter
@@ -306,6 +307,13 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         # os.environ/<name> markers land in the subprocess env and
         # cloud providers can actually authenticate.
         try:
+            # Apply LiteLLM's Prisma schema before spawning the proxy so
+            # /key/generate works on fresh installs. No-ops when no DB is
+            # configured or the schema is already present.
+            try:
+                _litellm_migrate(data_dir)
+            except Exception:
+                logger.exception("litellm prisma migration failed — virtual keys will not work")
             resolved_secrets: dict[str, str] = {}
             for backend in config.backends:
                 name = backend.get("api_key_secret")
