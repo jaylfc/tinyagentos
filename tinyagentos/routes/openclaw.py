@@ -84,13 +84,44 @@ async def bootstrap(request: Request, agent: str | None = None):
     if agent_dict is None:
         return JSONResponse({"error": f"agent not found: {agent}"}, status_code=404)
 
-    # llm_key may be null when no LiteLLM proxy is configured; fall back to
-    # empty string so the gateway can start and openclaw can connect.
-    llm_key = agent_dict.get("llm_key") or ""
+    llm_key = agent_dict.get("llm_key")
+    if not llm_key:
+        return JSONResponse(
+            {
+                "error": (
+                    "agent llm_key not yet minted; deployer must call "
+                    f"/api/agents/{agent}/start after key generation"
+                )
+            },
+            status_code=409,
+        )
 
     session_id = agent_dict.get("session_id") or agent
 
     base_url = "http://127.0.0.1:6969"
+
+    # Build models[] from primary model + fallback_models.
+    primary_model = agent_dict.get("model") or ""
+    fallback_models = agent_dict.get("fallback_models") or []
+
+    def _model_entry(model_id: str) -> dict:
+        return {
+            "id": model_id,
+            "name": model_id,
+            "contextWindow": 128000,
+            "maxTokens": 16384,
+            "input": ["text"],
+            "reasoning": False,
+        }
+
+    models_list = []
+    if primary_model:
+        models_list.append(_model_entry(primary_model))
+    for fb in fallback_models:
+        if fb and fb != primary_model:
+            models_list.append(_model_entry(fb))
+
+    primary_ref = f"litellm/{primary_model}" if primary_model else ""
 
     return {
         "schema_version": 1,
@@ -98,11 +129,18 @@ async def bootstrap(request: Request, agent: str | None = None):
         "session_id": session_id,
         "models": {
             "providers": {
-                "taos": {
+                "litellm": {
                     "api": "openai-completions",
-                    "baseUrl": "http://127.0.0.1:4000/v1",
-                    "apiKey": llm_key,
-                    "models": [],
+                    "baseUrl": "http://127.0.0.1:4000",
+                    "apiKey": "${LITELLM_API_KEY}",
+                    "models": models_list,
+                }
+            }
+        },
+        "agents": {
+            "defaults": {
+                "model": {
+                    "primary": primary_ref,
                 }
             }
         },

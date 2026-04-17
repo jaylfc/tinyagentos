@@ -41,6 +41,7 @@ def openclaw_data_dir(tmp_path):
                 "color": "#aabbcc",
                 "llm_key": "sk-test-virtualkey",
                 "model": "qwen2.5:7b",
+                "fallback_models": ["kilo-auto/free", "gpt-4o"],
                 "chat_channel_id": "ch_mybot",
             }
         ],
@@ -110,17 +111,60 @@ async def test_bootstrap_shape(bearer_client):
     data = resp.json()
     assert data["schema_version"] == 1
     assert data["agent_name"] == "mybot"
+    # providers is a record (dict), not a list
     providers = data["models"]["providers"]
-    assert len(providers) == 1
-    p = providers[0]
-    assert p["id"] == "taos"
-    assert p["apiKey"] == "sk-test-virtualkey"
-    assert p["default_model"] == "qwen2.5:7b"
+    assert "litellm" in providers
+    assert "taos" not in providers
+    p = providers["litellm"]
+    assert p["api"] == "openai-completions"
+    assert p["baseUrl"] == "http://127.0.0.1:4000"
+    assert p["apiKey"] == "${LITELLM_API_KEY}"
+    assert "default_model" not in data
+    # models[] contains primary + deduplicated fallbacks
+    assert len(p["models"]) == 3  # qwen2.5:7b + kilo-auto/free + gpt-4o
+    assert p["models"][0]["id"] == "qwen2.5:7b"
+    assert p["models"][1]["id"] == "kilo-auto/free"
+    assert p["models"][2]["id"] == "gpt-4o"
+    # agents.defaults.model.primary uses litellm/<id> prefix
+    assert data["agents"]["defaults"]["model"]["primary"] == "litellm/qwen2.5:7b"
     assert data["channel"]["auth_bearer"] == token
     assert "events_url" in data["channel"]
     assert "reply_url" in data["channel"]
     assert data["memory"] is None
     assert data["skills_mcp_url"] is None
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_fallback_models_length(bearer_client):
+    """models[] has exactly 1 + len(fallback_models) entries (deduped)."""
+    client, _token, app = bearer_client
+    resp = await client.get("/api/openclaw/bootstrap?agent=mybot")
+    assert resp.status_code == 200
+    data = resp.json()
+    models = data["models"]["providers"]["litellm"]["models"]
+    # fixture has primary=qwen2.5:7b + 2 distinct fallbacks
+    assert len(models) == 3
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_no_fallback_models(bearer_client):
+    """Agent with no fallback_models gets a models[] of length 1."""
+    _client, _token, app = bearer_client
+    for a in app.state.config.agents:
+        if a.get("name") == "mybot":
+            a.pop("fallback_models", None)
+    transport = ASGITransport(app=app)
+    token = app.state.auth.get_local_token()
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"Authorization": f"Bearer {token}"},
+    ) as c:
+        resp = await c.get("/api/openclaw/bootstrap?agent=mybot")
+    assert resp.status_code == 200
+    models = resp.json()["models"]["providers"]["litellm"]["models"]
+    assert len(models) == 1
+    assert models[0]["id"] == "qwen2.5:7b"
 
 
 @pytest.mark.asyncio
