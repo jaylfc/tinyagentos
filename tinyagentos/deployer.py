@@ -33,6 +33,7 @@ class DeployRequest:
     name: str
     framework: str        # agent framework app_id
     model: str | None     # model app_id (optional)
+    fallback_models: list[str] = field(default_factory=list)
     data_dir: Path        # host data dir — trace and shared state live here
     color: str = "#888888"
     memory_limit: str | None = None
@@ -87,6 +88,9 @@ async def deploy_agent(req: DeployRequest) -> dict:
             llm_key = await proxy.create_agent_key(req.name)
             if llm_key:
                 from tinyagentos.llm_proxy import EMBEDDING_ALIAS
+                # Primary key for openclaw's litellm provider.
+                env["LITELLM_API_KEY"] = llm_key
+                # Compat shim — smolagents and other frameworks still expect OPENAI_API_KEY.
                 env["OPENAI_API_KEY"] = llm_key
                 env["OPENAI_BASE_URL"] = f"{proxy.url}/v1"
                 # Host-side embedding endpoint — same LiteLLM process,
@@ -115,9 +119,10 @@ async def deploy_agent(req: DeployRequest) -> dict:
     # Home is always /root inside the container (rootfs).
     env["TAOS_AGENT_HOME"] = "/root"
 
-    # Selected model name.
-    if req.model:
-        env["TAOS_MODEL"] = req.model
+    # Selected model name (always set; empty string when not configured).
+    env["TAOS_MODEL"] = req.model or ""
+    # Fallback models as comma-separated list for install.sh.
+    env["TAOS_FALLBACK_MODELS"] = ",".join(req.fallback_models or [])
 
     # Trace capture — local auth token + trace API URL.
     try:
@@ -137,6 +142,8 @@ async def deploy_agent(req: DeployRequest) -> dict:
         env["OPENAI_BASE_URL"] = "http://127.0.0.1:4000/v1"
     if "OPENAI_API_KEY" not in env:
         env["OPENAI_API_KEY"] = ""
+    if "LITELLM_API_KEY" not in env:
+        env["LITELLM_API_KEY"] = ""
 
     # Step 1: Create container with trace mount + env baked in at launch time.
     # root_size_gib applies the disk quota (40 GiB default per §10.10).
