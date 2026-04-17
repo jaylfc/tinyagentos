@@ -107,6 +107,11 @@ systemctl daemon-reload
 systemctl enable --now tinyagentos-disk-quota.timer
 echo "Disk quota timer status: $(systemctl is-active tinyagentos-disk-quota.timer)"
 
+# Migrate legacy trace paths (pre-pivot agent-home/*/.taos/trace → trace/{slug}/)
+if [ -x "$INSTALL_DIR/scripts/migrate-trace-paths.sh" ]; then
+  bash "$INSTALL_DIR/scripts/migrate-trace-paths.sh" "$DATA_DIR" || echo "migrate-trace-paths: non-fatal error; continuing install"
+fi
+
 # Install systemd service
 echo "Installing systemd service..."
 cat > /etc/systemd/system/tinyagentos.service << EOF
