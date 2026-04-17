@@ -119,18 +119,17 @@ chmod 700 /root/.openclaw
 
 cat > /root/.openclaw/openclaw.json <<JSON_EOF
 {
-  "gateway": { "bind": "loopback", "port": 18789, "auth": { "mode": "token" } },
+  "gateway": { "bind": "loopback", "port": 18789, "auth": { "mode": "token" }, "mode": "local" },
   "channels": {},
   "models": {
-    "providers": [
-      {
-        "id": "taos",
+    "providers": {
+      "taos": {
         "api": "openai-completions",
         "baseUrl": "${OPENAI_BASE_URL}",
         "apiKey": "${OPENAI_API_KEY}",
-        "default_model": "${TAOS_MODEL}"
+        "models": []
       }
-    ]
+    }
   }
 }
 JSON_EOF
