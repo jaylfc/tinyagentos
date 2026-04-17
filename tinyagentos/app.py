@@ -339,6 +339,15 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         from tinyagentos.trace_store import TraceStoreRegistry
         app.state.trace_registry = TraceStoreRegistry(data_dir)
 
+        # Bridge session registry — per-agent queue + accumulator for openclaw.
+        from tinyagentos.bridge_session import BridgeSessionRegistry
+        app.state.bridge_sessions = BridgeSessionRegistry(
+            trace_registry=app.state.trace_registry,
+            chat_messages=chat_messages,
+            chat_channels=chat_channels,
+            chat_hub=chat_hub,
+        )
+
         # After the first probe, mark auto-managed backends that are not
         # currently reachable as "stopped" so the scheduler knows to start
         # them on demand rather than treating them as permanently broken.
@@ -516,6 +525,14 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     from tinyagentos.trace_store import TraceStoreRegistry as _TraceStoreRegistry
     app.state.trace_registry = _TraceStoreRegistry(data_dir)
+
+    from tinyagentos.bridge_session import BridgeSessionRegistry as _BridgeSessionRegistry
+    app.state.bridge_sessions = _BridgeSessionRegistry(
+        trace_registry=app.state.trace_registry,
+        chat_messages=chat_messages,
+        chat_channels=chat_channels,
+        chat_hub=chat_hub,
+    )
 
     # Detect and set container runtime (eager, so tests work without lifespan)
     try:
@@ -706,6 +723,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     from tinyagentos.routes.trace import router as trace_router
     app.include_router(trace_router)
+
+    from tinyagentos.routes.openclaw import router as openclaw_router
+    app.include_router(openclaw_router)
 
     # Lobby demo (internal only — not included in public builds)
     try:
