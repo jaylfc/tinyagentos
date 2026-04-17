@@ -163,18 +163,20 @@ async def update_agent_permissions(request: Request, name: str, body: AgentPermi
 
 
 async def _archive_agent_fully(request: Request, name: str) -> dict:
-    """Archive an agent: stop container, rename it + move its dirs into
-    a dated archive bucket, revoke its LiteLLM key, flag its chat channel,
-    and move the config entry from agents to archived_agents.
+    """Archive via incus snapshot. Zero-copy on btrfs/ZFS pools; rsync fallback
+    on dir-backed. Container stays intact (snapshots live alongside); restoring
+    is snapshot restore. Purge = incus delete.
 
-    The agent can later be restored with its history intact via
-    ``POST /api/agents/archived/{id}/restore``.
+    Archive target:
+      - pool: (default) — snapshot lives in-pool alongside the container.
+      - path:/abs/path — export snapshot tarball to that path.
+      - s3://bucket — export + upload (not yet implemented; log + skip).
 
     Returns ``{"error": ..., "status_code": ...}`` on failure so callers
     can re-raise as JSONResponse.
     """
-    import shutil
-    from tinyagentos.containers import stop_container, rename_container
+    import json as _json
+    from tinyagentos.containers import stop_container, snapshot_create
 
     config = request.app.state.config
     agent = find_agent(config, name)
@@ -183,7 +185,6 @@ async def _archive_agent_fully(request: Request, name: str) -> dict:
 
     agent_id = agent.get("id")
     if not agent_id:
-        # Backfill on the fly for agents created before id was mandatory.
         import uuid
         agent_id = uuid.uuid4().hex[:12]
         agent["id"] = agent_id
@@ -191,112 +192,94 @@ async def _archive_agent_fully(request: Request, name: str) -> dict:
     ts = _archive_timestamp()
     slug = agent["name"]
     container = f"taos-agent-{slug}"
-    archive_container = f"taos-archived-{slug}-{ts}"
+    snapshot_name = f"taos-archive-{ts}"
     data_dir = request.app.state.data_dir
     archive_subdir = f"{slug}-{ts}"
     archive_base = data_dir / "archive" / archive_subdir
 
-    # 1) Force-stop to make rename succeed regardless of prior container
-    #    state. Best-effort — if incus doesn't know the container (e.g. a
-    #    partial deploy that never created one), that's fine, we just
-    #    proceed. The rename below is the gate: if IT fails, we abort the
-    #    archive so we don't leave config state divorced from reality.
+    # 1) Force-stop the container. Best-effort — container may not exist
+    #    (partial deploy), which is fine; the snapshot step below is the gate.
     try:
         await stop_container(container, force=True)
     except Exception as exc:  # noqa: BLE001
         logger.warning("archive: stop failed for %s: %s", slug, exc)
 
-    # 2) Rename container. Distinguish "container didn't exist" (fine —
-    #    partial deploy, user nuked it manually) from "container existed
-    #    but we couldn't move it" (bad — we'd leave an orphan running
-    #    after we update config). If rename fails for a known-present
-    #    container, abort and return 500 so the user can fix state and retry.
-    rename_result = {"success": False, "output": ""}
-    container_exists = True
-    try:
-        rename_result = await rename_container(container, archive_container)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("archive: rename container failed for %s: %s", slug, exc)
+    # 2) Create snapshot. If this fails (container not found, pool error, etc.)
+    #    we abort without mutating config so the agent stays in the live list.
+    snap_result = await snapshot_create(container, snapshot_name)
+    if not snap_result.get("success"):
+        out = (snap_result.get("output") or "").strip()
+        return {
+            "error": (
+                f"archive failed: could not create snapshot {snapshot_name} "
+                f"on {container}: {out or 'unknown error'}. "
+                f"Agent left in live list — fix container state and retry."
+            ),
+            "status_code": 500,
+        }
 
-    if not rename_result.get("success"):
-        out = (rename_result.get("output") or "").lower()
-        # incus rename of a non-existent instance says "Instance not found"
-        if "not found" in out or "no such" in out:
-            container_exists = False
-        else:
-            return {
-                "error": (
-                    f"archive failed: could not rename container {container} "
-                    f"to {archive_container}: {rename_result.get('output', '').strip() or 'unknown error'}. "
-                    f"Agent left in live list — fix container state and retry."
-                ),
-                "status_code": 500,
-            }
-
-    # 3) Move host dirs under archive/. We move whatever exists; missing
-    #    dirs aren't fatal (deploy might not have created memory/ yet).
-    archive_base.mkdir(parents=True, exist_ok=True)
-    dir_map = {
-        "agent-workspaces": "workspace",
-        "agent-memory": "memory",
-        "agent-home": "home",
-    }
-    for sub, dst_name in dir_map.items():
-        src = data_dir / sub / slug
-        if src.exists():
-            dst = archive_base / dst_name
-            try:
-                shutil.move(str(src), str(dst))
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("archive: move %s -> %s failed: %s", src, dst, exc)
-
-    # 4) Revoke LiteLLM key (best effort).
-    llm_key = agent.get("llm_key")
-    llm_proxy = getattr(request.app.state, "llm_proxy", None)
-    if llm_key and llm_proxy and llm_proxy.is_running():
-        try:
-            await llm_proxy.delete_agent_key(llm_key)
-        except Exception:
-            pass
-
-    # 5) Export DM channel messages to agent-home then flag archived.
-    channel_id = agent.get("chat_channel_id")
-    if channel_id:
-        # 5a) Write chat-export.jsonl into agent-home (already moved to archive).
-        try:
-            import json as _json
-            msg_store = request.app.state.chat_messages
-            all_msgs = await msg_store.get_all_messages_for_channel(channel_id)
-            # agent-home was moved to archive_base / "home"; write there.
-            home_dir = archive_base / "home"
-            if home_dir.exists():
-                taos_dir = home_dir / ".taos"
-                taos_dir.mkdir(mode=0o700, exist_ok=True)
-                export_path = taos_dir / "chat-export.jsonl"
-                try:
-                    with export_path.open("w", encoding="utf-8") as fh:
-                        for m in all_msgs:
-                            fh.write(_json.dumps(m, default=str) + "\n")
-                    export_path.chmod(0o600)
-                    logger.info(
-                        "archive: wrote %d messages to %s", len(all_msgs), export_path
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning(
-                        "archive: chat-export write failed for %s: %s — "
-                        "messages still in global DB, re-export safe to retry",
-                        slug,
-                        exc,
-                    )
+    # 3) If archive.target is set to something other than "pool:", export
+    #    the snapshot as a tarball. "s3://" is logged + skipped (not yet
+    #    implemented per pivot doc §10.2).
+    export_path: str | None = None
+    archive_target = (config.archive or {}).get("target", "pool:")
+    if archive_target and archive_target != "pool:":
+        if archive_target.startswith("path:"):
+            dest_dir = archive_target[len("path:"):]
+            tarball_dir = data_dir / "archive" / archive_subdir
+            tarball_dir.mkdir(parents=True, exist_ok=True)
+            tarball_path = tarball_dir / f"{snapshot_name}.tar.gz"
+            from tinyagentos.containers import _run as _c_run
+            ecode, eout = await _c_run([
+                "incus", "export", f"{container}/{snapshot_name}",
+                str(tarball_path),
+            ], timeout=600)
+            if ecode == 0:
+                export_path = str(tarball_path)
+                logger.info("archive: exported snapshot to %s", export_path)
             else:
                 logger.warning(
-                    "archive: agent-home not found at %s, skipping chat-export",
-                    home_dir,
+                    "archive: incus export failed for %s/%s: %s — "
+                    "snapshot still in-pool, export path not recorded",
+                    container, snapshot_name, eout,
+                )
+        elif archive_target.startswith("s3://"):
+            logger.warning(
+                "archive: s3 export target '%s' not yet implemented — "
+                "snapshot lives in-pool only",
+                archive_target,
+            )
+        else:
+            logger.warning("archive: unknown archive.target '%s', ignoring", archive_target)
+
+    # 4) Export chat history to a host-side path alongside any tarball.
+    #    Chat is host-owned state; we don't write inside the container.
+    channel_id = agent.get("chat_channel_id")
+    if channel_id:
+        try:
+            msg_store = request.app.state.chat_messages
+            all_msgs = await msg_store.get_all_messages_for_channel(channel_id)
+            chat_export_dir = archive_base / "chat"
+            chat_export_dir.mkdir(parents=True, exist_ok=True)
+            chat_export_file = chat_export_dir / "chat-export.jsonl"
+            try:
+                with chat_export_file.open("w", encoding="utf-8") as fh:
+                    for m in all_msgs:
+                        fh.write(_json.dumps(m, default=str) + "\n")
+                chat_export_file.chmod(0o600)
+                logger.info(
+                    "archive: wrote %d messages to %s", len(all_msgs), chat_export_file
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "archive: chat-export write failed for %s: %s — "
+                    "messages still in global DB, re-export safe to retry",
+                    slug, exc,
                 )
         except Exception as exc:  # noqa: BLE001
             logger.warning("archive: chat-export failed for %s: %s", slug, exc)
 
-        # 5b) Flag the channel archived with full metadata.
+        # 4b) Flag the channel archived with full metadata.
         try:
             ch_store = request.app.state.chat_channels
             await ch_store.set_settings(
@@ -311,13 +294,23 @@ async def _archive_agent_fully(request: Request, name: str) -> dict:
         except Exception as exc:  # noqa: BLE001
             logger.warning("archive: channel flag failed for %s: %s", channel_id, exc)
 
+    # 5) Revoke LiteLLM key (best effort).
+    llm_key = agent.get("llm_key")
+    llm_proxy = getattr(request.app.state, "llm_proxy", None)
+    if llm_key and llm_proxy and llm_proxy.is_running():
+        try:
+            await llm_proxy.delete_agent_key(llm_key)
+        except Exception:
+            pass
+
     # 6) Move config entry out of agents into archived_agents.
     original_snapshot = dict(agent)
     archive_entry = {
         "id": agent_id,
         "archived_at": ts,
         "archived_slug": slug,
-        "archive_container": archive_container,
+        "snapshot_name": snapshot_name,
+        "export_path": export_path,
         "archive_dir": f"archive/{archive_subdir}",
         "original": original_snapshot,
     }
@@ -330,8 +323,8 @@ async def _archive_agent_fully(request: Request, name: str) -> dict:
         "name": slug,
         "id": agent_id,
         "archived_at": ts,
-        "container": archive_container,
-        "container_renamed": rename_result.get("success", False),
+        "snapshot_name": snapshot_name,
+        "export_path": export_path,
     }
 
 
@@ -798,8 +791,10 @@ async def destroy_agent(request: Request, name: str):
 
 @router.post("/api/agents/archived/{archive_id}/restore")
 async def restore_archived_agent(request: Request, archive_id: str):
-    import shutil
-    from tinyagentos.containers import rename_container, start_container
+    import json as _json
+    from tinyagentos.containers import (
+        snapshot_restore, rename_container, start_container, set_env, exec_in_container,
+    )
 
     config = request.app.state.config
     entry = next((a for a in config.archived_agents if a.get("id") == archive_id), None)
@@ -811,6 +806,17 @@ async def restore_archived_agent(request: Request, archive_id: str):
     if not desired_slug:
         return JSONResponse({"error": "Archive entry is corrupted (no slug)"}, status_code=500)
 
+    snapshot_name = entry.get("snapshot_name")
+    if not snapshot_name:
+        return JSONResponse(
+            {"error": "Archive entry has no snapshot_name — created with legacy archive path"},
+            status_code=500,
+        )
+
+    # The container name is derived from the original slug (unchanged since
+    # archive; we snapshot in-place, not rename).
+    container = f"taos-agent-{desired_slug}"
+
     # Resolve slug collisions with currently-live agents.
     final_slug = desired_slug
     suffix = 2
@@ -820,35 +826,48 @@ async def restore_archived_agent(request: Request, archive_id: str):
         if suffix > 100:
             return JSONResponse({"error": "Could not resolve restore slug"}, status_code=500)
 
-    archive_container = entry.get("archive_container") or ""
     data_dir = request.app.state.data_dir
     archive_base = data_dir / entry.get("archive_dir", "")
-    target_container = f"taos-agent-{final_slug}"
 
-    # 1) Rename container back (must be stopped; archive path stopped it).
+    # 1) Restore snapshot. Container must be stopped (archive left it stopped).
+    snap_result = await snapshot_restore(container, snapshot_name)
+    if not snap_result.get("success"):
+        out = (snap_result.get("output") or "").strip()
+        return JSONResponse(
+            {
+                "error": (
+                    f"restore failed: snapshot_restore {container}/{snapshot_name} "
+                    f"failed: {out or 'unknown error'}"
+                ),
+            },
+            status_code=500,
+        )
+
+    # 2) Rename if the slug changed (collision resolution).
     rename_ok = True
+    target_container = f"taos-agent-{final_slug}"
+    if final_slug != desired_slug:
+        try:
+            rename_result = await rename_container(container, target_container)
+            rename_ok = rename_result.get("success", False)
+            if not rename_ok:
+                logger.warning(
+                    "restore: rename %s -> %s failed: %s",
+                    container, target_container, rename_result.get("output", ""),
+                )
+        except Exception as exc:  # noqa: BLE001
+            rename_ok = False
+            logger.warning("restore: rename failed: %s", exc)
+    else:
+        target_container = container
+
+    # 3) Start container.
     try:
-        result = await rename_container(archive_container, target_container)
-        rename_ok = result.get("success", False)
-    except Exception:
-        rename_ok = False
+        await start_container(target_container)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("restore: start_container failed for %s: %s", target_container, exc)
 
-    # 2) Move dirs back.
-    for sub, host_dir in (
-        ("workspace", "agent-workspaces"),
-        ("memory", "agent-memory"),
-        ("home", "agent-home"),
-    ):
-        src = archive_base / sub
-        dst = data_dir / host_dir / final_slug
-        if src.exists():
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            try:
-                shutil.move(str(src), str(dst))
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("restore: move %s -> %s failed: %s", src, dst, exc)
-
-    # 3) Mint new LiteLLM key if proxy running.
+    # 4) Mint new LiteLLM key if proxy running.
     llm_proxy = getattr(request.app.state, "llm_proxy", None)
     new_key = None
     if llm_proxy and llm_proxy.is_running():
@@ -857,31 +876,39 @@ async def restore_archived_agent(request: Request, archive_id: str):
         except Exception:
             pass
 
-    # 4) Rewrite the agent's env file with the new key so when the user
-    # starts the container, systemd loads the fresh credential rather
-    # than the revoked one left over from the pre-archive deploy.
-    # Other vars (base URLs, agent name) stay untouched -- we only
-    # replace what actually rotated.
+    # 5) Update openclaw env in the restored container with the new key.
+    #    Uses incus config set environment.OPENAI_API_KEY=<new> so the
+    #    value persists in the container's config and does not require a
+    #    bind-mounted file. Also restart openclaw.service if present.
     if new_key is not None:
         try:
-            from tinyagentos.agent_env import update_agent_env_file
-            host_home = data_dir / "agent-home" / final_slug
-            if host_home.exists():
-                update_agent_env_file(host_home, {"OPENAI_API_KEY": new_key})
+            env_result = await set_env(target_container, "OPENAI_API_KEY", new_key)
+            if not env_result.get("success"):
+                logger.warning(
+                    "restore: set_env OPENAI_API_KEY failed for %s: %s",
+                    target_container, env_result.get("output", ""),
+                )
+            else:
+                # Best-effort: restart openclaw.service if it is present.
+                try:
+                    await exec_in_container(
+                        target_container,
+                        ["systemctl", "restart", "openclaw.service"],
+                        timeout=30,
+                    )
+                except Exception:
+                    pass
         except Exception as exc:  # noqa: BLE001
-            logger.warning("restore: env file rewrite failed for %s: %s", final_slug, exc)
+            logger.warning("restore: env key update failed for %s: %s", target_container, exc)
 
-    # 5b) Re-import chat-export.jsonl if present, then unflag all archived channels
-    #     that belonged to this archive entry.
+    # 6) Re-import chat-export.jsonl from the archive path if present.
     try:
-        import json as _json
-        host_home = data_dir / "agent-home" / final_slug
-        export_path = host_home / ".taos" / "chat-export.jsonl"
-        if export_path.exists():
+        chat_export_file = archive_base / "chat" / "chat-export.jsonl"
+        if chat_export_file.exists():
             msg_store = request.app.state.chat_messages
             imported = 0
             try:
-                with export_path.open("r", encoding="utf-8") as fh:
+                with chat_export_file.open("r", encoding="utf-8") as fh:
                     for raw_line in fh:
                         raw_line = raw_line.strip()
                         if not raw_line:
@@ -898,15 +925,13 @@ async def restore_archived_agent(request: Request, archive_id: str):
     except Exception as exc:  # noqa: BLE001
         logger.warning("restore: chat re-import outer failed: %s", exc)
 
-    # 6) Unflag all channels where archived_agent_id matches this archive entry.
+    # 7) Unflag all channels where archived_agent_id matches this archive entry.
     agent_id_to_unflag = entry.get("id")
     try:
         ch_store = request.app.state.chat_channels
-        # Try the primary chat_channel_id from original config first.
         channel_id = original.get("chat_channel_id")
         if channel_id:
             await ch_store.set_settings(channel_id, {"archived": False})
-        # Also scan all channels in case settings has archived_agent_id pointing here.
         all_channels = await ch_store.list_channels(archived=True)
         for ch in all_channels:
             ch_settings = ch.get("settings") or {}
@@ -915,22 +940,16 @@ async def restore_archived_agent(request: Request, archive_id: str):
     except Exception as exc:  # noqa: BLE001
         logger.warning("restore: channel unflag failed: %s", exc)
 
-    # 7) Restore the agent dict (possibly with new slug + new key).
+    # 8) Move config entry from archived_agents back to agents.
     restored = dict(original)
     restored["name"] = final_slug
-    restored["status"] = "stopped"  # user must manually start after restore
+    restored["status"] = "stopped"
     restored["host"] = ""
     if new_key is not None:
         restored["llm_key"] = new_key
     config.agents.append(restored)
     config.archived_agents = [a for a in config.archived_agents if a.get("id") != archive_id]
     await save_config_locked(config, config.config_path)
-
-    # Remove empty archive dir.
-    try:
-        archive_base.rmdir()
-    except OSError:
-        pass  # Non-empty or gone — fine.
 
     return {
         "status": "restored",
@@ -944,8 +963,11 @@ async def restore_archived_agent(request: Request, archive_id: str):
 
 @router.delete("/api/agents/archived/{archive_id}")
 async def purge_archived_agent(request: Request, archive_id: str):
-    """True permanent deletion: destroys the archived container and wipes
-    the archive directory. Irreversible."""
+    """True permanent deletion: destroys the archived container (and all its
+    snapshots) via ``incus delete --force``, wipes any exported tarball,
+    deletes chat channels and messages, and drops the config entry.
+    Irreversible.
+    """
     import shutil
     from tinyagentos.containers import destroy_container
 
@@ -954,27 +976,39 @@ async def purge_archived_agent(request: Request, archive_id: str):
     if entry is None:
         return JSONResponse({"error": f"Archived agent '{archive_id}' not found"}, status_code=404)
 
-    archive_container = entry.get("archive_container") or ""
+    archived_slug = entry.get("archived_slug") or (entry.get("original") or {}).get("name") or ""
+    container_name = f"taos-agent-{archived_slug}" if archived_slug else ""
     data_dir = request.app.state.data_dir
     archive_base = data_dir / entry.get("archive_dir", "")
 
-    # 1) Destroy container (best effort).
-    if archive_container:
+    # 1) Destroy container (destroys all snapshots too in incus).
+    #    "not found" is fine — container may already be gone.
+    if container_name:
         try:
-            await destroy_container(archive_container)
+            await destroy_container(container_name)
         except Exception:
             pass
 
-    # 2) Wipe archive dir.
+    # 2) Wipe exported archive tarball path if one was recorded.
+    export_path = entry.get("export_path")
+    if export_path:
+        import os as _os
+        try:
+            if _os.path.isdir(export_path):
+                shutil.rmtree(export_path, ignore_errors=True)
+            elif _os.path.isfile(export_path):
+                _os.unlink(export_path)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("purge: export path cleanup failed %s: %s", export_path, exc)
+
+    # 3) Wipe archive dir (chat-export + any other host-side state).
     if archive_base.exists():
         try:
             shutil.rmtree(archive_base, ignore_errors=True)
         except Exception:
             pass
 
-    # 3) Delete messages + channels for every DM channel belonging to this agent.
-    #    Primary: the explicit chat_channel_id on the original config.
-    #    Secondary: any channel whose settings.archived_agent_id matches.
+    # 4) Delete messages + channels for every DM channel belonging to this agent.
     archive_id_for_purge = entry.get("id")
     try:
         ch_store = request.app.state.chat_channels
@@ -983,7 +1017,6 @@ async def purge_archived_agent(request: Request, archive_id: str):
         channel_id = (entry.get("original") or {}).get("chat_channel_id")
         if channel_id:
             channels_to_purge.append(channel_id)
-        # Also find any additional channels flagged with this agent's id.
         try:
             archived_channels = await ch_store.list_channels(archived=True)
             for ch in archived_channels:
@@ -1008,7 +1041,7 @@ async def purge_archived_agent(request: Request, archive_id: str):
     except Exception as exc:  # noqa: BLE001
         logger.warning("purge: channel/message cleanup failed: %s", exc)
 
-    # 4) Drop archived_agents entry.
+    # 5) Drop archived_agents entry.
     config.archived_agents = [a for a in config.archived_agents if a.get("id") != archive_id]
     await save_config_locked(config, config.config_path)
 
