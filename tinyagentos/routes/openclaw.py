@@ -84,12 +84,9 @@ async def bootstrap(request: Request, agent: str | None = None):
     if agent_dict is None:
         return JSONResponse({"error": f"agent not found: {agent}"}, status_code=404)
 
-    llm_key = agent_dict.get("llm_key")
-    if not llm_key:
-        return JSONResponse(
-            {"error": "agent llm_key missing — deploy may not have completed"},
-            status_code=409,
-        )
+    # llm_key may be null when no LiteLLM proxy is configured; fall back to
+    # empty string so the gateway can start and openclaw can connect.
+    llm_key = agent_dict.get("llm_key") or ""
 
     session_id = agent_dict.get("session_id") or agent
 
@@ -100,15 +97,14 @@ async def bootstrap(request: Request, agent: str | None = None):
         "agent_name": agent,
         "session_id": session_id,
         "models": {
-            "providers": [
-                {
-                    "id": "taos",
+            "providers": {
+                "taos": {
                     "api": "openai-completions",
                     "baseUrl": "http://127.0.0.1:4000/v1",
                     "apiKey": llm_key,
-                    "default_model": agent_dict.get("model"),
+                    "models": [],
                 }
-            ]
+            }
         },
         "channel": {
             "provider": "taos",
