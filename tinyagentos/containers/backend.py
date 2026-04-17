@@ -44,6 +44,20 @@ class ContainerBackend(ABC):
         ...
 
     @abstractmethod
+    async def set_root_quota(self, name: str, size_gib: int) -> dict:
+        """Set per-container rootfs quota.
+
+        On btrfs-backed LXC pools, the quota is immediately enforced via
+        btrfs qgroups. On ZFS, same. On dir-backed pools, this is
+        accounting-only (soft) because dir pools don't enforce. Docker
+        requires a supported storage driver (btrfs, ZFS, devicemapper);
+        on overlay2 the call is a no-op and logged.
+
+        Returns a dict with ``success`` (bool) and ``note`` (str).
+        """
+        ...
+
+    @abstractmethod
     async def create_container(
         self,
         name: str,
@@ -53,13 +67,11 @@ class ContainerBackend(ABC):
         mounts: list[tuple[str, str]] | None = None,
         env: dict[str, str] | None = None,
         host_uid: int | None = None,
+        root_size_gib: int | None = None,
     ) -> dict:
         """Create and start a new container.
 
-        ``mounts`` is a list of ``(host_path, container_path)`` pairs. Every
-        piece of per-agent state — memory, workspace, vector stores — enters
-        the container through one of these bind mounts. See
-        ``docs/design/framework-agnostic-runtime.md``.
+        ``mounts`` is a list of ``(host_path, container_path)`` pairs.
 
         ``env`` is a dict of environment variables injected at container
         creation time. Used for host-service endpoints (LLM proxy, embeddings,
@@ -67,8 +79,12 @@ class ContainerBackend(ABC):
         can be destroyed and rebuilt without losing its wiring.
 
         ``host_uid``: when provided, apply a UID mapping so container root
-        (uid 0) maps to this host UID.  Required when bind-mounting directories
-        owned by a non-root process user so the container can write to them.
+        (uid 0) maps to this host UID.
+
+        ``root_size_gib``: when provided, set the rootfs disk quota via
+        ``set_root_quota`` after the container is created. On btrfs/ZFS
+        pools this is enforced at the kernel level; on dir-backed pools
+        and Docker overlay2 without pquota it is accounting-only.
         """
         ...
 

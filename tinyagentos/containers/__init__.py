@@ -75,6 +75,25 @@ async def list_containers(prefix: str = "taos-agent-") -> list[ContainerInfo]:
     return results
 
 
+async def set_root_quota(name: str, size_gib: int) -> dict:
+    """Set per-container rootfs quota. On btrfs-backed LXC pools, the
+    quota is immediately enforced. On ZFS, same. On dir-backed, this
+    is accounting-only (soft) because dir pools don't enforce. Docker
+    requires a supported storage driver (btrfs, ZFS, devicemapper); on
+    overlay2 the call is a no-op and logged.
+
+    Returns a dict with ``success`` (bool) and ``note`` (str).
+    """
+    code, output = await _run([
+        "incus", "config", "device", "set", name, "root",
+        f"size={size_gib}GiB",
+    ])
+    if code != 0:
+        logger.warning("set_root_quota: incus config device set failed for %s: %s", name, output)
+        return {"success": False, "note": output}
+    return {"success": True, "note": f"root quota set to {size_gib} GiB"}
+
+
 async def create_container(
     name: str,
     image: str = "images:debian/bookworm",
@@ -83,21 +102,20 @@ async def create_container(
     mounts: list[tuple[str, str]] | None = None,
     env: dict[str, str] | None = None,
     host_uid: int | None = None,
+    root_size_gib: int | None = None,
 ) -> dict:
     """Create and start a new LXC container with mounts and env injected.
 
     ``mounts`` is a list of ``(host_path, container_path)`` bind mounts
     attached as incus disk devices. ``env`` is a dict of environment
-    variables set via ``incus config set environment.KEY VALUE``. Every
-    piece of per-agent state must enter through one of these; the
-    container image itself holds only the framework and base OS. See
-    ``docs/design/framework-agnostic-runtime.md``.
+    variables set via ``incus config set environment.KEY VALUE``.
 
     ``host_uid``: when provided, apply ``raw.idmap`` so container root
-    (uid 0) is remapped to this UID on the host.  Required when the
-    agent-home bind mount is owned by a non-root user (e.g. the taOS
-    process owner) so the container can write config files there.
-    Applying the idmap requires a stop/start cycle before mounts are added.
+    (uid 0) is remapped to this UID on the host.
+
+    ``root_size_gib``: when provided, apply a rootfs disk quota via
+    ``set_root_quota`` after launch. Enforced on btrfs/ZFS pools;
+    accounting-only on dir-backed pools.
     """
     import asyncio as _asyncio
     code, output = await _run(
@@ -114,6 +132,15 @@ async def create_container(
         await _run(["incus", "stop", name, "--force"])
         await _run(["incus", "start", name])
         await _asyncio.sleep(3)
+
+    # Root quota — set before mounts/env so subsequent writes are subject to limit.
+    if root_size_gib is not None:
+        quota_result = await set_root_quota(name, root_size_gib)
+        if not quota_result["success"]:
+            logger.warning(
+                "create_container: root quota not applied for %s: %s",
+                name, quota_result.get("note", ""),
+            )
 
     if memory_limit is not None:
         await _run(["incus", "config", "set", name, "limits.memory", memory_limit])
@@ -227,6 +254,7 @@ __all__ = [
     "LXCBackend",
     "DockerBackend",
     "list_containers",
+    "set_root_quota",
     "create_container",
     "exec_in_container",
     "push_file",

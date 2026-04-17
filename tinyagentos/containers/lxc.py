@@ -27,6 +27,23 @@ class LXCBackend(ContainerBackend):
     async def _run(self, cmd: list[str], timeout: int = 120) -> tuple[int, str]:
         return await _run(cmd, timeout=timeout)
 
+    async def set_root_quota(self, name: str, size_gib: int) -> dict:
+        """Set per-container rootfs quota via incus config device set root size.
+
+        On btrfs-backed pools, the quota is enforced by btrfs qgroups.
+        On ZFS pools, by ZFS dataset quotas. On dir-backed pools incus
+        does not enforce the limit at the kernel level (accounting-only);
+        callers should warn users of this limitation.
+        """
+        code, output = await _run([
+            "incus", "config", "device", "set", name, "root",
+            f"size={size_gib}GiB",
+        ])
+        if code != 0:
+            logger.warning("set_root_quota: incus config device set failed for %s: %s", name, output)
+            return {"success": False, "note": output}
+        return {"success": True, "note": f"root quota set to {size_gib} GiB"}
+
     async def list_containers(self, prefix: str = "taos-agent-") -> list[ContainerInfo]:
         """List all agent containers."""
         code, output = await _run(["incus", "list", "-f", "json"])
@@ -72,15 +89,17 @@ class LXCBackend(ContainerBackend):
         mounts: list[tuple[str, str]] | None = None,
         env: dict[str, str] | None = None,
         host_uid: int | None = None,
+        root_size_gib: int | None = None,
     ) -> dict:
         """Create and start a new LXC container.
 
         Bind mounts are attached as disk devices via ``incus config device
         add`` and env vars via ``incus config set environment.KEY VALUE``.
-        The container image itself holds only the framework and base OS;
-        every piece of per-agent state enters through one of the mounts
-        or reaches a host service named by one of the env vars. See
-        ``docs/design/framework-agnostic-runtime.md``.
+
+        root_size_gib: when set, apply a rootfs disk quota via
+        ``incus config device set root size=<N>GiB`` immediately after
+        launch. On btrfs/ZFS-backed pools this is enforced at the kernel
+        level; on dir-backed pools incus does not enforce it.
 
         host_uid: when set, apply ``raw.idmap`` so that container root (uid 0)
         maps to this uid on the host.  Required when bind-mounting directories
@@ -105,6 +124,16 @@ class LXCBackend(ContainerBackend):
             await _run(["incus", "start", name])
             import asyncio as _asyncio
             await _asyncio.sleep(3)
+
+        # Root quota — set before mounts/env so any subsequent writes are
+        # already subject to the limit.
+        if root_size_gib is not None:
+            quota_result = await self.set_root_quota(name, root_size_gib)
+            if not quota_result["success"]:
+                logger.warning(
+                    "create_container: root quota not applied for %s: %s",
+                    name, quota_result.get("note", ""),
+                )
 
         if memory_limit is not None:
             await _run(["incus", "config", "set", name, "limits.memory", memory_limit])

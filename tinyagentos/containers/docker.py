@@ -89,6 +89,40 @@ class DockerBackend(ContainerBackend):
             ))
         return results
 
+    async def set_root_quota(self, name: str, size_gib: int) -> dict:
+        """Set per-container rootfs quota via docker container update.
+
+        Docker supports ``--storage-opt size=<n>g`` only on drivers that
+        provide per-container quota (devicemapper, overlay2 on XFS with
+        pquota, btrfs). On overlay2 without pquota the command is
+        accepted but silently not enforced; we treat that as success with
+        a soft note.
+        """
+        size_g = f"{size_gib}g"
+        code, output = await self._run([
+            self.binary, "container", "update",
+            "--storage-opt", f"size={size_g}", name,
+        ])
+        if code != 0:
+            # Specific well-known message from overlay2 without pquota.
+            no_support_markers = (
+                "storage driver does not support",
+                "storage-opt",
+                "not supported",
+                "invalid option",
+            )
+            low = output.lower()
+            if any(m in low for m in no_support_markers):
+                logger.warning(
+                    "set_root_quota: storage driver does not enforce quota for %s "
+                    "(overlay2 without pquota?); treating as soft limit: %s",
+                    name, output.strip(),
+                )
+                return {"success": True, "note": "storage driver does not enforce quota"}
+            logger.warning("set_root_quota: docker update failed for %s: %s", name, output)
+            return {"success": False, "note": output}
+        return {"success": True, "note": f"root quota set to {size_gib} GiB"}
+
     async def create_container(
         self,
         name: str,
@@ -98,12 +132,16 @@ class DockerBackend(ContainerBackend):
         mounts: list[tuple[str, str]] | None = None,
         env: dict[str, str] | None = None,
         host_uid: int | None = None,
+        root_size_gib: int | None = None,
     ) -> dict:
         """Create and start a new container.
 
         Every bind mount and env var the container needs must be passed
-        explicitly — nothing is baked into the image. See
-        ``docs/design/framework-agnostic-runtime.md``.
+        explicitly — nothing is baked into the image.
+
+        root_size_gib: when set, call set_root_quota after the container
+        is created. Enforcement depends on the Docker storage driver;
+        on overlay2 without pquota this is accounting-only.
         """
         args = [
             self.binary, "run", "-d",
@@ -121,6 +159,16 @@ class DockerBackend(ContainerBackend):
         code, output = await self._run(args, timeout=300)
         if code != 0:
             return {"success": False, "error": output}
+
+        # Root quota — set after container exists, before it receives writes.
+        if root_size_gib is not None:
+            quota_result = await self.set_root_quota(name, root_size_gib)
+            if not quota_result["success"]:
+                logger.warning(
+                    "create_container: root quota not applied for %s: %s",
+                    name, quota_result.get("note", ""),
+                )
+
         return {"success": True, "name": name}
 
     async def exec_in_container(

@@ -2,8 +2,9 @@ import json
 import pytest
 from unittest.mock import AsyncMock, patch
 from tinyagentos.containers import (
-    list_containers, create_container, start_container,
-    stop_container, destroy_container, _parse_memory, ContainerInfo,
+    list_containers, create_container, set_root_quota,
+    start_container, stop_container, destroy_container,
+    _parse_memory, ContainerInfo,
 )
 
 
@@ -79,6 +80,46 @@ class TestCreateContainer:
             mock_run.return_value = (1, "launch failed")
             result = await create_container("taos-agent-test")
             assert result["success"] is False
+
+
+class TestSetRootQuota:
+    @pytest.mark.asyncio
+    async def test_success(self):
+        with patch("tinyagentos.containers._run", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = (0, "")
+            result = await set_root_quota("taos-agent-test", 40)
+            assert result["success"] is True
+            assert "40" in result["note"]
+            cmd = mock_run.call_args[0][0]
+            assert "incus" in cmd
+            assert "config" in cmd
+            assert "device" in cmd
+            assert "set" in cmd
+            assert "root" in cmd
+            assert "size=40GiB" in cmd
+
+    @pytest.mark.asyncio
+    async def test_failure_returns_success_false(self):
+        with patch("tinyagentos.containers._run", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = (1, "device not found")
+            result = await set_root_quota("taos-agent-test", 40)
+            assert result["success"] is False
+            assert "device not found" in result["note"]
+
+    @pytest.mark.asyncio
+    async def test_create_container_passes_root_size_gib(self):
+        """root_size_gib passed to create_container triggers set_root_quota."""
+        calls = []
+        async def mock_run(cmd, timeout=120):
+            calls.append(cmd)
+            return (0, "")
+
+        with patch("tinyagentos.containers._run", side_effect=mock_run):
+            result = await create_container("taos-agent-test", root_size_gib=40)
+        assert result["success"] is True
+        # At least one call should set the root size
+        quota_calls = [c for c in calls if "size=40GiB" in " ".join(c)]
+        assert quota_calls, "expected a quota set call with size=40GiB"
 
 
 class TestContainerLifecycle:
