@@ -146,6 +146,57 @@ class ContainerBackend(ABC):
         """
         ...
 
+    @abstractmethod
+    async def snapshot_create(self, name: str, snapshot_name: str) -> dict:
+        """Create a named snapshot of the container.
+
+        LXC: ``incus snapshot create <name> <snapshot_name>``.
+        Docker: ``docker commit <name> taos/<snapshot_name>:latest``.
+
+        Returns ``{"success": bool, "output": str}`` (and optionally
+        ``"note"`` for partial-success situations).
+        """
+        ...
+
+    @abstractmethod
+    async def snapshot_restore(self, name: str, snapshot_name: str) -> dict:
+        """Restore a container to a previously-created snapshot.
+
+        LXC: ``incus snapshot restore <name> <snapshot_name>``.
+        Docker: not natively supported; returns
+        ``{"success": False, "note": "docker snapshot restore not supported"}``.
+
+        Returns ``{"success": bool, "output": str}``.
+        """
+        ...
+
+    @abstractmethod
+    async def snapshot_list(self, name: str) -> dict:
+        """List snapshots for a container.
+
+        LXC: parses ``incus info <name>`` for the Snapshots section.
+        Docker: lists ``docker images`` filtered to the ``taos/`` namespace.
+
+        Returns ``{"success": bool, "snapshots": list[str], "output": str}``.
+        """
+        ...
+
+    @abstractmethod
+    async def set_env(self, name: str, key: str, value: str) -> dict:
+        """Set a single environment variable on a container without recreating it.
+
+        LXC: ``incus config set <name> environment.<key> <value>``.  The
+        change is picked up by the container on next start (or immediately
+        if the container is already running and the process re-reads its
+        environment via systemd unit restart).
+
+        Docker: requires container recreation to change env vars; returns
+        ``{"success": False, "note": "docker env change requires recreate"}``.
+
+        Returns ``{"success": bool, "output": str}``.
+        """
+        ...
+
 
 def detect_runtime() -> str:
     """Detect the available container runtime.

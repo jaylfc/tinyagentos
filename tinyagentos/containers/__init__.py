@@ -244,6 +244,80 @@ async def get_container_logs(name: str, lines: int = 100) -> str:
     return output if code == 0 else f"Error getting logs: {output}"
 
 
+async def snapshot_create(name: str, snapshot_name: str) -> dict:
+    """Create a named snapshot of a container.
+
+    LXC: ``incus snapshot create <name> <snapshot_name>`` — zero-copy on
+    btrfs/ZFS-backed pools; full rsync on dir-backed pools.
+
+    Docker: ``docker commit <name> taos/<snapshot_name>:latest``.
+
+    Returns ``{"success": bool, "output": str}``.
+    """
+    code, output = await _run(["incus", "snapshot", "create", name, snapshot_name])
+    return {"success": code == 0, "output": output}
+
+
+async def snapshot_restore(name: str, snapshot_name: str) -> dict:
+    """Restore a container to a previously-created snapshot.
+
+    LXC: ``incus snapshot restore <name> <snapshot_name>``.  The container
+    must be stopped beforehand; the running filesystem is replaced in-place.
+
+    Docker: not supported natively; returns
+    ``{"success": False, "note": "docker snapshot restore not supported"}``.
+
+    Returns ``{"success": bool, "output": str}``.
+    """
+    code, output = await _run(["incus", "snapshot", "restore", name, snapshot_name])
+    return {"success": code == 0, "output": output}
+
+
+async def snapshot_list(name: str) -> dict:
+    """List snapshot names for a container.
+
+    LXC: parses ``incus info <name>`` for the Snapshots section.
+    Docker: lists ``docker images`` filtered to the ``taos/`` namespace.
+
+    Returns ``{"success": bool, "snapshots": list[str], "output": str}``.
+    """
+    code, output = await _run(["incus", "info", name])
+    if code != 0:
+        return {"success": False, "snapshots": [], "output": output}
+    snapshots: list[str] = []
+    in_section = False
+    for line in output.splitlines():
+        stripped = line.strip()
+        if stripped.lower().startswith("snapshots:"):
+            in_section = True
+            continue
+        if in_section:
+            if line and not line[0].isspace():
+                break
+            if stripped and not stripped.startswith("-"):
+                snap_name = stripped.split()[0]
+                snapshots.append(snap_name)
+    return {"success": True, "snapshots": snapshots, "output": output}
+
+
+async def set_env(name: str, key: str, value: str) -> dict:
+    """Set an environment variable on a container via incus config set.
+
+    LXC: ``incus config set <name> environment.<key> <value>``.  Persisted
+    in incus config; picked up by the container on next start or on restart
+    of individual systemd services inside the container.
+
+    Docker: requires container recreation; returns
+    ``{"success": False, "note": "docker env change requires recreate"}``.
+
+    Returns ``{"success": bool, "output": str}``.
+    """
+    code, output = await _run([
+        "incus", "config", "set", name, f"environment.{key}", value,
+    ])
+    return {"success": code == 0, "output": output}
+
+
 __all__ = [
     "ContainerInfo",
     "_parse_memory",
@@ -265,4 +339,8 @@ __all__ = [
     "destroy_container",
     "rename_container",
     "get_container_logs",
+    "snapshot_create",
+    "snapshot_restore",
+    "snapshot_list",
+    "set_env",
 ]

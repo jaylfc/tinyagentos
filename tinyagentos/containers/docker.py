@@ -222,3 +222,60 @@ class DockerBackend(ContainerBackend):
         # to choose a different TAOS_HOST default. Return success so the
         # deploy doesn't stall.
         return {"success": True, "output": "proxy devices not supported on docker"}
+
+    async def snapshot_create(self, name: str, snapshot_name: str) -> dict:
+        """Create a named image snapshot via ``docker commit``.
+
+        Docker has no native snapshot primitive equivalent to incus snapshots.
+        We commit the container to an image tagged ``taos/<snapshot_name>:latest``
+        so the image survives across container deletions. Restore is not
+        currently supported (see ``snapshot_restore``).
+        """
+        image_tag = f"taos/{snapshot_name}:latest"
+        code, output = await self._run([self.binary, "commit", name, image_tag])
+        return {"success": code == 0, "output": output}
+
+    async def snapshot_restore(self, name: str, snapshot_name: str) -> dict:
+        """Docker does not support in-place snapshot restore.
+
+        Restoring from a committed image would require stopping the running
+        container, creating a new one from the image, reattaching all bind
+        mounts and env vars, and renaming — a destructive multi-step process
+        that is not safe to automate without more context. Fall back to the
+        caller's rsync-based archive path instead (per pivot doc §3.1).
+        """
+        return {
+            "success": False,
+            "output": "",
+            "note": "docker snapshot restore not supported; use rsync-based archive fallback",
+        }
+
+    async def snapshot_list(self, name: str) -> dict:
+        """List committed snapshot images in the ``taos/`` namespace."""
+        code, output = await self._run([
+            self.binary, "images", "--format", "{{.Repository}}:{{.Tag}}",
+            "--filter", "reference=taos/*",
+        ])
+        if code != 0:
+            return {"success": False, "snapshots": [], "output": output}
+        snapshots = [
+            line.strip()
+            for line in output.splitlines()
+            if line.strip()
+        ]
+        return {"success": True, "snapshots": snapshots, "output": output}
+
+    async def set_env(self, name: str, key: str, value: str) -> dict:
+        """Docker does not support per-container env changes without recreating.
+
+        Changing an environment variable on a running Docker container requires
+        stopping it, deleting it, and re-running ``docker run`` with the updated
+        ``-e`` flags plus all the original mounts and options. This is not safe
+        to automate transparently. The caller should recreate the container or
+        use a bind-mounted env file instead.
+        """
+        return {
+            "success": False,
+            "output": "",
+            "note": "docker env change requires container recreation; use a bind-mounted env file",
+        }

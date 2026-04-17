@@ -215,3 +215,59 @@ class LXCBackend(ContainerBackend):
             cmd.append(f"bind={bind_mode}")
         code, output = await _run(cmd)
         return {"success": code == 0, "output": output}
+
+    async def snapshot_create(self, name: str, snapshot_name: str) -> dict:
+        """Create a named snapshot of the container via incus.
+
+        The container must already be stopped before snapshotting; callers
+        are responsible for stopping it first.  On btrfs/ZFS-backed pools
+        this is a zero-copy COW operation; on dir-backed pools incus does a
+        full rsync of the rootfs.
+        """
+        code, output = await _run(["incus", "snapshot", "create", name, snapshot_name])
+        return {"success": code == 0, "output": output}
+
+    async def snapshot_restore(self, name: str, snapshot_name: str) -> dict:
+        """Restore the container to a previously-created snapshot.
+
+        The container must be stopped.  The restore is in-place — the
+        running filesystem is discarded and replaced with the snapshot's
+        state. Subsequent snapshots taken after the restored one are not
+        affected (they remain accessible for re-restore if needed).
+        """
+        code, output = await _run(["incus", "snapshot", "restore", name, snapshot_name])
+        return {"success": code == 0, "output": output}
+
+    async def snapshot_list(self, name: str) -> dict:
+        """Return snapshot names for a container by parsing ``incus info``."""
+        code, output = await _run(["incus", "info", name])
+        if code != 0:
+            return {"success": False, "snapshots": [], "output": output}
+        snapshots: list[str] = []
+        in_section = False
+        for line in output.splitlines():
+            stripped = line.strip()
+            if stripped.lower().startswith("snapshots:"):
+                in_section = True
+                continue
+            if in_section:
+                # Stop at the next top-level section (no leading whitespace).
+                if line and not line[0].isspace():
+                    break
+                if stripped and not stripped.startswith("-"):
+                    # lines like "  name-here (created ...)"
+                    snap_name = stripped.split()[0]
+                    snapshots.append(snap_name)
+        return {"success": True, "snapshots": snapshots, "output": output}
+
+    async def set_env(self, name: str, key: str, value: str) -> dict:
+        """Set an environment variable on the container via incus config set.
+
+        The variable is persisted in incus config and injected into the
+        container's environment on next start (or on restart of individual
+        services inside the container).
+        """
+        code, output = await _run([
+            "incus", "config", "set", name, f"environment.{key}", value,
+        ])
+        return {"success": code == 0, "output": output}
