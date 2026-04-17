@@ -3,6 +3,7 @@ from unittest.mock import patch
 import pytest
 from tinyagentos.llm_proxy import (
     EMBEDDING_ALIAS,
+    TAOS_LITELLM_MASTER_KEY,
     _is_embedding_model,
     generate_litellm_config,
     LLMProxy,
@@ -24,6 +25,14 @@ class TestConfigGeneration:
     def test_empty_backends_returns_empty_model_list(self):
         config = generate_litellm_config([])
         assert config["model_list"] == []
+
+    def test_config_emits_master_key(self):
+        """general_settings.master_key must carry the shared taOS master
+        key so LiteLLM rejects unauthenticated requests and accepts the
+        value the deployer injects into every agent container."""
+        config = generate_litellm_config([])
+        assert config["general_settings"]["master_key"] == "sk-taos-master"
+        assert config["general_settings"]["master_key"] == TAOS_LITELLM_MASTER_KEY
 
     def test_ollama_backend_uses_ollama_prefix(self):
         backends = [{"name": "local", "type": "ollama", "url": "http://localhost:11434", "priority": 1}]

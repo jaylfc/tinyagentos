@@ -86,19 +86,30 @@ async def deploy_agent(req: DeployRequest) -> dict:
         proxy = req.extra_config["llm_proxy"]
         if proxy.is_running():
             llm_key = await proxy.create_agent_key(req.name)
-            if llm_key:
-                from tinyagentos.llm_proxy import EMBEDDING_ALIAS
-                # Primary key for openclaw's litellm provider.
-                env["LITELLM_API_KEY"] = llm_key
-                # Compat shim — smolagents and other frameworks still expect OPENAI_API_KEY.
-                env["OPENAI_API_KEY"] = llm_key
-                env["OPENAI_BASE_URL"] = f"{proxy.url}/v1"
-                # Host-side embedding endpoint — same LiteLLM process,
-                # OpenAI-compatible /v1/embeddings. Framework-agnostic.
-                env["TAOS_EMBEDDING_URL"] = f"{proxy.url}/v1/embeddings"
-                # Stable alias the host LiteLLM routes to whichever
-                # concrete embedding model the backends actually have loaded.
-                env["TAOS_EMBEDDING_MODEL"] = EMBEDDING_ALIAS
+            if llm_key is None:
+                # No Postgres DB configured — LiteLLM is in routing-only
+                # mode and cannot issue virtual keys. Fall back to the
+                # shared master key so the container can still authenticate.
+                # Per-agent scoping, if needed, lives in the agent's own
+                # config rather than in LiteLLM.
+                from tinyagentos.llm_proxy import TAOS_LITELLM_MASTER_KEY
+                llm_key = TAOS_LITELLM_MASTER_KEY
+                logger.info(
+                    "deploy %s: LiteLLM routing-only mode — using shared master key (no DB configured for virtual keys)",
+                    req.name,
+                )
+            from tinyagentos.llm_proxy import EMBEDDING_ALIAS
+            # Primary key for openclaw's litellm provider.
+            env["LITELLM_API_KEY"] = llm_key
+            # Compat shim — smolagents and other frameworks still expect OPENAI_API_KEY.
+            env["OPENAI_API_KEY"] = llm_key
+            env["OPENAI_BASE_URL"] = f"{proxy.url}/v1"
+            # Host-side embedding endpoint — same LiteLLM process,
+            # OpenAI-compatible /v1/embeddings. Framework-agnostic.
+            env["TAOS_EMBEDDING_URL"] = f"{proxy.url}/v1/embeddings"
+            # Stable alias the host LiteLLM routes to whichever
+            # concrete embedding model the backends actually have loaded.
+            env["TAOS_EMBEDDING_MODEL"] = EMBEDDING_ALIAS
 
     # User memory (optional, permission-gated)
     if req.can_read_user_memory:

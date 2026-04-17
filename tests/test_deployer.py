@@ -185,6 +185,43 @@ class TestDeployAgent:
             mock_proxy.create_agent_key.assert_called_once_with("proxy-test")
 
     @pytest.mark.asyncio
+    async def test_fallback_to_master_key_when_create_returns_none(self, tmp_path):
+        """When LiteLLM runs without a Postgres DB, create_agent_key
+        returns None. The deployer must fall back to the shared master
+        key so the container still gets a non-empty LITELLM_API_KEY —
+        otherwise openclaw's gateway crashes on boot."""
+        mock_proxy = MagicMock()
+        mock_proxy.is_running.return_value = True
+        mock_proxy.url = "http://localhost:4000"
+        mock_proxy.create_agent_key = AsyncMock(return_value=None)
+
+        req = _req(
+            name="routing-only",
+            data_dir=tmp_path,
+            extra_config={"llm_proxy": mock_proxy},
+        )
+
+        async def mock_exec_fn(name, cmd, **kwargs):
+            if "hostname -I" in " ".join(cmd):
+                return (0, "10.0.0.14")
+            return (0, "ok")
+
+        with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
+            mock_create.return_value = {"success": True, "name": "taos-agent-routing-only"}
+            result = await deploy_agent(req)
+            assert result["success"] is True
+            env = mock_create.call_args.kwargs["env"]
+            assert env["LITELLM_API_KEY"] == "sk-taos-master"
+            assert env["OPENAI_API_KEY"] == "sk-taos-master"
+            assert env["OPENAI_BASE_URL"] == "http://localhost:4000/v1"
+            # Embedding env must still fire under the fallback path — the
+            # LiteLLM routing-only mode serves /v1/embeddings identically.
+            assert env["TAOS_EMBEDDING_URL"] == "http://localhost:4000/v1/embeddings"
+            assert env["TAOS_EMBEDDING_MODEL"] == "taos-embedding-default"
+
+    @pytest.mark.asyncio
     async def test_deployment_without_llm_proxy(self, tmp_path):
         req = _req(name="no-proxy", data_dir=tmp_path)
 

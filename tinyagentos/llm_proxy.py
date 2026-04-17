@@ -90,6 +90,13 @@ CLOUD_BACKEND_TYPES = {"openai", "anthropic", "openrouter", "kilocode"}
 # See docs/design/framework-agnostic-runtime.md.
 EMBEDDING_ALIAS = "taos-embedding-default"
 
+# Shared master key used for LiteLLM auth. When LiteLLM runs without a
+# Postgres DB it cannot issue per-agent virtual keys, so every client
+# (openclaw gateway, host-side key admin calls) authenticates with this
+# single value. Written into the config yaml AND exported into the
+# litellm subprocess env so whichever source LiteLLM reads first agrees.
+TAOS_LITELLM_MASTER_KEY = "sk-taos-master"
+
 
 def _is_embedding_model(name: str) -> bool:
     """Classify a model name as embedding vs chat.
@@ -270,6 +277,7 @@ def generate_litellm_config(backends: list[dict], default_model: str = "default"
             "enable_pre_call_checks": False,
         },
         "general_settings": {
+            "master_key": TAOS_LITELLM_MASTER_KEY,
             "background_health_checks": False,
             "disable_spend_logs": True,
             "custom_callbacks": ["tinyagentos.litellm_callback.taos_callback"],
@@ -376,6 +384,13 @@ class LLMProxy:
             logger.warning("LiteLLM not installed — proxy disabled. Install with: pip install litellm[proxy]")
             return False
 
+        # Belt-and-braces: the yaml config already carries master_key, but
+        # LiteLLM also honours the env var — exporting both guarantees
+        # whichever path the subprocess reads first matches the value the
+        # deployer uses when auth'ing /key/generate and agent requests.
+        env = os.environ.copy()
+        env["LITELLM_MASTER_KEY"] = TAOS_LITELLM_MASTER_KEY
+
         try:
             self._process = subprocess.Popen(
                 [
@@ -386,6 +401,7 @@ class LLMProxy:
                 ],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
+                env=env,
             )
             # Wait for startup
             for _ in range(30):
@@ -452,7 +468,7 @@ class LLMProxy:
                 if max_budget is not None:
                     body["max_budget"] = max_budget
                 resp = await client.post(f"{self.url}/key/generate", json=body,
-                                          headers={"Authorization": "Bearer sk-taos-master"})
+                                          headers={"Authorization": f"Bearer {TAOS_LITELLM_MASTER_KEY}"})
                 if resp.status_code == 200:
                     data = resp.json()
                     return data.get("key", data.get("token"))
@@ -472,7 +488,7 @@ class LLMProxy:
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 resp = await client.post(f"{self.url}/key/delete", json={"keys": [key]},
-                                          headers={"Authorization": "Bearer sk-taos-master"})
+                                          headers={"Authorization": f"Bearer {TAOS_LITELLM_MASTER_KEY}"})
                 if resp.status_code == 200:
                     return True
                 logger.warning(
@@ -490,7 +506,7 @@ class LLMProxy:
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 resp = await client.get(f"{self.url}/key/info", params={"key": key},
-                                         headers={"Authorization": "Bearer sk-taos-master"})
+                                         headers={"Authorization": f"Bearer {TAOS_LITELLM_MASTER_KEY}"})
                 if resp.status_code == 200:
                     return resp.json()
                 logger.warning(
