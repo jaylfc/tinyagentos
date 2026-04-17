@@ -164,7 +164,8 @@ async def rename_container(old_name: str, new_name: str) -> dict:
 
 
 async def add_proxy_device(
-    name: str, device_name: str, listen: str, connect: str
+    name: str, device_name: str, listen: str, connect: str,
+    bind_mode: str | None = None,
 ) -> dict:
     """Attach an incus proxy device so the container can reach a host
     service via its own localhost.
@@ -173,12 +174,20 @@ async def add_proxy_device(
     `connect` is where incus forwards to on the host (e.g. the same
     host-local address). Stable device names let the deployer upgrade
     the target port later without device-name collisions.
+
+    `bind_mode`: when set to ``'instance'``, incus binds the listen
+    address inside the container rather than on the host.  Use this
+    when the host service already owns the port (e.g. litellm on 4000)
+    so incus does not try to re-bind it on the host side.
     """
-    code, output = await _run([
+    cmd = [
         "incus", "config", "device", "add", name, device_name, "proxy",
         f"listen={listen}",
         f"connect={connect}",
-    ])
+    ]
+    if bind_mode:
+        cmd.append(f"bind={bind_mode}")
+    code, output = await _run(cmd)
     return {"success": code == 0, "output": output}
 
 

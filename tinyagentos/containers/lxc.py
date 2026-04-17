@@ -155,11 +155,15 @@ class LXCBackend(ContainerBackend):
         return {"success": code == 0, "output": output}
 
     async def add_proxy_device(
-        self, name: str, device_name: str, listen: str, connect: str
+        self, name: str, device_name: str, listen: str, connect: str,
+        bind_mode: str | None = None,
     ) -> dict:
-        code, output = await _run([
+        cmd = [
             "incus", "config", "device", "add", name, device_name, "proxy",
             f"listen={listen}",
             f"connect={connect}",
-        ])
+        ]
+        if bind_mode:
+            cmd.append(f"bind={bind_mode}")
+        code, output = await _run(cmd)
         return {"success": code == 0, "output": output}

@@ -253,6 +253,7 @@ async def deploy_agent(req: DeployRequest) -> dict:
                 dev_name,
                 listen=f"tcp:127.0.0.1:{port}",
                 connect=f"tcp:127.0.0.1:{port}",
+                bind_mode="instance",
             )
             if not res.get("success"):
                 raise RuntimeError(

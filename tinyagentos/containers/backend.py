@@ -110,10 +110,16 @@ class ContainerBackend(ABC):
 
     @abstractmethod
     async def add_proxy_device(
-        self, name: str, device_name: str, listen: str, connect: str
+        self, name: str, device_name: str, listen: str, connect: str,
+        bind_mode: str | None = None,
     ) -> dict:
         """Attach a TCP proxy device so the container's localhost:<port>
-        transparently reaches the host's localhost:<port>."""
+        transparently reaches the host's localhost:<port>.
+
+        bind_mode: incus bind_mode value ('instance' binds inside the
+        container; omit or 'host' binds on the host).  Use 'instance'
+        when the host already owns the listen port (e.g. litellm on 4000).
+        """
         ...
 
 

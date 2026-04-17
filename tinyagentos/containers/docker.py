@@ -164,7 +164,8 @@ class DockerBackend(ContainerBackend):
         return {"success": code == 0, "output": output}
 
     async def add_proxy_device(
-        self, name: str, device_name: str, listen: str, connect: str
+        self, name: str, device_name: str, listen: str, connect: str,
+        bind_mode: str | None = None,
     ) -> dict:
         # Docker containers reach the host via docker-provided networking
         # (host.docker.internal on Mac/Windows, --add-host on Linux). No
