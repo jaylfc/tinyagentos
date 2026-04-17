@@ -259,14 +259,54 @@ async def _archive_agent_fully(request: Request, name: str) -> dict:
         except Exception:
             pass
 
-    # 5) Flag DM channel archived (best effort).
+    # 5) Export DM channel messages to agent-home then flag archived.
     channel_id = agent.get("chat_channel_id")
     if channel_id:
+        # 5a) Write chat-export.jsonl into agent-home (already moved to archive).
+        try:
+            import json as _json
+            msg_store = request.app.state.chat_messages
+            all_msgs = await msg_store.get_all_messages_for_channel(channel_id)
+            # agent-home was moved to archive_base / "home"; write there.
+            home_dir = archive_base / "home"
+            if home_dir.exists():
+                taos_dir = home_dir / ".taos"
+                taos_dir.mkdir(mode=0o700, exist_ok=True)
+                export_path = taos_dir / "chat-export.jsonl"
+                try:
+                    with export_path.open("w", encoding="utf-8") as fh:
+                        for m in all_msgs:
+                            fh.write(_json.dumps(m, default=str) + "\n")
+                    export_path.chmod(0o600)
+                    logger.info(
+                        "archive: wrote %d messages to %s", len(all_msgs), export_path
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "archive: chat-export write failed for %s: %s — "
+                        "messages still in global DB, re-export safe to retry",
+                        slug,
+                        exc,
+                    )
+            else:
+                logger.warning(
+                    "archive: agent-home not found at %s, skipping chat-export",
+                    home_dir,
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("archive: chat-export failed for %s: %s", slug, exc)
+
+        # 5b) Flag the channel archived with full metadata.
         try:
             ch_store = request.app.state.chat_channels
-            await ch_store.update_channel(
+            await ch_store.set_settings(
                 channel_id,
-                settings={"archived": True, "archived_at": ts},
+                {
+                    "archived": True,
+                    "archived_at": ts,
+                    "archived_agent_id": agent_id,
+                    "archived_agent_slug": slug,
+                },
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("archive: channel flag failed for %s: %s", channel_id, exc)
@@ -831,14 +871,49 @@ async def restore_archived_agent(request: Request, archive_id: str):
         except Exception as exc:  # noqa: BLE001
             logger.warning("restore: env file rewrite failed for %s: %s", final_slug, exc)
 
-    # 6) Unflag DM channel if present.
-    channel_id = original.get("chat_channel_id")
-    if channel_id:
-        try:
-            ch_store = request.app.state.chat_channels
-            await ch_store.update_channel(channel_id, settings={"archived": False})
-        except Exception:
-            pass
+    # 5b) Re-import chat-export.jsonl if present, then unflag all archived channels
+    #     that belonged to this archive entry.
+    try:
+        import json as _json
+        host_home = data_dir / "agent-home" / final_slug
+        export_path = host_home / ".taos" / "chat-export.jsonl"
+        if export_path.exists():
+            msg_store = request.app.state.chat_messages
+            imported = 0
+            try:
+                with export_path.open("r", encoding="utf-8") as fh:
+                    for raw_line in fh:
+                        raw_line = raw_line.strip()
+                        if not raw_line:
+                            continue
+                        try:
+                            msg = _json.loads(raw_line)
+                            await msg_store.ensure_message(msg)
+                            imported += 1
+                        except Exception as line_exc:  # noqa: BLE001
+                            logger.warning("restore: bad export line, skipping: %s", line_exc)
+                logger.info("restore: re-imported %d messages from chat-export", imported)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("restore: chat-export read failed for %s: %s", final_slug, exc)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("restore: chat re-import outer failed: %s", exc)
+
+    # 6) Unflag all channels where archived_agent_id matches this archive entry.
+    agent_id_to_unflag = entry.get("id")
+    try:
+        ch_store = request.app.state.chat_channels
+        # Try the primary chat_channel_id from original config first.
+        channel_id = original.get("chat_channel_id")
+        if channel_id:
+            await ch_store.set_settings(channel_id, {"archived": False})
+        # Also scan all channels in case settings has archived_agent_id pointing here.
+        all_channels = await ch_store.list_channels(archived=True)
+        for ch in all_channels:
+            ch_settings = ch.get("settings") or {}
+            if ch_settings.get("archived_agent_id") == agent_id_to_unflag:
+                await ch_store.set_settings(ch["id"], {"archived": False})
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("restore: channel unflag failed: %s", exc)
 
     # 7) Restore the agent dict (possibly with new slug + new key).
     restored = dict(original)
@@ -897,14 +972,41 @@ async def purge_archived_agent(request: Request, archive_id: str):
         except Exception:
             pass
 
-    # 3) Delete chat channel for real.
-    channel_id = (entry.get("original") or {}).get("chat_channel_id")
-    if channel_id:
+    # 3) Delete messages + channels for every DM channel belonging to this agent.
+    #    Primary: the explicit chat_channel_id on the original config.
+    #    Secondary: any channel whose settings.archived_agent_id matches.
+    archive_id_for_purge = entry.get("id")
+    try:
+        ch_store = request.app.state.chat_channels
+        msg_store = request.app.state.chat_messages
+        channels_to_purge: list[str] = []
+        channel_id = (entry.get("original") or {}).get("chat_channel_id")
+        if channel_id:
+            channels_to_purge.append(channel_id)
+        # Also find any additional channels flagged with this agent's id.
         try:
-            ch_store = request.app.state.chat_channels
-            await ch_store.delete_channel(channel_id)
-        except Exception:
-            pass
+            archived_channels = await ch_store.list_channels(archived=True)
+            for ch in archived_channels:
+                ch_settings = ch.get("settings") or {}
+                if (
+                    ch_settings.get("archived_agent_id") == archive_id_for_purge
+                    and ch["id"] not in channels_to_purge
+                ):
+                    channels_to_purge.append(ch["id"])
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("purge: channel scan failed: %s", exc)
+
+        for cid in channels_to_purge:
+            try:
+                await msg_store.delete_channel_messages(cid)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("purge: delete messages for channel %s failed: %s", cid, exc)
+            try:
+                await ch_store.delete_channel(cid)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("purge: delete channel %s failed: %s", cid, exc)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("purge: channel/message cleanup failed: %s", exc)
 
     # 4) Drop archived_agents entry.
     config.archived_agents = [a for a in config.archived_agents if a.get("id") != archive_id]

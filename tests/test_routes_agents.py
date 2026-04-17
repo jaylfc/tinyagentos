@@ -599,3 +599,224 @@ class TestAgentArchiveLifecycle:
 
         archived2 = (await client.get("/api/agents/archived")).json()
         assert archived2 == []
+
+
+@pytest.mark.asyncio
+class TestArchivedChatPersistence:
+    """Archive preserves chat messages; restore re-imports; purge deletes all."""
+
+    async def _setup_agent_with_channel(self, client, monkeypatch, slug="chat-agent"):
+        """Deploy an agent, create its DM channel, send messages, archive it."""
+        async def fake_deploy(req):
+            return {"success": True, "name": req.name, "ip": "10.0.0.70",
+                    "llm_key": None, "steps": [], "container": f"taos-agent-{req.name}"}
+
+        async def fake_stop(name, force=False):
+            return {"success": True, "output": ""}
+
+        async def fake_rename(old, new):
+            return {"success": True, "output": ""}
+
+        monkeypatch.setattr("tinyagentos.deployer.deploy_agent", fake_deploy)
+        monkeypatch.setattr("tinyagentos.containers.stop_container", fake_stop)
+        monkeypatch.setattr("tinyagentos.containers.rename_container", fake_rename)
+
+        deploy_resp = await client.post("/api/agents/deploy", json={"name": slug, "framework": "none"})
+        assert deploy_resp.status_code == 200
+        import asyncio
+        await asyncio.sleep(0.2)
+
+        app = client._transport.app
+        ch_store = app.state.chat_channels
+        msg_store = app.state.chat_messages
+
+        # Create DM channel and wire it to the agent config.
+        ch = await ch_store.create_channel(
+            name=f"dm-{slug}", type="dm", created_by="user",
+            members=[slug, "user"],
+        )
+        # Inject chat_channel_id into agent config so _archive_agent_fully finds it.
+        config = app.state.config
+        for a in config.agents:
+            if a["name"] == slug:
+                a["chat_channel_id"] = ch["id"]
+                break
+        from tinyagentos.config import save_config_locked
+        await save_config_locked(config, config.config_path)
+
+        # Send a couple of messages.
+        m1 = await msg_store.send_message(ch["id"], slug, "agent", "hello from agent")
+        m2 = await msg_store.send_message(ch["id"], "user", "user", "hi agent")
+
+        return ch, [m1, m2]
+
+    async def test_archive_writes_chat_export(self, client, monkeypatch, tmp_data_dir):
+        """Archive writes chat-export.jsonl into agent-home/.taos/."""
+        ch, msgs = await self._setup_agent_with_channel(client, monkeypatch)
+
+        async def fake_stop(name, force=False):
+            return {"success": True, "output": ""}
+
+        async def fake_rename(old, new):
+            return {"success": True, "output": ""}
+
+        monkeypatch.setattr("tinyagentos.containers.stop_container", fake_stop)
+        monkeypatch.setattr("tinyagentos.containers.rename_container", fake_rename)
+
+        # Create agent-home dir so export can be written.
+        agent_home = tmp_data_dir / "agent-home" / "chat-agent"
+        agent_home.mkdir(parents=True, exist_ok=True)
+
+        resp = await client.delete("/api/agents/chat-agent")
+        assert resp.status_code == 200
+
+        # Find the archive directory.
+        app = client._transport.app
+        config = app.state.config
+        entry = config.archived_agents[-1]
+        archive_base = tmp_data_dir / entry["archive_dir"]
+
+        export_path = archive_base / "home" / ".taos" / "chat-export.jsonl"
+        assert export_path.exists(), f"chat-export.jsonl missing at {export_path}"
+
+        import json
+        lines = [json.loads(l) for l in export_path.read_text().splitlines() if l.strip()]
+        assert len(lines) == 2
+        contents = {l["content"] for l in lines}
+        assert "hello from agent" in contents
+        assert "hi agent" in contents
+
+        # Channel should be flagged archived with full metadata.
+        ch_store = app.state.chat_channels
+        updated_ch = await ch_store.get_channel(ch["id"])
+        s = updated_ch["settings"]
+        assert s.get("archived") is True
+        assert "archived_at" in s
+        assert s.get("archived_agent_id") == entry["id"]
+        assert s.get("archived_agent_slug") == "chat-agent"
+
+    async def test_restore_reimports_messages_and_unflags_channel(
+        self, client, monkeypatch, tmp_data_dir
+    ):
+        """Restore: missing messages come back, channel is unflagged."""
+        ch, msgs = await self._setup_agent_with_channel(client, monkeypatch, slug="restore-agent")
+
+        async def fake_stop(name, force=False):
+            return {"success": True, "output": ""}
+
+        async def fake_rename(old, new):
+            return {"success": True, "output": ""}
+
+        monkeypatch.setattr("tinyagentos.containers.stop_container", fake_stop)
+        monkeypatch.setattr("tinyagentos.containers.rename_container", fake_rename)
+
+        # Create agent-home dir so export can be written.
+        (tmp_data_dir / "agent-home" / "restore-agent").mkdir(parents=True, exist_ok=True)
+
+        await client.delete("/api/agents/restore-agent")
+
+        app = client._transport.app
+        config = app.state.config
+        entry = config.archived_agents[-1]
+        archive_id = entry["id"]
+
+        # Simulate messages deleted from DB (to verify re-import).
+        msg_store = app.state.chat_messages
+        for m in msgs:
+            await msg_store.delete_message(m["id"])
+        remaining = await msg_store.get_messages(ch["id"], limit=100)
+        assert len(remaining) == 0
+
+        # Restore.
+        resp = await client.post(f"/api/agents/archived/{archive_id}/restore")
+        assert resp.status_code == 200
+
+        # Messages re-imported.
+        reimported = await msg_store.get_messages(ch["id"], limit=100)
+        assert len(reimported) == 2
+        contents = {m["content"] for m in reimported}
+        assert "hello from agent" in contents
+
+        # Channel unflagged.
+        ch_store = app.state.chat_channels
+        updated_ch = await ch_store.get_channel(ch["id"])
+        assert updated_ch["settings"].get("archived") is False
+
+    async def test_restore_is_idempotent(self, client, monkeypatch, tmp_data_dir):
+        """Re-importing the same messages twice does not create duplicates."""
+        ch, msgs = await self._setup_agent_with_channel(client, monkeypatch, slug="idem-agent")
+
+        async def fake_stop(name, force=False):
+            return {"success": True, "output": ""}
+
+        async def fake_rename(old, new):
+            return {"success": True, "output": ""}
+
+        monkeypatch.setattr("tinyagentos.containers.stop_container", fake_stop)
+        monkeypatch.setattr("tinyagentos.containers.rename_container", fake_rename)
+
+        (tmp_data_dir / "agent-home" / "idem-agent").mkdir(parents=True, exist_ok=True)
+        await client.delete("/api/agents/idem-agent")
+
+        app = client._transport.app
+        config = app.state.config
+        entry = config.archived_agents[-1]
+        archive_id = entry["id"]
+        export_path = (tmp_data_dir / entry["archive_dir"]) / "home" / ".taos" / "chat-export.jsonl"
+        assert export_path.exists()
+
+        # Call ensure_message directly on the same data twice.
+        import json
+        msg_store = app.state.chat_messages
+        lines = [json.loads(l) for l in export_path.read_text().splitlines() if l.strip()]
+        for _ in range(2):
+            for line in lines:
+                await msg_store.ensure_message(line)
+
+        # Still exactly the original count (2).
+        all_msgs = await msg_store.get_messages(ch["id"], limit=100)
+        assert len(all_msgs) == 2
+
+    async def test_purge_deletes_channel_and_messages(
+        self, client, monkeypatch, tmp_data_dir
+    ):
+        """Purge removes messages, channel, and archive dir."""
+        ch, msgs = await self._setup_agent_with_channel(client, monkeypatch, slug="purge-agent")
+
+        async def fake_stop(name, force=False):
+            return {"success": True, "output": ""}
+
+        async def fake_rename(old, new):
+            return {"success": True, "output": ""}
+
+        async def fake_destroy(name):
+            return {"success": True, "output": ""}
+
+        monkeypatch.setattr("tinyagentos.containers.stop_container", fake_stop)
+        monkeypatch.setattr("tinyagentos.containers.rename_container", fake_rename)
+        monkeypatch.setattr("tinyagentos.containers.destroy_container", fake_destroy)
+
+        (tmp_data_dir / "agent-home" / "purge-agent").mkdir(parents=True, exist_ok=True)
+        await client.delete("/api/agents/purge-agent")
+
+        app = client._transport.app
+        config = app.state.config
+        entry = config.archived_agents[-1]
+        archive_id = entry["id"]
+
+        resp = await client.delete(f"/api/agents/archived/{archive_id}")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "purged"
+
+        # Channel gone.
+        ch_store = app.state.chat_channels
+        assert await ch_store.get_channel(ch["id"]) is None
+
+        # Messages gone.
+        msg_store = app.state.chat_messages
+        remaining = await msg_store.get_messages(ch["id"], limit=100)
+        assert len(remaining) == 0
+
+        # Archive dir gone.
+        archive_base = tmp_data_dir / entry["archive_dir"]
+        assert not archive_base.exists()
