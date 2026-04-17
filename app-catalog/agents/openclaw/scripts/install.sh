@@ -21,6 +21,10 @@ fi
 # 2. openclaw from our fork (taos-fork branch).
 # Fork baseline tracks upstream main; the taos-fork branch adds the bridge patch.
 # ---------------------------------------------------------------------------
+# Fix npm cache ownership before install — Debian's apt nodejs leaves
+# /root/.npm with mixed ownership which breaks global npm installs as root.
+[ -d /root/.npm ] && chown -R 0:0 /root/.npm || true
+
 npm install -g github:jaylfc/openclaw#taos-fork
 
 # ---------------------------------------------------------------------------
