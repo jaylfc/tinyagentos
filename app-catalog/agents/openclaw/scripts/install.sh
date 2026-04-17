@@ -11,10 +11,14 @@ echo "[openclaw] installing Node 22.x (NodeSource) + openclaw from jaylfc fork"
 
 # ---------------------------------------------------------------------------
 # 1. Node 22.14+ via NodeSource (Debian bookworm default is Node 18, too old).
+#    Also ensure git is present — npm's github: shorthand uses git to clone.
 # ---------------------------------------------------------------------------
 if ! command -v node >/dev/null 2>&1 || [ "$(node -v | sed 's/^v//; s/\..*//')" -lt 22 ]; then
   curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
   DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nodejs
+fi
+if ! command -v git >/dev/null 2>&1; then
+  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git
 fi
 
 # ---------------------------------------------------------------------------
