@@ -551,6 +551,30 @@ async def deploy_agent_endpoint(request: Request, body: DeployAgentRequest):
                     agent["host"] = result.get("ip", "")
                     agent["status"] = "running"
                     agent["llm_key"] = result.get("llm_key")
+                    # Save config now so the bootstrap endpoint can return
+                    # the llm_key before we start the openclaw service.
+                    await save_config_locked(config, config.config_path)
+                    # Start the openclaw service now that llm_key is written.
+                    # install.sh enables the service but defers start so the
+                    # bootstrap endpoint (which requires llm_key) succeeds.
+                    if body.framework == "openclaw":
+                        try:
+                            from tinyagentos.containers import exec_in_container
+                            container_name = f"taos-agent-{body.name}"
+                            start_code, start_out = await exec_in_container(
+                                container_name,
+                                ["systemctl", "start", "openclaw.service"],
+                                timeout=30,
+                            )
+                            if start_code != 0:
+                                logger.warning(
+                                    "openclaw service start returned %d: %s",
+                                    start_code, start_out
+                                )
+                            else:
+                                logger.info("openclaw.service started in %s", container_name)
+                        except Exception as exc:  # noqa: BLE001
+                            logger.warning("Failed to start openclaw.service: %s", exc)
                     # Auto-create a 1:1 DM channel so the Messages app
                     # shows this agent immediately. Safe to call even if
                     # the channel exists from a prior failed deploy — the

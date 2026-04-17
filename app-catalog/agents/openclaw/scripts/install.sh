@@ -259,22 +259,10 @@ WantedBy=multi-user.target
 UNIT
 
 systemctl daemon-reload
-systemctl enable --now openclaw.service
+# Enable but do NOT start — the deployer starts the service after writing
+# the llm_key to the taOS config (required for the bootstrap endpoint to
+# return 200). Starting here would cause the gateway to hit HTTP 409 on
+# bootstrap and crash-loop until the deployer has written the key.
+systemctl enable openclaw.service
 
-# ---------------------------------------------------------------------------
-# 4. Wait for openclaw to be ready (health RPC).
-# ---------------------------------------------------------------------------
-for i in $(seq 1 30); do
-  if openclaw health --timeout 2000 >/dev/null 2>&1; then
-    echo "[openclaw] ready"
-    break
-  fi
-  sleep 1
-  if [ "$i" -eq 30 ]; then
-    echo "[openclaw] FAILED to become ready in 30s"
-    journalctl -u openclaw.service --no-pager -n 50 || true
-    exit 1
-  fi
-done
-
-echo "[openclaw] install complete"
+echo "[openclaw] install complete (service enabled, start deferred to deployer)"
