@@ -1,9 +1,12 @@
 """Container backend abstraction layer."""
 from __future__ import annotations
 
+import logging
 import shutil
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -133,14 +136,34 @@ def detect_runtime() -> str:
 
     Checks for incus, docker, podman in priority order.
     Returns 'lxc', 'docker', 'podman', or 'none'.
+
+    Policy: LXC (incus) is preferred when multiple runtimes are present.
+    Docker and podman are supported for app-store services but never take
+    precedence over LXC for agent deployment.
     """
+    available = []
     if shutil.which("incus"):
-        return "lxc"
+        available.append("lxc")
     if shutil.which("docker"):
-        return "docker"
+        available.append("docker")
     if shutil.which("podman"):
-        return "podman"
-    return "none"
+        available.append("podman")
+
+    if "lxc" in available:
+        # LXC is preferred: full-OS containers align with taOS's host-owns-state
+        # model; Docker coexists for app-store services but never displaces LXC.
+        selected = "lxc"
+    elif available:
+        selected = available[0]
+    else:
+        selected = "none"
+
+    logger.info(
+        "detect_runtime: selected=%s, available=%s, policy=lxc-preferred",
+        selected,
+        available,
+    )
+    return selected
 
 
 _active_backend: ContainerBackend | None = None

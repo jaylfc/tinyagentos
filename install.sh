@@ -64,17 +64,29 @@ if [ ! -f "$DATA_DIR/config.yaml" ]; then
     cp "$INSTALL_DIR/data/config.yaml" "$DATA_DIR/config.yaml"
 fi
 
+# Run bridge subnet collision probe before touching the firewall.
+if command -v incus >/dev/null 2>&1; then
+    echo ""
+    echo "Checking incusbr0 subnet for collisions..."
+    chmod +x "$INSTALL_DIR/scripts/incus-bridge-probe.sh"
+    bash "$INSTALL_DIR/scripts/incus-bridge-probe.sh"
+fi
+
 # Install host firewall scripts (allow incus bridge through docker's FORWARD DROP)
 echo ""
 echo "Installing host firewall scripts..."
 mkdir -p /opt/tinyagentos/scripts
-for fw_script in host-firewall-up.sh host-firewall-down.sh; do
+for fw_script in host-firewall-up.sh host-firewall-down.sh incus-bridge-probe.sh; do
     cp "$INSTALL_DIR/scripts/$fw_script" /opt/tinyagentos/scripts/
     chmod +x /opt/tinyagentos/scripts/$fw_script
 done
-cp "$INSTALL_DIR/systemd/tinyagentos-host-firewall.service" /etc/systemd/system/
+for fw_unit in tinyagentos-host-firewall.service tinyagentos-host-firewall.path tinyagentos-host-firewall.timer; do
+    cp "$INSTALL_DIR/systemd/$fw_unit" /etc/systemd/system/
+done
 systemctl daemon-reload
 systemctl enable --now tinyagentos-host-firewall.service
+systemctl enable --now tinyagentos-host-firewall.path
+systemctl enable --now tinyagentos-host-firewall.timer
 echo "Host firewall service status: $(systemctl is-active tinyagentos-host-firewall.service)"
 
 # Install systemd service
@@ -112,6 +124,25 @@ fi
 echo ""
 echo "Starting TinyAgentOS..."
 systemctl start tinyagentos
+
+# Connectivity smoke test: launch an ephemeral container and probe two key
+# endpoints.  Failure warns but does not abort — the user can investigate
+# and restart the firewall service manually.
+if command -v incus >/dev/null 2>&1; then
+    echo ""
+    echo "=== connectivity smoke test ==="
+    incus launch images:debian/bookworm taos-netcheck --ephemeral 2>&1 | tail -3
+    sleep 2
+    if incus exec taos-netcheck -- timeout 10 curl -sI https://github.com >/dev/null 2>&1 \
+      && incus exec taos-netcheck -- timeout 10 curl -sI https://registry.npmjs.org >/dev/null 2>&1; then
+        echo "[ok] containers can reach github.com and registry.npmjs.org"
+    else
+        echo "[WARN] connectivity test failed from a fresh container."
+        echo "  Check: iptables -L DOCKER-USER -v -n"
+        echo "  Try:   sudo systemctl restart tinyagentos-host-firewall.service"
+    fi
+    incus delete taos-netcheck --force 2>/dev/null || true
+fi
 
 # Get IP address
 IP=$(hostname -I | awk '{print $1}')
