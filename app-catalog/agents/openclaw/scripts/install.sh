@@ -112,10 +112,41 @@ chmod 700 /root/.openclaw
 # Resolve values or fall back to safe defaults for dev/test.
 : "${TAOS_AGENT_NAME:=unknown}"
 : "${TAOS_MODEL:=}"
-: "${OPENAI_BASE_URL:=http://127.0.0.1:4000/v1}"
+: "${TAOS_FALLBACK_MODELS:=}"
+: "${LITELLM_API_KEY:=}"
 : "${OPENAI_API_KEY:=}"
+: "${OPENAI_BASE_URL:=http://127.0.0.1:4000/v1}"
 : "${TAOS_BRIDGE_URL:=http://127.0.0.1:6969}"
 : "${TAOS_LOCAL_TOKEN:=}"
+
+# Build the models[] JSON array from TAOS_MODEL + TAOS_FALLBACK_MODELS.
+# Each entry: {"id":"<id>","name":"<id>","contextWindow":128000,"maxTokens":16384,"input":["text"],"reasoning":false}
+_build_model_entry() {
+  local id="$1"
+  printf '{"id":"%s","name":"%s","contextWindow":128000,"maxTokens":16384,"input":["text"],"reasoning":false}' "$id" "$id"
+}
+
+MODELS_JSON="["
+FIRST=1
+if [ -n "$TAOS_MODEL" ]; then
+  MODELS_JSON+="$(_build_model_entry "$TAOS_MODEL")"
+  FIRST=0
+fi
+if [ -n "$TAOS_FALLBACK_MODELS" ]; then
+  IFS=',' read -ra _FALLBACKS <<< "$TAOS_FALLBACK_MODELS"
+  for _fb in "${_FALLBACKS[@]}"; do
+    _fb="${_fb// /}"
+    [ -z "$_fb" ] && continue
+    [ "$_fb" = "$TAOS_MODEL" ] && continue
+    [ "$FIRST" = "0" ] && MODELS_JSON+=","
+    MODELS_JSON+="$(_build_model_entry "$_fb")"
+    FIRST=0
+  done
+fi
+MODELS_JSON+="]"
+
+PRIMARY_REF=""
+[ -n "$TAOS_MODEL" ] && PRIMARY_REF="litellm/${TAOS_MODEL}"
 
 cat > /root/.openclaw/openclaw.json <<JSON_EOF
 {
@@ -123,11 +154,18 @@ cat > /root/.openclaw/openclaw.json <<JSON_EOF
   "channels": {},
   "models": {
     "providers": {
-      "taos": {
+      "litellm": {
         "api": "openai-completions",
-        "baseUrl": "${OPENAI_BASE_URL}",
-        "apiKey": "${OPENAI_API_KEY}",
-        "models": []
+        "baseUrl": "http://127.0.0.1:4000",
+        "apiKey": "\${LITELLM_API_KEY}",
+        "models": ${MODELS_JSON}
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "${PRIMARY_REF}"
       }
     }
   }
@@ -140,8 +178,10 @@ TAOS_AGENT_NAME=${TAOS_AGENT_NAME}
 TAOS_BRIDGE_URL=${TAOS_BRIDGE_URL}
 TAOS_LOCAL_TOKEN=${TAOS_LOCAL_TOKEN}
 TAOS_MODEL=${TAOS_MODEL}
-OPENAI_BASE_URL=${OPENAI_BASE_URL}
+TAOS_FALLBACK_MODELS=${TAOS_FALLBACK_MODELS}
+LITELLM_API_KEY=${LITELLM_API_KEY}
 OPENAI_API_KEY=${OPENAI_API_KEY}
+OPENAI_BASE_URL=${OPENAI_BASE_URL}
 ENV_EOF
 chmod 600 /root/.openclaw/env
 
