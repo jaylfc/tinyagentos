@@ -27,6 +27,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import time
 import uuid
 from datetime import datetime, timezone
@@ -38,6 +39,7 @@ import aiosqlite
 logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 1
+SEAL_AGE_SECONDS = 7200  # 2 hours
 
 TRACE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS trace_events (
@@ -111,6 +113,10 @@ def _bucket_jsonl_path(data_dir: Path, slug: str, bucket: str) -> Path:
     return _agent_trace_dir(data_dir, slug) / f"{bucket}.jsonl"
 
 
+def _bucket_late_jsonl_path(data_dir: Path, slug: str, bucket: str) -> Path:
+    return _agent_trace_dir(data_dir, slug) / f"{bucket}.late.jsonl"
+
+
 def _new_id() -> str:
     return uuid.uuid4().hex
 
@@ -173,7 +179,8 @@ class AgentTraceStore:
 
     async def _evict_old_buckets(self, current_bucket: str) -> None:
         """Close buckets older than current - 2 hours. Keep current and
-        previous bucket open for late-arriving events."""
+        previous bucket open for late-arriving events. Seals files for
+        buckets old enough to be considered immutable."""
         keep = {current_bucket}
         try:
             from datetime import timedelta
@@ -182,6 +189,7 @@ class AgentTraceStore:
             keep.add(prev)
         except ValueError:
             pass
+        now = time.time()
         for b in list(self._connections.keys()):
             if b in keep:
                 continue
@@ -190,6 +198,15 @@ class AgentTraceStore:
             except Exception:
                 pass
             del self._connections[b]
+            # Seal if the bucket is old enough.
+            try:
+                bucket_ts = datetime.strptime(b, "%Y-%m-%dT%H").replace(
+                    tzinfo=timezone.utc
+                ).timestamp()
+                if now - bucket_ts >= SEAL_AGE_SECONDS:
+                    self._seal_bucket(b)
+            except ValueError:
+                pass
 
     async def close(self) -> None:
         async with self._lock:
@@ -209,6 +226,13 @@ class AgentTraceStore:
         envelope = _build_envelope(self._slug, kind, fields)
         bucket = _bucket_key(envelope["created_at"])
         async with self._lock:
+            # Route sealed buckets straight to the late sidecar — attempting
+            # SQLite on a read-only file would raise "readonly database".
+            if self._is_sealed_bucket(bucket):
+                self._append_late(bucket, envelope)
+                now_bucket = _bucket_key(time.time())
+                await self._evict_old_buckets(now_bucket)
+                return envelope
             try:
                 conn = await self._open_bucket(bucket)
                 await conn.execute(
@@ -237,6 +261,52 @@ class AgentTraceStore:
             now_bucket = _bucket_key(time.time())
             await self._evict_old_buckets(now_bucket)
         return envelope
+
+    def _seal_bucket(self, bucket: str) -> None:
+        """chmod .db and .jsonl to 0o400 (read-only) for the given bucket.
+        Idempotent — skips files that are already read-only."""
+        db_path = _bucket_db_path(self._data_dir, self._slug, bucket)
+        jsonl_path = _bucket_jsonl_path(self._data_dir, self._slug, bucket)
+        for path in (db_path, jsonl_path):
+            if not path.exists():
+                continue
+            try:
+                if not os.access(str(path), os.W_OK):
+                    # Already read-only; nothing to do.
+                    continue
+                os.chmod(str(path), 0o400)
+                logger.info(
+                    "trace_store: sealed bucket file %s", path
+                )
+            except OSError as exc:
+                logger.warning(
+                    "trace_store: could not seal %s: %s", path, exc
+                )
+
+    def _is_sealed_bucket(self, bucket: str) -> bool:
+        """Return True if the bucket's .db file exists and is read-only."""
+        db_path = _bucket_db_path(self._data_dir, self._slug, bucket)
+        if not db_path.exists():
+            return False
+        return not os.access(str(db_path), os.W_OK)
+
+    def _append_late(self, bucket: str, envelope: dict) -> None:
+        """Write an envelope to the late-arrival sidecar ({bucket}.late.jsonl).
+        This file is always writable and never sealed."""
+        try:
+            path = _bucket_late_jsonl_path(self._data_dir, self._slug, bucket)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                path.parent.chmod(0o700)
+            except OSError:
+                pass
+            with open(path, "a") as f:
+                f.write(json.dumps(envelope, default=str) + "\n")
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "trace_store: LATE WRITE FAILED for %s/%s: %s — EVENT LOST",
+                self._slug, bucket, exc,
+            )
 
     def _append_fallback(self, bucket: str, envelope: dict) -> None:
         try:
@@ -271,11 +341,16 @@ class AgentTraceStore:
         if not trace_dir.exists():
             return []
         merged: list[dict] = []
+        # Track seen ids so duplicates (same event in .db and .late.jsonl)
+        # are deduplicated; the first occurrence wins (primary source = DB).
+        seen_ids: set[str] = set()
 
         # Enumerate bucket files; filter by since/until on bucket keys
         # where possible before opening each one.
         db_files = sorted(trace_dir.glob("*.db"), reverse=True)
+        # Collect all .jsonl files, including .late.jsonl sidecars.
         jsonl_files = sorted(trace_dir.glob("*.jsonl"), reverse=True)
+        late_jsonl_files = sorted(trace_dir.glob("*.late.jsonl"), reverse=True)
 
         async with self._lock:
             for db_file in db_files:
@@ -309,6 +384,11 @@ class AgentTraceStore:
                             ev["payload"] = json.loads(ev.get("payload") or "{}")
                         except Exception:
                             pass
+                        ev_id = ev.get("id")
+                        if ev_id and ev_id in seen_ids:
+                            continue
+                        if ev_id:
+                            seen_ids.add(ev_id)
                         merged.append(ev)
                 except Exception as exc:
                     logger.warning("trace_store: list() bucket %s skipped: %s", bucket, exc)
@@ -316,11 +396,9 @@ class AgentTraceStore:
                     # Enough to sort + trim; don't open more buckets.
                     break
 
-            # Merge JSONL fallback lines.
-            for jl in jsonl_files:
-                bucket = jl.stem
+            def _read_jsonl_file(jl: Path, bucket: str) -> None:
                 if not _bucket_overlaps(bucket, since, until):
-                    continue
+                    return
                 try:
                     with open(jl) as f:
                         for line in f:
@@ -342,9 +420,27 @@ class AgentTraceStore:
                                 continue
                             if until is not None and ts > until:
                                 continue
+                            ev_id = ev.get("id")
+                            if ev_id and ev_id in seen_ids:
+                                continue
+                            if ev_id:
+                                seen_ids.add(ev_id)
                             merged.append(ev)
                 except Exception as exc:
-                    logger.warning("trace_store: list() jsonl %s skipped: %s", bucket, exc)
+                    logger.warning("trace_store: list() jsonl %s skipped: %s", jl, exc)
+
+            # Merge regular JSONL fallback lines (not late sidecars).
+            for jl in jsonl_files:
+                # Skip late sidecars here; they are handled separately below.
+                if jl.name.endswith(".late.jsonl"):
+                    continue
+                _read_jsonl_file(jl, jl.name[: -len(".jsonl")])
+
+            # Merge late-arrival sidecars.
+            for jl in late_jsonl_files:
+                # Bucket key is the stem minus ".late" suffix.
+                bucket = jl.name[: -len(".late.jsonl")]
+                _read_jsonl_file(jl, bucket)
 
         merged.sort(key=lambda e: e.get("created_at") or 0, reverse=True)
         return merged[:limit]

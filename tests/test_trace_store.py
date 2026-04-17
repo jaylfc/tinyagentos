@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import stat
 import time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -16,8 +18,10 @@ from tinyagentos.trace_store import (
     _agent_trace_dir,
     _bucket_db_path,
     _bucket_jsonl_path,
+    _bucket_late_jsonl_path,
     VALID_KINDS,
     SCHEMA_VERSION,
+    SEAL_AGE_SECONDS,
 )
 
 
@@ -316,3 +320,223 @@ async def test_list_empty_no_dir(tmp_path):
     result = await store.list()
     assert result == []
     await store.close()
+
+
+# ---------------------------------------------------------------------------
+# 11. Seal: chmod 0o400 after 2h eviction
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_seal_chmod_0400_after_2h(tmp_path):
+    """An old bucket (>= SEAL_AGE_SECONDS ago) is chmod'd 0o400 during eviction."""
+    store = AgentTraceStore(tmp_path, "agent-seal-a")
+    # Write an event timestamped 3 hours ago so it lands in an old bucket.
+    old_ts = time.time() - 3 * 3600
+    old_bucket = _bucket_key(old_ts)
+    current_ts = time.time()
+    current_bucket = _bucket_key(current_ts)
+    assert old_bucket != current_bucket
+
+    # Write the old event (opens old bucket connection).
+    with patch("tinyagentos.trace_store.time") as mock_time:
+        mock_time.time.return_value = old_ts
+        await store.record("lifecycle", created_at=old_ts, payload={"event": "old"})
+
+    # Write a current event — eviction runs with the real wall-clock which
+    # is >= SEAL_AGE_SECONDS away from old_bucket, triggering sealing.
+    await store.record("lifecycle", created_at=current_ts, payload={"event": "now"})
+
+    db_path = _bucket_db_path(tmp_path, "agent-seal-a", old_bucket)
+    assert db_path.exists(), "old bucket .db should exist"
+    mode = stat.S_IMODE(os.stat(str(db_path)).st_mode)
+    assert mode == 0o400, f"expected 0o400, got {oct(mode)}"
+
+    await store.close()
+    # Restore write permission so tmp_path cleanup works.
+    os.chmod(str(db_path), 0o600)
+
+
+# ---------------------------------------------------------------------------
+# 12. Seal: idempotent — already-sealed files are not re-chmod'd
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_seal_idempotent(tmp_path):
+    """_seal_bucket called twice only chmod's each file once."""
+    store = AgentTraceStore(tmp_path, "agent-seal-b")
+    old_ts = time.time() - 3 * 3600
+    old_bucket = _bucket_key(old_ts)
+
+    with patch("tinyagentos.trace_store.time") as mock_time:
+        mock_time.time.return_value = old_ts
+        await store.record("lifecycle", created_at=old_ts, payload={"event": "old"})
+    await store.close()
+
+    db_path = _bucket_db_path(tmp_path, "agent-seal-b", old_bucket)
+    assert db_path.exists()
+
+    chmod_calls: list[str] = []
+    real_chmod = os.chmod
+
+    def counting_chmod(path, mode):
+        chmod_calls.append(str(path))
+        real_chmod(path, mode)
+
+    with patch("os.chmod", side_effect=counting_chmod):
+        store._seal_bucket(old_bucket)
+        calls_after_first = len(chmod_calls)
+        # Second call — file is already read-only, should not chmod again.
+        store._seal_bucket(old_bucket)
+
+    assert calls_after_first == 1, "expected exactly one chmod on first seal"
+    assert len(chmod_calls) == 1, "second seal should be a no-op"
+
+    # Restore for cleanup.
+    os.chmod(str(db_path), 0o600)
+
+
+# ---------------------------------------------------------------------------
+# 13. Late event routes to .late.jsonl when bucket is sealed
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_late_event_writes_late_jsonl_not_db(tmp_path):
+    """Writing to a sealed bucket creates .late.jsonl and leaves .db unchanged."""
+    store = AgentTraceStore(tmp_path, "agent-seal-c")
+    old_ts = time.time() - 3 * 3600
+    old_bucket = _bucket_key(old_ts)
+
+    # Populate and close the old bucket so the .db exists.
+    with patch("tinyagentos.trace_store.time") as mock_time:
+        mock_time.time.return_value = old_ts
+        await store.record("lifecycle", created_at=old_ts, payload={"event": "old"})
+    await store.close()
+
+    db_path = _bucket_db_path(tmp_path, "agent-seal-c", old_bucket)
+    late_path = _bucket_late_jsonl_path(tmp_path, "agent-seal-c", old_bucket)
+
+    # Manually seal the bucket.
+    os.chmod(str(db_path), 0o400)
+    db_mtime_before = db_path.stat().st_mtime
+
+    # Now write another event with the same old bucket timestamp.
+    store2 = AgentTraceStore(tmp_path, "agent-seal-c")
+    env = await store2.record("lifecycle", created_at=old_ts + 60, payload={"event": "late"})
+    await store2.close()
+
+    assert late_path.exists(), ".late.jsonl should have been created"
+    lines = [json.loads(l) for l in late_path.read_text().strip().splitlines()]
+    assert len(lines) == 1
+    assert lines[0]["payload"]["event"] == "late"
+
+    # .db must not have been touched.
+    assert db_path.stat().st_mtime == db_mtime_before
+
+    # Cleanup.
+    os.chmod(str(db_path), 0o600)
+
+
+# ---------------------------------------------------------------------------
+# 14. list() merges .db + .jsonl + .late.jsonl
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_list_merges_db_jsonl_late_jsonl(tmp_path):
+    """list() returns events from all three file types in a bucket."""
+    store = AgentTraceStore(tmp_path, "agent-merge-all")
+    bucket_ts = _ts(hour=10)
+    bucket = _bucket_key(bucket_ts)
+
+    # Write one event to DB.
+    env_db = await store.record(
+        "lifecycle", created_at=bucket_ts, payload={"event": "db"}
+    )
+    await store.close()
+
+    trace_dir = _agent_trace_dir(tmp_path, "agent-merge-all")
+
+    # Manually add a JSONL fallback entry.
+    jl_path = _bucket_jsonl_path(tmp_path, "agent-merge-all", bucket)
+    with open(jl_path, "a") as f:
+        f.write(json.dumps({
+            "v": 1, "id": "jsonl-id-001", "trace_id": None, "parent_id": None,
+            "created_at": bucket_ts + 10, "agent_name": "agent-merge-all",
+            "kind": "lifecycle", "channel_id": None, "thread_id": None,
+            "backend_name": None, "model": None, "duration_ms": None,
+            "tokens_in": None, "tokens_out": None, "cost_usd": None,
+            "error": None, "payload": {"event": "jsonl"},
+        }) + "\n")
+
+    # Manually add a late.jsonl entry.
+    late_path = _bucket_late_jsonl_path(tmp_path, "agent-merge-all", bucket)
+    with open(late_path, "a") as f:
+        f.write(json.dumps({
+            "v": 1, "id": "late-id-001", "trace_id": None, "parent_id": None,
+            "created_at": bucket_ts + 20, "agent_name": "agent-merge-all",
+            "kind": "lifecycle", "channel_id": None, "thread_id": None,
+            "backend_name": None, "model": None, "duration_ms": None,
+            "tokens_in": None, "tokens_out": None, "cost_usd": None,
+            "error": None, "payload": {"event": "late"},
+        }) + "\n")
+
+    store2 = AgentTraceStore(tmp_path, "agent-merge-all")
+    events = await store2.list()
+    await store2.close()
+
+    event_sources = {e["payload"]["event"] if isinstance(e.get("payload"), dict) else None
+                     for e in events}
+    assert "db" in event_sources
+    assert "jsonl" in event_sources
+    assert "late" in event_sources
+    assert len(events) == 3
+
+    # Verify sorted newest-first.
+    times = [e["created_at"] for e in events]
+    assert times == sorted(times, reverse=True)
+
+
+# ---------------------------------------------------------------------------
+# 15. list() dedup by id: primary (.db) wins over .late.jsonl
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_list_dedup_by_id_primary_wins(tmp_path):
+    """When the same id appears in .db and .late.jsonl, only the .db version
+    is returned."""
+    store = AgentTraceStore(tmp_path, "agent-dedup")
+    bucket_ts = _ts(hour=11)
+    bucket = _bucket_key(bucket_ts)
+    shared_id = "shared-event-id-xyz"
+
+    env_db = await store.record(
+        "lifecycle",
+        id=shared_id,
+        created_at=bucket_ts,
+        payload={"source": "db"},
+    )
+    await store.close()
+
+    # Inject the same id into .late.jsonl with a different payload.
+    late_path = _bucket_late_jsonl_path(tmp_path, "agent-dedup", bucket)
+    late_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(late_path, "a") as f:
+        f.write(json.dumps({
+            "v": 1, "id": shared_id, "trace_id": None, "parent_id": None,
+            "created_at": bucket_ts + 5, "agent_name": "agent-dedup",
+            "kind": "lifecycle", "channel_id": None, "thread_id": None,
+            "backend_name": None, "model": None, "duration_ms": None,
+            "tokens_in": None, "tokens_out": None, "cost_usd": None,
+            "error": None, "payload": {"source": "late"},
+        }) + "\n")
+
+    store2 = AgentTraceStore(tmp_path, "agent-dedup")
+    events = await store2.list()
+    await store2.close()
+
+    # Only one event with that id.
+    matching = [e for e in events if e.get("id") == shared_id]
+    assert len(matching) == 1
+    payload = matching[0].get("payload")
+    if isinstance(payload, str):
+        payload = json.loads(payload)
+    assert payload.get("source") == "db", "DB version should win over late version"
