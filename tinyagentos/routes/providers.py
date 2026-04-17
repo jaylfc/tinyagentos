@@ -37,6 +37,31 @@ PROVIDER_DEFAULT_MODELS: dict[str, list[dict]] = {
 }
 
 
+async def _resolve_backend_secrets(
+    app_state, backends: list[dict]
+) -> dict[str, str]:
+    """Build a name→value map of every ``api_key_secret`` referenced
+    from ``backends``. Used to refresh the LiteLLM subprocess env on
+    reload so newly-added/rotated provider keys take effect without
+    a full app restart."""
+    secrets_store = getattr(app_state, "secrets", None)
+    if secrets_store is None:
+        return {}
+    out: dict[str, str] = {}
+    for backend in backends:
+        name = backend.get("api_key_secret")
+        if not name or name in out:
+            continue
+        try:
+            rec = await secrets_store.get(name)
+        except Exception as exc:
+            logger.warning("provider reload: secret lookup %s failed: %s", name, exc)
+            continue
+        if rec and rec.get("value"):
+            out[name] = rec["value"]
+    return out
+
+
 async def _discover_provider_models(
     base_url: str, api_key: str | None, timeout: float = 5.0,
 ) -> list[dict]:
@@ -279,7 +304,8 @@ async def add_provider(request: Request, body: ProviderCreate):
     # Reconfigure LLM proxy if running
     proxy = getattr(request.app.state, "llm_proxy", None)
     if proxy and proxy.is_running():
-        await proxy.reload_config(config.backends)
+        resolved = await _resolve_backend_secrets(request.app.state, config.backends)
+        await proxy.reload_config(config.backends, secrets=resolved)
     return {"status": "added", "name": body.name}
 
 @router.patch("/api/providers/{name}")
@@ -298,7 +324,8 @@ async def patch_provider(request: Request, name: str, body: ProviderPatch):
     await save_config_locked(config, config.config_path)
     proxy = getattr(request.app.state, "llm_proxy", None)
     if proxy and proxy.is_running():
-        await proxy.reload_config(config.backends)
+        resolved = await _resolve_backend_secrets(request.app.state, config.backends)
+        await proxy.reload_config(config.backends, secrets=resolved)
     return {"status": "updated", "name": name}
 
 
@@ -352,5 +379,6 @@ async def delete_provider(request: Request, name: str):
     await save_config_locked(config, config.config_path)
     proxy = getattr(request.app.state, "llm_proxy", None)
     if proxy and proxy.is_running():
-        await proxy.reload_config(config.backends)
+        resolved = await _resolve_backend_secrets(request.app.state, config.backends)
+        await proxy.reload_config(config.backends, secrets=resolved)
     return {"status": "deleted", "name": name}

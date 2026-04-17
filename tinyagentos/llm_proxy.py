@@ -341,7 +341,11 @@ class LLMProxy:
         config_path.write_text(yaml.dump(config, default_flow_style=False))
         return config_path
 
-    async def start(self, backends: list[dict]) -> bool:
+    async def start(
+        self,
+        backends: list[dict],
+        secrets: dict[str, str] | None = None,
+    ) -> bool:
         """Start LiteLLM proxy with auto-generated config.
 
         If another process (a stale taOS, a manual launch) is already on
@@ -349,6 +353,13 @@ class LLMProxy:
         foreign instance may have been started with a different master
         key or an outdated model config that the UI cannot update
         without a SIGHUP we have no PID for.
+
+        ``secrets`` maps secret_name → value for every ``api_key_secret``
+        referenced from ``backends``. Each entry is exported as an env
+        var before the litellm subprocess starts so the ``os.environ/...``
+        markers in the generated config resolve to real API keys.
+        Without this, cloud providers authenticated via the secrets
+        store return 401 from LiteLLM.
         """
         if self.is_running():
             return True
@@ -418,6 +429,13 @@ class LLMProxy:
         # returns a server error.
         if self.database_url:
             env["DATABASE_URL"] = self.database_url
+        # Resolve every api_key_secret into a real env var so the
+        # os.environ/<name> markers in the generated config resolve to
+        # actual API keys. LiteLLM reads them by name at request time.
+        if secrets:
+            for name, value in secrets.items():
+                if name and value:
+                    env[name] = value
 
         try:
             self._process = subprocess.Popen(
@@ -459,10 +477,15 @@ class LLMProxy:
             self._process = None
             logger.info("LiteLLM proxy stopped")
 
-    async def reload_config(self, backends: list[dict]) -> bool:
+    async def reload_config(
+        self,
+        backends: list[dict],
+        secrets: dict[str, str] | None = None,
+    ) -> bool:
         """Rewrite the LiteLLM config with a new backend list and signal
         the proxy to re-read it via SIGHUP. Falls back to a full restart
-        if signalling fails.
+        if signalling fails — in that case ``secrets`` is forwarded to
+        ``start`` so newly-added provider keys reach the subprocess env.
         """
         new_path = self.write_config(backends)
         if not self.is_running():
@@ -479,7 +502,7 @@ class LLMProxy:
                 exc,
             )
             self.stop()
-            return await self.start(backends)
+            return await self.start(backends, secrets=secrets)
 
     async def create_agent_key(self, agent_name: str, models: list[str] | None = None,
                                 max_budget: float | None = None) -> str | None:

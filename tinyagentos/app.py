@@ -301,9 +301,24 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
             await resume_agents_from_notes(app.state)
         except Exception:
             logger.exception("boot-time agent resume failed")
-        # Optionally start LiteLLM proxy (non-fatal if not installed)
+        # Optionally start LiteLLM proxy (non-fatal if not installed).
+        # Resolve every backend's api_key_secret so LiteLLM's
+        # os.environ/<name> markers land in the subprocess env and
+        # cloud providers can actually authenticate.
         try:
-            await llm_proxy.start(config.backends)
+            resolved_secrets: dict[str, str] = {}
+            for backend in config.backends:
+                name = backend.get("api_key_secret")
+                if not name or name in resolved_secrets:
+                    continue
+                try:
+                    rec = await secrets_store.get(name)
+                except Exception as exc:
+                    logger.warning("llm_proxy: secret lookup for %s failed: %s", name, exc)
+                    continue
+                if rec and rec.get("value"):
+                    resolved_secrets[name] = rec["value"]
+            await llm_proxy.start(config.backends, secrets=resolved_secrets)
         except Exception:
             pass  # LiteLLM is optional
         # Start background health monitor
@@ -376,7 +391,20 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         async def _reload_llm_proxy_on_catalog_change() -> None:
             if not llm_proxy.is_running():
                 return
-            await llm_proxy.reload_config(config.backends)
+            # Re-resolve secrets so rotated keys or newly-added providers
+            # that changed between SIGHUPs pick up the current values.
+            resolved: dict[str, str] = {}
+            for backend in config.backends:
+                name = backend.get("api_key_secret")
+                if not name or name in resolved:
+                    continue
+                try:
+                    rec = await secrets_store.get(name)
+                except Exception:
+                    continue
+                if rec and rec.get("value"):
+                    resolved[name] = rec["value"]
+            await llm_proxy.reload_config(config.backends, secrets=resolved)
 
         backend_catalog.subscribe(_reload_llm_proxy_on_catalog_change)
 
