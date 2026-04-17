@@ -94,6 +94,17 @@ versions) but is a fallback, not a peer. Making it user-switchable
 would create a support surface where "I turned off LXC" masks real
 networking problems.
 
+**Docker and the snapshot archive model.** Agent archive and restore rely
+on `incus snapshot create` / `incus snapshot restore`. Docker has no
+equivalent primitive: `docker commit` produces a new image from a running
+container's filesystem but does not capture named, restorable snapshots in
+the same atomic sense. On hosts where the Docker backend is active,
+`snapshot_create` and `snapshot_restore` return a graceful "not supported"
+response and the archive call falls back to a dir-copy path. This is
+documented in `tinyagentos/containers/docker.py::DockerBackend.snapshot_create`.
+The LXC backend is the only path that delivers the full snapshot-archive
+guarantee described in `docs/design/architecture-pivot-v2.md`.
+
 ## Operational runbook
 
 ### Symptom: "Agent has no internet"

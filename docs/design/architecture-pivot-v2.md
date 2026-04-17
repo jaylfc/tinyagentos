@@ -1,6 +1,29 @@
 # Architecture pivot v2 — whole-container archive, portable collab services, disk quotas
 
-**Status:** Accepted. Phase 1 starting. Phases 2–5 sequential after Phase 1 stable.
+**Status:** Decision record — complete. All phases landed.
+
+---
+
+## Post-landing status
+
+Phases 1 and 2.A–2.C have landed on branch `fix/agent-creation-flow`.
+
+| Phase | Scope | Commits |
+|---|---|---|
+| Phase 1 | Disk quota, recycle-bin Layer 1 + 3, monitoring background task, quota prompt library | `307e496` through `f97c6ae` |
+| Phase 2.A | Deployer: three bind mounts removed, single trace mount, openclaw bootstrap inside container, `root_size_gib` default 40 | `43e18c1`, `4d3b6b2`, `0578f62`, `cf0c3d9`, `2ea0917` |
+| Phase 2.B | `_archive_agent_fully`, `restore_archived_agent`, `purge_archived_agent` rewritten around incus snapshot primitives; `archive.target` config knob | `ed7b3bb`, `32cd237`, `fa373b7` |
+| Phase 2.C | `agent_env.py` deleted; env rewrites now via `containers.set_env` | `792cab2` |
+
+`docs/design/framework-agnostic-runtime.md` and
+`docs/runbooks/agent-archive-restore.md` have been updated to reflect the
+post-pivot reality.
+
+The sections below remain as the authoritative decision record for the choices
+made in this pivot. They are not updated retroactively; read them in the context
+of the implementation state described above.
+
+---
 
 **Supersedes (if adopted):** parts of `framework-agnostic-runtime.md`,
 `agent-archive-restore.md` runbook, `_archive_agent_fully` in `tinyagentos/routes/agents.py`,
