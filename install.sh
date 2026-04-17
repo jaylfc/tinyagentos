@@ -89,6 +89,12 @@ systemctl enable --now tinyagentos-host-firewall.path
 systemctl enable --now tinyagentos-host-firewall.timer
 echo "Host firewall service status: $(systemctl is-active tinyagentos-host-firewall.service)"
 
+echo ""
+echo "=== FS snapshot backstop (Layer 3 of recycle-bin) ==="
+if [ -f "$INSTALL_DIR/scripts/fs-snapshot-install.sh" ]; then
+  bash "$INSTALL_DIR/scripts/fs-snapshot-install.sh" || echo "fs-snapshot-install: non-fatal error; continuing install"
+fi
+
 # Install disk quota scanner script and systemd units
 echo ""
 echo "Installing disk quota scanner..."
