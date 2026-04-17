@@ -72,8 +72,8 @@ Audit as of **2026-04-11**. Pass = aligned with rule. Fail = needs migration.
 | User memory | SQLite on host (`data/user_memory.db`), containers call via `TAOS_USER_MEMORY_URL` | **Pass** |
 | Agent-to-agent messages | SQLite on host (`data/agent_messages.db`) | **Pass** |
 | Secrets | SQLite on host (`data/secrets.db`), agents fetch via API on demand | **Pass** |
-| Workspace files | `/data/agent-workspaces/{name}` mounted into Docker containers at `/workspace` | **Pass (Docker only)** |
-| Agent memory dir | `/data/agent-memory/{name}` mounted into Docker containers at `/memory` | **Pass (Docker only)** |
+| Workspace files | `/data/agent-workspaces/{name}` mounted into containers at `/workspace` | **Pass** |
+| Agent memory dir | `/data/agent-memory/{name}` mounted into containers at `/memory` | **Pass** |
 | QMD embedding + index service | Single host `qmd.service` systemd unit on :7832 routing per-tenant via `dbPath` | **Pass** |
 | Per-agent memory isolation | `data/agent-memory/{name}/index.sqlite` mounted at `/memory`, addressed by dbPath | **Pass** |
 | LiteLLM `/v1/embeddings` | Auto-discovers ollama-compatible backends, exposes `taos-embedding-default` alias | **Pass** |
@@ -114,10 +114,16 @@ that routes to the same backends, so frameworks consuming the OpenAI
 embeddings API work unchanged. Every agent container gets:
 
 ```
-OPENAI_BASE_URL=http://host.docker.internal:4000/v1
-TAOS_EMBEDDING_URL=http://host.docker.internal:4000/v1/embeddings
+OPENAI_BASE_URL=http://127.0.0.1:4000/v1
+TAOS_EMBEDDING_URL=http://127.0.0.1:4000/v1/embeddings
 TAOS_EMBEDDING_MODEL=taos-embedding-default
 ```
+
+``127.0.0.1`` works inside the container because the deployer attaches
+incus proxy devices that forward container-localhost:4000 and
+container-localhost:6969 to the same ports on the host. Source of truth:
+``tinyagentos/containers/__init__.py::add_proxy_device``, called from
+``tinyagentos/deployer.py``.
 
 Frameworks that want a native embedder shim against
 ``TAOS_EMBEDDING_URL``; everything else just sees an OpenAI endpoint
@@ -182,6 +188,129 @@ Every container gets `/root` bind-mounted from `{data_dir}/agent-home/{slug}/` o
 
 The container also sees `TAOS_AGENT_HOME=/root` so runtimes can write to a well-known path.
 
+The per-agent home also hosts the trace store (see "Per-agent trace capture" below) and
+the OpenClaw env file at `.openclaw/env`; both travel with the home folder on
+archive, restore, and backup.
+
+## Per-agent trace capture
+
+Every agent's trace events land inside its home folder so they travel with the
+agent on archive, restore, and backup with no extra steps.
+
+**Path layout.**
+
+```
+{data_dir}/agent-home/{slug}/.taos/trace/
+    YYYY-MM-DDTHH.db        primary: one aiosqlite DB per UTC hour
+    YYYY-MM-DDTHH.jsonl     fallback: appended only when the DB write fails
+```
+
+A future `.late.jsonl` file will hold events whose bucket has already been
+closed; the store does not yet produce one but the naming is reserved.
+
+**Hourly buckets.** One file per UTC hour bounds individual file size and
+matches the librarian's natural query scope — a single summarisation pass
+rarely needs more than a few hours of history. Bucket routing uses the
+event's `created_at`, not wall-clock at write time, so a 14:59:59.999 event
+flushed at 15:00:00.001 still lands in the T14 file; rollover never drops
+events. The registry keeps the current and previous hour open and closes
+older connections opportunistically.
+
+**Why per-agent.** The trace files live inside `agent-home/{slug}/`, the same
+root that archive and restore moves. No separate migration step is needed.
+
+**Envelope v1 fields.**
+
+```
+v, id, trace_id, parent_id, created_at, agent_name,
+kind, channel_id, thread_id, backend_name, model,
+duration_ms, tokens_in, tokens_out, cost_usd, error, payload
+```
+
+Valid kinds: `llm_call`, `message_in`, `message_out`, `tool_call`,
+`tool_result`, `reasoning`, `error`, `lifecycle`.
+
+`SCHEMA_VERSION` is exported from `tinyagentos/trace_store.py`; bump it and
+provide a migration if any field name changes.
+
+**Zero-loss contract.** The primary write path is `INSERT OR IGNORE` into
+SQLite (idempotent on `id`). On any SQLite exception the envelope is
+appended to the sibling `.jsonl` fallback. If even the JSONL write fails
+the event is logged at ERROR level. The `list()` method merges `.db` rows
+and `.jsonl` lines before returning, so neither path is invisible to
+readers. See `tinyagentos/trace_store.py::AgentTraceStore.record`.
+
+**Librarian consumption.** taOSmd reads traces newest-first via
+`GET /api/agents/{name}/trace` or direct SQL. The librarian summarises and
+may annotate but does not delete raw envelopes. See
+`docs/design/user-memory.md` for how per-agent traces relate to user memory.
+
+## Agent archive / restore
+
+`DELETE /api/agents/{name}` archives rather than hard-deletes an agent. The
+distinction matters: a hard delete is irreversible; an archive preserves
+everything and allows restore with minimal friction.
+
+**Why archive instead of delete.** Chat history, trace data, workspace
+files, and trained-context embeddings represent real user investment. A
+misbehaving agent should be paused or archived, not erased. Archive also
+makes "clone by archive → restore as different slug" possible without a
+dedicated clone endpoint.
+
+**What the archive step does** (source: `tinyagentos/routes/agents.py::_archive_agent_fully`):
+
+1. Force-stops the container.
+2. Renames it from `taos-agent-{slug}` to `taos-archived-{slug}-{timestamp}`.
+3. Moves `agent-workspaces/{slug}`, `agent-memory/{slug}`, and
+   `agent-home/{slug}` under `data/archive/{slug}-{timestamp}/workspace`,
+   `.../memory`, and `.../home` respectively.
+4. Revokes the agent's LiteLLM key.
+5. Flags the agent's DM channel archived in the chat store.
+6. Moves the config entry from `config.agents` to `config.archived_agents`.
+
+**What stays with the archive.** Trace data lives inside `agent-home/{slug}/.taos/trace/`,
+which moves with the home folder in step 3. Pre-archive trace history is
+fully preserved.
+
+**Restore path** (`POST /api/agents/archived/{id}/restore`). Slug collision
+is handled by appending a numeric suffix (`foo` → `foo-2`). A new LiteLLM
+key is minted and written to the per-agent env file at
+`agent-home/{slug}/.openclaw/env` via `tinyagentos/agent_env.py::update_agent_env_file`.
+No framework reinstall is needed; the container is renamed back and the
+existing home, workspace, and memory mounts are restored in place.
+
+**Purge** (`DELETE /api/agents/archived/{id}`). Destroys the archived
+container and runs `shutil.rmtree` on `archive/{slug}-{timestamp}/`.
+Irreversible. Trace history, chat messages, and workspace files are gone.
+
+## Programmatic access (local token)
+
+Scripts, the LiteLLM callback, and in-container agent runtimes authenticate
+to the taOS API using a persistent local token rather than browser sessions.
+
+**Token file.** `{data_dir}/.auth_local_token` — generated on first call to
+`AuthManager.get_local_token()` (see `tinyagentos/auth.py`), written with
+0600 permissions so only the process owner can read it. Never rotated
+automatically; delete the file to force regeneration.
+
+**Middleware.** `auth_middleware` accepts `Authorization: Bearer <token>` in
+addition to session cookies. The local token grants the same access level as
+a logged-in admin session; it is intended only for same-host callers.
+
+**Consumers.**
+
+- The LiteLLM callback (`tinyagentos/litellm_callback.py`) runs in-process
+  with the LiteLLM proxy subprocess. It probes `/data/.auth_local_token` and
+  `~/.taos/.auth_local_token` in order, then falls back to the
+  `TAOS_LOCAL_TOKEN` env var injected by the deployer.
+- In-container agent runtimes receive `TAOS_LOCAL_TOKEN` as an env var (set
+  at deploy time from the token file) and post traces to `TAOS_TRACE_URL`.
+- A future taOS CLI will read the token file directly.
+
+**Scope.** The token file is bound to the host machine. It must not leave
+the machine — never commit it, never copy it to workers, never include it in
+backups that leave the network boundary.
+
 ## Rule application checklist (for future changes)
 
 When adding a new feature that touches an agent container, answer these
@@ -207,8 +336,26 @@ path breaks.
   concern; containers don't hold weights either)
 - `docs/design/cluster-dispatch.md` — migrating agents across workers (the rule
   makes this almost free)
+- `docs/design/user-memory.md` — user's own long-lived notes/context; cross-
+  references the per-agent trace layer
+- `docs/runbooks/agent-archive-restore.md` — step-by-step archive, restore,
+  and purge procedures
+- `docs/runbooks/trace-querying.md` — using the trace API for forensics and
+  cost attribution
 - `docs/superpowers/specs/2026-04-11-taos-framework-integration-bridge-design.md`
   — TAOS Framework Integration Bridge: the concrete design for routing an
   OpenClaw agent through Hermes and back, enabled by this rule
 - Issues #29, #30, #32, #33, #34 — backend-driven scheduler wiring, the
   reason this cleanup unblocks real work
+
+## Related code
+
+- `tinyagentos/trace_store.py` — `AgentTraceStore` + `TraceStoreRegistry`
+- `tinyagentos/routes/trace.py` — `POST /api/trace`, `GET /api/agents/{name}/trace`,
+  `POST /api/lifecycle/notify`
+- `tinyagentos/litellm_callback.py` — `TaosLiteLLMCallback` posts `llm_call`
+  traces automatically on every LiteLLM completion
+- `tinyagentos/agent_env.py` — `update_agent_env_file` rewrites
+  `.openclaw/env` on restore without a full reinstall
+- `tinyagentos/containers/__init__.py::add_proxy_device` — attaches incus
+  proxy devices so the container reaches host services via 127.0.0.1
