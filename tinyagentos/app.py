@@ -411,6 +411,18 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
             set_backend(LXCBackend())
         elif runtime in ("docker", "podman"):
             set_backend(DockerBackend(binary=runtime))
+
+        # Disk quota monitor — build and attach to app state so the route
+        # handler can reuse the same instance (preserves in-memory last_state).
+        try:
+            from tinyagentos.disk_quota import DiskQuotaMonitor
+            from tinyagentos.containers.backend import get_backend as _get_container_backend
+            _dq_backend = _get_container_backend()
+            app.state.disk_quota_monitor = DiskQuotaMonitor(config, _dq_backend, notif_store)
+        except Exception:
+            logger.exception("disk quota monitor failed to initialise — disk routes will still work")
+            app.state.disk_quota_monitor = None
+
         yield
         # NOTE: controller restart/shutdown does NOT touch agent containers —
         # agents and LiteLLM keep running independently, so there's nothing to
@@ -726,6 +738,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     from tinyagentos.routes.openclaw import router as openclaw_router
     app.include_router(openclaw_router)
+
+    from tinyagentos.routes.disk_quota import router as disk_quota_router
+    app.include_router(disk_quota_router)
 
     # Lobby demo (internal only — not included in public builds)
     try:
