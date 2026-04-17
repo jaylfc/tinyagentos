@@ -335,6 +335,10 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         lifecycle_manager = LifecycleManager(backend_catalog)
         app.state.lifecycle_manager = lifecycle_manager
 
+        # Trace registry — per-agent hourly-bucketed SQLite for zero-loss capture.
+        from tinyagentos.trace_store import TraceStoreRegistry
+        app.state.trace_registry = TraceStoreRegistry(data_dir)
+
         # After the first probe, mark auto-managed backends that are not
         # currently reachable as "stopped" so the scheduler knows to start
         # them on demand rather than treating them as permanently broken.
@@ -416,6 +420,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         except Exception:
             pass
         await app.state.mcp_supervisor.stop_all()
+        await app.state.trace_registry.close_all()
         await mcp_store.close()
         await scheduler_history_store.close()
         await benchmark_store.close()
@@ -508,6 +513,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     app.state.mcp_store = mcp_store
     app.state.mcp_supervisor = MCPSupervisor(mcp_store, catalog=registry, notif_store=notif_store, secrets_store=secrets_store)
     app.state.orchestrator = RestartOrchestrator(app.state)
+
+    from tinyagentos.trace_store import TraceStoreRegistry as _TraceStoreRegistry
+    app.state.trace_registry = _TraceStoreRegistry(data_dir)
 
     # Detect and set container runtime (eager, so tests work without lifespan)
     try:
@@ -695,6 +703,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     from tinyagentos.routes.mcp import router as mcp_router
     app.include_router(mcp_router)
+
+    from tinyagentos.routes.trace import router as trace_router
+    app.include_router(trace_router)
 
     # Lobby demo (internal only — not included in public builds)
     try:

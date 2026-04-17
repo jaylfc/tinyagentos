@@ -124,6 +124,16 @@ async def deploy_agent(req: DeployRequest) -> dict:
     if req.model:
         env["TAOS_MODEL"] = req.model
 
+    # Trace capture — local auth token + trace API URL so the container
+    # runtime can POST events directly into the per-agent trace store.
+    try:
+        local_token_path = req.data_dir / ".auth_local_token"
+        if local_token_path.exists():
+            env["TAOS_LOCAL_TOKEN"] = local_token_path.read_text().strip()
+    except Exception:
+        pass
+    env["TAOS_TRACE_URL"] = f"http://{req.taos_host}:{req.taos_port}/api/trace"
+
     # Step 1: Create container with mounts + env baked in at launch time
     logger.info(f"Creating container {container_name}")
     result = await create_container(
