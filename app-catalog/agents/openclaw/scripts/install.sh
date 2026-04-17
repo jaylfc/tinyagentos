@@ -20,8 +20,21 @@ fi
 # ---------------------------------------------------------------------------
 # 2. openclaw from our fork (taos-fork branch).
 # Fork baseline tracks upstream main; the taos-fork branch adds the bridge patch.
+#
+# Use npm's github: shorthand (NOT a tarball URL) so npm's prepare
+# script fires. The prepare script detects it is outside a git work tree
+# (i.e. an npm global install) and runs `pnpm build:docker` in the
+# destination, producing dist/entry.js at install time.
+#
+# Tarball URLs skip the prepare lifecycle entirely — that is why prebuilt
+# dist/ kept landing as incomplete and crashing openclaw.mjs:178.
+#
+# corepack is bundled with Node 22 (no apt install needed). The pnpm
+# build step adds ~2-3 minutes on arm64 Pi hardware.
 # ---------------------------------------------------------------------------
-npm install -g https://github.com/jaylfc/openclaw/tarball/taos-fork
+corepack enable
+corepack prepare pnpm@latest --activate
+npm install -g github:jaylfc/openclaw#taos-fork
 
 # ------------------------------------------------------------------
 # 2a. Bootstrap config + env for the openclaw bridge. Written from env
