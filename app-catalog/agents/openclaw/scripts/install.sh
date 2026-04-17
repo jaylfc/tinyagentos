@@ -11,7 +11,11 @@ echo "[openclaw] installing Node 22.x (NodeSource) + openclaw prebuilt from GitH
 
 # ---------------------------------------------------------------------------
 # 1. Node 22.14+ via NodeSource (Debian bookworm default is Node 18, too old).
-#    Also ensure 'file' is present — used to sanity-check the downloaded tarball.
+#    Also ensure:
+#    - 'file' is present — used to sanity-check the downloaded tarball.
+#    - 'git' is present — openclaw's transitive dep libsignal
+#      (@whiskeysockets/baileys -> libsignal@git+https://github.com/...)
+#      is a git-URL dependency and npm needs git to fetch it at install time.
 # ---------------------------------------------------------------------------
 if ! command -v node >/dev/null 2>&1 || [ "$(node -v | sed 's/^v//; s/\..*//')" -lt 22 ]; then
   curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
@@ -19,6 +23,9 @@ if ! command -v node >/dev/null 2>&1 || [ "$(node -v | sed 's/^v//; s/\..*//')" 
 fi
 if ! command -v file >/dev/null 2>&1; then
   DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends file
+fi
+if ! command -v git >/dev/null 2>&1; then
+  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git
 fi
 
 # ----------------------------------------------------------------------
