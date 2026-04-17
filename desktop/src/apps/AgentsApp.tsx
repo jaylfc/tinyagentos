@@ -61,7 +61,7 @@ interface Framework {
   id: string;
   name: string;
   description: string;
-  verification_status: "tested" | "beta" | "experimental" | "broken";
+  verification_status: "beta" | "alpha" | "broken";
 }
 
 // AgentModel is defined and exported from ModelPickerFlow
@@ -391,14 +391,19 @@ function DeployWizard({
             const visible = data.filter(
               (a: Record<string, unknown>) => a.verification_status !== "broken"
             );
-            setFrameworks(
-              visible.map((a: Record<string, unknown>) => ({
-                id: String(a.id),
-                name: String(a.name ?? a.id),
-                description: String(a.description ?? ""),
-                verification_status: (a.verification_status as Framework["verification_status"]) ?? "experimental",
-              }))
-            );
+            const mapped: Framework[] = visible.map((a: Record<string, unknown>) => ({
+              id: String(a.id),
+              name: String(a.name ?? a.id),
+              description: String(a.description ?? ""),
+              verification_status: (a.verification_status as Framework["verification_status"]) ?? "alpha",
+            }));
+            // openclaw first, then preserve API order
+            mapped.sort((a, b) => {
+              if (a.id === "openclaw") return -1;
+              if (b.id === "openclaw") return 1;
+              return 0;
+            });
+            setFrameworks(mapped);
           }
         }
       } catch { /* leave frameworks empty, wizard will show nothing selectable */ }
@@ -743,10 +748,10 @@ function DeployWizard({
             <div className="space-y-2">
               <span className="block text-xs text-shell-text-secondary mb-2">Select Framework</span>
               {frameworks
-                .filter((fw) => fw.verification_status !== "experimental" || showExperimental)
+                .filter((fw) => fw.verification_status !== "alpha" || showExperimental)
                 .map((fw) => {
-                  const isExperimental = fw.verification_status === "experimental";
-                  const selectable = !isExperimental || showExperimental;
+                  const isAlpha = fw.verification_status === "alpha";
+                  const selectable = !isAlpha || showExperimental;
                   return (
                     <button
                       key={fw.id}
@@ -762,27 +767,27 @@ function DeployWizard({
                       }`}
                     >
                       <div className="flex items-center gap-2">
-                        <span className={`text-sm font-medium ${isExperimental ? "text-shell-text-tertiary" : ""}`}>
+                        <span className={`text-sm font-medium ${isAlpha ? "text-shell-text-tertiary" : ""}`}>
                           {fw.name}
                         </span>
                         {fw.verification_status === "beta" && (
                           <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/20 text-amber-400 leading-none">
-                            beta
+                            Beta
                           </span>
                         )}
-                        {fw.verification_status === "experimental" && (
+                        {fw.verification_status === "alpha" && (
                           <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-zinc-500/20 text-zinc-400 leading-none">
-                            experimental
+                            Alpha · Testing
                           </span>
                         )}
                       </div>
-                      <div className={`text-xs mt-0.5 ${isExperimental ? "text-shell-text-tertiary" : "text-shell-text-secondary"}`}>
+                      <div className={`text-xs mt-0.5 ${isAlpha ? "text-shell-text-tertiary" : "text-shell-text-secondary"}`}>
                         {fw.description}
                       </div>
                     </button>
                   );
                 })}
-              {/* Experimental toggle */}
+              {/* Alpha toggle */}
               <label
                 htmlFor="show-experimental-frameworks"
                 className="flex items-center gap-2 mt-3 cursor-pointer select-none"
@@ -796,12 +801,12 @@ function DeployWizard({
                     // Deselect if currently selected framework becomes hidden
                     if (!e.target.checked) {
                       const fw = frameworks.find((f) => f.id === selectedFramework);
-                      if (fw?.verification_status === "experimental") setSelectedFramework("");
+                      if (fw?.verification_status === "alpha") setSelectedFramework("");
                     }
                   }}
                   className="accent-accent"
                 />
-                <span className="text-xs text-shell-text-secondary">Show experimental frameworks</span>
+                <span className="text-xs text-shell-text-secondary">Show alpha / in testing frameworks</span>
               </label>
             </div>
           )}
