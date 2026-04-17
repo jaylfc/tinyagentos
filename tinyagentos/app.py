@@ -141,7 +141,13 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     auth_manager = AuthManager(data_dir)
     webhook_notifier = WebhookNotifier(config.to_dict())
     notif_store.set_webhook_notifier(webhook_notifier)
-    llm_proxy = LLMProxy(port=4000)
+    # Optional Postgres URL for LiteLLM's virtual key store. When this
+    # file is present, LiteLLM can mint per-agent keys via /key/generate;
+    # otherwise the deployer falls back to the shared master key. See
+    # docs/design/framework-agnostic-runtime.md.
+    db_url_path = data_dir / ".litellm_db_url"
+    db_url = db_url_path.read_text().strip() if db_url_path.exists() else None
+    llm_proxy = LLMProxy(port=4000, database_url=db_url)
     channel_hub_router = MessageRouter()
     adapter_manager = AdapterManager(channel_hub_router)
     chat_messages = ChatMessageStore(data_dir / "chat.db")

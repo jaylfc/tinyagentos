@@ -174,6 +174,46 @@ class TestCloudBackends:
         cfg = generate_litellm_config(backends)
         assert [e["model_name"] for e in cfg["model_list"]] == ["default"]
 
+    def test_generate_config_warns_on_incomplete_cloud_backend(self, caplog):
+        """A cloud-type backend missing ``url`` or ``models`` should fire
+        a WARNING so silent drops surface in logs. Historical kilocode
+        regression slipped through precisely because this path was mute."""
+        import logging
+        backends = [
+            {"name": "headless-kilo", "type": "kilocode", "priority": 5,
+             "api_key_secret": "KILO_KEY"},
+            {"name": "blank-openrouter", "type": "openrouter",
+             "url": "https://openrouter.ai/api/v1", "priority": 6},
+        ]
+        with caplog.at_level(logging.WARNING, logger="tinyagentos.llm_proxy"):
+            generate_litellm_config(backends)
+
+        msgs = [r.getMessage() for r in caplog.records]
+        assert any(
+            "headless-kilo" in m and "missing url or models" in m and "type=kilocode" in m
+            for m in msgs
+        ), msgs
+        assert any(
+            "blank-openrouter" in m and "missing url or models" in m
+            for m in msgs
+        ), msgs
+
+    def test_generate_config_no_warning_on_complete_cloud_backend(self, caplog):
+        """Well-formed cloud entries (url + models) must not trigger the
+        incomplete-backend warning — otherwise operators lose the signal."""
+        import logging
+        backends = [{
+            "name": "ok-kilo", "type": "kilocode",
+            "url": "https://api.kilo.ai/api/gateway",
+            "models": [{"id": "kilo-auto/free"}],
+            "api_key_secret": "KILO_KEY",
+        }]
+        with caplog.at_level(logging.WARNING, logger="tinyagentos.llm_proxy"):
+            generate_litellm_config(backends)
+        assert not any(
+            "missing url or models" in r.getMessage() for r in caplog.records
+        )
+
     def test_generate_config_ollama_backend_unchanged(self):
         backends = [{
             "name": "pi",
@@ -196,6 +236,84 @@ class TestLLMProxy:
     def test_proxy_url(self):
         proxy = LLMProxy(port=14000)
         assert proxy.url == "http://localhost:14000"
+
+    def test_proxy_database_url_defaults_to_none(self):
+        proxy = LLMProxy(port=14000)
+        assert proxy.database_url is None
+
+    def test_proxy_database_url_persisted(self):
+        proxy = LLMProxy(port=14000, database_url="postgresql://u:p@h/db")
+        assert proxy.database_url == "postgresql://u:p@h/db"
+
+
+class TestDatabaseUrlPropagation:
+    @pytest.mark.asyncio
+    async def test_start_passes_database_url_when_set(self, monkeypatch):
+        """DATABASE_URL lands in the litellm subprocess env when configured."""
+        import shutil
+        import tinyagentos.llm_proxy as mod
+
+        class _FakeClient:
+            def __init__(self, *a, **kw): pass
+            async def __aenter__(self): return self
+            async def __aexit__(self, *exc): return False
+            async def get(self, url):
+                raise RuntimeError("no proxy")
+
+        monkeypatch.setattr(mod.httpx, "AsyncClient", _FakeClient)
+        monkeypatch.setattr(mod, "_pids_listening_on", lambda port: [])
+        monkeypatch.setattr(shutil, "which", lambda _: "/fake/litellm")
+
+        captured: dict = {}
+
+        class _FakePopen:
+            def __init__(self, *args, **kwargs):
+                captured["env"] = kwargs.get("env") or {}
+                # Raise so start() exits without spawning; the env we
+                # cared about was already captured.
+                raise FileNotFoundError("stubbed")
+
+        monkeypatch.setattr(mod.subprocess, "Popen", _FakePopen)
+
+        p = mod.LLMProxy(port=14001, database_url="postgresql://fake:pw@host/db")
+        await p.start(backends=[])
+
+        assert captured["env"]["DATABASE_URL"] == "postgresql://fake:pw@host/db"
+        assert captured["env"]["LITELLM_MASTER_KEY"] == "sk-taos-master"
+
+    @pytest.mark.asyncio
+    async def test_start_omits_database_url_when_unset(self, monkeypatch):
+        """No DATABASE_URL in env when the proxy was built without one."""
+        import shutil
+        import tinyagentos.llm_proxy as mod
+
+        class _FakeClient:
+            def __init__(self, *a, **kw): pass
+            async def __aenter__(self): return self
+            async def __aexit__(self, *exc): return False
+            async def get(self, url):
+                raise RuntimeError("no proxy")
+
+        monkeypatch.setattr(mod.httpx, "AsyncClient", _FakeClient)
+        monkeypatch.setattr(mod, "_pids_listening_on", lambda port: [])
+        monkeypatch.setattr(shutil, "which", lambda _: "/fake/litellm")
+        # Scrub any ambient DATABASE_URL from the test runner so we can
+        # assert the proxy didn't invent one.
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+
+        captured: dict = {}
+
+        class _FakePopen:
+            def __init__(self, *args, **kwargs):
+                captured["env"] = kwargs.get("env") or {}
+                raise FileNotFoundError("stubbed")
+
+        monkeypatch.setattr(mod.subprocess, "Popen", _FakePopen)
+
+        p = mod.LLMProxy(port=14002)
+        await p.start(backends=[])
+
+        assert "DATABASE_URL" not in captured["env"]
 
 
 class TestLLMProxyOwnership:

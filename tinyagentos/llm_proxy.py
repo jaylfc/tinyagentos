@@ -168,6 +168,16 @@ def generate_litellm_config(backends: list[dict], default_model: str = "default"
 
     for backend in sorted_backends:
         backend_type = backend.get("type", "ollama")
+        # Loudly flag cloud-type entries missing url/models so the next
+        # round of silent drops (the kilocode regression) is visible in
+        # logs instead of surfacing only as a broken agent much later.
+        if backend_type in CLOUD_BACKEND_TYPES:
+            if not backend.get("url") or not backend.get("models"):
+                logger.warning(
+                    "backend %s skipped — missing url or models (type=%s)",
+                    backend.get("name"),
+                    backend_type,
+                )
         prefix = CHAT_BACKEND_TYPE_MAP.get(backend_type, "openai")
         url = backend.get("url", "").rstrip("/")
         model_name = backend.get("model", "default")
@@ -286,11 +296,24 @@ def generate_litellm_config(backends: list[dict], default_model: str = "default"
 
 
 class LLMProxy:
-    """Manages LiteLLM proxy as a subprocess."""
+    """Manages LiteLLM proxy as a subprocess.
 
-    def __init__(self, port: int = 4000, config_dir: Path | None = None):
+    When ``database_url`` is set, it's exported as ``DATABASE_URL`` to
+    the LiteLLM subprocess so LiteLLM can connect to Postgres and issue
+    per-agent virtual keys via ``/key/generate``. Without it LiteLLM
+    runs in routing-only mode — virtual key endpoints return 5xx and
+    the deployer falls back to the shared master key.
+    """
+
+    def __init__(
+        self,
+        port: int = 4000,
+        config_dir: Path | None = None,
+        database_url: str | None = None,
+    ):
         self.port = port
         self.config_dir = config_dir or Path("/tmp/taos-litellm")
+        self.database_url = database_url
         self._process: subprocess.Popen | None = None
 
     @property
@@ -390,6 +413,11 @@ class LLMProxy:
         # deployer uses when auth'ing /key/generate and agent requests.
         env = os.environ.copy()
         env["LITELLM_MASTER_KEY"] = TAOS_LITELLM_MASTER_KEY
+        # DATABASE_URL enables Postgres-backed virtual keys. Without it
+        # LiteLLM still routes chat/embeddings fine but /key/generate
+        # returns a server error.
+        if self.database_url:
+            env["DATABASE_URL"] = self.database_url
 
         try:
             self._process = subprocess.Popen(

@@ -85,19 +85,35 @@ async def deploy_agent(req: DeployRequest) -> dict:
     if req.extra_config and req.extra_config.get("llm_proxy"):
         proxy = req.extra_config["llm_proxy"]
         if proxy.is_running():
-            llm_key = await proxy.create_agent_key(req.name)
+            # Scope the virtual key to exactly the models this agent is
+            # allowed to call. An empty list is preserved as empty (not
+            # ["default"]) when the agent was deployed without a model
+            # pick so mint failure isn't masked by an ambient alias.
+            key_models = [m for m in [req.model, *(req.fallback_models or [])] if m]
+            llm_key = await proxy.create_agent_key(req.name, models=key_models or None)
             if llm_key is None:
-                # No Postgres DB configured — LiteLLM is in routing-only
-                # mode and cannot issue virtual keys. Fall back to the
-                # shared master key so the container can still authenticate.
-                # Per-agent scoping, if needed, lives in the agent's own
-                # config rather than in LiteLLM.
-                from tinyagentos.llm_proxy import TAOS_LITELLM_MASTER_KEY
-                llm_key = TAOS_LITELLM_MASTER_KEY
-                logger.info(
-                    "deploy %s: LiteLLM routing-only mode — using shared master key (no DB configured for virtual keys)",
-                    req.name,
-                )
+                db_url = getattr(proxy, "database_url", None)
+                if db_url is None:
+                    # Routing-only mode — LiteLLM can't mint virtual keys
+                    # without a Postgres DB. Fall back to the shared master
+                    # key so the container can still authenticate.
+                    from tinyagentos.llm_proxy import TAOS_LITELLM_MASTER_KEY
+                    llm_key = TAOS_LITELLM_MASTER_KEY
+                    logger.info(
+                        "deploy %s: LiteLLM routing-only mode — using shared master key (no DB configured for virtual keys)",
+                        req.name,
+                    )
+                else:
+                    # DB configured but key mint failed — something else
+                    # is wrong (migration pending, DB unreachable, master
+                    # key mismatch). Don't silently fall back; that hides
+                    # the bug and ships broken agents.
+                    db_host = db_url.split("@")[-1] if "@" in db_url else db_url
+                    msg = (
+                        f"virtual key mint failed despite DB configured at {db_host}"
+                    )
+                    logger.error("deploy %s: %s", req.name, msg)
+                    return {"success": False, "error": msg, "steps": steps}
             from tinyagentos.llm_proxy import EMBEDDING_ALIAS
             # Primary key for openclaw's litellm provider.
             env["LITELLM_API_KEY"] = llm_key

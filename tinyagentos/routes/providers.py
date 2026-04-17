@@ -1,4 +1,8 @@
 from __future__ import annotations
+
+import logging
+
+import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -6,11 +10,66 @@ from tinyagentos.backend_adapters import get_adapter
 from tinyagentos.config import save_config_locked, VALID_BACKEND_TYPES
 from tinyagentos.lifecycle_manager import LifecycleManager
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 # Provider categories used by the UI to group entries. The backend
 # doesn't care about category for routing — it's purely display metadata.
 CLOUD_TYPES = {"openai", "anthropic", "openrouter", "kilocode"}
+
+# Defaults applied per-type when the Add Provider form doesn't supply
+# them. Covers the case where the UI collects just api_key + name and
+# relies on the server to know the canonical base URL.
+PROVIDER_URL_DEFAULTS: dict[str, str] = {
+    "kilocode": "https://api.kilo.ai/api/gateway",
+    "openai": "https://api.openai.com/v1",
+    "anthropic": "https://api.anthropic.com/v1",
+    "openrouter": "https://openrouter.ai/api/v1",
+}
+
+# Seed model list for cloud providers that don't expose an openly-listable
+# /v1/models endpoint — used as a last-resort fallback when /models probing
+# also fails. kilocode ships a documented "auto" alias that always routes
+# so we keep that as a safety net.
+PROVIDER_DEFAULT_MODELS: dict[str, list[dict]] = {
+    "kilocode": [{"id": "kilo-auto/free"}],
+}
+
+
+async def _discover_provider_models(
+    base_url: str, api_key: str | None, timeout: float = 5.0,
+) -> list[dict]:
+    """Probe ``{base_url}/models`` for an OpenAI-shaped model list.
+
+    Returns a list of ``{"id": ...}`` dicts on success, empty list on any
+    failure. Works for openai, anthropic, openrouter, kilocode — they all
+    expose an OpenAI-compatible models endpoint that returns
+    ``{"data": [{"id": "..."}]}``. Provider-agnostic: no per-type branching
+    so a new cloud provider with the same shape just works.
+    """
+    url = f"{base_url.rstrip('/')}/models"
+    headers = {}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.get(url, headers=headers)
+        if resp.status_code != 200:
+            logger.warning(
+                "provider model discovery at %s returned HTTP %d",
+                url, resp.status_code,
+            )
+            return []
+        body = resp.json()
+        data = body.get("data") if isinstance(body, dict) else None
+        if not isinstance(data, list):
+            return []
+        ids = [m.get("id") for m in data if isinstance(m, dict) and m.get("id")]
+        return [{"id": mid} for mid in ids]
+    except Exception as exc:
+        logger.warning("provider model discovery at %s failed: %s", url, exc)
+        return []
 
 
 def _categorise(provider: dict) -> str:
@@ -30,9 +89,10 @@ def _categorise(provider: dict) -> str:
 class ProviderCreate(BaseModel):
     name: str
     type: str
-    url: str
+    url: str | None = None
     priority: int = 99
     api_key_secret: str | None = None
+    models: list[dict] | list[str] | None = None
 
 class ProviderTest(BaseModel):
     type: str
@@ -180,7 +240,41 @@ async def add_provider(request: Request, body: ProviderCreate):
     config = request.app.state.config
     if any(b["name"] == body.name for b in config.backends):
         return JSONResponse({"error": f"Provider '{body.name}' already exists"}, status_code=409)
-    config.backends.append(body.model_dump(exclude_none=True))
+    entry = body.model_dump(exclude_none=True)
+    # Auto-fill canonical URL so a minimal Add Provider form (name +
+    # api_key) still produces a routable entry. Without this, a cloud
+    # provider saved without `url` never lands in LiteLLM's model_list.
+    if not entry.get("url") and entry.get("type") in PROVIDER_URL_DEFAULTS:
+        entry["url"] = PROVIDER_URL_DEFAULTS[entry["type"]]
+    if not entry.get("url"):
+        return JSONResponse({"error": "URL required for this provider type"}, status_code=400)
+    # Auto-discover models for cloud providers when the caller didn't
+    # supply any. Keeps the path generic across openai/anthropic/
+    # openrouter/kilocode — each exposes an OpenAI-shaped {url}/models.
+    # On probe failure we fall back to the per-type seed list (if any)
+    # so the entry still registers at least one routable model. The
+    # entry is saved either way so the user can refine in Settings.
+    if not entry.get("models") and entry.get("type") in CLOUD_TYPES:
+        api_key = None
+        secret_name = entry.get("api_key_secret")
+        if secret_name:
+            secrets = getattr(request.app.state, "secrets", None)
+            if secrets is not None:
+                try:
+                    rec = await secrets.get(secret_name)
+                    if rec:
+                        api_key = rec.get("value")
+                except Exception as exc:
+                    logger.warning(
+                        "secret lookup for %s failed during provider add: %s",
+                        secret_name, exc,
+                    )
+        discovered = await _discover_provider_models(entry["url"], api_key)
+        if discovered:
+            entry["models"] = discovered
+        elif entry.get("type") in PROVIDER_DEFAULT_MODELS:
+            entry["models"] = list(PROVIDER_DEFAULT_MODELS[entry["type"]])
+    config.backends.append(entry)
     await save_config_locked(config, config.config_path)
     # Reconfigure LLM proxy if running
     proxy = getattr(request.app.state, "llm_proxy", None)
