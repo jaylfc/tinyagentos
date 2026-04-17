@@ -1,17 +1,19 @@
 """Agent deployment — create container, install framework, start.
 
-Honours the framework-agnostic runtime rule: containers hold code, hosts
-hold state. See ``docs/design/framework-agnostic-runtime.md``. This
-deployer installs only the agent framework into the container. Memory,
-workspace, secrets, and the embedding service all live on the host and
-reach the container via bind mounts or injected service URLs.
+Snapshot model (Phase 2.A): the container rootfs holds everything.
+workspace, memory, and home live inside the container image rather than
+as host-side bind mounts. The only bind mount is the trace directory
+so the host trace-API can read events without incus exec per request.
 
-A container produced by this deployer can be destroyed and rebuilt from
-the image with zero user-visible state loss, which is the whole point.
+See ``docs/design/architecture-pivot-v2.md`` §3 and §10 for the full
+rationale. The archive unit is the container snapshot; state travels
+with the container, not with separately-moved host directories.
+
+A container produced by this deployer can be snapshot-exported as a
+single tarball for atomic archive and restore.
 """
 from __future__ import annotations
 
-import json
 import logging
 import os
 from dataclasses import dataclass, field
@@ -26,80 +28,12 @@ from tinyagentos.containers import (
 logger = logging.getLogger(__name__)
 
 
-def _write_openclaw_bootstrap(
-    *,
-    host_home: Path,
-    slug: str,
-    llm_key: str | None,
-    model: str | None,
-    data_dir: Path,
-    taos_host: str,
-    taos_port: int,
-) -> None:
-    """Write openclaw.json + .openclaw/env into the agent-home host dir.
-
-    The full agent-home dir is bind-mounted to /root inside the container,
-    so the container sees these files at /root/.openclaw/... on first start.
-    The openclaw systemd unit (written by install.sh) reads them via its
-    EnvironmentFile directive and the gateway reads openclaw.json on startup.
-
-    Called before create_container so the files exist by the time the
-    container first runs install.sh and the systemd unit starts.
-    """
-    openclaw_dir = host_home / ".openclaw"
-    openclaw_dir.mkdir(parents=True, exist_ok=True)
-    openclaw_dir.chmod(0o700)
-
-    # Bootstrap config: taos LiteLLM provider + gateway binding.
-    config = {
-        "gateway": {
-            "bind": "loopback",
-            "port": 18789,
-            "auth": {
-                "mode": "token",
-            },
-        },
-        "channels": {},
-        "models": {
-            "providers": [
-                {
-                    "id": "taos",
-                    "api": "openai-completions",
-                    "baseUrl": f"http://127.0.0.1:4000/v1",
-                    "apiKey": llm_key or "",
-                    "default_model": model,
-                }
-            ]
-        },
-    }
-    config_path = openclaw_dir / "openclaw.json"
-    config_path.write_text(json.dumps(config, indent=2))
-
-    # env file: bridge patch reads these on startup.
-    local_token = ""
-    try:
-        token_path = data_dir / ".auth_local_token"
-        if token_path.exists():
-            local_token = token_path.read_text().strip()
-    except Exception:
-        pass
-
-    env_lines = [
-        f"TAOS_BRIDGE_URL=http://{taos_host}:{taos_port}",
-        f"TAOS_LOCAL_TOKEN={local_token}",
-        f"TAOS_AGENT_NAME={slug}",
-    ]
-    env_path = openclaw_dir / "env"
-    env_path.write_text("\n".join(env_lines) + "\n")
-    env_path.chmod(0o600)
-
-
 @dataclass
 class DeployRequest:
     name: str
     framework: str        # agent framework app_id
     model: str | None     # model app_id (optional)
-    data_dir: Path        # host data dir — all per-agent state lives under here
+    data_dir: Path        # host data dir — trace and shared state live here
     color: str = "#888888"
     memory_limit: str | None = None
     cpu_limit: int | None = None
@@ -110,45 +44,42 @@ class DeployRequest:
     # 127.0.0.1 on the host.
     taos_host: str = "127.0.0.1"
     taos_port: int = 6969
+    # Per §10.10: default 40 GiB rootfs quota. Overridable per-agent at
+    # deploy time. None disables quota (unlimited, e.g. for dev/test).
+    root_size_gib: int = 40
 
 
 async def deploy_agent(req: DeployRequest) -> dict:
     """Full agent deployment: create container → install framework → start.
 
+    Snapshot model: the container rootfs holds workspace, memory, and home.
+    ONE bind mount for traces only — host_trace_dir → /root/.taos/trace/ —
+    so the host trace-API can read without incus exec per request.
+
     Rolls back (destroys container) on any critical failure after creation.
-    No per-agent state is written inside the container — everything the
-    agent needs reaches it via bind mounts (``/workspace``, ``/memory``)
-    or injected service URL env vars (LLM proxy, embeddings, skills, user
-    memory). Destroying and re-running this on the same name is safe.
+    Re-running on the same name is safe if the previous container was cleaned
+    up (idempotent at the deploy level).
     """
     import asyncio
 
     container_name = f"taos-agent-{req.name}"
     steps = []
 
-    # Per-agent host-side state directories. These are the mounts the
-    # container sees at /workspace, /memory, and /root. Created if missing
-    # so the first deploy of a new agent just works.
-    host_workspace = req.data_dir / "agent-workspaces" / req.name
-    host_memory = req.data_dir / "agent-memory" / req.name
-    host_home = req.data_dir / "agent-home" / req.name
-    host_workspace.mkdir(parents=True, exist_ok=True)
-    host_memory.mkdir(parents=True, exist_ok=True)
-    host_home.mkdir(parents=True, exist_ok=True)
+    # Trace directory on the host — the only host-side path this deployer
+    # creates. Layout matches the target for Phase 2.C trace_store migration:
+    # {data_dir}/trace/{slug}/ → /root/.taos/trace/ inside container.
+    host_trace = req.data_dir / "trace" / req.name
+    host_trace.mkdir(parents=True, exist_ok=True)
 
+    # ONE bind mount: trace only.
     mounts = [
-        (str(host_workspace), "/workspace"),
-        (str(host_memory), "/memory"),
-        (str(host_home), "/root"),
+        (str(host_trace), "/root/.taos/trace"),
     ]
 
-    # Env vars injected at container creation time — all point at host
-    # services so the container holds zero config it would lose on rebuild.
+    # Env vars injected at container creation time.
     env: dict[str, str] = {}
 
-    # LLM proxy (LiteLLM). The proxy is also the embedding endpoint in the
-    # default configuration: LiteLLM exposes POST /v1/embeddings and will
-    # route to whichever embedding model the host catalog configures.
+    # LLM proxy (LiteLLM).
     llm_key = None
     if req.extra_config and req.extra_config.get("llm_proxy"):
         proxy = req.extra_config["llm_proxy"]
@@ -162,9 +93,7 @@ async def deploy_agent(req: DeployRequest) -> dict:
                 # OpenAI-compatible /v1/embeddings. Framework-agnostic.
                 env["TAOS_EMBEDDING_URL"] = f"{proxy.url}/v1/embeddings"
                 # Stable alias the host LiteLLM routes to whichever
-                # concrete embedding model the backends actually have
-                # loaded. Agents pick this up and pass it as the `model`
-                # field of their embedding requests.
+                # concrete embedding model the backends actually have loaded.
                 env["TAOS_EMBEDDING_MODEL"] = EMBEDDING_ALIAS
 
     # User memory (optional, permission-gated)
@@ -183,19 +112,14 @@ async def deploy_agent(req: DeployRequest) -> dict:
         f"{skill_server_url}/tools?agent_name={req.name}"
     )
     env["TAOS_AGENT_NAME"] = req.name
-    # Agent's home folder is bind-mounted from the host so framework
-    # configs, dotfiles, caches, and cloned repos persist across
-    # container rebuilds and travel with the agent on archive / move.
+    # Home is always /root inside the container (rootfs).
     env["TAOS_AGENT_HOME"] = "/root"
 
-    # Selected model name — the in-container agent runtime reads this
-    # and passes it as the ``model`` field on LLM calls so the host's
-    # LiteLLM proxy routes to the right backend.
+    # Selected model name.
     if req.model:
         env["TAOS_MODEL"] = req.model
 
-    # Trace capture — local auth token + trace API URL so the container
-    # runtime can POST events directly into the per-agent trace store.
+    # Trace capture — local auth token + trace API URL.
     try:
         local_token_path = req.data_dir / ".auth_local_token"
         if local_token_path.exists():
@@ -204,28 +128,18 @@ async def deploy_agent(req: DeployRequest) -> dict:
         pass
     env["TAOS_TRACE_URL"] = f"http://{req.taos_host}:{req.taos_port}/api/trace"
 
-    # openclaw bootstrap: write openclaw.json + .openclaw/env into agent-home
-    # host-side so they are visible inside the container at /root/.openclaw/
-    # on first start (before install.sh runs, but consumed by the systemd unit
-    # that install.sh writes).
-    #
-    # session_id == req.name (slug) for MVP. The bridge endpoints already key
-    # their state on agent name, so minting a separate UUID adds no value at
-    # this stage. A future task can promote it to a persisted UUID if needed.
-    _write_openclaw_bootstrap(
-        host_home=host_home,
-        slug=req.name,
-        llm_key=llm_key,
-        model=req.model,
-        data_dir=req.data_dir,
-        taos_host=req.taos_host,
-        taos_port=req.taos_port,
-    )
+    # openclaw bridge connection info — injected so install.sh can write
+    # /root/.openclaw/openclaw.json and /root/.openclaw/env inside the container
+    # from these env vars. Bridge URL is how the openclaw service phones home.
+    env["TAOS_BRIDGE_URL"] = f"http://{req.taos_host}:{req.taos_port}"
+    # OPENAI_BASE_URL defaults to LiteLLM proxy if no llm_proxy in config.
+    if "OPENAI_BASE_URL" not in env:
+        env["OPENAI_BASE_URL"] = "http://127.0.0.1:4000/v1"
+    if "OPENAI_API_KEY" not in env:
+        env["OPENAI_API_KEY"] = ""
 
-    # Step 1: Create container with mounts + env baked in at launch time.
-    # Pass host_uid so incus maps container root to the taOS process owner,
-    # allowing the container to write to host-owned bind-mount directories
-    # (e.g. agent-home, where openclaw writes runtime config).
+    # Step 1: Create container with trace mount + env baked in at launch time.
+    # root_size_gib applies the disk quota (40 GiB default per §10.10).
     logger.info(f"Creating container {container_name}")
     result = await create_container(
         container_name,
@@ -235,6 +149,7 @@ async def deploy_agent(req: DeployRequest) -> dict:
         mounts=mounts,
         env=env,
         host_uid=os.getuid(),
+        root_size_gib=req.root_size_gib,
     )
     if not result["success"]:
         return {"success": False, "error": f"Container creation failed: {result.get('error')}", "steps": steps}
@@ -242,11 +157,7 @@ async def deploy_agent(req: DeployRequest) -> dict:
 
     try:
         # Incus proxy devices: let the container reach host services via
-        # its own 127.0.0.1. The openai SDK (pointed at OPENAI_BASE_URL)
-        # and the skills / user-memory clients all hit localhost:<port>
-        # inside the container — the deployer doesn't need to inject a
-        # host IP or rely on DNS. If either add fails, bail: without
-        # these the agent has no LLM and no host-side services.
+        # its own 127.0.0.1.
         proxy_ports = [
             ("taos-proxy-litellm", 4000),
             ("taos-proxy-taos", req.taos_port),
@@ -285,14 +196,12 @@ async def deploy_agent(req: DeployRequest) -> dict:
         steps.append("deps_installed")
 
         # Step 4: Install agent framework (if specified and not just "none").
-        # This is the only thing beyond the base OS that lives in the image.
         if req.framework and req.framework != "none":
             manifest = None
             if req.extra_config and req.extra_config.get("registry"):
                 manifest = req.extra_config["registry"].get(req.framework)
 
             if manifest is None:
-                # Fallback: no registry or manifest not found — pip install by framework id
                 method = "pip"
                 package = req.framework
             else:
@@ -355,15 +264,11 @@ async def deploy_agent(req: DeployRequest) -> dict:
 async def undeploy_agent(name: str, *, data_dir: Path | None = None, delete_state: bool = False) -> dict:
     """Stop and destroy an agent's container.
 
-    Host-side state (workspace, memory, secret grants) is left alone by
-    default — the rule says containers are disposable, state is the identity.
-    Rerun ``deploy_agent`` with the same name to bring the agent back exactly
-    as it was.
-
-    When ``delete_state=True`` and ``data_dir`` is provided, this call also
-    wipes the host-side workspace (``agent-workspaces/{name}``) and memory
-    (``agent-memory/{name}``) directories. This is destructive and
-    irreversible — only call it on a true delete, not a stop/rebuild flow.
+    In the snapshot model, all state lives inside the container rootfs.
+    The only host-side path this deployer creates is the trace directory
+    (``{data_dir}/trace/{name}``). Pass ``delete_state=True`` to also
+    remove it, but note this is destructive and irreversible — only do
+    so on a true delete, not a stop/rebuild flow.
     """
     container_name = f"taos-agent-{name}"
     result = await destroy_container(container_name)
