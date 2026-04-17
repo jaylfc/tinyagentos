@@ -3,42 +3,90 @@
 # Runs once inside a fresh Debian bookworm LXC container.
 # Idempotent: safe to re-run on an already-provisioned container.
 #
-# Pinned to jaylfc/openclaw at upstream main (SHA: be7a415eb096)
-# Fork tracks upstream main; taos-fork branch carries the bridge patch.
+# Installs openclaw from prebuilt tarballs published by jaylfc/openclaw taos-fork CI.
+# The fork's .github/workflows/release.yml builds per-arch tarballs on every push.
 set -euo pipefail
 
-echo "[openclaw] installing Node 22.x (NodeSource) + openclaw from jaylfc fork"
+echo "[openclaw] installing Node 22.x (NodeSource) + openclaw prebuilt from GitHub Releases"
 
 # ---------------------------------------------------------------------------
 # 1. Node 22.14+ via NodeSource (Debian bookworm default is Node 18, too old).
-#    Also ensure git is present — npm's github: shorthand uses git to clone.
+#    Also ensure 'file' is present — used to sanity-check the downloaded tarball.
 # ---------------------------------------------------------------------------
 if ! command -v node >/dev/null 2>&1 || [ "$(node -v | sed 's/^v//; s/\..*//')" -lt 22 ]; then
   curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
   DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nodejs
 fi
-if ! command -v git >/dev/null 2>&1; then
-  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git
+if ! command -v file >/dev/null 2>&1; then
+  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends file
 fi
 
-# ---------------------------------------------------------------------------
-# 2. openclaw from our fork (taos-fork branch).
-# Fork baseline tracks upstream main; the taos-fork branch adds the bridge patch.
+# ----------------------------------------------------------------------
+# 2. Install openclaw from a prebuilt tarball published by the fork's CI.
+# This avoids any build-at-deploy time. The fork's GitHub Actions
+# workflow .github/workflows/release.yml builds a fresh tarball per
+# architecture on every push to taos-fork and publishes them as assets
+# on the "rolling" Release. We always grab the latest.
 #
-# Use npm's github: shorthand (NOT a tarball URL) so npm's prepare
-# script fires. The prepare script detects it is outside a git work tree
-# (i.e. an npm global install) and runs `pnpm build:docker` in the
-# destination, producing dist/entry.js at install time.
-#
-# Tarball URLs skip the prepare lifecycle entirely — that is why prebuilt
-# dist/ kept landing as incomplete and crashing openclaw.mjs:178.
-#
-# corepack is bundled with Node 22 (no apt install needed). The pnpm
-# build step adds ~2-3 minutes on arm64 Pi hardware.
-# ---------------------------------------------------------------------------
-corepack enable
-corepack prepare pnpm@latest --activate
-npm install -g github:jaylfc/openclaw#taos-fork
+# If GitHub is unreachable we FAIL — there is no build fallback. Build
+# at deploy time was tried and is brittle (workspace deps, partial
+# artefacts, slow on arm64); the right fix is to make the prebuilt path
+# reliable, not to paper over its absence.
+# ----------------------------------------------------------------------
+
+# Architecture detection
+ARCH=$(uname -m)
+case "$ARCH" in
+  aarch64|arm64) NPM_ARCH=arm64 ;;
+  x86_64|amd64)  NPM_ARCH=x64 ;;
+  *)
+    echo "[openclaw] FATAL: unsupported architecture $ARCH"
+    echo "[openclaw] supported: aarch64, x86_64"
+    echo "[openclaw] open an issue at github.com/jaylfc/openclaw if you need another arch."
+    exit 1
+    ;;
+esac
+
+TARBALL_URL="https://github.com/jaylfc/openclaw/releases/latest/download/openclaw-taos-fork-linux-${NPM_ARCH}.tgz"
+TARBALL_DEST="/tmp/openclaw-taos-fork-${NPM_ARCH}.tgz"
+
+echo "[openclaw] downloading prebuilt tarball for ${NPM_ARCH} from GitHub Releases"
+if ! curl -fsSL --max-time 120 -o "$TARBALL_DEST" "$TARBALL_URL"; then
+  echo "[openclaw] FATAL: cannot download $TARBALL_URL"
+  echo "[openclaw] check network connectivity to github.com from inside this container."
+  echo "[openclaw] cf. docs/runbooks/openclaw-install-troubleshooting.md"
+  exit 1
+fi
+
+# Sanity check the file we got
+if ! [ -s "$TARBALL_DEST" ]; then
+  echo "[openclaw] FATAL: downloaded tarball is empty"
+  exit 1
+fi
+file "$TARBALL_DEST" | grep -qE "gzip|compressed" || {
+  echo "[openclaw] FATAL: downloaded file is not a gzipped tarball:"
+  file "$TARBALL_DEST"
+  head -c 500 "$TARBALL_DEST"
+  exit 1
+}
+
+# Install from the local file (no network re-fetch, no build)
+echo "[openclaw] installing $TARBALL_DEST"
+npm install -g --unsafe-perm "$TARBALL_DEST"
+
+# Cleanup the downloaded tarball — keeps container small
+rm -f "$TARBALL_DEST"
+
+# Verify entry exists
+if [ ! -f /usr/lib/node_modules/openclaw/dist/entry.js ] && [ ! -f /usr/lib/node_modules/openclaw/dist/entry.mjs ]; then
+  echo "[openclaw] FATAL: install completed but dist/entry.{js,mjs} missing"
+  echo "[openclaw] this means the published tarball is broken. report at:"
+  echo "  github.com/jaylfc/openclaw/issues — include the URL above and the build SHA."
+  ls -la /usr/lib/node_modules/openclaw/dist/ | head -10
+  exit 1
+fi
+
+echo "[openclaw] install OK"
 
 # ------------------------------------------------------------------
 # 2a. Bootstrap config + env for the openclaw bridge. Written from env
