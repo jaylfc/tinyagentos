@@ -376,6 +376,8 @@ so containers always have working networking before the first agent is started.
 the unit. Set `BRIDGES` in the unit's environment to cover additional bridges
 beyond `incusbr0`.
 
+See `docs/design/lxc-docker-coexistence.md` for the full policy, install-scenario coverage, and operational runbook.
+
 ## Related code
 
 - `tinyagentos/trace_store.py` — `AgentTraceStore` + `TraceStoreRegistry`
