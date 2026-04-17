@@ -80,7 +80,8 @@ POST /api/agents/{name}/start
 POST /api/agents/{name}/stop
 POST /api/agents/{name}/restart
 GET  /api/agents/{name}/logs
-DELETE /api/agents/{name}/destroy  — stop + delete container + deregister
+DELETE /api/agents/{name}          — archive agent (stop + rename container + move dirs)
+DELETE /api/agents/archived/{id}   — purge archived agent (irreversible)
 ```
 
 ## Implementation Priority
