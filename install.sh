@@ -64,6 +64,19 @@ if [ ! -f "$DATA_DIR/config.yaml" ]; then
     cp "$INSTALL_DIR/data/config.yaml" "$DATA_DIR/config.yaml"
 fi
 
+# Install host firewall scripts (allow incus bridge through docker's FORWARD DROP)
+echo ""
+echo "Installing host firewall scripts..."
+mkdir -p /opt/tinyagentos/scripts
+for fw_script in host-firewall-up.sh host-firewall-down.sh; do
+    cp "$INSTALL_DIR/scripts/$fw_script" /opt/tinyagentos/scripts/
+    chmod +x /opt/tinyagentos/scripts/$fw_script
+done
+cp "$INSTALL_DIR/systemd/tinyagentos-host-firewall.service" /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now tinyagentos-host-firewall.service
+echo "Host firewall service status: $(systemctl is-active tinyagentos-host-firewall.service)"
+
 # Install systemd service
 echo "Installing systemd service..."
 cat > /etc/systemd/system/tinyagentos.service << EOF

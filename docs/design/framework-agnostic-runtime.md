@@ -348,6 +348,34 @@ path breaks.
 - Issues #29, #30, #32, #33, #34 — backend-driven scheduler wiring, the
   reason this cleanup unblocks real work
 
+## Host firewall: incus through docker's DROP
+
+When Docker and incus are both installed on the same host, Docker sets the
+kernel's `FORWARD` policy to `DROP` and inserts a `DOCKER-USER` jump at the
+top of the `FILTER FORWARD` chain. Docker then populates its own `DOCKER`
+chain with `ACCEPT` rules — but only for bridges it manages. Incus-created
+bridges (`incusbr0` by default) never appear in those rules, so all forwarded
+traffic from taOS agent containers falls through to the DROP policy. The
+symptom is selective connectivity loss inside containers: domains routed via
+Cloudflare's CDN (with short-TTL cached paths) may still appear reachable
+while direct TCP to others (e.g. github.com) times out.
+
+The Docker-documented fix is to insert `ACCEPT` rules into `DOCKER-USER`
+for the bridges that Docker doesn't manage.
+
+`scripts/host-firewall-up.sh` does this idempotently at boot: it checks
+whether `DOCKER-USER` exists (no-op if Docker isn't installed), then inserts
+`-i incusbr0 -j ACCEPT` and `-o incusbr0 -j ACCEPT` guards before the DROP
+fall-through, skipping each insertion if it's already present.
+`scripts/host-firewall-down.sh` reverses this on service stop.
+
+`systemd/tinyagentos-host-firewall.service` is a `Type=oneshot RemainAfterExit`
+unit ordered `After=docker.service incus.service` and `Before=tinyagentos.service`,
+so containers always have working networking before the first agent is started.
+`install.sh` drops the scripts into `/opt/tinyagentos/scripts/` and enables
+the unit. Set `BRIDGES` in the unit's environment to cover additional bridges
+beyond `incusbr0`.
+
 ## Related code
 
 - `tinyagentos/trace_store.py` — `AgentTraceStore` + `TraceStoreRegistry`

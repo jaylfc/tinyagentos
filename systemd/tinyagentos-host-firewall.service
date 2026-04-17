@@ -1,0 +1,15 @@
+[Unit]
+Description=tinyagentos host firewall rules (allow incus bridge through docker DROP)
+After=network-online.target docker.service incus.service
+Before=tinyagentos.service
+Wants=network-online.target
+ConditionPathExists=/usr/sbin/iptables
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/tinyagentos/scripts/host-firewall-up.sh
+ExecStop=/opt/tinyagentos/scripts/host-firewall-down.sh
+
+[Install]
+WantedBy=multi-user.target
