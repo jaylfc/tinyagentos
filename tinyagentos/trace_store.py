@@ -1,13 +1,12 @@
 """Per-agent hourly-bucketed trace store for the librarian / zero-loss layer.
 
 Every LLM call, tool invocation, and agent message boundary is captured
-here. Files live inside each agent's home-folder mount so archive,
-restore, backup, and cross-worker migration all work via the existing
-"move the home folder" mechanism — the rule from
-docs/design/framework-agnostic-runtime.md.
+here. Files live on a dedicated host path that is bind-mounted into the
+container at /root/.taos/trace/ — the single persistent trace mount in
+the Phase 2 snapshot model (docs/design/architecture-pivot-v2.md §3.3).
 
 Layout:
-    {data_dir}/agent-home/{slug}/.taos/trace/
+    {data_dir}/trace/{slug}/
         YYYY-MM-DDTHH.db       # primary: aiosqlite, one per UTC hour
         YYYY-MM-DDTHH.jsonl    # fallback: appended only on DB failure
 
@@ -102,7 +101,7 @@ def _bucket_key(ts: float) -> str:
 
 
 def _agent_trace_dir(data_dir: Path, slug: str) -> Path:
-    return data_dir / "agent-home" / slug / ".taos" / "trace"
+    return data_dir / "trace" / slug
 
 
 def _bucket_db_path(data_dir: Path, slug: str, bucket: str) -> Path:

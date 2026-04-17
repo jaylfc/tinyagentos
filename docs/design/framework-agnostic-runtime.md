@@ -194,19 +194,22 @@ archive, restore, and backup.
 
 ## Per-agent trace capture
 
-Every agent's trace events land inside its home folder so they travel with the
-agent on archive, restore, and backup with no extra steps.
+Every agent's trace events land in a dedicated host directory that is
+bind-mounted into the container at `/root/.taos/trace/`. This is the single
+persistent host mount in the Phase 2 snapshot model
+(docs/design/architecture-pivot-v2.md §3.3). Separating the trace store from
+the home-folder snapshot means traces accumulate on the host regardless of
+container lifecycle and are accessible to the host API without entering the
+container.
 
 **Path layout.**
 
 ```
-{data_dir}/agent-home/{slug}/.taos/trace/
+{data_dir}/trace/{slug}/
     YYYY-MM-DDTHH.db        primary: one aiosqlite DB per UTC hour
     YYYY-MM-DDTHH.jsonl     fallback: appended only when the DB write fails
+    YYYY-MM-DDTHH.late.jsonl late-arrival sidecar for sealed buckets
 ```
-
-A future `.late.jsonl` file will hold events whose bucket has already been
-closed; the store does not yet produce one but the naming is reserved.
 
 **Hourly buckets.** One file per UTC hour bounds individual file size and
 matches the librarian's natural query scope — a single summarisation pass
@@ -216,8 +219,10 @@ flushed at 15:00:00.001 still lands in the T14 file; rollover never drops
 events. The registry keeps the current and previous hour open and closes
 older connections opportunistically.
 
-**Why per-agent.** The trace files live inside `agent-home/{slug}/`, the same
-root that archive and restore moves. No separate migration step is needed.
+**Why separate from home.** The trace directory is a dedicated bind-mount rather
+than a path inside `agent-home/{slug}/`. Traces accumulate on the host through
+snapshot replacements and are always reachable by the host API at
+`{data_dir}/trace/{slug}/` without entering the container.
 
 **Envelope v1 fields.**
 
@@ -268,9 +273,10 @@ dedicated clone endpoint.
 5. Flags the agent's DM channel archived in the chat store.
 6. Moves the config entry from `config.agents` to `config.archived_agents`.
 
-**What stays with the archive.** Trace data lives inside `agent-home/{slug}/.taos/trace/`,
-which moves with the home folder in step 3. Pre-archive trace history is
-fully preserved.
+**What stays with the archive.** Trace data lives in `{data_dir}/trace/{slug}/`
+on the host and is NOT moved during archive — it remains accessible by the
+host API for forensics after the agent is archived. Pre-archive trace history
+is fully preserved.
 
 **Restore path** (`POST /api/agents/archived/{id}/restore`). Slug collision
 is handled by appending a numeric suffix (`foo` → `foo-2`). A new LiteLLM
