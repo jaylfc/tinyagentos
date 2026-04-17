@@ -10,12 +10,52 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import signal
 import subprocess
+import time
 from pathlib import Path
 
 import httpx
 
 logger = logging.getLogger(__name__)
+
+
+def _pid_alive(pid: int) -> bool:
+    """Return True if ``pid`` is alive (signal 0 succeeds)."""
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # Process exists but we don't own it — still alive.
+        return True
+
+
+def _pids_listening_on(port: int) -> list[int]:
+    """Best-effort lookup of PIDs holding a TCP listen on ``port``.
+
+    Uses ``lsof -ti:<port>`` which is available on macOS, most Linux
+    distros, and the Fedora LXC we ship on the Pi. Returns ``[]`` when
+    ``lsof`` is missing, errors, or reports nothing.
+    """
+    try:
+        out = subprocess.check_output(
+            ["lsof", "-ti", f":{port}"], text=True, stderr=subprocess.DEVNULL
+        ).strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return []
+    pids: list[int] = []
+    for line in out.split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            pids.append(int(line))
+        except ValueError:
+            continue
+    return pids
 
 # Map TinyAgentOS backend types to LiteLLM model prefixes
 BACKEND_TYPE_MAP = {
@@ -244,23 +284,18 @@ class LLMProxy:
         self.port = port
         self.config_dir = config_dir or Path("/tmp/taos-litellm")
         self._process: subprocess.Popen | None = None
-        self._adopted: bool = False
 
     @property
     def url(self) -> str:
         return f"http://localhost:{self.port}"
 
     def is_running(self) -> bool:
-        """True if we're either running a LiteLLM subprocess we spawned,
-        or we adopted a pre-existing one from a previous taOS run.
+        """True iff we own a live LiteLLM subprocess.
 
-        The adopt case is the common one in production: taOS restarts,
-        the LiteLLM subprocess from the prior session is still up on the
-        port, ``start()`` detects it and records ``_adopted=True`` rather
-        than spawning a duplicate.
+        We never adopt a foreign process — ``start()`` terminates any
+        stranger on our port and spawns its own — so the only running
+        state worth reporting is "our Popen is still alive".
         """
-        if self._adopted:
-            return True
         if not self._process:
             return False
         return self._process.poll() is None
@@ -276,24 +311,55 @@ class LLMProxy:
         return config_path
 
     async def start(self, backends: list[dict]) -> bool:
-        """Start LiteLLM proxy with auto-generated config."""
+        """Start LiteLLM proxy with auto-generated config.
+
+        If another process (a stale taOS, a manual launch) is already on
+        our port, terminate it first — adopting it is unsafe because the
+        foreign instance may have been started with a different master
+        key or an outdated model config that the UI cannot update
+        without a SIGHUP we have no PID for.
+        """
         if self.is_running():
             return True
 
-        # Check if a litellm process from a previous taOS run is already
-        # listening on our port. If so, adopt it rather than spawning a
-        # duplicate (which would fail to bind and sit idle, leaking memory).
+        # Detect any foreign process on our port and terminate it so we
+        # can spawn with the current config + master key.
         try:
             async with httpx.AsyncClient(timeout=3) as client:
                 resp = await client.get(f"{self.url}/health")
-                if resp.status_code == 200:
-                    logger.info("LiteLLM proxy already running on port %d (adopted from previous run)", self.port)
-                    self._adopted = True
-                    # Rewrite config so it reflects current backends
-                    self.write_config(backends)
-                    return True
+                port_in_use = resp.status_code < 500
         except Exception:
-            pass  # Not running — proceed to start
+            port_in_use = False
+
+        if port_in_use:
+            pids = _pids_listening_on(self.port)
+            if pids:
+                logger.info(
+                    "LiteLLM on port %d owned by foreign PID(s) %r — "
+                    "terminated so taOS can spawn its own",
+                    self.port,
+                    pids,
+                )
+                for pid in pids:
+                    try:
+                        os.kill(pid, signal.SIGTERM)
+                    except ProcessLookupError:
+                        pass
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline and any(_pid_alive(p) for p in pids):
+                    await asyncio.sleep(0.2)
+                for pid in pids:
+                    if _pid_alive(pid):
+                        try:
+                            os.kill(pid, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+            else:
+                logger.warning(
+                    "LiteLLM responding on port %d but no owning PID "
+                    "discovered (lsof missing?) — spawn may fail to bind",
+                    self.port,
+                )
 
         config_path = self.write_config(backends)
 
@@ -348,26 +414,15 @@ class LLMProxy:
                 self._process.kill()
             self._process = None
             logger.info("LiteLLM proxy stopped")
-        self._adopted = False
 
     async def reload_config(self, backends: list[dict]) -> bool:
         """Rewrite the LiteLLM config with a new backend list and signal
-        the proxy to re-read it. SIGHUP on processes we own; a best-effort
-        config rewrite on processes we adopted (we don't have their PID).
+        the proxy to re-read it via SIGHUP. Falls back to a full restart
+        if signalling fails.
         """
-        import signal
-
         new_path = self.write_config(backends)
         if not self.is_running():
             return False
-
-        # Adopted proxy — we have no PID to signal. Write the config and
-        # rely on LiteLLM to pick it up on its next request cycle. Users
-        # who need immediate effect can restart taOS (which releases
-        # adoption) and relaunch it.
-        if self._adopted and self._process is None:
-            logger.info("LiteLLM proxy reload: adopted instance, config rewritten to %s (no SIGHUP available)", new_path)
-            return True
 
         try:
             assert self._process is not None
@@ -401,6 +456,11 @@ class LLMProxy:
                 if resp.status_code == 200:
                     data = resp.json()
                     return data.get("key", data.get("token"))
+                logger.warning(
+                    "LiteLLM /key/generate returned %d for agent=%s body=%.200s",
+                    resp.status_code, agent_name, resp.text,
+                )
+                return None
         except Exception as e:
             logger.warning(f"Failed to create LiteLLM key for {agent_name}: {e}")
         return None
@@ -413,7 +473,13 @@ class LLMProxy:
             async with httpx.AsyncClient(timeout=10) as client:
                 resp = await client.post(f"{self.url}/key/delete", json={"keys": [key]},
                                           headers={"Authorization": "Bearer sk-taos-master"})
-                return resp.status_code == 200
+                if resp.status_code == 200:
+                    return True
+                logger.warning(
+                    "LiteLLM /key/delete returned %d body=%.200s",
+                    resp.status_code, resp.text,
+                )
+                return False
         except Exception:
             return False
 
@@ -427,6 +493,10 @@ class LLMProxy:
                                          headers={"Authorization": "Bearer sk-taos-master"})
                 if resp.status_code == 200:
                     return resp.json()
+                logger.warning(
+                    "LiteLLM /key/info returned %d body=%.200s",
+                    resp.status_code, resp.text,
+                )
         except Exception:
             pass
         return None

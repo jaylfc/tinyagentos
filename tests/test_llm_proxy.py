@@ -189,49 +189,91 @@ class TestLLMProxy:
         assert proxy.url == "http://localhost:14000"
 
 
-class TestLLMProxyAdoption:
+class TestLLMProxyOwnership:
     def test_is_running_false_by_default(self):
         from tinyagentos.llm_proxy import LLMProxy
         p = LLMProxy(port=4000)
         assert p.is_running() is False
 
-    def test_is_running_true_after_adoption_flag_set(self):
-        from tinyagentos.llm_proxy import LLMProxy
-        p = LLMProxy(port=4000)
-        p._adopted = True
-        assert p.is_running() is True
-
-    def test_stop_clears_adopted(self):
-        from tinyagentos.llm_proxy import LLMProxy
-        p = LLMProxy(port=4000)
-        p._adopted = True
-        p.stop()
-        assert p._adopted is False
-        assert p.is_running() is False
-
     @pytest.mark.asyncio
-    async def test_start_adopts_existing_healthy_proxy(self, monkeypatch):
-        """When a LiteLLM proxy is already answering on the port, start()
-        adopts it instead of spawning a duplicate, and is_running() must
-        report True so downstream callers (deployer) will mint keys."""
-        import httpx
-        from tinyagentos.llm_proxy import LLMProxy
+    async def test_start_kills_foreign_process_on_port(self, monkeypatch):
+        """When another process is already on :4000, start() must SIGTERM
+        it rather than adopt — a foreign proxy could be holding a stale
+        config or different master key, which would make /key/generate
+        fail silently downstream."""
+        import tinyagentos.llm_proxy as mod
 
-        # Fake httpx so /health returns 200 without touching the network
         class _FakeResp:
             status_code = 200
+
         class _FakeClient:
             def __init__(self, *a, **kw): pass
             async def __aenter__(self): return self
             async def __aexit__(self, *exc): return False
-            async def get(self, url):
-                return _FakeResp()
+            async def get(self, url): return _FakeResp()
 
-        monkeypatch.setattr("tinyagentos.llm_proxy.httpx.AsyncClient", _FakeClient)
+        monkeypatch.setattr(mod.httpx, "AsyncClient", _FakeClient)
 
-        p = LLMProxy(port=4000)
-        ok = await p.start(backends=[])
-        assert ok is True
-        assert p.is_running() is True
-        assert p._adopted is True
-        assert p._process is None
+        foreign_pid = 424242
+        monkeypatch.setattr(mod, "_pids_listening_on", lambda port: [foreign_pid])
+        # Once killed, report dead so start() doesn't escalate to SIGKILL.
+        monkeypatch.setattr(mod, "_pid_alive", lambda pid: False)
+
+        kill_calls: list[tuple[int, int]] = []
+
+        def _fake_kill(pid, sig):
+            kill_calls.append((pid, sig))
+
+        monkeypatch.setattr(mod.os, "kill", _fake_kill)
+
+        # Short-circuit the spawn — we only care about the kill path.
+        class _FakePopen:
+            def __init__(self, *a, **kw):
+                raise FileNotFoundError("stubbed to skip real spawn")
+
+        monkeypatch.setattr(mod.subprocess, "Popen", _FakePopen)
+        # Avoid resolving a real litellm binary on the test host.
+        monkeypatch.setattr(mod, "_discover_ollama_models", lambda *a, **kw: [])
+
+        p = mod.LLMProxy(port=4000)
+        await p.start(backends=[])
+
+        # SIGTERM must have been sent to the foreign PID before the
+        # spawn attempt.
+        assert (foreign_pid, mod.signal.SIGTERM) in kill_calls
+
+    @pytest.mark.asyncio
+    async def test_create_agent_key_logs_on_non_200(self, monkeypatch, caplog):
+        """Non-200 from /key/generate must surface in logs so operators
+        can see master-key mismatches / model-list rejections instead of
+        hunting through null llm_key fields."""
+        import logging
+        import tinyagentos.llm_proxy as mod
+
+        class _FakeResp:
+            status_code = 401
+            text = "Invalid master key"
+
+        class _FakeClient:
+            def __init__(self, *a, **kw): pass
+            async def __aenter__(self): return self
+            async def __aexit__(self, *exc): return False
+            async def post(self, url, json=None, headers=None): return _FakeResp()
+
+        monkeypatch.setattr(mod.httpx, "AsyncClient", _FakeClient)
+
+        p = mod.LLMProxy(port=4000)
+
+        # Bypass is_running(): pretend we own a live subprocess.
+        class _FakeProc:
+            def poll(self): return None
+        p._process = _FakeProc()
+
+        with caplog.at_level(logging.WARNING, logger="tinyagentos.llm_proxy"):
+            key = await p.create_agent_key("bridgetest")
+
+        assert key is None
+        assert any(
+            "/key/generate" in rec.getMessage() and "401" in rec.getMessage()
+            for rec in caplog.records
+        ), [rec.getMessage() for rec in caplog.records]
