@@ -89,6 +89,18 @@ systemctl enable --now tinyagentos-host-firewall.path
 systemctl enable --now tinyagentos-host-firewall.timer
 echo "Host firewall service status: $(systemctl is-active tinyagentos-host-firewall.service)"
 
+# Install disk quota scanner script and systemd units
+echo ""
+echo "Installing disk quota scanner..."
+cp "$INSTALL_DIR/scripts/disk-quota-scan.sh" /opt/tinyagentos/scripts/
+chmod +x /opt/tinyagentos/scripts/disk-quota-scan.sh
+for dq_unit in tinyagentos-disk-quota.service tinyagentos-disk-quota.timer; do
+    cp "$INSTALL_DIR/systemd/$dq_unit" /etc/systemd/system/
+done
+systemctl daemon-reload
+systemctl enable --now tinyagentos-disk-quota.timer
+echo "Disk quota timer status: $(systemctl is-active tinyagentos-disk-quota.timer)"
+
 # Install systemd service
 echo "Installing systemd service..."
 cat > /etc/systemd/system/tinyagentos.service << EOF
