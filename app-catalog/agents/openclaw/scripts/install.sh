@@ -23,6 +23,53 @@ fi
 # ---------------------------------------------------------------------------
 npm install -g https://github.com/jaylfc/openclaw/tarball/taos-fork
 
+# ------------------------------------------------------------------
+# 2a. Bootstrap config + env for the openclaw bridge. Written from env
+# vars the deployer set via `incus config set environment.*`.
+# These live inside the container rootfs (not on the host) so they
+# travel with snapshot-based archives cleanly.
+# ------------------------------------------------------------------
+
+mkdir -p /root/.openclaw
+chmod 700 /root/.openclaw
+
+# Resolve values or fall back to safe defaults for dev/test.
+: "${TAOS_AGENT_NAME:=unknown}"
+: "${TAOS_MODEL:=}"
+: "${OPENAI_BASE_URL:=http://127.0.0.1:4000/v1}"
+: "${OPENAI_API_KEY:=}"
+: "${TAOS_BRIDGE_URL:=http://127.0.0.1:6969}"
+: "${TAOS_LOCAL_TOKEN:=}"
+
+cat > /root/.openclaw/openclaw.json <<JSON_EOF
+{
+  "gateway": { "bind": "loopback", "port": 18789, "auth": { "mode": "token" } },
+  "channels": {},
+  "models": {
+    "providers": [
+      {
+        "id": "taos",
+        "api": "openai-completions",
+        "baseUrl": "${OPENAI_BASE_URL}",
+        "apiKey": "${OPENAI_API_KEY}",
+        "default_model": "${TAOS_MODEL}"
+      }
+    ]
+  }
+}
+JSON_EOF
+chmod 600 /root/.openclaw/openclaw.json
+
+cat > /root/.openclaw/env <<ENV_EOF
+TAOS_AGENT_NAME=${TAOS_AGENT_NAME}
+TAOS_BRIDGE_URL=${TAOS_BRIDGE_URL}
+TAOS_LOCAL_TOKEN=${TAOS_LOCAL_TOKEN}
+TAOS_MODEL=${TAOS_MODEL}
+OPENAI_BASE_URL=${OPENAI_BASE_URL}
+OPENAI_API_KEY=${OPENAI_API_KEY}
+ENV_EOF
+chmod 600 /root/.openclaw/env
+
 # ===== BEGIN recycle-bin install (Layer 1) — see app-catalog/_common/scripts/recycle-bin-install.sh =====
 # Install taOS recycle-bin (Layer 1). Shared across agent frameworks.
 echo "[recycle-bin] installing trash-cli and shadow rm wrapper"
@@ -116,14 +163,7 @@ echo "[recycle-bin] ready; /usr/local/bin/rm now soft-deletes to /var/recycle-bi
 # ===== END recycle-bin install =====
 
 # ---------------------------------------------------------------------------
-# 3. Data dirs + .openclaw mount under /root (agent-home bind mount).
-# openclaw.json is written by the deployer, not here. We only ensure the dir.
-# ---------------------------------------------------------------------------
-mkdir -p /root/.openclaw
-chmod 700 /root/.openclaw
-
-# ---------------------------------------------------------------------------
-# 4. systemd unit for the gateway.
+# 3. systemd unit for the gateway.
 # ---------------------------------------------------------------------------
 cat > /etc/systemd/system/openclaw.service <<'UNIT'
 [Unit]
@@ -147,7 +187,7 @@ systemctl daemon-reload
 systemctl enable --now openclaw.service
 
 # ---------------------------------------------------------------------------
-# 5. Wait for openclaw to be ready (health RPC).
+# 4. Wait for openclaw to be ready (health RPC).
 # ---------------------------------------------------------------------------
 for i in $(seq 1 30); do
   if openclaw health --timeout 2000 >/dev/null 2>&1; then
