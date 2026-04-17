@@ -742,6 +742,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     from tinyagentos.routes.disk_quota import router as disk_quota_router
     app.include_router(disk_quota_router)
 
+    from tinyagentos.routes.recycle import router as recycle_router
+    app.include_router(recycle_router)
+
     from tinyagentos.routes import admin_prompts as admin_prompts_routes
     app.include_router(admin_prompts_routes.router)
 
