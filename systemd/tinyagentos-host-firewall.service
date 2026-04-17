@@ -4,8 +4,12 @@ After=network-online.target docker.service incus.service
 Before=tinyagentos.service
 Wants=network-online.target
 # Skip on pure-nftables systems that don't ship the iptables legacy wrapper.
-# Either location is acceptable; the glob matches either.
-ConditionPathExistsGlob=/usr/sbin/iptables /usr/bin/iptables
+# Multiple ConditionPathExists directives are AND-combined; the "|" prefix
+# on each turns them into OR so the unit runs if iptables exists at EITHER
+# location. A single-line space-separated glob was silently evaluating to
+# false and skipping the unit on every boot.
+ConditionPathExists=|/usr/sbin/iptables
+ConditionPathExists=|/usr/bin/iptables
 
 [Service]
 Type=oneshot
