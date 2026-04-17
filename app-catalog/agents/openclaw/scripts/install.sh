@@ -70,9 +70,13 @@ file "$TARBALL_DEST" | grep -qE "gzip|compressed" || {
   exit 1
 }
 
-# Install from the local file (no network re-fetch, no build)
+# Install from the local file (no network re-fetch, no build).
+# --ignore-scripts: the tarball already has dist/ built by CI; we must NOT
+# run the prepare script because it tries to spawn git (for hook setup) and
+# falls back to pnpm build:docker — both of which are wrong and unnecessary
+# when installing a prebuilt tarball.
 echo "[openclaw] installing $TARBALL_DEST"
-npm install -g --unsafe-perm "$TARBALL_DEST"
+npm install -g --unsafe-perm --ignore-scripts "$TARBALL_DEST"
 
 # Cleanup the downloaded tarball — keeps container small
 rm -f "$TARBALL_DEST"
