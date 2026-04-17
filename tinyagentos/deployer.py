@@ -33,8 +33,8 @@ class DeployRequest:
     name: str
     framework: str        # agent framework app_id
     model: str | None     # model app_id (optional)
-    fallback_models: list[str] = field(default_factory=list)
     data_dir: Path        # host data dir — trace and shared state live here
+    fallback_models: list[str] = field(default_factory=list)
     color: str = "#888888"
     memory_limit: str | None = None
     cpu_limit: int | None = None
