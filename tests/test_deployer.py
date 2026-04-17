@@ -427,3 +427,98 @@ class TestUndeployWithStateCleanup:
             result = await undeploy_agent("keeper", data_dir=tmp_path, delete_state=False)
             assert result["success"] is True
             assert (tmp_path / "agent-workspaces" / "keeper").exists()
+
+
+class TestOpenclawBootstrap:
+    """deploy_agent writes openclaw.json + .openclaw/env into agent-home."""
+
+    @pytest.mark.asyncio
+    async def test_openclaw_json_created_with_correct_shape(self, tmp_path):
+        import json
+
+        mock_proxy = MagicMock()
+        mock_proxy.is_running.return_value = True
+        mock_proxy.url = "http://localhost:4000"
+        mock_proxy.create_agent_key = AsyncMock(return_value="sk-oc-key")
+
+        req = _req(
+            name="oc-agent",
+            framework="openclaw",
+            model="llama-3.1-8b",
+            data_dir=tmp_path,
+            extra_config={"llm_proxy": mock_proxy},
+        )
+
+        async def mock_exec_fn(name, cmd, **kwargs):
+            if "hostname -I" in " ".join(cmd):
+                return (0, "10.0.0.50")
+            return (0, "ok")
+
+        with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
+            mock_create.return_value = {"success": True, "name": "taos-agent-oc-agent"}
+            result = await deploy_agent(req)
+            assert result["success"] is True
+
+        config_path = tmp_path / "agent-home" / "oc-agent" / ".openclaw" / "openclaw.json"
+        assert config_path.exists(), "openclaw.json not created"
+
+        config = json.loads(config_path.read_text())
+        assert config["gateway"]["bind"] == "loopback"
+        assert config["gateway"]["port"] == 18789
+        assert config["gateway"]["auth"]["mode"] == "token"
+        assert config["channels"] == {}
+        providers = config["models"]["providers"]
+        assert len(providers) == 1
+        assert providers[0]["id"] == "taos"
+        assert providers[0]["api"] == "openai-completions"
+        assert providers[0]["baseUrl"] == "http://127.0.0.1:4000/v1"
+        assert providers[0]["apiKey"] == "sk-oc-key"
+        assert providers[0]["default_model"] == "llama-3.1-8b"
+
+    @pytest.mark.asyncio
+    async def test_openclaw_env_created_with_correct_keys_and_perms(self, tmp_path):
+        import stat
+
+        # Write a local auth token so the deployer can read it.
+        (tmp_path / ".auth_local_token").write_text("test-local-token\n")
+
+        req = _req(
+            name="oc-env",
+            framework="openclaw",
+            data_dir=tmp_path,
+        )
+
+        async def mock_exec_fn(name, cmd, **kwargs):
+            if "hostname -I" in " ".join(cmd):
+                return (0, "10.0.0.51")
+            return (0, "ok")
+
+        with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
+            mock_create.return_value = {"success": True, "name": "taos-agent-oc-env"}
+            result = await deploy_agent(req)
+            assert result["success"] is True
+
+        env_path = tmp_path / "agent-home" / "oc-env" / ".openclaw" / "env"
+        assert env_path.exists(), ".openclaw/env not created"
+
+        # Permissions: 0600
+        mode = stat.S_IMODE(env_path.stat().st_mode)
+        assert mode == 0o600, f"expected 0600 perms, got {oct(mode)}"
+
+        env_text = env_path.read_text()
+        env_map = {}
+        for line in env_text.strip().splitlines():
+            if "=" in line:
+                k, v = line.split("=", 1)
+                env_map[k] = v
+
+        assert "TAOS_BRIDGE_URL" in env_map
+        assert env_map["TAOS_BRIDGE_URL"] == "http://127.0.0.1:6969"
+        assert "TAOS_LOCAL_TOKEN" in env_map
+        assert env_map["TAOS_LOCAL_TOKEN"] == "test-local-token"
+        assert "TAOS_AGENT_NAME" in env_map
+        assert env_map["TAOS_AGENT_NAME"] == "oc-env"

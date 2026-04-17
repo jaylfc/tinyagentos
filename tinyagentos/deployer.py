@@ -11,7 +11,9 @@ the image with zero user-visible state loss, which is the whole point.
 """
 from __future__ import annotations
 
+import json
 import logging
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -22,6 +24,74 @@ from tinyagentos.containers import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _write_openclaw_bootstrap(
+    *,
+    host_home: Path,
+    slug: str,
+    llm_key: str | None,
+    model: str | None,
+    data_dir: Path,
+    taos_host: str,
+    taos_port: int,
+) -> None:
+    """Write openclaw.json + .openclaw/env into the agent-home host dir.
+
+    The full agent-home dir is bind-mounted to /root inside the container,
+    so the container sees these files at /root/.openclaw/... on first start.
+    The openclaw systemd unit (written by install.sh) reads them via its
+    EnvironmentFile directive and the gateway reads openclaw.json on startup.
+
+    Called before create_container so the files exist by the time the
+    container first runs install.sh and the systemd unit starts.
+    """
+    openclaw_dir = host_home / ".openclaw"
+    openclaw_dir.mkdir(parents=True, exist_ok=True)
+    openclaw_dir.chmod(0o700)
+
+    # Bootstrap config: taos LiteLLM provider + gateway binding.
+    config = {
+        "gateway": {
+            "bind": "loopback",
+            "port": 18789,
+            "auth": {
+                "mode": "token",
+            },
+        },
+        "channels": {},
+        "models": {
+            "providers": [
+                {
+                    "id": "taos",
+                    "api": "openai-completions",
+                    "baseUrl": f"http://127.0.0.1:4000/v1",
+                    "apiKey": llm_key or "",
+                    "default_model": model,
+                }
+            ]
+        },
+    }
+    config_path = openclaw_dir / "openclaw.json"
+    config_path.write_text(json.dumps(config, indent=2))
+
+    # env file: bridge patch reads these on startup.
+    local_token = ""
+    try:
+        token_path = data_dir / ".auth_local_token"
+        if token_path.exists():
+            local_token = token_path.read_text().strip()
+    except Exception:
+        pass
+
+    env_lines = [
+        f"TAOS_BRIDGE_URL=http://{taos_host}:{taos_port}",
+        f"TAOS_LOCAL_TOKEN={local_token}",
+        f"TAOS_AGENT_NAME={slug}",
+    ]
+    env_path = openclaw_dir / "env"
+    env_path.write_text("\n".join(env_lines) + "\n")
+    env_path.chmod(0o600)
 
 
 @dataclass
@@ -133,6 +203,24 @@ async def deploy_agent(req: DeployRequest) -> dict:
     except Exception:
         pass
     env["TAOS_TRACE_URL"] = f"http://{req.taos_host}:{req.taos_port}/api/trace"
+
+    # openclaw bootstrap: write openclaw.json + .openclaw/env into agent-home
+    # host-side so they are visible inside the container at /root/.openclaw/
+    # on first start (before install.sh runs, but consumed by the systemd unit
+    # that install.sh writes).
+    #
+    # session_id == req.name (slug) for MVP. The bridge endpoints already key
+    # their state on agent name, so minting a separate UUID adds no value at
+    # this stage. A future task can promote it to a persisted UUID if needed.
+    _write_openclaw_bootstrap(
+        host_home=host_home,
+        slug=req.name,
+        llm_key=llm_key,
+        model=req.model,
+        data_dir=req.data_dir,
+        taos_host=req.taos_host,
+        taos_port=req.taos_port,
+    )
 
     # Step 1: Create container with mounts + env baked in at launch time
     logger.info(f"Creating container {container_name}")
