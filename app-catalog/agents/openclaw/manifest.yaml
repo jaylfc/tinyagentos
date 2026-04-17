@@ -1,6 +1,7 @@
 id: openclaw
 name: OpenClaw
 type: agent-framework
+verification_status: beta
 version: 1.0.0
 description: "Full-featured agent framework with multi-channel support (Discord, Telegram, Slack, Signal)"
 homepage: https://github.com/openclaw/openclaw

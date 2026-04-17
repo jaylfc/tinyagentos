@@ -2,7 +2,7 @@ import pytest
 
 from tinyagentos.adapters import list_frameworks
 
-VALID_STATUSES = {"tested", "beta", "experimental", "broken"}
+VALID_STATUSES = {"beta", "alpha", "broken"}
 
 
 @pytest.mark.asyncio
@@ -43,11 +43,33 @@ async def test_frameworks_all_statuses_are_valid(client):
 
 
 @pytest.mark.asyncio
-async def test_frameworks_at_least_one_tested(client):
+async def test_frameworks_openclaw_is_beta(client):
     resp = await client.get("/api/frameworks")
     assert resp.status_code == 200
-    tested = [e for e in resp.json() if e["verification_status"] == "tested"]
-    assert len(tested) > 0, "no tested frameworks found — wizard would show nothing by default"
+    openclaw = next((e for e in resp.json() if e["id"] == "openclaw"), None)
+    assert openclaw is not None, "openclaw adapter missing from response"
+    assert openclaw["verification_status"] == "beta", (
+        f"expected openclaw to be 'beta', got {openclaw['verification_status']!r}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_frameworks_at_least_one_alpha(client):
+    resp = await client.get("/api/frameworks")
+    assert resp.status_code == 200
+    alpha = [e for e in resp.json() if e["verification_status"] == "alpha"]
+    assert len(alpha) > 0, "no alpha frameworks found"
+
+
+@pytest.mark.asyncio
+async def test_frameworks_no_experimental_status(client):
+    """Regression guard: 'experimental' was retired in favour of 'alpha'."""
+    resp = await client.get("/api/frameworks")
+    assert resp.status_code == 200
+    experimental = [e for e in resp.json() if e["verification_status"] == "experimental"]
+    assert experimental == [], (
+        f"found entries still using retired 'experimental' status: {[e['id'] for e in experimental]}"
+    )
 
 
 @pytest.mark.asyncio
