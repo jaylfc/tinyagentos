@@ -21,7 +21,7 @@ fi
 # 2. openclaw from our fork (taos-fork branch).
 # Fork baseline tracks upstream main; the taos-fork branch adds the bridge patch.
 # ---------------------------------------------------------------------------
-npm install -g git+https://github.com/jaylfc/openclaw.git#taos-fork
+npm install -g https://github.com/jaylfc/openclaw/tarball/taos-fork
 
 # ---------------------------------------------------------------------------
 # 3. Data dirs + .openclaw mount under /root (agent-home bind mount).
