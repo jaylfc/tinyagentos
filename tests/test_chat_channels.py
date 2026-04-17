@@ -186,3 +186,67 @@ async def test_update_last_message_at(store):
     await store.update_last_message_at(ch["id"])
     updated = await store.get_channel(ch["id"])
     assert updated["last_message_at"] is not None
+
+
+# ── archived filter + set_settings ───────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_list_channels_archived_filter(store):
+    """archived=True/False/None filtering via list_channels."""
+    live = await _create(store, name="live-ch")
+    archived = await _create(store, name="archived-ch")
+
+    await store.set_settings(archived["id"], {"archived": True, "archived_at": "20260101T000000"})
+
+    # Default: no filter — returns both
+    all_ch = await store.list_channels()
+    ids = {c["id"] for c in all_ch}
+    assert live["id"] in ids
+    assert archived["id"] in ids
+
+    # archived=False — only live
+    live_only = await store.list_channels(archived=False)
+    ids_live = {c["id"] for c in live_only}
+    assert live["id"] in ids_live
+    assert archived["id"] not in ids_live
+
+    # archived=True — only archived
+    arch_only = await store.list_channels(archived=True)
+    ids_arch = {c["id"] for c in arch_only}
+    assert archived["id"] in ids_arch
+    assert live["id"] not in ids_arch
+
+
+@pytest.mark.asyncio
+async def test_set_settings_merges(store):
+    """set_settings merges keys, preserving unrelated ones."""
+    ch = await _create(store, name="merge-test")
+    await store.set_settings(ch["id"], {"color": "blue", "pinned": True})
+    fetched = await store.get_channel(ch["id"])
+    assert fetched["settings"]["color"] == "blue"
+    assert fetched["settings"]["pinned"] is True
+
+    # Merge again — color updated, pinned preserved
+    await store.set_settings(ch["id"], {"color": "red"})
+    fetched2 = await store.get_channel(ch["id"])
+    assert fetched2["settings"]["color"] == "red"
+    assert fetched2["settings"]["pinned"] is True
+
+
+@pytest.mark.asyncio
+async def test_set_settings_archived_flag_roundtrip(store):
+    """Archiving then unarchiving via set_settings is correctly reflected in filter."""
+    ch = await _create(store, name="round-trip")
+
+    await store.set_settings(
+        ch["id"],
+        {"archived": True, "archived_at": "20260101T000000", "archived_agent_id": "abc123"},
+    )
+    arch_list = await store.list_channels(archived=True)
+    assert any(c["id"] == ch["id"] for c in arch_list)
+
+    await store.set_settings(ch["id"], {"archived": False})
+    arch_list2 = await store.list_channels(archived=True)
+    assert not any(c["id"] == ch["id"] for c in arch_list2)
+    live_list = await store.list_channels(archived=False)
+    assert any(c["id"] == ch["id"] for c in live_list)

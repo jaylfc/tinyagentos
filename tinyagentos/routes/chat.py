@@ -280,9 +280,13 @@ async def update_message_state(request: Request, message_id: str):
 # ── Channel CRUD ──────────────────────────────────────────────────────────────
 
 @router.get("/api/chat/channels")
-async def list_channels(request: Request, member: str | None = None):
+async def list_channels(
+    request: Request,
+    member: str | None = None,
+    archived: bool | None = None,
+):
     ch_store = request.app.state.chat_channels
-    channels = await ch_store.list_channels(member_id=member)
+    channels = await ch_store.list_channels(member_id=member, archived=archived)
     return {"channels": channels}
 
 

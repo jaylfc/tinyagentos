@@ -101,14 +101,27 @@ class ChatChannelStore(BaseStore):
                 return None
             return _parse_channel(row, cursor.description)
 
-    async def list_channels(self, member_id: str | None = None) -> list[dict]:
+    async def list_channels(
+        self,
+        member_id: str | None = None,
+        archived: bool | None = None,
+    ) -> list[dict]:
+        conditions: list[str] = []
+        params: list = []
+
         if member_id is not None:
-            pattern = f'%"{member_id}"%'
-            sql = "SELECT * FROM chat_channels WHERE members LIKE ? ORDER BY created_at ASC"
-            params = (pattern,)
-        else:
-            sql = "SELECT * FROM chat_channels ORDER BY created_at ASC"
-            params = ()
+            conditions.append("members LIKE ?")
+            params.append(f'%"{member_id}"%')
+
+        # archived filter — use JSON text search for speed (settings is stored as
+        # a JSON string; the canonical marker is '"archived": true').
+        if archived is True:
+            conditions.append('settings LIKE \'%"archived": true%\'')
+        elif archived is False:
+            conditions.append('(settings NOT LIKE \'%"archived": true%\')')
+
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        sql = f"SELECT * FROM chat_channels {where} ORDER BY created_at ASC"
         async with self._db.execute(sql, params) as cursor:
             rows = await cursor.fetchall()
             desc = cursor.description
@@ -141,6 +154,27 @@ class ChatChannelStore(BaseStore):
         params.append(channel_id)
         await self._db.execute(
             f"UPDATE chat_channels SET {', '.join(sets)} WHERE id = ?", params
+        )
+        await self._db.commit()
+
+    async def set_settings(self, channel_id: str, updates: dict) -> None:
+        """Merge ``updates`` into the channel's settings dict, then persist.
+
+        Existing keys not present in ``updates`` are preserved.  Pass
+        ``{key: False}`` (or any falsy value) to clear an individual key
+        without touching others.
+        """
+        async with self._db.execute(
+            "SELECT settings FROM chat_channels WHERE id = ?", (channel_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+        if row is None:
+            return
+        current: dict = json.loads(row[0]) if row[0] else {}
+        current.update(updates)
+        await self._db.execute(
+            "UPDATE chat_channels SET settings = ? WHERE id = ?",
+            (json.dumps(current), channel_id),
         )
         await self._db.commit()
 

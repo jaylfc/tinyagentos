@@ -289,3 +289,62 @@ async def test_unread_counts(client):
     assert resp.status_code == 200
     assert "unread" in resp.json()
 
+
+
+# ── ?archived filter on GET /api/chat/channels ────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_list_channels_archived_false_excludes_archived(client):
+    """?archived=false omits channels flagged archived."""
+    app = client._transport.app
+    ch_store = app.state.chat_channels
+
+    live_ch = await ch_store.create_channel(name="live", type="dm", created_by="user")
+    arch_ch = await ch_store.create_channel(name="archived-dm", type="dm", created_by="user")
+    await ch_store.set_settings(
+        arch_ch["id"],
+        {"archived": True, "archived_at": "20260101T000000", "archived_agent_id": "ag1"},
+    )
+
+    resp = await client.get("/api/chat/channels", params={"archived": "false"})
+    assert resp.status_code == 200
+    ids = {c["id"] for c in resp.json()["channels"]}
+    assert live_ch["id"] in ids
+    assert arch_ch["id"] not in ids
+
+
+@pytest.mark.asyncio
+async def test_list_channels_archived_true_returns_only_archived(client):
+    """?archived=true returns only archived channels."""
+    app = client._transport.app
+    ch_store = app.state.chat_channels
+
+    live_ch = await ch_store.create_channel(name="live2", type="dm", created_by="user")
+    arch_ch = await ch_store.create_channel(name="archived-dm2", type="dm", created_by="user")
+    await ch_store.set_settings(
+        arch_ch["id"],
+        {"archived": True, "archived_at": "20260101T000000", "archived_agent_id": "ag2"},
+    )
+
+    resp = await client.get("/api/chat/channels", params={"archived": "true"})
+    assert resp.status_code == 200
+    ids = {c["id"] for c in resp.json()["channels"]}
+    assert arch_ch["id"] in ids
+    assert live_ch["id"] not in ids
+
+
+@pytest.mark.asyncio
+async def test_list_channels_no_archived_param_returns_all(client):
+    """No ?archived param returns all channels (no filter)."""
+    app = client._transport.app
+    ch_store = app.state.chat_channels
+
+    live_ch = await ch_store.create_channel(name="live3", type="dm", created_by="user")
+    arch_ch = await ch_store.create_channel(name="archived-dm3", type="dm", created_by="user")
+    await ch_store.set_settings(arch_ch["id"], {"archived": True})
+
+    resp = await client.get("/api/chat/channels")
+    assert resp.status_code == 200
+    ids = {c["id"] for c in resp.json()["channels"]}
+    assert live_ch["id"] in ids
+    assert arch_ch["id"] in ids
