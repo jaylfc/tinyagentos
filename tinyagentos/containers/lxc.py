@@ -28,19 +28,34 @@ class LXCBackend(ContainerBackend):
         return await _run(cmd, timeout=timeout)
 
     async def set_root_quota(self, name: str, size_gib: int) -> dict:
-        """Set per-container rootfs quota via incus config device set root size.
+        """Set per-container rootfs quota via incus config device override/set root size.
 
         On btrfs-backed pools, the quota is enforced by btrfs qgroups.
         On ZFS pools, by ZFS dataset quotas. On dir-backed pools incus
         does not enforce the limit at the kernel level (accounting-only);
         callers should warn users of this limitation.
+
+        Uses ``incus config device override`` to create a per-instance copy of
+        the root device when it is inherited from a profile (plain ``device set``
+        is rejected in that case). Falls back to ``device set`` if an override
+        is already present.
         """
+        # Override the profile-inherited root disk device on this instance,
+        # then set the size. `override` creates a per-instance copy of the
+        # device if it doesn't already have one.
         code, output = await _run([
-            "incus", "config", "device", "set", name, "root",
+            "incus", "config", "device", "override", name, "root",
             f"size={size_gib}GiB",
         ])
+        # If override fails because a per-instance root device already exists,
+        # fall back to plain `set` which works in that case.
+        if code != 0 and "already exists" in output.lower():
+            code, output = await _run([
+                "incus", "config", "device", "set", name, "root",
+                f"size={size_gib}GiB",
+            ])
         if code != 0:
-            logger.warning("set_root_quota: incus config device set failed for %s: %s", name, output)
+            logger.warning("set_root_quota: incus config device override/set failed for %s: %s", name, output)
             return {"success": False, "note": output}
         return {"success": True, "note": f"root quota set to {size_gib} GiB"}
 
@@ -151,7 +166,7 @@ class LXCBackend(ContainerBackend):
 
         for key, value in (env or {}).items():
             ecode, eout = await _run([
-                "incus", "config", "set", name, f"environment.{key}", value,
+                "incus", "config", "set", name, f"environment.{key}={value}",
             ])
             if ecode != 0:
                 logger.error(f"incus env set {key} failed: {eout}")
@@ -268,6 +283,6 @@ class LXCBackend(ContainerBackend):
         services inside the container).
         """
         code, output = await _run([
-            "incus", "config", "set", name, f"environment.{key}", value,
+            "incus", "config", "set", name, f"environment.{key}={value}",
         ])
         return {"success": code == 0, "output": output}

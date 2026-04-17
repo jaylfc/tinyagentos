@@ -1,8 +1,8 @@
 import json
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, patch, call
 from tinyagentos.containers import (
-    list_containers, create_container, set_root_quota,
+    list_containers, create_container, set_root_quota, set_env,
     start_container, stop_container, destroy_container,
     _parse_memory, ContainerInfo,
 )
@@ -84,7 +84,8 @@ class TestCreateContainer:
 
 class TestSetRootQuota:
     @pytest.mark.asyncio
-    async def test_success(self):
+    async def test_success_via_override(self):
+        """set_root_quota uses incus config device override (not set) as primary path."""
         with patch("tinyagentos.containers._run", new_callable=AsyncMock) as mock_run:
             mock_run.return_value = (0, "")
             result = await set_root_quota("taos-agent-test", 40)
@@ -94,9 +95,26 @@ class TestSetRootQuota:
             assert "incus" in cmd
             assert "config" in cmd
             assert "device" in cmd
-            assert "set" in cmd
+            assert "override" in cmd
             assert "root" in cmd
             assert "size=40GiB" in cmd
+
+    @pytest.mark.asyncio
+    async def test_fallback_to_set_when_override_already_exists(self):
+        """Falls back to device set when override reports 'already exists'."""
+        calls = []
+        async def mock_run(cmd, timeout=120):
+            calls.append(cmd)
+            if "override" in cmd:
+                return (1, "Device already exists")
+            return (0, "")
+
+        with patch("tinyagentos.containers._run", side_effect=mock_run):
+            result = await set_root_quota("taos-agent-test", 40)
+        assert result["success"] is True
+        # First call must be override, second must be set
+        assert "override" in calls[0]
+        assert "set" in calls[1]
 
     @pytest.mark.asyncio
     async def test_failure_returns_success_false(self):
@@ -117,9 +135,72 @@ class TestSetRootQuota:
         with patch("tinyagentos.containers._run", side_effect=mock_run):
             result = await create_container("taos-agent-test", root_size_gib=40)
         assert result["success"] is True
-        # At least one call should set the root size
+        # At least one call should set the root size via override
         quota_calls = [c for c in calls if "size=40GiB" in " ".join(c)]
         assert quota_calls, "expected a quota set call with size=40GiB"
+        override_calls = [c for c in calls if "override" in c]
+        assert override_calls, "expected an override call for profile-inherited root device"
+
+
+class TestSetEnv:
+    @pytest.mark.asyncio
+    async def test_env_uses_key_equals_value_form(self):
+        """incus env set uses key=value single-arg form (not separate positional value)."""
+        with patch("tinyagentos.containers._run", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = (0, "")
+            result = await set_env("taos-agent-test", "MY_KEY", "myvalue")
+            assert result["success"] is True
+            cmd = mock_run.call_args[0][0]
+            # The key=value must appear as one element, not split across two
+            assert "environment.MY_KEY=myvalue" in cmd
+            # The value must NOT appear as a separate trailing argument
+            assert cmd[-1] == "environment.MY_KEY=myvalue"
+
+    @pytest.mark.asyncio
+    async def test_env_dash_prefixed_value_no_flag_error(self):
+        """A token value starting with '-' must not be parsed as a CLI flag.
+
+        Regression for: incus env set TAOS_LOCAL_TOKEN failed:
+        Error: unknown shorthand flag: 'X' in -XOvCacuHM1H...
+        """
+        dash_token = "-Xabc123secrettoken"
+        calls = []
+        async def mock_run(cmd, timeout=120):
+            calls.append(cmd)
+            # Simulate incus succeeding (no flag parse error)
+            return (0, "")
+
+        with patch("tinyagentos.containers._run", side_effect=mock_run):
+            result = await set_env("taos-agent-test", "TAOS_LOCAL_TOKEN", dash_token)
+        assert result["success"] is True
+        assert len(calls) == 1
+        cmd = calls[0]
+        # Value embedded in key=value arg — never a standalone arg that could be a flag
+        assert f"environment.TAOS_LOCAL_TOKEN={dash_token}" in cmd
+        # Confirm the token is NOT a separate final element
+        assert cmd[-1] != dash_token
+
+    @pytest.mark.asyncio
+    async def test_create_container_env_uses_key_equals_value_form(self):
+        """create_container env loop also uses key=value form."""
+        calls = []
+        async def mock_run(cmd, timeout=120):
+            calls.append(cmd)
+            return (0, "")
+
+        with patch("tinyagentos.containers._run", side_effect=mock_run):
+            result = await create_container(
+                "taos-agent-test",
+                env={"TAOS_LOCAL_TOKEN": "-Xsecret", "OTHER": "val"},
+            )
+        assert result["success"] is True
+        env_calls = [c for c in calls if any("environment." in e for e in c)]
+        assert len(env_calls) == 2
+        for c in env_calls:
+            # Each env arg must be a single key=value element
+            env_args = [e for e in c if e.startswith("environment.")]
+            assert len(env_args) == 1
+            assert "=" in env_args[0]
 
 
 class TestContainerLifecycle:

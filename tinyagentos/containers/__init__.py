@@ -84,12 +84,22 @@ async def set_root_quota(name: str, size_gib: int) -> dict:
 
     Returns a dict with ``success`` (bool) and ``note`` (str).
     """
+    # Override the profile-inherited root disk device on this instance,
+    # then set the size. `override` creates a per-instance copy of the
+    # device if it doesn't already have one.
     code, output = await _run([
-        "incus", "config", "device", "set", name, "root",
+        "incus", "config", "device", "override", name, "root",
         f"size={size_gib}GiB",
     ])
+    # If override fails because a per-instance root device already exists,
+    # fall back to plain `set` which works in that case.
+    if code != 0 and "already exists" in output.lower():
+        code, output = await _run([
+            "incus", "config", "device", "set", name, "root",
+            f"size={size_gib}GiB",
+        ])
     if code != 0:
-        logger.warning("set_root_quota: incus config device set failed for %s: %s", name, output)
+        logger.warning("set_root_quota: incus config device override/set failed for %s: %s", name, output)
         return {"success": False, "note": output}
     return {"success": True, "note": f"root quota set to {size_gib} GiB"}
 
@@ -156,7 +166,7 @@ async def create_container(
             logger.error(f"incus mount {host_path}->{container_path} failed: {mout}")
     for key, value in (env or {}).items():
         ecode, eout = await _run([
-            "incus", "config", "set", name, f"environment.{key}", value,
+            "incus", "config", "set", name, f"environment.{key}={value}",
         ])
         if ecode != 0:
             logger.error(f"incus env set {key} failed: {eout}")
@@ -313,7 +323,7 @@ async def set_env(name: str, key: str, value: str) -> dict:
     Returns ``{"success": bool, "output": str}``.
     """
     code, output = await _run([
-        "incus", "config", "set", name, f"environment.{key}", value,
+        "incus", "config", "set", name, f"environment.{key}={value}",
     ])
     return {"success": code == 0, "output": output}
 
