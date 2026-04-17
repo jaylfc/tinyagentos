@@ -24,8 +24,11 @@ fi
 # Remove stale npm cache left by Debian's apt-installed npm (old versions
 # leave /root/.npm in a state that blocks global installs as root).
 rm -rf /root/.npm
+# Force a clean cache directory
+mkdir -p /root/.npm
+chown -R root:root /root/.npm
 
-npm install -g github:jaylfc/openclaw#taos-fork
+npm install -g --unsafe-perm github:jaylfc/openclaw#taos-fork
 
 # ---------------------------------------------------------------------------
 # 3. Data dirs + .openclaw mount under /root (agent-home bind mount).
