@@ -232,6 +232,7 @@ def generate_litellm_config(backends: list[dict], default_model: str = "default"
         "general_settings": {
             "background_health_checks": False,
             "disable_spend_logs": True,
+            "custom_callbacks": ["tinyagentos.litellm_callback.taos_callback"],
         },
     }
 
