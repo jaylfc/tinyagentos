@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Bot, Plus, Trash2, ScrollText, Play, Server, X, ChevronRight, ChevronLeft, Check, Wrench, MessageSquare, PauseCircle, RotateCcw, Archive } from "lucide-react";
+import { Bot, Plus, Trash2, ScrollText, Play, Server, X, ChevronRight, ChevronLeft, Check, Wrench, MessageSquare, PauseCircle, RotateCcw, Archive, HardDrive } from "lucide-react";
 import { AgentSkillsPanel } from "./AgentSkillsPanel";
 import { AgentMessagesPanel } from "./AgentMessagesPanel";
 import {
@@ -40,6 +40,14 @@ interface Agent {
   kv_cache_quant_k?: string;
   kv_cache_quant_v?: string;
   kv_cache_quant_boundary_layers?: number;
+}
+
+interface DiskState {
+  used_gib: number;
+  quota_gib: number;
+  percent: number;
+  state: "ok" | "warn" | "hard";
+  last_checked_at: string;
 }
 
 interface ArchivedAgent {
@@ -92,6 +100,7 @@ const STATUS_STYLES: Record<string, string> = {
 
 function AgentRow({
   agent,
+  diskState,
   onViewLogs,
   onViewSkills,
   onViewMessages,
@@ -99,6 +108,7 @@ function AgentRow({
   onResume,
 }: {
   agent: Agent;
+  diskState?: DiskState | null;
   onViewLogs: (name: string) => void;
   onViewSkills: (name: string) => void;
   onViewMessages: (name: string) => void;
@@ -121,6 +131,24 @@ function AgentRow({
           >
             <PauseCircle size={10} aria-hidden="true" />
             paused
+          </span>
+        )}
+        {diskState && diskState.state !== "ok" && (
+          <span
+            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium border ${
+              diskState.state === "hard"
+                ? "bg-red-500/20 text-red-400 border-red-500/20"
+                : "bg-amber-500/20 text-amber-400 border-amber-500/20"
+            }`}
+            title={
+              diskState.state === "hard"
+                ? "Full — agent paused until user action"
+                : `Used more than ${diskState.percent}% — needs audit or expand`
+            }
+            aria-label={`Disk usage: ${diskState.used_gib}/${diskState.quota_gib} GiB (${diskState.percent}%)`}
+          >
+            <HardDrive size={10} aria-hidden="true" />
+            {diskState.used_gib}/{diskState.quota_gib} GiB ({diskState.percent}%)
           </span>
         )}
       </div>
@@ -1308,6 +1336,8 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
   const [loading, setLoading] = useState(true);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [detail, setDetail] = useState<{ name: string; tab: DetailTab } | null>(null);
+  const [diskStates, setDiskStates] = useState<Record<string, DiskState>>({});
+  const [quotaErrors, setQuotaErrors] = useState<Record<string, string>>({});
 
   const fetchAgents = useCallback(async () => {
     try {
@@ -1358,6 +1388,29 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
     }
   }, []);
 
+  const fetchDiskStates = useCallback(async (agentNames: string[]) => {
+    if (agentNames.length === 0) return;
+    const results = await Promise.allSettled(
+      agentNames.map(async (name) => {
+        const res = await fetch(`/api/agents/${encodeURIComponent(name)}/disk`, {
+          headers: { Accept: "application/json" },
+        });
+        if (!res.ok) return null;
+        const ct = res.headers.get("content-type") ?? "";
+        if (!ct.includes("application/json")) return null;
+        const data: DiskState = await res.json();
+        return { name, data };
+      })
+    );
+    const next: Record<string, DiskState> = {};
+    for (const r of results) {
+      if (r.status === "fulfilled" && r.value) {
+        next[r.value.name] = r.value.data;
+      }
+    }
+    setDiskStates(next);
+  }, []);
+
   // Listen for agent-resumed events from the notification toast
   useEffect(() => {
     const handler = () => fetchAgents();
@@ -1385,6 +1438,13 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
       window.alert(e instanceof Error ? e.message : "Network error");
     }
   }
+
+  // Fetch disk states whenever agent list changes
+  useEffect(() => {
+    if (agents.length > 0) {
+      fetchDiskStates(agents.map((a) => a.name));
+    }
+  }, [agents, fetchDiskStates]);
 
   useEffect(() => {
     fetchAgents();
@@ -1444,6 +1504,48 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
     } catch (e) {
       window.alert(`Network error: ${String(e)}`);
     }
+  }
+
+  async function handleExpandQuota(name: string, currentGib: number) {
+    const newGib = currentGib + 10;
+    setQuotaErrors((prev) => { const next = { ...prev }; delete next[name]; return next; });
+    try {
+      const res = await fetch(`/api/agents/${encodeURIComponent(name)}/quota`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ size_gib: newGib }),
+      });
+      if (res.status === 409) {
+        setQuotaErrors((prev) => ({
+          ...prev,
+          [name]: "Cannot resize on this storage backend — run install-time migration to btrfs",
+        }));
+        return;
+      }
+      if (!res.ok) {
+        let msg = `Expand failed (${res.status})`;
+        try { const e = await res.json(); if (e?.error) msg = String(e.error); } catch { /* ignore */ }
+        setQuotaErrors((prev) => ({ ...prev, [name]: msg }));
+        return;
+      }
+      await fetchDiskStates([name]);
+    } catch (e) {
+      setQuotaErrors((prev) => ({ ...prev, [name]: e instanceof Error ? e.message : "Network error" }));
+    }
+  }
+
+  function handleAuditWithAgent(name: string) {
+    // Find the agent's DM channel by convention (agent name is the channel id or name)
+    // Dispatch cross-app navigation event — MessagesApp listens for taos:open-messages
+    window.dispatchEvent(
+      new CustomEvent("taos:open-messages", {
+        detail: {
+          channelId: name,
+          prefillPromptName: "disk-audit",
+          prefillAgent: name,
+        },
+      })
+    );
   }
 
   function handleWizardClose(deployed?: boolean) {
@@ -1513,11 +1615,61 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
           </div>
         ) : (
           <div className="p-4">
+            {/* Disk quota notification cards */}
+            {agents
+              .filter((a) => diskStates[a.name] != null && diskStates[a.name]!.state !== "ok")
+              .map((agent) => {
+                const ds = diskStates[agent.name]!;
+                const isHard = ds.state === "hard";
+                return (
+                  <div
+                    key={`quota-card-${agent.name}`}
+                    className={`mb-3 px-4 py-3 rounded-lg border ${
+                      isHard
+                        ? "bg-red-500/10 border-red-500/30"
+                        : "bg-amber-500/10 border-amber-500/30"
+                    }`}
+                    role="alert"
+                    aria-label={`Disk quota warning for ${agent.display_name || agent.name}`}
+                  >
+                    <div className={`text-xs font-medium mb-2 ${isHard ? "text-red-400" : "text-amber-400"}`}>
+                      Disk quota {isHard ? "full" : "warning"} — {agent.display_name || agent.name} at {ds.percent}%
+                    </div>
+                    {quotaErrors[agent.name] && (
+                      <div className="text-xs text-red-400 mb-2" role="alert">
+                        {quotaErrors[agent.name]}
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleExpandQuota(agent.name, ds.quota_gib)}
+                        aria-label={`Expand disk quota for ${agent.name} by 10 GB`}
+                        className={isHard ? "border-red-500/30 hover:bg-red-500/10" : "border-amber-500/30 hover:bg-amber-500/10"}
+                      >
+                        <HardDrive size={13} aria-hidden="true" />
+                        Expand +10 GB
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleAuditWithAgent(agent.name)}
+                        aria-label={`Audit disk usage with ${agent.name}`}
+                      >
+                        <MessageSquare size={13} aria-hidden="true" />
+                        Audit with agent
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
             <div className="space-y-2" role="list" aria-label="Agent list">
               {agents.map((agent) => (
                 <AgentRow
                   key={agent.name}
                   agent={agent}
+                  diskState={diskStates[agent.name] ?? null}
                   onViewLogs={(name) => setDetail({ name, tab: "logs" })}
                   onViewSkills={(name) => setDetail({ name, tab: "skills" })}
                   onViewMessages={(name) => setDetail({ name, tab: "messages" })}

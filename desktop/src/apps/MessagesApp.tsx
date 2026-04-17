@@ -35,6 +35,18 @@ import { useIsMobile } from "@/hooks/use-is-mobile";
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
+interface AdminPrompt {
+  name: string;
+  body: string;
+  description?: string;
+}
+
+interface OpenMessagesDetail {
+  channelId: string;
+  prefillPromptName?: string;
+  prefillAgent?: string;
+}
+
 interface Channel {
   id: string;
   name: string;
@@ -173,6 +185,7 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
   const [showEmoji, setShowEmoji] = useState<string | null>(null); // message id
   const [viewingCanvas, setViewingCanvas] = useState<{ url: string; title?: string } | null>(null);
   const [newChannel, setNewChannel] = useState({ name: "", type: "topic" as "topic" | "group", description: "" });
+  const [prefillBanner, setPrefillBanner] = useState<{ promptName: string; agentName?: string } | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -384,6 +397,45 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
       }
     };
   }, [fetchChannels, fetchArchivedChannels, fetchAgentLists, connectWs]);
+
+  /* ---- cross-app open-messages event ---- */
+  useEffect(() => {
+    const handler = async (e: Event) => {
+      const detail = (e as CustomEvent<OpenMessagesDetail>).detail;
+      if (!detail?.channelId) return;
+
+      // Select the channel — try to match by id or by name (DM channels often use agent name)
+      setSelectedChannel(detail.channelId);
+
+      // Fetch the admin prompt body if requested
+      if (detail.prefillPromptName) {
+        try {
+          const res = await fetch(
+            `/api/admin-prompts/${encodeURIComponent(detail.prefillPromptName)}`,
+            { headers: { Accept: "application/json" } }
+          );
+          if (res.ok) {
+            const ct = res.headers.get("content-type") ?? "";
+            if (ct.includes("application/json")) {
+              const data: AdminPrompt = await res.json();
+              setInput(data.body ?? "");
+              setPrefillBanner({
+                promptName: detail.prefillPromptName,
+                agentName: detail.prefillAgent,
+              });
+              // Focus composer after a short delay (channel selection renders first)
+              setTimeout(() => inputRef.current?.focus(), 150);
+            }
+          }
+        } catch {
+          /* ignore — user can type manually */
+        }
+      }
+    };
+
+    window.addEventListener("taos:open-messages", handler);
+    return () => window.removeEventListener("taos:open-messages", handler);
+  }, []);
 
   /* ---- channel selection ---- */
   useEffect(() => {
@@ -1020,6 +1072,30 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
             <div className="mx-4 mb-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[12px] text-amber-400/80 flex items-center gap-2 shrink-0" role="status">
               <Archive size={13} aria-hidden="true" />
               This chat is archived. The agent is no longer active.
+            </div>
+          )}
+
+          {/* prefill banner */}
+          {prefillBanner && (
+            <div
+              className="mx-4 mb-1 px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/20 text-[12px] text-blue-300/90 flex items-center gap-2 shrink-0"
+              role="status"
+              aria-label={`Composer prefilled from prompt: ${prefillBanner.promptName}`}
+            >
+              <span className="flex-1 truncate">
+                Prefilled from: {prefillBanner.promptName}
+                {prefillBanner.agentName ? ` for ${prefillBanner.agentName}` : ""} — edit and send
+              </span>
+              <button
+                onClick={() => {
+                  setPrefillBanner(null);
+                  setInput("");
+                }}
+                className="shrink-0 p-0.5 rounded hover:bg-white/10 transition-colors"
+                aria-label="Dismiss prefill"
+              >
+                <X size={12} aria-hidden="true" />
+              </button>
             </div>
           )}
 
