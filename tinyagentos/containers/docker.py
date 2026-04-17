@@ -97,6 +97,7 @@ class DockerBackend(ContainerBackend):
         cpu_limit: int | None = None,
         mounts: list[tuple[str, str]] | None = None,
         env: dict[str, str] | None = None,
+        host_uid: int | None = None,
     ) -> dict:
         """Create and start a new container.
 

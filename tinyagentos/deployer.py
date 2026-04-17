@@ -222,7 +222,10 @@ async def deploy_agent(req: DeployRequest) -> dict:
         taos_port=req.taos_port,
     )
 
-    # Step 1: Create container with mounts + env baked in at launch time
+    # Step 1: Create container with mounts + env baked in at launch time.
+    # Pass host_uid so incus maps container root to the taOS process owner,
+    # allowing the container to write to host-owned bind-mount directories
+    # (e.g. agent-home, where openclaw writes runtime config).
     logger.info(f"Creating container {container_name}")
     result = await create_container(
         container_name,
@@ -231,6 +234,7 @@ async def deploy_agent(req: DeployRequest) -> dict:
         cpu_limit=req.cpu_limit,
         mounts=mounts,
         env=env,
+        host_uid=os.getuid(),
     )
     if not result["success"]:
         return {"success": False, "error": f"Container creation failed: {result.get('error')}", "steps": steps}

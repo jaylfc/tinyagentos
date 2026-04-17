@@ -71,6 +71,7 @@ class LXCBackend(ContainerBackend):
         cpu_limit: int | None = None,
         mounts: list[tuple[str, str]] | None = None,
         env: dict[str, str] | None = None,
+        host_uid: int | None = None,
     ) -> dict:
         """Create and start a new LXC container.
 
@@ -80,12 +81,30 @@ class LXCBackend(ContainerBackend):
         every piece of per-agent state enters through one of the mounts
         or reaches a host service named by one of the env vars. See
         ``docs/design/framework-agnostic-runtime.md``.
+
+        host_uid: when set, apply ``raw.idmap`` so that container root (uid 0)
+        maps to this uid on the host.  Required when bind-mounting directories
+        owned by a non-root host user (e.g. the taOS process user) so that
+        the container can write to them.  The container is stopped, the idmap
+        is applied, then it is restarted before mounts are attached.
         """
         code, output = await _run(
             ["incus", "launch", image, name], timeout=300,
         )
         if code != 0:
             return {"success": False, "error": output}
+
+        if host_uid is not None:
+            # Apply uid/gid mapping: container root -> host_uid.  This
+            # requires a stop/start cycle to take effect.
+            await _run([
+                "incus", "config", "set", name, "raw.idmap",
+                f"both {host_uid} 0",
+            ])
+            await _run(["incus", "stop", name, "--force"])
+            await _run(["incus", "start", name])
+            import asyncio as _asyncio
+            await _asyncio.sleep(3)
 
         if memory_limit is not None:
             await _run(["incus", "config", "set", name, "limits.memory", memory_limit])

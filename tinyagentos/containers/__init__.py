@@ -82,6 +82,7 @@ async def create_container(
     cpu_limit: int | None = None,
     mounts: list[tuple[str, str]] | None = None,
     env: dict[str, str] | None = None,
+    host_uid: int | None = None,
 ) -> dict:
     """Create and start a new LXC container with mounts and env injected.
 
@@ -91,12 +92,29 @@ async def create_container(
     piece of per-agent state must enter through one of these; the
     container image itself holds only the framework and base OS. See
     ``docs/design/framework-agnostic-runtime.md``.
+
+    ``host_uid``: when provided, apply ``raw.idmap`` so container root
+    (uid 0) is remapped to this UID on the host.  Required when the
+    agent-home bind mount is owned by a non-root user (e.g. the taOS
+    process owner) so the container can write config files there.
+    Applying the idmap requires a stop/start cycle before mounts are added.
     """
+    import asyncio as _asyncio
     code, output = await _run(
         ["incus", "launch", image, name], timeout=300,
     )
     if code != 0:
         return {"success": False, "error": output}
+
+    if host_uid is not None:
+        await _run([
+            "incus", "config", "set", name, "raw.idmap",
+            f"both {host_uid} 0",
+        ])
+        await _run(["incus", "stop", name, "--force"])
+        await _run(["incus", "start", name])
+        await _asyncio.sleep(3)
+
     if memory_limit is not None:
         await _run(["incus", "config", "set", name, "limits.memory", memory_limit])
     if cpu_limit is not None:

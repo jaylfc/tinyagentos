@@ -49,6 +49,7 @@ class ContainerBackend(ABC):
         cpu_limit: int | None = None,
         mounts: list[tuple[str, str]] | None = None,
         env: dict[str, str] | None = None,
+        host_uid: int | None = None,
     ) -> dict:
         """Create and start a new container.
 
@@ -61,6 +62,10 @@ class ContainerBackend(ABC):
         creation time. Used for host-service endpoints (LLM proxy, embeddings,
         skills, user memory) so the container holds no baked-in config and
         can be destroyed and rebuilt without losing its wiring.
+
+        ``host_uid``: when provided, apply a UID mapping so container root
+        (uid 0) maps to this host UID.  Required when bind-mounting directories
+        owned by a non-root process user so the container can write to them.
         """
         ...
 
