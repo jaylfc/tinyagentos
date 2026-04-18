@@ -12,6 +12,33 @@ from fastapi import FastAPI
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
+
+class _CacheAwareStaticFiles(StaticFiles):
+    """StaticFiles that sets Cache-Control by file type.
+
+    index.html / manifests / the legacy sw.js must always revalidate so
+    PWAs pick up rebuilds; everything else under /static/ is fingerprinted
+    or static-forever (icons, wallpaper) and is safe to cache a long time.
+    """
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        filename = path.rsplit("/", 1)[-1].lower()
+        is_manifest_json = (
+            filename.startswith("manifest") and filename.endswith(".json")
+        )
+        if (
+            filename.endswith((".html", ".webmanifest"))
+            or filename == "sw.js"
+            or is_manifest_json
+        ):
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        else:
+            response.headers.setdefault(
+                "Cache-Control", "public, max-age=86400"
+            )
+        return response
+
 from tinyagentos.auth import AuthManager
 from tinyagentos.backend_fallback import BackendFallback
 from tinyagentos.capabilities import CapabilityChecker
@@ -620,7 +647,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     # Mount static files
     static_dir = PROJECT_DIR / "static"
     if static_dir.exists():
-        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+        app.mount("/static", _CacheAwareStaticFiles(directory=str(static_dir)), name="static")
 
     # Mount workspace for serving generated images and other workspace files
     workspace_dir = data_dir / "workspace"
