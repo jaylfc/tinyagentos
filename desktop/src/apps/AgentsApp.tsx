@@ -10,7 +10,6 @@ import {
 } from "@/lib/models";
 import { availableKvQuantOptions, type KvQuantOptions } from "@/lib/cluster";
 import {
-  defaultEmojiForFramework,
   resolveAgentEmoji,
   EMOJI_QUICK_PICKS,
 } from "@/lib/agent-emoji";
@@ -384,11 +383,7 @@ function DeployWizard({
   const [customSlug, setCustomSlug] = useState<string | null>(null);
   const [editingSlug, setEditingSlug] = useState(false);
   const [color, setColor] = useState(COLORS[0]);
-  // Emoji defaults to the chosen framework's icon unless the user has
-  // typed their own. `emojiTouched` tracks "user edited this field", so
-  // switching frameworks only overwrites the default, never a custom pick.
-  const [emoji, setEmoji] = useState<string>(defaultEmojiForFramework(""));
-  const [emojiTouched, setEmojiTouched] = useState(false);
+  const [emoji, setEmoji] = useState<string>("");
 
   // Step 2
   const [frameworks, setFrameworks] = useState<Framework[]>([]);
@@ -651,8 +646,7 @@ function DeployWizard({
       setCustomSlug(null);
       setEditingSlug(false);
       setColor(COLORS[0]);
-      setEmoji(defaultEmojiForFramework(""));
-      setEmojiTouched(false);
+      setEmoji("");
       setSelectedFramework("");
       setShowExperimental(false);
       setSelectedModel("");
@@ -684,13 +678,6 @@ function DeployWizard({
     }
   }, [fallbackModels, onWorkerFailure]);
 
-  // Sync emoji default to the chosen framework, but only until the user
-  // manually edits the emoji field. After that, the user's pick wins.
-  useEffect(() => {
-    if (!emojiTouched) {
-      setEmoji(defaultEmojiForFramework(selectedFramework));
-    }
-  }, [selectedFramework, emojiTouched]);
 
   if (!open) return null;
 
@@ -917,7 +904,6 @@ function DeployWizard({
                   value={emoji}
                   onChange={(e) => {
                     setEmoji(e.target.value);
-                    setEmojiTouched(true);
                   }}
                   placeholder="\u{1F916}"
                   aria-describedby="agent-emoji-desc"
@@ -928,7 +914,7 @@ function DeployWizard({
                   className="mt-1 text-xs text-shell-text-tertiary"
                 >
                   Paste any unicode emoji, or pick one below. Leave empty to
-                  use the chosen framework&apos;s default.
+                  show no emoji.
                 </p>
                 <div
                   className="flex flex-wrap gap-1.5 mt-2"
@@ -941,7 +927,6 @@ function DeployWizard({
                       type="button"
                       onClick={() => {
                         setEmoji(e);
-                        setEmojiTouched(true);
                       }}
                       className={`w-8 h-8 rounded-md text-lg leading-none transition-colors ${
                         emoji === e
@@ -1252,7 +1237,7 @@ function DeployWizard({
                 {[
                   ["Name", name],
                   ["Color", color],
-                  ["Emoji", emoji.trim() || defaultEmojiForFramework(selectedFramework)],
+                  ["Emoji", emoji.trim() || "—"],
                   ["Framework", frameworks.find((f) => f.id === selectedFramework)?.name ?? selectedFramework],
                   ["Model", models.find((m) => m.id === selectedModel)?.name ?? selectedModel],
                   ["Memory", memory ? (parseInt(memory, 10) >= 1024 ? `${Math.round(parseInt(memory, 10) / 1024)} GB` : `${memory} MB`) : "Unlimited"],
