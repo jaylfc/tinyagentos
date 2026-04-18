@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { detectHwClass, type HwClass } from "@/lib/hw-detect";
 
 interface MemoryTabProps {
   agent: { name: string; memory_plugin?: string };
@@ -23,6 +24,11 @@ export function MemoryTab({ agent, onUpdated }: MemoryTabProps) {
   const [librarian, setLibrarian] = useState<LibrarianConfig | null>(null);
   const [stats, setStats] = useState<MemoryStats | null>(null);
   const [advanced, setAdvanced] = useState(false);
+  const [hw, setHw] = useState<HwClass>("cpu");
+
+  useEffect(() => {
+    detectHwClass().then(setHw);
+  }, []);
 
   useEffect(() => {
     fetch(`/api/agents/${agent.name}/librarian`)
@@ -137,9 +143,15 @@ export function MemoryTab({ agent, onUpdated }: MemoryTabProps) {
               aria-label="Librarian model"
             >
               <option value="">Use install default</option>
-              <option value="ollama:qwen3:4b">ollama:qwen3:4b ✓ recommended</option>
+              <option value="ollama:qwen3:4b">
+                {hw === "rk3588"
+                  ? "ollama:qwen3:4b"
+                  : "ollama:qwen3:4b \u2713 recommended"}
+              </option>
               <option value="dulimov/Qwen3-4B-rk3588-1.2.1-base">
-                Qwen3-4B NPU (RK3588)
+                {hw === "rk3588"
+                  ? "Qwen3-4B NPU (RK3588) \u2713 recommended"
+                  : "Qwen3-4B NPU (RK3588)"}
               </option>
             </select>
           </label>
