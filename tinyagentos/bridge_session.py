@@ -111,11 +111,13 @@ class BridgeSessionRegistry:
         chat_messages=None,
         chat_channels=None,
         chat_hub=None,
+        archive=None,
     ) -> None:
         self._trace_registry = trace_registry
         self._chat_messages = chat_messages
         self._chat_channels = chat_channels
         self._chat_hub = chat_hub
+        self._archive = archive
         self._sessions: dict[str, _AgentSession] = {}
         self._lock = asyncio.Lock()
 
@@ -333,6 +335,7 @@ class BridgeSessionRegistry:
 
         elif kind == "tool_call":
             channel_id = await self._resolve_channel(slug)
+            tool_name = body.get("tool") or ""
             if self._trace_registry:
                 store = await self._trace_registry.get(slug)
                 await store.record(
@@ -340,14 +343,29 @@ class BridgeSessionRegistry:
                     trace_id=trace_id,
                     channel_id=channel_id,
                     payload={
-                        "tool": body.get("tool") or "",
+                        "tool": tool_name,
                         "args": body.get("args") or {},
                         "caller": "openclaw",
                     },
                 )
+            if self._archive is not None:
+                try:
+                    await self._archive.record(
+                        event_type="tool_call",
+                        data={
+                            "tool": tool_name,
+                            "args": body.get("args") or {},
+                            "trace_id": trace_id,
+                        },
+                        agent_name=slug,
+                        summary=tool_name,
+                    )
+                except Exception:
+                    logger.exception("archive dual-write failed (tool_call)")
 
         elif kind == "tool_result":
             channel_id = await self._resolve_channel(slug)
+            tool_name = body.get("tool") or ""
             if self._trace_registry:
                 store = await self._trace_registry.get(slug)
                 await store.record(
@@ -355,11 +373,26 @@ class BridgeSessionRegistry:
                     trace_id=trace_id,
                     channel_id=channel_id,
                     payload={
-                        "tool": body.get("tool") or "",
+                        "tool": tool_name,
                         "result": body.get("result"),
                         "success": body.get("success", True),
                     },
                 )
+            if self._archive is not None:
+                try:
+                    await self._archive.record(
+                        event_type="tool_result",
+                        data={
+                            "tool": tool_name,
+                            "result": body.get("result"),
+                            "success": body.get("success", True),
+                            "trace_id": trace_id,
+                        },
+                        agent_name=slug,
+                        summary=tool_name,
+                    )
+                except Exception:
+                    logger.exception("archive dual-write failed (tool_result)")
 
         elif kind == "error":
             error_text = body.get("error") or ""

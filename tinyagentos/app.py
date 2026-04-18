@@ -416,6 +416,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
             chat_messages=chat_messages,
             chat_channels=chat_channels,
             chat_hub=chat_hub,
+            archive=getattr(app.state, "archive", None),
         )
 
         # After the first probe, mark auto-managed backends that are not
@@ -627,6 +628,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         chat_messages=chat_messages,
         chat_channels=chat_channels,
         chat_hub=chat_hub,
+        archive=getattr(app.state, "archive", None),
     )
 
     # Detect and set container runtime (eager, so tests work without lifespan)
