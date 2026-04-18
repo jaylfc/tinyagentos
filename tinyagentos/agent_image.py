@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import platform
 
 logger = logging.getLogger(__name__)
@@ -101,21 +102,29 @@ async def ensure_image_present(
         "agent_image: importing base image %s from %s (one-time bootstrap, ~300-500MB)",
         alias, import_url,
     )
+    # Connect curl's stdout directly to incus's stdin via an OS-level
+    # pipe so the tarball never buffers in Python. Keeps memory flat
+    # even for 500MB images. Each end is explicitly closed in the
+    # parent once passed to the child, so when curl exits incus sees EOF.
+    read_fd, write_fd = os.pipe()
     try:
-        curl = await asyncio.create_subprocess_exec(
-            "curl", "-fsSL", "--max-time", "600", import_url,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        incus = await asyncio.create_subprocess_exec(
-            "incus", "image", "import", "-", "--alias", alias,
-            stdin=curl.stdout,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-        )
-        # Close our handle so incus sees EOF when curl finishes.
-        if curl.stdout is not None:
-            curl.stdout.close()
+        try:
+            curl = await asyncio.create_subprocess_exec(
+                "curl", "-fsSL", "--max-time", "600", import_url,
+                stdout=write_fd,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        finally:
+            os.close(write_fd)
+        try:
+            incus = await asyncio.create_subprocess_exec(
+                "incus", "image", "import", "-", "--alias", alias,
+                stdin=read_fd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+        finally:
+            os.close(read_fd)
         incus_out, _ = await asyncio.wait_for(incus.communicate(), timeout=900)
         curl_rc = await asyncio.wait_for(curl.wait(), timeout=30)
     except (FileNotFoundError, asyncio.TimeoutError) as exc:
