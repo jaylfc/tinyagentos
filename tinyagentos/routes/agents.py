@@ -8,6 +8,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+import taosmd.agents as tm_agents
+
 from tinyagentos.agent_db import find_agent, get_agent_summaries
 from tinyagentos.config import save_config_locked, validate_agent_name, slugify_agent_name
 
@@ -433,6 +435,12 @@ class DeployAgentRequest(BaseModel):
     # Worker failure policy fields (added in worker-failure-handling).
     on_worker_failure: str = "pause"
     fallback_models: list[str] = []
+    # Persona fields (v2 persona system).
+    soul_md: str = ""
+    agent_md: str = ""
+    memory_plugin: str = "taosmd"
+    source_persona_id: str | None = None
+    save_to_library: dict | None = None  # {"name": str, "description": str|None}
 
 
 @router.post("/api/agents/deploy")
@@ -577,6 +585,19 @@ async def deploy_agent_endpoint(request: Request, body: DeployAgentRequest):
         # kind == "controller" or "cloud": fall through to the unchanged
         # controller-local deploy path below.
 
+    # Register the agent with taosmd BEFORE mutating config so a failure
+    # here aborts cleanly with no half-state.
+    try:
+        tm_agents.register_agent(unique_slug)
+    except tm_agents.AgentExistsError:
+        pass  # idempotent — agent already registered, proceed normally
+    except Exception as e:
+        logger.exception("register_agent(%s) failed", unique_slug)
+        return JSONResponse(
+            {"error": f"Could not register agent with taosmd: {e}"},
+            status_code=500,
+        )
+
     # Add agent entry immediately with deploying status. qmd_url has
     # been removed from the agent schema — every agent reads and writes
     # through the shared host qmd.service, addressed by agent name and
@@ -597,8 +618,26 @@ async def deploy_agent_endpoint(request: Request, body: DeployAgentRequest):
         "model": body.model,
         "framework": body.framework,
     })
+    # Apply persona fields to the agent record.
+    new_agent["soul_md"] = body.soul_md
+    new_agent["agent_md"] = body.agent_md
+    new_agent["memory_plugin"] = body.memory_plugin
+    new_agent["source_persona_id"] = body.source_persona_id
+    new_agent["migrated_to_v2_personas"] = True
+
     config.agents.append(new_agent)
     await save_config_locked(config, config.config_path)
+
+    # Write to user persona library if requested.
+    if body.save_to_library:
+        store = getattr(request.app.state, "user_personas", None)
+        if store is not None:
+            store.create(
+                name=body.save_to_library.get("name") or body.name,
+                description=body.save_to_library.get("description"),
+                soul_md=body.soul_md,
+                agent_md=body.agent_md,
+            )
 
     # Record deploy task
     deploy_tasks = request.app.state.deploy_tasks
@@ -703,7 +742,26 @@ async def deploy_agent_endpoint(request: Request, body: DeployAgentRequest):
             await save_config_locked(config, config.config_path)
 
     asyncio.create_task(_background_deploy())
-    return {"status": "deploying", "name": body.name}
+
+    # Archive smoke-check: verify trace path end-to-end after provisioning.
+    # A failure here does NOT abort the deploy — it surfaces a warning flag.
+    archive = getattr(request.app.state, "archive", None)
+    smoke_ok = False
+    if archive is not None:
+        try:
+            await archive.record(
+                event_type="agent_deployed",
+                data={"slug": unique_slug, "framework": body.framework},
+                agent_name=unique_slug,
+                summary=f"deployed {unique_slug}",
+            )
+            rows = await archive.query(agent_name=unique_slug, limit=1)
+            smoke_ok = bool(rows)
+        except Exception:
+            logger.exception("archive smoke-check failed for %s", unique_slug)
+            smoke_ok = False
+
+    return {"status": "deploying", "name": body.name, "archive_smoke_ok": smoke_ok}
 
 
 @router.post("/api/agents/bulk/start")
@@ -1164,6 +1222,65 @@ async def resume_agent(request: Request, name: str):
     agent["paused"] = False
     await save_config_locked(config, config.config_path)
     return {"status": "resumed", "name": name, "paused": False}
+
+
+class PersonaPatch(BaseModel):
+    soul_md: str | None = None
+    agent_md: str | None = None
+    source_persona_id: str | None = None
+
+
+@router.patch("/api/agents/{slug}/persona")
+async def patch_agent_persona(request: Request, slug: str, body: PersonaPatch):
+    """Partially update an agent's persona fields (soul_md, agent_md, source_persona_id)."""
+    config = request.app.state.config
+    agent = find_agent(config, slug)
+    if not agent:
+        return JSONResponse({"error": "agent not found"}, status_code=404)
+    if body.soul_md is not None:
+        agent["soul_md"] = body.soul_md
+    if body.agent_md is not None:
+        agent["agent_md"] = body.agent_md
+    if body.source_persona_id is not None:
+        agent["source_persona_id"] = body.source_persona_id
+    await save_config_locked(config, config.config_path)
+    return {"status": "ok", "agent": agent}
+
+
+class MemoryPatch(BaseModel):
+    memory_plugin: str
+
+
+_VALID_MEMORY_PLUGINS = {"taosmd", "none"}
+
+
+@router.patch("/api/agents/{slug}/memory")
+async def patch_agent_memory(request: Request, slug: str, body: MemoryPatch):
+    """Set the memory_plugin for an agent. Valid values: 'taosmd', 'none'."""
+    if body.memory_plugin not in _VALID_MEMORY_PLUGINS:
+        return JSONResponse(
+            {"error": f"Invalid memory_plugin '{body.memory_plugin}'. Must be one of: {sorted(_VALID_MEMORY_PLUGINS)}"},
+            status_code=400,
+        )
+    config = request.app.state.config
+    agent = find_agent(config, slug)
+    if not agent:
+        return JSONResponse({"error": "agent not found"}, status_code=404)
+    agent["memory_plugin"] = body.memory_plugin
+    await save_config_locked(config, config.config_path)
+    return {"status": "ok", "agent": agent}
+
+
+@router.post("/api/agents/{slug}/dismiss-migration-banner")
+async def dismiss_migration_banner(request: Request, slug: str):
+    """Flip migrated_to_v2_personas to True, hiding the migration banner."""
+    config = request.app.state.config
+    agent = find_agent(config, slug)
+    if not agent:
+        return JSONResponse({"error": f"Agent '{slug}' not found"}, status_code=404)
+    agent["migrated_to_v2_personas"] = True
+    await save_config_locked(config, config.config_path)
+    return {"status": "ok"}
 
 
 class AgentModelUpdate(BaseModel):

@@ -24,15 +24,6 @@ const FRAMEWORK_EMOJI: Record<string, string> = {
 const DEFAULT_EMOJI = "\u{1F916}"; // 🤖
 
 /**
- * Return the default unicode emoji for a given framework id.
- * Always returns a non-empty string — falls back to the generic robot.
- */
-export function defaultEmojiForFramework(framework: string | undefined | null): string {
-  if (!framework) return DEFAULT_EMOJI;
-  return FRAMEWORK_EMOJI[framework] ?? DEFAULT_EMOJI;
-}
-
-/**
  * Resolve the emoji to show for an agent.  Prefers the per-agent emoji,
  * falls back to the framework default, falls back to the generic robot.
  */
@@ -42,24 +33,6 @@ export function resolveAgentEmoji(
 ): string {
   const trimmed = (agentEmoji ?? "").trim();
   if (trimmed) return trimmed;
-  return defaultEmojiForFramework(framework);
+  if (!framework) return DEFAULT_EMOJI;
+  return FRAMEWORK_EMOJI[framework] ?? DEFAULT_EMOJI;
 }
-
-/**
- * A small quick-pick palette covering common categories (faces, animals,
- * objects, symbols).  Users can still paste any unicode into the input.
- */
-export const EMOJI_QUICK_PICKS: readonly string[] = [
-  "\u{1F916}", // 🤖
-  "\u{1F98A}", // 🦊
-  "\u{1F436}", // 🐶
-  "\u{1F431}", // 🐱
-  "\u{1F525}", // 🔥
-  "\u{2B50}", // ⭐
-  "\u{1F9EA}", // 🧪
-  "\u{1F9E0}", // 🧠
-  "\u{1F4A1}", // 💡
-  "\u{1F680}", // 🚀
-  "\u{1F308}", // 🌈
-  "\u{1F47B}", // 👻
-];

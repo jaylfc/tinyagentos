@@ -24,9 +24,30 @@ import json
 import logging
 import time
 import uuid
+from types import SimpleNamespace
 from typing import Any, AsyncIterator
 
+from tinyagentos.prompt_assembly import assemble_system_prompt
+
 logger = logging.getLogger(__name__)
+
+
+def build_bootstrap_system_prompt(agent) -> str:
+    """Assemble the system prompt from an agent record.
+
+    Accepts either a dict (YAML-loaded config shape) or any object exposing
+    the expected attributes (``slug``, ``soul_md``, ``agent_md``,
+    ``memory_plugin``). The dict's ``name`` field is used as ``slug`` since
+    the taOS config uses ``name`` as the container-safe slug.
+    """
+    if isinstance(agent, dict):
+        agent = SimpleNamespace(
+            slug=agent.get("name"),
+            soul_md=agent.get("soul_md", ""),
+            agent_md=agent.get("agent_md", ""),
+            memory_plugin=agent.get("memory_plugin", "taosmd"),
+        )
+    return assemble_system_prompt(agent)
 
 # Sentinel pushed to a subscriber queue to tell its generator to exit.
 _DISCONNECT = object()
@@ -90,11 +111,13 @@ class BridgeSessionRegistry:
         chat_messages=None,
         chat_channels=None,
         chat_hub=None,
+        archive=None,
     ) -> None:
         self._trace_registry = trace_registry
         self._chat_messages = chat_messages
         self._chat_channels = chat_channels
         self._chat_hub = chat_hub
+        self._archive = archive
         self._sessions: dict[str, _AgentSession] = {}
         self._lock = asyncio.Lock()
 
@@ -312,6 +335,7 @@ class BridgeSessionRegistry:
 
         elif kind == "tool_call":
             channel_id = await self._resolve_channel(slug)
+            tool_name = body.get("tool") or ""
             if self._trace_registry:
                 store = await self._trace_registry.get(slug)
                 await store.record(
@@ -319,14 +343,29 @@ class BridgeSessionRegistry:
                     trace_id=trace_id,
                     channel_id=channel_id,
                     payload={
-                        "tool": body.get("tool") or "",
+                        "tool": tool_name,
                         "args": body.get("args") or {},
                         "caller": "openclaw",
                     },
                 )
+            if self._archive is not None:
+                try:
+                    await self._archive.record(
+                        event_type="tool_call",
+                        data={
+                            "tool": tool_name,
+                            "args": body.get("args") or {},
+                            "trace_id": trace_id,
+                        },
+                        agent_name=slug,
+                        summary=tool_name,
+                    )
+                except Exception:
+                    logger.exception("archive dual-write failed (tool_call)")
 
         elif kind == "tool_result":
             channel_id = await self._resolve_channel(slug)
+            tool_name = body.get("tool") or ""
             if self._trace_registry:
                 store = await self._trace_registry.get(slug)
                 await store.record(
@@ -334,11 +373,26 @@ class BridgeSessionRegistry:
                     trace_id=trace_id,
                     channel_id=channel_id,
                     payload={
-                        "tool": body.get("tool") or "",
+                        "tool": tool_name,
                         "result": body.get("result"),
                         "success": body.get("success", True),
                     },
                 )
+            if self._archive is not None:
+                try:
+                    await self._archive.record(
+                        event_type="tool_result",
+                        data={
+                            "tool": tool_name,
+                            "result": body.get("result"),
+                            "success": body.get("success", True),
+                            "trace_id": trace_id,
+                        },
+                        agent_name=slug,
+                        summary=tool_name,
+                    )
+                except Exception:
+                    logger.exception("archive dual-write failed (tool_result)")
 
         elif kind == "error":
             error_text = body.get("error") or ""
@@ -351,6 +405,19 @@ class BridgeSessionRegistry:
                     channel_id=channel_id,
                     payload={"stage": "openclaw", "message": error_text},
                 )
+            if self._archive is not None:
+                try:
+                    await self._archive.record(
+                        event_type="error",
+                        data={
+                            "error": error_text,
+                            "trace_id": trace_id,
+                        },
+                        agent_name=slug,
+                        summary=error_text,
+                    )
+                except Exception:
+                    logger.exception("archive dual-write failed (error)")
             # Set any pending message to error state.
             pending_msg_id = session.pop_pending_msg(trace_id)
             if pending_msg_id and self._chat_messages:
@@ -373,6 +440,19 @@ class BridgeSessionRegistry:
                     channel_id=channel_id,
                     payload={"text": content},
                 )
+            if self._archive is not None:
+                try:
+                    await self._archive.record(
+                        event_type="reasoning",
+                        data={
+                            "text": content,
+                            "trace_id": trace_id,
+                        },
+                        agent_name=slug,
+                        summary=content[:120] if content else "",
+                    )
+                except Exception:
+                    logger.exception("archive dual-write failed (reasoning)")
         # "delta" without a matching kind is silently ignored.
 
     async def _resolve_channel(self, slug: str) -> str | None:

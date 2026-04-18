@@ -33,7 +33,9 @@ const CATEGORIES: Category[] = [
   { id: "all", label: "All Apps", icon: <ShoppingBag size={16} />, types: [], description: "Browse everything" },
   { id: "frameworks", label: "Agent Frameworks", icon: <Bot size={16} />, types: ["agent-framework"], description: "Execution engines for your AI agents" },
   { id: "models", label: "Models", icon: <Brain size={16} />, types: ["model"], description: "Language models for inference" },
-  { id: "plugins", label: "Plugins & MCP", icon: <Plug size={16} />, types: ["plugin"], description: "Tools and capabilities for agents" },
+  { id: "memory", label: "Memory", icon: <Brain size={16} />, types: ["memory"], description: "Memory backends and knowledge stores for agents" },
+  { id: "plugins", label: "Plugins", icon: <Plug size={16} />, types: ["plugin"], description: "Tools and capabilities for agents" },
+  { id: "mcp-server", label: "MCP Servers", icon: <Cpu size={16} />, types: ["mcp"], description: "Model Context Protocol servers" },
   { id: "services", label: "Services", icon: <Server size={16} />, types: ["service"], description: "Infrastructure and backends" },
   { id: "streaming", label: "Streaming Apps", icon: <Globe size={16} />, types: ["streaming-app"], description: "Desktop apps streamed via KasmVNC" },
   { id: "image", label: "Image Generation", icon: <Image size={16} />, types: ["image-gen", "image-model"], description: "Stable Diffusion and image models" },
@@ -61,12 +63,13 @@ const MOCK_APPS: CatalogApp[] = [
   { id: "qwen3-1.7b", name: "Qwen3 1.7B", type: "model", version: "3.0.0", description: "Fast, fits comfortably in 8GB RAM", installed: false, compat: "green" },
   { id: "qwen3-8b", name: "Qwen3 8B", type: "model", version: "3.0.0", description: "Most capable local model for 16GB devices", installed: false, compat: "yellow" },
 
-  // Plugins & MCP
-  { id: "mcp-pandoc", name: "MCP Pandoc", type: "plugin", version: "0.1.0", description: "Document format conversion — markdown, docx, pdf, 30+ formats", installed: false, compat: "green" },
-  { id: "mcp-server-office", name: "MCP Office Docs", type: "plugin", version: "0.1.0", description: "Read, write, and edit .docx files programmatically", installed: false, compat: "green" },
-  { id: "playwright-mcp", name: "Playwright MCP", type: "plugin", version: "1.0.0", description: "Browser automation for agents via Playwright", installed: false, compat: "green" },
-  { id: "github-mcp-server", name: "GitHub MCP", type: "plugin", version: "1.0.0", description: "Issues, PRs, repos, search — official GitHub MCP", installed: false, compat: "green" },
-  { id: "mcp-memory", name: "MCP Memory", type: "plugin", version: "1.0.0", description: "Knowledge graph memory for persistent context", installed: false, compat: "green" },
+  // MCP Servers
+  { id: "mcp-pandoc", name: "MCP Pandoc", type: "mcp", version: "0.1.0", description: "Document format conversion — markdown, docx, pdf, 30+ formats", installed: false, compat: "green" },
+  { id: "mcp-server-office", name: "MCP Office Docs", type: "mcp", version: "0.1.0", description: "Read, write, and edit .docx files programmatically", installed: false, compat: "green" },
+  { id: "playwright-mcp", name: "Playwright MCP", type: "mcp", version: "1.0.0", description: "Browser automation for agents via Playwright", installed: false, compat: "green" },
+  { id: "github-mcp-server", name: "GitHub MCP", type: "mcp", version: "1.0.0", description: "Issues, PRs, repos, search — official GitHub MCP", installed: false, compat: "green" },
+  { id: "mcp-memory", name: "MCP Memory", type: "mcp", version: "1.0.0", description: "Knowledge graph memory for persistent context", installed: false, compat: "green" },
+  // Plugins
   { id: "web-search", name: "Web Search", type: "plugin", version: "0.3.0", description: "Search the web via SearXNG or Perplexica", installed: false, compat: "green" },
   { id: "image-generation-tool", name: "Image Generation", type: "plugin", version: "0.1.0", description: "Generate images via Stable Diffusion", installed: false, compat: "green" },
 
@@ -114,6 +117,7 @@ const TYPE_COLORS: Record<string, string> = {
   model: "bg-slate-500/20 text-slate-400",
   service: "bg-amber-500/20 text-amber-400",
   plugin: "bg-teal-500/20 text-teal-400",
+  mcp: "bg-violet-500/20 text-violet-400",
   "streaming-app": "bg-indigo-500/20 text-indigo-400",
   "image-gen": "bg-pink-500/20 text-pink-400",
   "image-model": "bg-pink-500/20 text-pink-400",
@@ -130,7 +134,8 @@ const TYPE_LABELS: Record<string, string> = {
   "agent-framework": "Framework",
   model: "Model",
   service: "Service",
-  plugin: "Plugin / MCP",
+  plugin: "Plugin",
+  mcp: "MCP Server",
   "streaming-app": "Streaming",
   "image-gen": "Image Gen",
   "image-model": "Image Model",
@@ -529,6 +534,12 @@ export function StoreApp({ windowId: _windowId }: { windowId: string }) {
     return () => { cancelled = true; };
   }, [fetchCatalog]);
 
+  useEffect(() => {
+    const qs = new URLSearchParams(window.location.hash.split("?")[1] || "");
+    const cat = qs.get("category");
+    if (cat) setActiveCategory(cat);
+  }, []);
+
   const activeCat = CATEGORIES.find((c) => c.id === activeCategory);
 
   const filtered = apps.filter((app) => {
@@ -637,6 +648,10 @@ export function StoreApp({ windowId: _windowId }: { windowId: string }) {
           {loading ? (
             <div className="flex items-center justify-center h-40">
               <Loader2 className="w-6 h-6 text-shell-text-tertiary animate-spin" />
+            </div>
+          ) : filtered.length === 0 && activeCategory === "memory" ? (
+            <div className="p-6 text-center opacity-70">
+              No third-party memory plugins yet. <b>taOSmd</b> is installed by default and available on every agent.
             </div>
           ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-40 text-shell-text-tertiary text-sm gap-2">

@@ -1,14 +1,17 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 
 from tinyagentos.agent_templates import (
     list_templates, get_template, CATEGORIES, EXTERNAL_SOURCES,
     fetch_external_index, fetch_external_template, template_stats,
+    TEMPLATES,
 )
 
 router = APIRouter()
+
+_VALID_SOURCES = {"builtin", "awesome-openclaw", "prompt-library", "user"}
 
 
 @router.get("/api/templates/stats")
@@ -59,6 +62,70 @@ async def fetch_external(request: Request, source_id: str, path: str = ""):
     if not template:
         return JSONResponse({"error": "Template not found or source unavailable"}, status_code=404)
     return template
+
+
+@router.get("/api/personas/library")
+async def api_personas_library(
+    request: Request,
+    source: str | None = Query(None),
+    q: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+):
+    """Aggregated persona library: builtin templates + user-authored personas.
+
+    External sources (awesome-openclaw, prompt-library) are not yet wired —
+    they require network fetches and are tracked as a follow-up.
+    source filter returns 400 for unrecognised values.
+    """
+    if source is not None and source not in _VALID_SOURCES:
+        return JSONResponse(
+            {"error": f"unknown source '{source}'; valid: {sorted(_VALID_SOURCES)}"},
+            status_code=400,
+        )
+
+    personas: list[dict] = []
+
+    want_builtin = source in (None, "builtin")
+    want_user = source in (None, "user")
+    # External sources not implemented — return empty for now.
+
+    if want_builtin:
+        for tpl in TEMPLATES:
+            sp = tpl.get("system_prompt", "") or ""
+            personas.append({
+                "source": "builtin",
+                "id": tpl["id"],
+                "name": tpl["name"],
+                "description": tpl.get("description"),
+                "preview": sp[:120],
+            })
+
+    if want_user:
+        user_persona_store = getattr(request.app.state, "user_personas", None)
+        if user_persona_store is not None:
+            for row in user_persona_store.list():
+                soul = row.get("soul_md", "") or ""
+                personas.append({
+                    "source": "user",
+                    "id": row["id"],
+                    "name": row["name"],
+                    "description": row.get("description"),
+                    "preview": soul[:120],
+                })
+
+    if q:
+        q_lower = q.lower()
+        personas = [
+            p for p in personas
+            if q_lower in (p["name"] or "").lower()
+            or q_lower in (p["description"] or "").lower()
+            or q_lower in (p["preview"] or "").lower()
+        ]
+
+    total = len(personas)
+    page = personas[offset:offset + limit]
+    return {"personas": page, "total": total}
 
 
 @router.get("/api/templates/{template_id}")

@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { Bot, Plus, Trash2, ScrollText, Play, Server, X, ChevronRight, ChevronLeft, Check, Wrench, MessageSquare, PauseCircle, RotateCcw, Archive, HardDrive } from "lucide-react";
 import { AgentSkillsPanel } from "./AgentSkillsPanel";
 import { AgentMessagesPanel } from "./AgentMessagesPanel";
+import { PersonaTab } from "@/components/agent-settings/PersonaTab";
+import { MemoryTab } from "@/components/agent-settings/MemoryTab";
 import {
   fetchClusterWorkers,
   workersToAggregated,
@@ -9,11 +11,8 @@ import {
   CLOUD_PROVIDER_TYPES,
 } from "@/lib/models";
 import { availableKvQuantOptions, type KvQuantOptions } from "@/lib/cluster";
-import {
-  defaultEmojiForFramework,
-  resolveAgentEmoji,
-  EMOJI_QUICK_PICKS,
-} from "@/lib/agent-emoji";
+import { resolveAgentEmoji } from "@/lib/agent-emoji";
+import { EmojiPickerField } from "@/components/EmojiPicker";
 import {
   Button,
   Card,
@@ -26,6 +25,10 @@ import {
 } from "@/components/ui";
 import { ModelPickerFlow, type AgentModel } from "@/components/ModelPickerFlow";
 import { ModelPickerModal } from "@/components/ModelPickerModal";
+import { PersonaPicker } from "@/components/persona-picker/PersonaPicker";
+import type { PersonaSelection } from "@/components/persona-picker/types";
+import { slugifyClient, isValidSlug, SLUG_REGEX } from "@/lib/slug";
+import { MigrationBanner } from "@/components/MigrationBanner";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -46,6 +49,10 @@ interface Agent {
   kv_cache_quant_k?: string;
   kv_cache_quant_v?: string;
   kv_cache_quant_boundary_layers?: number;
+  soul_md?: string;
+  agent_md?: string;
+  source_persona_id?: string | null;
+  migrated_to_v2_personas?: boolean;
 }
 
 interface DiskState {
@@ -241,16 +248,18 @@ function AgentRow({
 /*  AgentDetailPanel (Logs + Skills tabs)                              */
 /* ------------------------------------------------------------------ */
 
-type DetailTab = "logs" | "skills" | "messages";
+type DetailTab = "logs" | "persona" | "memory" | "skills" | "messages";
 
 function AgentDetailPanel({
   agent,
   initialTab,
   onClose,
+  onAgentUpdated,
 }: {
   agent: Agent;
   initialTab: DetailTab;
   onClose: () => void;
+  onAgentUpdated: () => void;
 }) {
   const [tab, setTab] = useState<DetailTab>(initialTab);
   const [logs, setLogs] = useState<string>("Fetching logs...");
@@ -292,8 +301,20 @@ function AgentDetailPanel({
     }
   }, [logs]);
 
+  const dismissMigrationBanner = async () => {
+    await fetch(`/api/agents/${encodeURIComponent(agentName)}/dismiss-migration-banner`, { method: "POST" });
+    onAgentUpdated();
+  };
+
+  const addPersonaClick = async () => {
+    await dismissMigrationBanner();
+    setTab("persona");
+  };
+
   return (
-    <Tabs
+    <>
+      <MigrationBanner agent={agent} onDismiss={dismissMigrationBanner} onAddPersona={addPersonaClick} />
+      <Tabs
       value={tab}
       onValueChange={(v) => setTab(v as DetailTab)}
       className="border-t border-white/5 bg-shell-bg-deep flex flex-col"
@@ -316,6 +337,14 @@ function AgentDetailPanel({
             <TabsTrigger value="logs">
               <ScrollText size={13} className="mr-1.5" />
               Logs
+            </TabsTrigger>
+            <TabsTrigger value="persona">
+              <Bot size={13} className="mr-1.5" />
+              Persona
+            </TabsTrigger>
+            <TabsTrigger value="memory">
+              <Archive size={13} className="mr-1.5" />
+              Memory
             </TabsTrigger>
             <TabsTrigger value="skills">
               <Wrench size={13} className="mr-1.5" />
@@ -346,6 +375,12 @@ function AgentDetailPanel({
             {logs}
           </pre>
         </TabsContent>
+        <TabsContent value="persona" className="h-full mt-0">
+          <PersonaTab agent={agent} onUpdated={onAgentUpdated} />
+        </TabsContent>
+        <TabsContent value="memory" className="h-full mt-0">
+          <MemoryTab agent={agent} onUpdated={onAgentUpdated} />
+        </TabsContent>
         <TabsContent value="skills" className="h-full mt-0">
           <AgentSkillsPanel
             agentId={agent.name}
@@ -357,6 +392,7 @@ function AgentDetailPanel({
         </TabsContent>
       </div>
     </Tabs>
+    </>
   );
 }
 
@@ -373,14 +409,15 @@ function DeployWizard({
 }) {
   const [step, setStep] = useState(0);
 
+  // Step 0 — Persona
+  const [persona, setPersona] = useState<PersonaSelection | null>(null);
+
   // Step 1
   const [name, setName] = useState("");
+  const [customSlug, setCustomSlug] = useState<string | null>(null);
+  const [editingSlug, setEditingSlug] = useState(false);
   const [color, setColor] = useState(COLORS[0]);
-  // Emoji defaults to the chosen framework's icon unless the user has
-  // typed their own. `emojiTouched` tracks "user edited this field", so
-  // switching frameworks only overwrites the default, never a custom pick.
-  const [emoji, setEmoji] = useState<string>(defaultEmojiForFramework(""));
-  const [emojiTouched, setEmojiTouched] = useState(false);
+  const [emoji, setEmoji] = useState<string>("");
 
   // Step 2
   const [frameworks, setFrameworks] = useState<Framework[]>([]);
@@ -638,10 +675,12 @@ function DeployWizard({
   useEffect(() => {
     if (open) {
       setStep(0);
+      setPersona(null);
       setName("");
+      setCustomSlug(null);
+      setEditingSlug(false);
       setColor(COLORS[0]);
-      setEmoji(defaultEmojiForFramework(""));
-      setEmojiTouched(false);
+      setEmoji("");
       setSelectedFramework("");
       setShowExperimental(false);
       setSelectedModel("");
@@ -673,22 +712,20 @@ function DeployWizard({
     }
   }, [fallbackModels, onWorkerFailure]);
 
-  // Sync emoji default to the chosen framework, but only until the user
-  // manually edits the emoji field. After that, the user's pick wins.
-  useEffect(() => {
-    if (!emojiTouched) {
-      setEmoji(defaultEmojiForFramework(selectedFramework));
-    }
-  }, [selectedFramework, emojiTouched]);
 
   if (!open) return null;
 
-  const STEPS = ["Name & Color", "Framework", "Model", "Permissions", "Failure Policy", "Review"];
+  const STEPS = ["Persona", "Name & Color", "Framework", "Model", "Permissions", "Failure Policy", "Review"];
 
   const canNext = () => {
-    if (step === 0) return name.trim().length > 0;
-    if (step === 1) return selectedFramework.length > 0;
-    if (step === 2) return selectedModel.length > 0;
+    if (step === 0) return persona !== null;
+    if (step === 1) {
+      if (name.trim().length === 0) return false;
+      if (customSlug !== null && !isValidSlug(customSlug)) return false;
+      return true;
+    }
+    if (step === 2) return selectedFramework.length > 0;
+    if (step === 3) return selectedModel.length > 0;
     return true;
   };
 
@@ -705,7 +742,7 @@ function DeployWizard({
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({
-          name: name.trim(),
+          name: customSlug || name.trim(),
           framework: selectedFramework,
           model: selectedModel,
           color,
@@ -718,6 +755,10 @@ function DeployWizard({
           kv_cache_quant_k: kvCacheQuantK,
           kv_cache_quant_v: kvCacheQuantV,
           kv_cache_quant_boundary_layers: kvCacheQuantBoundaryLayers,
+          soul_md: persona?.soul_md ?? "",
+          agent_md: persona?.agent_md ?? "",
+          source_persona_id: persona?.source_persona_id ?? null,
+          save_to_library: persona?.save_to_library ?? null,
         }),
       });
       if (!res.ok) {
@@ -801,8 +842,20 @@ function DeployWizard({
 
         {/* Body */}
         <div className="px-5 py-5 flex-1 min-h-0 overflow-y-auto">
-          {/* Step 0: Name + Color */}
+          {/* Step 0: Persona */}
           {step === 0 && (
+            <Card className="p-0 border-0 bg-transparent shadow-none">
+              <PersonaPicker
+                onSelect={(s) => {
+                  setPersona(s);
+                  setStep(1);
+                }}
+              />
+            </Card>
+          )}
+
+          {/* Step 1: Name + Color */}
+          {step === 1 && (
             <Card className="p-0 border-0 bg-transparent shadow-none space-y-4">
               <div>
                 <Label htmlFor="agent-name" className="mb-1.5 block">
@@ -816,6 +869,43 @@ function DeployWizard({
                   placeholder="my-agent"
                   autoFocus
                 />
+                {(() => {
+                  const derivedSlug = slugifyClient(name);
+                  const slug = customSlug ?? derivedSlug;
+                  const slugInvalid = customSlug !== null && !isValidSlug(customSlug);
+                  return (
+                    <>
+                      <div className="text-xs opacity-60 mt-1">
+                        Slug: <code>{slug || "—"}</code>{" "}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCustomSlug(customSlug ?? derivedSlug);
+                            setEditingSlug(true);
+                          }}
+                          className="text-blue-400 hover:underline"
+                        >
+                          edit
+                        </button>
+                      </div>
+                      {editingSlug && (
+                        <Input
+                          value={customSlug ?? derivedSlug}
+                          onChange={(e) => setCustomSlug(e.target.value)}
+                          onBlur={() => setEditingSlug(false)}
+                          className="mt-1 text-sm"
+                          aria-label="Edit slug"
+                          pattern={SLUG_REGEX.source}
+                        />
+                      )}
+                      {slugInvalid && (
+                        <p className="mt-1 text-xs text-red-400">
+                          Slug must match <code>[a-z0-9][a-z0-9-]&#123;0,62&#125;</code>
+                        </p>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
               <div>
                 <Label className="mb-1.5 block">Color</Label>
@@ -848,7 +938,6 @@ function DeployWizard({
                   value={emoji}
                   onChange={(e) => {
                     setEmoji(e.target.value);
-                    setEmojiTouched(true);
                   }}
                   placeholder="\u{1F916}"
                   aria-describedby="agent-emoji-desc"
@@ -858,39 +947,18 @@ function DeployWizard({
                   id="agent-emoji-desc"
                   className="mt-1 text-xs text-shell-text-tertiary"
                 >
-                  Paste any unicode emoji, or pick one below. Leave empty to
-                  use the chosen framework&apos;s default.
+                  Paste any unicode emoji, or use the picker. Leave empty to
+                  show no emoji.
                 </p>
-                <div
-                  className="flex flex-wrap gap-1.5 mt-2"
-                  role="group"
-                  aria-label="Quick-pick emojis"
-                >
-                  {EMOJI_QUICK_PICKS.map((e) => (
-                    <button
-                      key={e}
-                      type="button"
-                      onClick={() => {
-                        setEmoji(e);
-                        setEmojiTouched(true);
-                      }}
-                      className={`w-8 h-8 rounded-md text-lg leading-none transition-colors ${
-                        emoji === e
-                          ? "bg-accent/20 ring-1 ring-accent"
-                          : "bg-shell-bg-deep hover:bg-white/5"
-                      }`}
-                      aria-label={`Set emoji to ${e}`}
-                    >
-                      {e}
-                    </button>
-                  ))}
+                <div className="mt-2">
+                  <EmojiPickerField value={emoji} onChange={setEmoji} />
                 </div>
               </div>
             </Card>
           )}
 
-          {/* Step 1: Framework */}
-          {step === 1 && (
+          {/* Step 2: Framework */}
+          {step === 2 && (
             <div className="space-y-2">
               <span className="block text-xs text-shell-text-secondary mb-2">Select Framework</span>
               {frameworks
@@ -957,8 +1025,8 @@ function DeployWizard({
             </div>
           )}
 
-          {/* Step 2: Model */}
-          {step === 2 && (
+          {/* Step 3: Model */}
+          {step === 3 && (
             <div className="space-y-2">
               {selectedModel ? (
                 /* Summary card — shown after a model is picked */
@@ -993,14 +1061,14 @@ function DeployWizard({
                   models={models}
                   modelsLoaded={modelsLoaded}
                   onSelect={(id) => setSelectedModel(id)}
-                  onBack={() => setStep(1)}
+                  onBack={() => setStep(2)}
                 />
               )}
             </div>
           )}
 
-          {/* Step 3: Permissions */}
-          {step === 3 && (
+          {/* Step 4: Permissions */}
+          {step === 4 && (
             <div className="space-y-4">
               <span className="block text-xs text-shell-text-secondary mb-2">Permissions</span>
               <label
@@ -1032,8 +1100,8 @@ function DeployWizard({
             </div>
           )}
 
-          {/* Step 4: Failure Policy */}
-          {step === 4 && (
+          {/* Step 5: Failure Policy */}
+          {step === 5 && (
             <div className="space-y-4">
               <span className="block text-xs text-shell-text-secondary mb-2">Worker Failure Policy</span>
               <div>
@@ -1175,15 +1243,15 @@ function DeployWizard({
             </div>
           )}
 
-          {/* Step 5: Review */}
-          {step === 5 && (
+          {/* Step 6: Review */}
+          {step === 6 && (
             <div className="space-y-3">
               <span className="block text-xs text-shell-text-secondary mb-2">Review Configuration</span>
               <div className="rounded-lg bg-shell-bg-deep border border-white/5 divide-y divide-white/5">
                 {[
                   ["Name", name],
                   ["Color", color],
-                  ["Emoji", emoji.trim() || defaultEmojiForFramework(selectedFramework)],
+                  ["Emoji", emoji.trim() || "—"],
                   ["Framework", frameworks.find((f) => f.id === selectedFramework)?.name ?? selectedFramework],
                   ["Model", models.find((m) => m.id === selectedModel)?.name ?? selectedModel],
                   ["Memory", memory ? (parseInt(memory, 10) >= 1024 ? `${Math.round(parseInt(memory, 10) / 1024)} GB` : `${memory} MB`) : "Unlimited"],
@@ -1289,7 +1357,7 @@ function DeployWizard({
         )}
 
         {/* Footer — hidden while the inline model picker is active (has its own nav) */}
-        {!(step === 2 && !selectedModel) && (
+        {!(step === 3 && !selectedModel) && (
         <div className="flex items-center justify-between px-5 py-3 border-t border-white/5 shrink-0">
           <Button
             variant="outline"
@@ -1839,6 +1907,7 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
             agent={agent}
             initialTab={detail.tab}
             onClose={() => setDetail(null)}
+            onAgentUpdated={fetchAgents}
           />
         );
       })()}
