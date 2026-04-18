@@ -1271,6 +1271,18 @@ async def patch_agent_memory(request: Request, slug: str, body: MemoryPatch):
     return {"status": "ok", "agent": agent}
 
 
+@router.post("/api/agents/{slug}/dismiss-migration-banner")
+async def dismiss_migration_banner(request: Request, slug: str):
+    """Flip migrated_to_v2_personas to True, hiding the migration banner."""
+    config = request.app.state.config
+    agent = find_agent(config, slug)
+    if not agent:
+        return JSONResponse({"error": f"Agent '{slug}' not found"}, status_code=404)
+    agent["migrated_to_v2_personas"] = True
+    await save_config_locked(config, config.config_path)
+    return {"status": "ok"}
+
+
 class AgentModelUpdate(BaseModel):
     model: str
 
