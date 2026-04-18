@@ -1501,15 +1501,23 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
   const fetchArchived = useCallback(async () => {
     try {
       const res = await fetch("/api/agents/archived");
-      if (!res.ok) return;
+      if (!res.ok) {
+        console.warn(`fetchArchived: ${res.status} ${res.statusText}`);
+        return;
+      }
       const ct = res.headers.get("content-type") ?? "";
-      if (!ct.includes("application/json")) return;
+      if (!ct.includes("application/json")) {
+        console.warn("fetchArchived: response not JSON, content-type:", ct);
+        return;
+      }
       const data = await res.json();
       if (Array.isArray(data)) {
         setArchived(data as ArchivedAgent[]);
       }
-    } catch {
-      /* network error — leave prior state */
+    } catch (err) {
+      // Surface the failure in DevTools so a silent empty-archived list
+      // isn't mistaken for "no archived agents". UI keeps prior state.
+      console.warn("fetchArchived: network/parse error", err);
     }
   }, []);
 
@@ -1529,7 +1537,17 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
     );
     const next: Record<string, DiskState> = {};
     for (const r of results) {
-      if (r.status === "fulfilled" && r.value) {
+      // Explicit nullness + structural check: the inner map can return
+      // null (when !res.ok or content-type mismatch), and we also guard
+      // against malformed data missing the expected fields. Without the
+      // shape check, AgentRow would deref undefined fields on render.
+      if (
+        r.status === "fulfilled" &&
+        r.value !== null &&
+        r.value !== undefined &&
+        typeof r.value.name === "string" &&
+        r.value.data
+      ) {
         next[r.value.name] = r.value.data;
       }
     }
