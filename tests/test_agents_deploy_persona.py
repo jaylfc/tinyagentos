@@ -41,8 +41,8 @@ class TestDeployPersonaFields:
 
     async def test_deploy_with_save_to_library_writes_user_persona(self, client, app, tmp_path):
         from tinyagentos.user_personas import UserPersonaStore
-        if not hasattr(app.state, "user_persona_store"):
-            app.state.user_persona_store = UserPersonaStore(tmp_path / "p.db")
+        if not hasattr(app.state, "user_personas"):
+            app.state.user_personas = UserPersonaStore(tmp_path / "p.db")
         app.state.archive = MagicMock(
             record=AsyncMock(), query=AsyncMock(return_value=[{}])
         )
@@ -55,14 +55,14 @@ class TestDeployPersonaFields:
             "save_to_library": {"name": "My Custom", "description": "for reuse"},
         })
         assert resp.status_code == 200
-        rows = app.state.user_persona_store.list()
+        rows = app.state.user_personas.list()
         assert any(r["name"] == "My Custom" and r["soul_md"] == "Custom soul" for r in rows)
 
     async def test_deploy_without_save_to_library_does_not_create_persona(self, client, app, tmp_path):
         from tinyagentos.user_personas import UserPersonaStore
-        if not hasattr(app.state, "user_persona_store"):
-            app.state.user_persona_store = UserPersonaStore(tmp_path / "p.db")
-        before = len(app.state.user_persona_store.list())
+        if not hasattr(app.state, "user_personas"):
+            app.state.user_personas = UserPersonaStore(tmp_path / "p.db")
+        before = len(app.state.user_personas.list())
         app.state.archive = MagicMock(
             record=AsyncMock(), query=AsyncMock(return_value=[{}])
         )
@@ -72,7 +72,7 @@ class TestDeployPersonaFields:
             "soul_md": "S",
         })
         assert resp.status_code == 200
-        after = len(app.state.user_persona_store.list())
+        after = len(app.state.user_personas.list())
         assert after == before
 
     async def test_deploy_registers_agent_with_taosmd(self, client, app, monkeypatch):

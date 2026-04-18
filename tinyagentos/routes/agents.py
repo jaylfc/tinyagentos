@@ -630,7 +630,7 @@ async def deploy_agent_endpoint(request: Request, body: DeployAgentRequest):
 
     # Write to user persona library if requested.
     if body.save_to_library:
-        store = getattr(request.app.state, "user_persona_store", None)
+        store = getattr(request.app.state, "user_personas", None)
         if store is not None:
             store.create(
                 name=body.save_to_library.get("name") or body.name,
