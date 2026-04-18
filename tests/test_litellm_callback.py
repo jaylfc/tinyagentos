@@ -59,6 +59,103 @@ def test_slug_from_alias_bare_taos_prefix():
 
 
 # ---------------------------------------------------------------------------
+# _extract_slug_and_model — source priority
+# ---------------------------------------------------------------------------
+
+def _cb():
+    try:
+        from tinyagentos.litellm_callback import TaosLiteLLMCallback
+    except ImportError:
+        pytest.skip("litellm not installed")
+    return TaosLiteLLMCallback()
+
+
+def test_slug_from_user_api_key_metadata_agent():
+    cb = _cb()
+    kwargs = {
+        "model": "default",
+        "litellm_params": {
+            "metadata": {
+                "user_api_key_metadata": {"agent": "fooagent", "managed_by": "tinyagentos"},
+            },
+        },
+    }
+    slug, model = cb._extract_slug_and_model(kwargs)
+    assert slug == "fooagent"
+    assert model == "default"
+
+
+def test_slug_from_user_api_key_auth_metadata_agent():
+    cb = _cb()
+    kwargs = {
+        "model": "kilo-auto/free",
+        "litellm_params": {
+            "metadata": {
+                "user_api_key_auth_metadata": {"agent": "baragent"},
+            },
+        },
+    }
+    slug, _ = cb._extract_slug_and_model(kwargs)
+    assert slug == "baragent"
+
+
+def test_slug_from_user_api_key_alias_stripped():
+    cb = _cb()
+    kwargs = {
+        "model": "default",
+        "litellm_params": {
+            "metadata": {
+                "user_api_key_alias": "taos-bridgetest-20260418-1245",
+            },
+        },
+    }
+    slug, _ = cb._extract_slug_and_model(kwargs)
+    assert slug == "bridgetest-20260418-1245"
+
+
+def test_slug_from_legacy_key_alias():
+    cb = _cb()
+    kwargs = {
+        "model": "default",
+        "litellm_params": {
+            "metadata": {
+                "key_alias": "taos-legacyagent",
+            },
+        },
+    }
+    slug, _ = cb._extract_slug_and_model(kwargs)
+    assert slug == "legacyagent"
+
+
+def test_slug_unknown_when_nothing_present():
+    from tinyagentos.litellm_callback import _UNKNOWN_SLUG
+    cb = _cb()
+    kwargs = {
+        "model": "default",
+        "litellm_params": {"metadata": {}},
+    }
+    slug, _ = cb._extract_slug_and_model(kwargs)
+    assert slug == _UNKNOWN_SLUG
+
+
+def test_slug_priority_metadata_beats_alias():
+    """When both user_api_key_metadata.agent and alias are present,
+    the explicit metadata wins — it's the canonical source."""
+    cb = _cb()
+    kwargs = {
+        "model": "default",
+        "litellm_params": {
+            "metadata": {
+                "user_api_key_metadata": {"agent": "winner"},
+                "user_api_key_alias": "taos-loser",
+            },
+        },
+    }
+    slug, _ = cb._extract_slug_and_model(kwargs)
+    assert slug == "winner"
+
+
+# ---------------------------------------------------------------------------
 # _read_local_token
 # ---------------------------------------------------------------------------
 

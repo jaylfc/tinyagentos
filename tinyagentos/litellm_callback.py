@@ -120,13 +120,51 @@ try:
             return ""
 
         def _extract_slug_and_model(self, kwargs: dict) -> tuple[str, str]:
-            # LiteLLM puts the key alias in litellm_params or metadata
+            """Resolve the agent slug from LiteLLM callback kwargs.
+
+            LiteLLM surfaces per-key metadata on success events under
+            ``litellm_params.metadata`` with several fields that all map
+            back to the key the deployer minted. We try the richest
+            source first (``user_api_key_metadata.agent`` is exactly
+            what ``LLMProxy.create_agent_key`` wrote) and fall back
+            through progressively weaker options:
+
+              1. ``user_api_key_metadata.agent`` — the agent slug as
+                 stamped into the key's metadata. Stable across LiteLLM
+                 versions that echo user-supplied metadata.
+              2. ``user_api_key_auth_metadata.agent`` — same payload
+                 under the auth-resolved alias; present on some
+                 versions but not others.
+              3. ``user_api_key_alias`` — the ``taos-<slug>`` alias.
+                 Stripping the prefix recovers the slug.
+              4. ``key_alias`` — legacy field used by older LiteLLM
+                 builds; kept for backward compat.
+
+            Returns ``(_UNKNOWN_SLUG, model)`` when nothing matches, so
+            events are still captured but bucketed under the sentinel.
+            """
             litellm_params = kwargs.get("litellm_params") or {}
             metadata = litellm_params.get("metadata") or kwargs.get("metadata") or {}
+
+            # 1+2: explicit agent slug stamped into key metadata.
+            for md_key in ("user_api_key_metadata", "user_api_key_auth_metadata"):
+                user_md = metadata.get(md_key)
+                if isinstance(user_md, dict):
+                    agent = user_md.get("agent")
+                    if isinstance(agent, str) and agent:
+                        return agent, str(kwargs.get("model") or "")
+
+            # 3: derive from the ``taos-<slug>`` key alias.
+            alias = metadata.get("user_api_key_alias")
+            if isinstance(alias, str) and alias.startswith("taos-"):
+                slug = alias[len("taos-"):]
+                if slug:
+                    return slug, str(kwargs.get("model") or "")
+
+            # 4: legacy ``key_alias`` fallback for older LiteLLM builds.
             key_alias = metadata.get("key_alias") or litellm_params.get("key_alias")
             slug = _slug_from_alias(key_alias)
-            model = str(kwargs.get("model") or "")
-            return slug, model
+            return slug, str(kwargs.get("model") or "")
 
         async def async_log_success_event(self, kwargs: dict, response_obj: Any, start_time: Any, end_time: Any) -> None:
             try:
