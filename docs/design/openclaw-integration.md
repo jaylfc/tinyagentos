@@ -791,25 +791,28 @@ The `api: "openai-completions"` mode uses the `/v1/chat/completions` endpoint. T
 **Model alias for the LiteLLM default model:**
 
 ```json5
+// Implementation note (2026-04-18): the provider name is openclaw's built-in
+// "litellm" (not a custom "taos" provider). The bridge wires
+// models.providers.litellm pointing at LiteLLM on 127.0.0.1:4000 with the
+// per-agent virtual key in LITELLM_API_KEY. Default model name is the
+// taOS-selected primary, e.g. "litellm/kilo-auto/free".
 {
-  agents: {
-    defaults: {
-      models: {
-        "taos/default": {
-          id: "taos/default",
-          name: "taOS Default",
-          provider: "taos",
-          contextWindow: 128000,
-        },
+  models: {
+    providers: {
+      litellm: {
+        baseUrl: "http://127.0.0.1:4000",
+        apiKey: "${LITELLM_API_KEY}",
+        api: "openai-completions",
+        models: [{ id: "kilo-auto/free", name: "Kilo Auto Free" }],
       },
     },
   },
+  agents: {
+    defaults: {
+      model: { primary: "litellm/kilo-auto/free" },
+    },
+  },
 }
-```
-
-Or via CLI:
-```bash
-openclaw models aliases add taos-default taos/default
 ```
 
 ### 3.5 API key handling: SecretRef format
@@ -1102,13 +1105,13 @@ The MVP integration path is the **bridge adapter** — openclaw's fork patch fet
 | OpenClaw capability | taOS maps it to | Mechanism | Priority |
 |---|---|---|---|
 | Bootstrap config load | taOS exposes `GET /api/openclaw/bootstrap` (bearer auth with local token) | openclaw's `src/taos-bridge.ts` patch fetches bootstrap on startup; receives LiteLLM endpoint + API key, qmd URL, MCP URL, channel config, `schema_version` | MVP |
-| LLM provider injection | taOS bootstrap supplies `models.providers.taos` with LiteLLM `base_url` + key | Bridge patch writes provider into openclaw's runtime provider registry; does NOT edit `openclaw.json` on disk | MVP |
+| LLM provider injection | taOS bootstrap supplies `models.providers.litellm` with `baseUrl` + `${LITELLM_API_KEY}` (openclaw's built-in litellm provider, not a custom "taos" provider) | Bridge writes the provider into openclaw's runtime registry; does NOT edit `openclaw.json` on disk | done |
 | Outbound channel (user→openclaw) | taOS's chat hub POSTs messages to the openclaw channel adapter via SSE | Bridge patch registers `channels.kind: "external", provider: "taos"`; receives messages via SSE from `{TAOS_BRIDGE_URL}/sessions/{id}/events` | MVP |
 | Inbound channel (openclaw→user) | openclaw emits replies + tool events on the external channel | Bridge adapter POSTs to `{TAOS_BRIDGE_URL}/sessions/{id}/reply` with delta/final/error payloads; taOS relays to chat hub | MVP |
 | Streaming deltas | openclaw's session message delta → channel → taOS | Bridge adapter hooks session message events and forwards to SSE client; chunk granularity matches openclaw's native stream | MVP |
 | Trace capture | taOS writes `llm_call`, `message_in`, `message_out`, `tool_call`, `tool_result`, `error` traces on every event received via bridge | No openclaw-side trace code needed; taOS's bridge endpoint captures as events flow through | MVP |
 | `npm install` + systemd unit | Replace Python FastAPI stub in `install.sh` | Install Node 22.14+ via NodeSource; `npm install -g github:jaylfc/openclaw#<sha>`; write `openclaw.service` unit; `After=network-online.target` | MVP |
-| `openclaw.json` generation | Deployer writes config at deploy time | Gateway auth `token` mode; empty `channels: {}`; `models.providers.taos` pointing to LiteLLM incus proxy; `TAOS_BRIDGE_URL` + `TAOS_LOCAL_TOKEN` in env | MVP |
+| `openclaw.json` generation | Deployer writes config at deploy time | Gateway auth `token` mode; empty `channels: {}`; `models.providers.litellm` pointing to LiteLLM at 127.0.0.1:4000 with `${LITELLM_API_KEY}`; `TAOS_BRIDGE_URL` + `TAOS_LOCAL_TOKEN` + `LITELLM_API_KEY` in env | done |
 | All channels disabled | Deployer writes `channels: {}` in `openclaw.json` | taOS owns all delivery via chat hub + channel-hub layer; openclaw's built-in channels (Discord, Telegram, etc.) never start | MVP |
 | Tool calling (openclaw→MCP) | Bridge bootstrap supplies MCP URL; openclaw uses its existing MCP client to reach taOS's MCP server on the host | Leverages openclaw's existing `registerTool` + MCP SDK; no protocol invention | MVP (if openclaw's MCP client is stable in current fork baseline) |
 | Cost tracking | Already wired via LiteLLM callback into taOS trace store | Existing trace pipeline picks up every LLM call by default | done |
