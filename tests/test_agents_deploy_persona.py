@@ -74,3 +74,40 @@ class TestDeployPersonaFields:
         assert resp.status_code == 200
         after = len(app.state.user_persona_store.list())
         assert after == before
+
+    async def test_deploy_registers_agent_with_taosmd(self, client, app, monkeypatch):
+        app.state.archive = MagicMock(
+            record=AsyncMock(), query=AsyncMock(return_value=[{}])
+        )
+        calls = []
+        def fake_register(name, **kwargs):
+            calls.append(name)
+        import taosmd.agents as tm_agents
+        monkeypatch.setattr(tm_agents, "register_agent", fake_register)
+        resp = await client.post("/api/agents/deploy", json={"name": "Atlas-reg", "framework": "openclaw"})
+        assert resp.status_code == 200
+        assert calls == [resp.json()["name"]]
+
+    async def test_deploy_aborts_if_register_agent_fails(self, client, app, monkeypatch):
+        app.state.archive = MagicMock(
+            record=AsyncMock(), query=AsyncMock(return_value=[{}])
+        )
+        def fake_register(name, **kwargs):
+            raise RuntimeError("taosmd down")
+        import taosmd.agents as tm_agents
+        monkeypatch.setattr(tm_agents, "register_agent", fake_register)
+        before_count = len(app.state.config.agents)
+        resp = await client.post("/api/agents/deploy", json={"name": "Atlas-fail", "framework": "openclaw"})
+        assert resp.status_code == 500
+        assert len(app.state.config.agents) == before_count
+
+    async def test_deploy_tolerates_already_registered(self, client, app, monkeypatch):
+        app.state.archive = MagicMock(
+            record=AsyncMock(), query=AsyncMock(return_value=[{}])
+        )
+        import taosmd.agents as tm_agents
+        def fake_register(name, **kwargs):
+            raise tm_agents.AgentExistsError(name)
+        monkeypatch.setattr(tm_agents, "register_agent", fake_register)
+        resp = await client.post("/api/agents/deploy", json={"name": "Atlas-dup", "framework": "openclaw"})
+        assert resp.status_code == 200

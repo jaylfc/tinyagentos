@@ -8,6 +8,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+import taosmd.agents as tm_agents
+
 from tinyagentos.agent_db import find_agent, get_agent_summaries
 from tinyagentos.config import save_config_locked, validate_agent_name, slugify_agent_name
 
@@ -582,6 +584,19 @@ async def deploy_agent_endpoint(request: Request, body: DeployAgentRequest):
             )
         # kind == "controller" or "cloud": fall through to the unchanged
         # controller-local deploy path below.
+
+    # Register the agent with taosmd BEFORE mutating config so a failure
+    # here aborts cleanly with no half-state.
+    try:
+        tm_agents.register_agent(unique_slug)
+    except tm_agents.AgentExistsError:
+        pass  # idempotent — agent already registered, proceed normally
+    except Exception as e:
+        logger.exception("register_agent(%s) failed", unique_slug)
+        return JSONResponse(
+            {"error": f"Could not register agent with taosmd: {e}"},
+            status_code=500,
+        )
 
     # Add agent entry immediately with deploying status. qmd_url has
     # been removed from the agent schema — every agent reads and writes
