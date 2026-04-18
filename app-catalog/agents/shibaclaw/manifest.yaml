@@ -1,6 +1,7 @@
 id: shibaclaw
 name: ShibaClaw
 type: agent-framework
+verification_status: alpha
 version: 0.0.13
 description: "Security-focused AI assistant with prompt injection protection, multi-channel support, and proactive learning"
 homepage: https://github.com/RikyZ90/ShibaClaw

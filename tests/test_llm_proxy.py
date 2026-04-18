@@ -3,6 +3,7 @@ from unittest.mock import patch
 import pytest
 from tinyagentos.llm_proxy import (
     EMBEDDING_ALIAS,
+    TAOS_LITELLM_MASTER_KEY,
     _is_embedding_model,
     generate_litellm_config,
     LLMProxy,
@@ -24,6 +25,14 @@ class TestConfigGeneration:
     def test_empty_backends_returns_empty_model_list(self):
         config = generate_litellm_config([])
         assert config["model_list"] == []
+
+    def test_config_emits_master_key(self):
+        """general_settings.master_key must carry the shared taOS master
+        key so LiteLLM rejects unauthenticated requests and accepts the
+        value the deployer injects into every agent container."""
+        config = generate_litellm_config([])
+        assert config["general_settings"]["master_key"] == "sk-taos-master"
+        assert config["general_settings"]["master_key"] == TAOS_LITELLM_MASTER_KEY
 
     def test_ollama_backend_uses_ollama_prefix(self):
         backends = [{"name": "local", "type": "ollama", "url": "http://localhost:11434", "priority": 1}]
@@ -121,6 +130,133 @@ class TestEmbeddingDiscovery:
         assert "nomic-embed-text-v1.5" in names
 
 
+class TestCloudBackends:
+    def test_generate_config_kilocode_backend(self):
+        backends = [{
+            "name": "kilo-free",
+            "type": "kilocode",
+            "url": "https://kilocode.ai/api/v1",
+            "priority": 10,
+            "api_key_secret": "KILOCODE_API_KEY",
+            "models": ["kilo/free/claude-3.5-sonnet", "kilo/free/gpt-4o"],
+        }]
+        cfg = generate_litellm_config(backends)
+        names = [e["model_name"] for e in cfg["model_list"]]
+        assert "default" in names
+        assert "kilo/free/claude-3.5-sonnet" in names
+        assert "kilo/free/gpt-4o" in names
+        kilo_entry = next(e for e in cfg["model_list"] if e["model_name"] == "kilo/free/claude-3.5-sonnet")
+        assert kilo_entry["litellm_params"]["model"].startswith("openai/")
+        assert kilo_entry["litellm_params"]["api_base"] == "https://kilocode.ai/api/v1"
+        assert kilo_entry["litellm_params"]["api_key"] == "os.environ/KILOCODE_API_KEY"
+
+    def test_generate_config_openrouter_backend(self):
+        backends = [{
+            "name": "or",
+            "type": "openrouter",
+            "url": "https://openrouter.ai/api/v1",
+            "priority": 5,
+            "api_key": "or-test-key",
+            "models": [{"id": "meta-llama/llama-3-70b"}],
+        }]
+        cfg = generate_litellm_config(backends)
+        model_entry = next(e for e in cfg["model_list"] if e["model_name"] == "meta-llama/llama-3-70b")
+        assert model_entry["litellm_params"]["model"].startswith("openrouter/")
+        assert model_entry["litellm_params"]["api_key"] == "or-test-key"
+
+    def test_generate_config_cloud_without_models_only_default(self):
+        backends = [{
+            "name": "blank",
+            "type": "openrouter",
+            "url": "https://openrouter.ai/api/v1",
+            "api_key": "x",
+        }]
+        cfg = generate_litellm_config(backends)
+        assert [e["model_name"] for e in cfg["model_list"]] == ["default"]
+
+    def test_generate_config_warns_on_incomplete_cloud_backend(self, caplog):
+        """A cloud-type backend missing ``url`` or ``models`` should fire
+        a WARNING so silent drops surface in logs. Historical kilocode
+        regression slipped through precisely because this path was mute."""
+        import logging
+        backends = [
+            {"name": "headless-kilo", "type": "kilocode", "priority": 5,
+             "api_key_secret": "KILO_KEY"},
+            {"name": "blank-openrouter", "type": "openrouter",
+             "url": "https://openrouter.ai/api/v1", "priority": 6},
+        ]
+        with caplog.at_level(logging.WARNING, logger="tinyagentos.llm_proxy"):
+            generate_litellm_config(backends)
+
+        msgs = [r.getMessage() for r in caplog.records]
+        assert any(
+            "headless-kilo" in m and "missing url or models" in m and "type=kilocode" in m
+            for m in msgs
+        ), msgs
+        assert any(
+            "blank-openrouter" in m and "missing url or models" in m
+            for m in msgs
+        ), msgs
+
+    def test_generate_config_no_warning_on_complete_cloud_backend(self, caplog):
+        """Well-formed cloud entries (url + models) must not trigger the
+        incomplete-backend warning — otherwise operators lose the signal."""
+        import logging
+        backends = [{
+            "name": "ok-kilo", "type": "kilocode",
+            "url": "https://api.kilo.ai/api/gateway",
+            "models": [{"id": "kilo-auto/free"}],
+            "api_key_secret": "KILO_KEY",
+        }]
+        with caplog.at_level(logging.WARNING, logger="tinyagentos.llm_proxy"):
+            generate_litellm_config(backends)
+        assert not any(
+            "missing url or models" in r.getMessage() for r in caplog.records
+        )
+
+    def test_generate_config_ollama_backend_unchanged(self):
+        backends = [{
+            "name": "pi",
+            "type": "ollama",
+            "url": "http://localhost:11434",
+            "priority": 10,
+            "model": "llama3.2",
+        }]
+        cfg = generate_litellm_config(backends)
+        chat = next(e for e in cfg["model_list"] if e["model_name"] == "default")
+        assert chat["litellm_params"]["model"] == "ollama_chat/llama3.2"
+        assert chat["litellm_params"]["api_base"] == "http://localhost:11434"
+
+
+class TestCallbackWiring:
+    def test_config_emits_callbacks_under_litellm_settings(self):
+        """Callbacks must be emitted under ``litellm_settings.callbacks`` as a
+        single dotted path string so LiteLLM's ``get_instance_fn`` loader can
+        resolve it relative to the config file directory. Historically the
+        callback lived in ``general_settings.custom_callbacks`` which LiteLLM
+        silently ignored — leaving trace events empty."""
+        result = generate_litellm_config([])
+        assert result["litellm_settings"]["callbacks"] == (
+            "taos_callback.proxy_handler_instance"
+        )
+        assert "custom_callbacks" not in result["general_settings"]
+
+    def test_write_config_creates_callback_shim(self, tmp_path):
+        """``write_config`` writes a sibling ``taos_callback.py`` next to
+        the generated yaml, re-exporting the installed callback instance as
+        ``proxy_handler_instance`` — so LiteLLM's config-dir-relative import
+        succeeds without duplicating the callback source."""
+        proxy = LLMProxy(port=14000, config_dir=tmp_path)
+        proxy.write_config([])
+        shim = tmp_path / "taos_callback.py"
+        assert shim.exists()
+        contents = shim.read_text()
+        assert (
+            "from tinyagentos.litellm_callback import taos_callback "
+            "as proxy_handler_instance"
+        ) in contents
+
+
 class TestLLMProxy:
     def test_proxy_not_running_initially(self):
         proxy = LLMProxy(port=14000)
@@ -129,3 +265,171 @@ class TestLLMProxy:
     def test_proxy_url(self):
         proxy = LLMProxy(port=14000)
         assert proxy.url == "http://localhost:14000"
+
+    def test_proxy_database_url_defaults_to_none(self):
+        proxy = LLMProxy(port=14000)
+        assert proxy.database_url is None
+
+    def test_proxy_database_url_persisted(self):
+        proxy = LLMProxy(port=14000, database_url="postgresql://u:p@h/db")
+        assert proxy.database_url == "postgresql://u:p@h/db"
+
+
+class TestDatabaseUrlPropagation:
+    @pytest.mark.asyncio
+    async def test_start_passes_database_url_when_set(self, monkeypatch):
+        """DATABASE_URL lands in the litellm subprocess env when configured."""
+        import shutil
+        import tinyagentos.llm_proxy as mod
+
+        class _FakeClient:
+            def __init__(self, *a, **kw): pass
+            async def __aenter__(self): return self
+            async def __aexit__(self, *exc): return False
+            async def get(self, url):
+                raise RuntimeError("no proxy")
+
+        monkeypatch.setattr(mod.httpx, "AsyncClient", _FakeClient)
+        monkeypatch.setattr(mod, "_pids_listening_on", lambda port: [])
+        monkeypatch.setattr(shutil, "which", lambda _: "/fake/litellm")
+
+        captured: dict = {}
+
+        class _FakePopen:
+            def __init__(self, *args, **kwargs):
+                captured["env"] = kwargs.get("env") or {}
+                # Raise so start() exits without spawning; the env we
+                # cared about was already captured.
+                raise FileNotFoundError("stubbed")
+
+        monkeypatch.setattr(mod.subprocess, "Popen", _FakePopen)
+
+        p = mod.LLMProxy(port=14001, database_url="postgresql://fake:pw@host/db")
+        await p.start(backends=[])
+
+        assert captured["env"]["DATABASE_URL"] == "postgresql://fake:pw@host/db"
+        assert captured["env"]["LITELLM_MASTER_KEY"] == "sk-taos-master"
+
+    @pytest.mark.asyncio
+    async def test_start_omits_database_url_when_unset(self, monkeypatch):
+        """No DATABASE_URL in env when the proxy was built without one."""
+        import shutil
+        import tinyagentos.llm_proxy as mod
+
+        class _FakeClient:
+            def __init__(self, *a, **kw): pass
+            async def __aenter__(self): return self
+            async def __aexit__(self, *exc): return False
+            async def get(self, url):
+                raise RuntimeError("no proxy")
+
+        monkeypatch.setattr(mod.httpx, "AsyncClient", _FakeClient)
+        monkeypatch.setattr(mod, "_pids_listening_on", lambda port: [])
+        monkeypatch.setattr(shutil, "which", lambda _: "/fake/litellm")
+        # Scrub any ambient DATABASE_URL from the test runner so we can
+        # assert the proxy didn't invent one.
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+
+        captured: dict = {}
+
+        class _FakePopen:
+            def __init__(self, *args, **kwargs):
+                captured["env"] = kwargs.get("env") or {}
+                raise FileNotFoundError("stubbed")
+
+        monkeypatch.setattr(mod.subprocess, "Popen", _FakePopen)
+
+        p = mod.LLMProxy(port=14002)
+        await p.start(backends=[])
+
+        assert "DATABASE_URL" not in captured["env"]
+
+
+class TestLLMProxyOwnership:
+    def test_is_running_false_by_default(self):
+        from tinyagentos.llm_proxy import LLMProxy
+        p = LLMProxy(port=4000)
+        assert p.is_running() is False
+
+    @pytest.mark.asyncio
+    async def test_start_kills_foreign_process_on_port(self, monkeypatch):
+        """When another process is already on :4000, start() must SIGTERM
+        it rather than adopt — a foreign proxy could be holding a stale
+        config or different master key, which would make /key/generate
+        fail silently downstream."""
+        import tinyagentos.llm_proxy as mod
+
+        class _FakeResp:
+            status_code = 200
+
+        class _FakeClient:
+            def __init__(self, *a, **kw): pass
+            async def __aenter__(self): return self
+            async def __aexit__(self, *exc): return False
+            async def get(self, url): return _FakeResp()
+
+        monkeypatch.setattr(mod.httpx, "AsyncClient", _FakeClient)
+
+        foreign_pid = 424242
+        monkeypatch.setattr(mod, "_pids_listening_on", lambda port: [foreign_pid])
+        # Once killed, report dead so start() doesn't escalate to SIGKILL.
+        monkeypatch.setattr(mod, "_pid_alive", lambda pid: False)
+
+        kill_calls: list[tuple[int, int]] = []
+
+        def _fake_kill(pid, sig):
+            kill_calls.append((pid, sig))
+
+        monkeypatch.setattr(mod.os, "kill", _fake_kill)
+
+        # Short-circuit the spawn — we only care about the kill path.
+        class _FakePopen:
+            def __init__(self, *a, **kw):
+                raise FileNotFoundError("stubbed to skip real spawn")
+
+        monkeypatch.setattr(mod.subprocess, "Popen", _FakePopen)
+        # Avoid resolving a real litellm binary on the test host.
+        monkeypatch.setattr(mod, "_discover_ollama_models", lambda *a, **kw: [])
+
+        p = mod.LLMProxy(port=4000)
+        await p.start(backends=[])
+
+        # SIGTERM must have been sent to the foreign PID before the
+        # spawn attempt.
+        assert (foreign_pid, mod.signal.SIGTERM) in kill_calls
+
+    @pytest.mark.asyncio
+    async def test_create_agent_key_logs_on_non_200(self, monkeypatch, caplog):
+        """Non-200 from /key/generate must surface in logs so operators
+        can see master-key mismatches / model-list rejections instead of
+        hunting through null llm_key fields."""
+        import logging
+        import tinyagentos.llm_proxy as mod
+
+        class _FakeResp:
+            status_code = 401
+            text = "Invalid master key"
+
+        class _FakeClient:
+            def __init__(self, *a, **kw): pass
+            async def __aenter__(self): return self
+            async def __aexit__(self, *exc): return False
+            async def post(self, url, json=None, headers=None): return _FakeResp()
+
+        monkeypatch.setattr(mod.httpx, "AsyncClient", _FakeClient)
+
+        p = mod.LLMProxy(port=4000)
+
+        # Bypass is_running(): pretend we own a live subprocess.
+        class _FakeProc:
+            def poll(self): return None
+        p._process = _FakeProc()
+
+        with caplog.at_level(logging.WARNING, logger="tinyagentos.llm_proxy"):
+            key = await p.create_agent_key("bridgetest")
+
+        assert key is None
+        assert any(
+            "/key/generate" in rec.getMessage() and "401" in rec.getMessage()
+            for rec in caplog.records
+        ), [rec.getMessage() for rec in caplog.records]

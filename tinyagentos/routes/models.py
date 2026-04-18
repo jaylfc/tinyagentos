@@ -576,6 +576,41 @@ async def loaded_models(request: Request):
                                 "expires_at": None,
                                 "details": {},
                             })
+                elif backend_type == "rknn-sd":
+                    resp = await client.get(f"{base}/v1/models", timeout=5)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        for m in data.get("data", []) or []:
+                            model_id = m.get("id", "rknn-sd")
+                            loaded.append({
+                                "name": model_id,
+                                "backend": backend_name,
+                                "backend_type": backend_type,
+                                "backend_url": backend_url,
+                                "purpose": "image-generation",
+                                "size_mb": None,
+                                "vram_mb": None,
+                                "ram_mb": None,
+                                "expires_at": None,
+                                "details": {},
+                            })
+                elif backend_type == "sd-cpp":
+                    resp = await client.get(f"{base}/sdapi/v1/options", timeout=5)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        checkpoint = data.get("sd_model_checkpoint") or "unknown"
+                        loaded.append({
+                            "name": checkpoint,
+                            "backend": backend_name,
+                            "backend_type": backend_type,
+                            "backend_url": backend_url,
+                            "purpose": "image-generation",
+                            "size_mb": None,
+                            "vram_mb": None,
+                            "ram_mb": None,
+                            "expires_at": None,
+                            "details": {},
+                        })
             except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError):
                 continue
             except Exception as e:

@@ -1,7 +1,9 @@
 import pytest
 import pytest_asyncio
 import yaml
+import httpx
 from httpx import AsyncClient, ASGITransport
+from unittest.mock import AsyncMock, patch, MagicMock
 from tinyagentos.app import create_app
 from tinyagentos.routes.models import get_downloaded_models
 
@@ -189,3 +191,165 @@ class TestGetDownloadedModels:
         assert len(results) == 1
         assert results[0]["size_mb"] == 3
         assert results[0]["format"] == "bin"
+
+
+@pytest.fixture
+def app_with_rknn_sd_backend(tmp_path):
+    config = {
+        "server": {"host": "0.0.0.0", "port": 6969},
+        "backends": [
+            {"name": "rknn-sd-npu", "type": "rknn-sd", "url": "http://localhost:7863", "priority": 1}
+        ],
+        "qmd": {"url": "http://localhost:7832"},
+        "agents": [],
+        "metrics": {"poll_interval": 30, "retention_days": 30},
+    }
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.dump(config))
+    (tmp_path / ".setup_complete").touch()
+    return create_app(data_dir=tmp_path)
+
+
+@pytest.fixture
+def app_with_sd_cpp_backend(tmp_path):
+    config = {
+        "server": {"host": "0.0.0.0", "port": 6969},
+        "backends": [
+            {"name": "sd-cpp-cpu", "type": "sd-cpp", "url": "http://localhost:7864", "priority": 1}
+        ],
+        "qmd": {"url": "http://localhost:7832"},
+        "agents": [],
+        "metrics": {"poll_interval": 30, "retention_days": 30},
+    }
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.dump(config))
+    (tmp_path / ".setup_complete").touch()
+    return create_app(data_dir=tmp_path)
+
+
+async def _make_auth_client(app):
+    store = app.state.metrics
+    if store._db is not None:
+        await store.close()
+    await store.init()
+    await app.state.qmd_client.init()
+    app.state.auth.setup_user("admin", "Test Admin", "", "testpass")
+    _rec = app.state.auth.find_user("admin")
+    _token = app.state.auth.create_session(user_id=_rec["id"] if _rec else "", long_lived=True)
+    transport = ASGITransport(app=app)
+    return AsyncClient(transport=transport, base_url="http://test", cookies={"taos_session": _token})
+
+
+@pytest.mark.asyncio
+class TestLoadedModelsImageBackends:
+    async def test_rknn_sd_loaded_models(self, app_with_rknn_sd_backend):
+        """rknn-sd backend: GET /v1/models lists entries in loaded output."""
+        app = app_with_rknn_sd_backend
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "data": [{"id": "lcm-dreamshaper-v7-rknn", "object": "model"}],
+            "object": "list",
+        }
+
+        async with await _make_auth_client(app) as c:
+            with patch.object(app.state, "http_client") as mock_http:
+                mock_http.get = AsyncMock(return_value=mock_response)
+                resp = await c.get("/api/models/loaded")
+        await app.state.metrics.close()
+        await app.state.qmd_client.close()
+        await app.state.http_client.aclose()
+
+        assert resp.status_code == 200
+        data = resp.json()
+        # The app may inject additional default rknn-sd backends; at least one
+        # entry must appear with the correct fields.
+        assert len(data["loaded"]) >= 1
+        entry = next(e for e in data["loaded"] if e["backend"] == "rknn-sd-npu")
+        assert entry["name"] == "lcm-dreamshaper-v7-rknn"
+        assert entry["backend_type"] == "rknn-sd"
+        assert entry["purpose"] == "image-generation"
+        assert entry["size_mb"] is None
+        assert entry["vram_mb"] is None
+
+    async def test_rknn_sd_offline_skipped(self, app_with_rknn_sd_backend):
+        """rknn-sd backend: ConnectError is swallowed; loaded list is empty."""
+        app = app_with_rknn_sd_backend
+
+        async with await _make_auth_client(app) as c:
+            with patch.object(app.state, "http_client") as mock_http:
+                mock_http.get = AsyncMock(side_effect=httpx.ConnectError("refused"))
+                resp = await c.get("/api/models/loaded")
+        await app.state.metrics.close()
+        await app.state.qmd_client.close()
+        await app.state.http_client.aclose()
+
+        assert resp.status_code == 200
+        assert resp.json()["loaded"] == []
+
+    async def test_sd_cpp_loaded_models(self, app_with_sd_cpp_backend):
+        """sd-cpp backend: GET /sdapi/v1/options checkpoint appears in loaded output."""
+        app = app_with_sd_cpp_backend
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "sd_model_checkpoint": "v1-5-pruned-emaonly.safetensors",
+            "sd_backend": "diffusers",
+        }
+
+        async with await _make_auth_client(app) as c:
+            with patch.object(app.state, "http_client") as mock_http:
+                mock_http.get = AsyncMock(return_value=mock_response)
+                resp = await c.get("/api/models/loaded")
+        await app.state.metrics.close()
+        await app.state.qmd_client.close()
+        await app.state.http_client.aclose()
+
+        assert resp.status_code == 200
+        data = resp.json()
+        sd_entries = [e for e in data["loaded"] if e["backend_type"] == "sd-cpp"]
+        assert len(sd_entries) == 1
+        entry = sd_entries[0]
+        assert entry["name"] == "v1-5-pruned-emaonly.safetensors"
+        assert entry["backend_type"] == "sd-cpp"
+        assert entry["purpose"] == "image-generation"
+        assert entry["size_mb"] is None
+
+    async def test_sd_cpp_missing_checkpoint_falls_back_to_unknown(self, app_with_sd_cpp_backend):
+        """sd-cpp: if sd_model_checkpoint is absent, name falls back to 'unknown'."""
+        app = app_with_sd_cpp_backend
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {}
+
+        async with await _make_auth_client(app) as c:
+            with patch.object(app.state, "http_client") as mock_http:
+                mock_http.get = AsyncMock(return_value=mock_response)
+                resp = await c.get("/api/models/loaded")
+        await app.state.metrics.close()
+        await app.state.qmd_client.close()
+        await app.state.http_client.aclose()
+
+        assert resp.status_code == 200
+        data = resp.json()
+        sd_entries = [e for e in data["loaded"] if e["backend_type"] == "sd-cpp"]
+        assert len(sd_entries) == 1
+        assert sd_entries[0]["name"] == "unknown"
+
+    async def test_sd_cpp_offline_skipped(self, app_with_sd_cpp_backend):
+        """sd-cpp backend: ConnectError is swallowed; loaded list is empty."""
+        app = app_with_sd_cpp_backend
+
+        async with await _make_auth_client(app) as c:
+            with patch.object(app.state, "http_client") as mock_http:
+                mock_http.get = AsyncMock(side_effect=httpx.ConnectError("refused"))
+                resp = await c.get("/api/models/loaded")
+        await app.state.metrics.close()
+        await app.state.qmd_client.close()
+        await app.state.http_client.aclose()
+
+        assert resp.status_code == 200
+        assert resp.json()["loaded"] == []

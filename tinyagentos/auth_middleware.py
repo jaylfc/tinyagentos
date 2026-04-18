@@ -26,6 +26,18 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if path in EXEMPT_PATHS or any(path.startswith(p) for p in EXEMPT_PREFIXES):
             return await call_next(request)
 
+        # Local token (Authorization: Bearer <token>) is accepted as a
+        # substitute for the session cookie. The token lives at
+        # {data_dir}/.auth_local_token, readable only by the user
+        # running taOS, so possession = same-user-on-the-host trust.
+        # Used by scripts and the upcoming CLI; the browser SPA keeps
+        # using cookies.
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.lower().startswith("bearer "):
+            presented = auth_header[7:].strip()
+            if presented and auth_mgr.validate_local_token(presented):
+                return await call_next(request)
+
         # First boot: no user yet. Browsers go to the setup page; APIs
         # hard-fail so a stale cached client knows to refresh.
         if not auth_mgr.is_configured():

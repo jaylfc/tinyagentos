@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -41,6 +42,8 @@ from tinyagentos.app_orchestrator import AppOrchestrator
 from tinyagentos.computer_use import ComputerUseManager
 from tinyagentos.webhook_notifier import WebhookNotifier
 from tinyagentos.llm_proxy import LLMProxy
+from tinyagentos.litellm_migrate import migrate as _litellm_migrate
+from tinyagentos.agent_image import ensure_image_present as _ensure_agent_image_present
 from tinyagentos.auto_update import AutoUpdateService
 from tinyagentos.restart_orchestrator import RestartOrchestrator, apply_pending_restart_check, resume_agents_from_notes
 from tinyagentos.channel_hub.router import MessageRouter
@@ -141,7 +144,18 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     auth_manager = AuthManager(data_dir)
     webhook_notifier = WebhookNotifier(config.to_dict())
     notif_store.set_webhook_notifier(webhook_notifier)
-    llm_proxy = LLMProxy(port=4000)
+    # Optional Postgres URL for LiteLLM's virtual key store. When this
+    # file is present, LiteLLM can mint per-agent keys via /key/generate;
+    # otherwise the deployer falls back to the shared master key. See
+    # docs/design/framework-agnostic-runtime.md.
+    db_url_path = data_dir / ".litellm_db_url"
+    db_url = db_url_path.read_text().strip() if db_url_path.exists() else None
+    # Read the local auth token so LLMProxy can forward it to LiteLLM's
+    # subprocess — otherwise the taOS callback can't POST llm_call events
+    # back to /api/trace and the 401s fill the log instead of trace rows.
+    local_token_path = data_dir / ".auth_local_token"
+    local_token = local_token_path.read_text().strip() if local_token_path.exists() else None
+    llm_proxy = LLMProxy(port=4000, database_url=db_url, local_token=local_token)
     channel_hub_router = MessageRouter()
     adapter_manager = AdapterManager(channel_hub_router)
     chat_messages = ChatMessageStore(data_dir / "chat.db")
@@ -258,6 +272,11 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.app_orchestrator = app_orchestrator
         app.state.computer_use = computer_use
         app.state.auth = auth_manager
+        # Ensure the local token file exists before any request can arrive.
+        # Logs the path at INFO so the user can find it.
+        _local_token_path = auth_manager.local_token_path()
+        auth_manager.get_local_token()
+        logger.info("local auth token path: %s", _local_token_path)
         app.state.webhook_notifier = webhook_notifier
         app.state.llm_proxy = llm_proxy
         app.state.channel_hub_router = channel_hub_router
@@ -268,6 +287,8 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.chat_messages = chat_messages
         app.state.chat_channels = chat_channels
         app.state.chat_hub = chat_hub
+        from tinyagentos.agent_chat_router import AgentChatRouter
+        app.state.agent_chat_router = AgentChatRouter(app.state)
         app.state.canvas_store = canvas_store
         app.state.desktop_settings = desktop_settings
         app.state.user_memory = user_memory
@@ -288,9 +309,38 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
             await resume_agents_from_notes(app.state)
         except Exception:
             logger.exception("boot-time agent resume failed")
-        # Optionally start LiteLLM proxy (non-fatal if not installed)
+        # Optionally start LiteLLM proxy (non-fatal if not installed).
+        # Resolve every backend's api_key_secret so LiteLLM's
+        # os.environ/<name> markers land in the subprocess env and
+        # cloud providers can actually authenticate.
         try:
-            await llm_proxy.start(config.backends)
+            # Apply LiteLLM's Prisma schema before spawning the proxy so
+            # /key/generate works on fresh installs. No-ops when no DB is
+            # configured or the schema is already present.
+            try:
+                _litellm_migrate(data_dir)
+            except Exception:
+                logger.exception("litellm prisma migration failed — virtual keys will not work")
+            # Kick off the one-time agent base image import in the background.
+            # Non-fatal — if GitHub is unreachable or the tarball isn't
+            # published yet, deploys fall back to images:debian/bookworm.
+            try:
+                asyncio.create_task(_ensure_agent_image_present())
+            except Exception:
+                logger.exception("agent base image bootstrap scheduling failed")
+            resolved_secrets: dict[str, str] = {}
+            for backend in config.backends:
+                name = backend.get("api_key_secret")
+                if not name or name in resolved_secrets:
+                    continue
+                try:
+                    rec = await secrets_store.get(name)
+                except Exception as exc:
+                    logger.warning("llm_proxy: secret lookup for %s failed: %s", name, exc)
+                    continue
+                if rec and rec.get("value"):
+                    resolved_secrets[name] = rec["value"]
+            await llm_proxy.start(config.backends, secrets=resolved_secrets)
         except Exception:
             pass  # LiteLLM is optional
         # Start background health monitor
@@ -328,6 +378,19 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         lifecycle_manager = LifecycleManager(backend_catalog)
         app.state.lifecycle_manager = lifecycle_manager
 
+        # Trace registry — per-agent hourly-bucketed SQLite for zero-loss capture.
+        from tinyagentos.trace_store import TraceStoreRegistry
+        app.state.trace_registry = TraceStoreRegistry(data_dir)
+
+        # Bridge session registry — per-agent queue + accumulator for openclaw.
+        from tinyagentos.bridge_session import BridgeSessionRegistry
+        app.state.bridge_sessions = BridgeSessionRegistry(
+            trace_registry=app.state.trace_registry,
+            chat_messages=chat_messages,
+            chat_channels=chat_channels,
+            chat_hub=chat_hub,
+        )
+
         # After the first probe, mark auto-managed backends that are not
         # currently reachable as "stopped" so the scheduler knows to start
         # them on demand rather than treating them as permanently broken.
@@ -350,7 +413,20 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         async def _reload_llm_proxy_on_catalog_change() -> None:
             if not llm_proxy.is_running():
                 return
-            await llm_proxy.reload_config(config.backends)
+            # Re-resolve secrets so rotated keys or newly-added providers
+            # that changed between SIGHUPs pick up the current values.
+            resolved: dict[str, str] = {}
+            for backend in config.backends:
+                name = backend.get("api_key_secret")
+                if not name or name in resolved:
+                    continue
+                try:
+                    rec = await secrets_store.get(name)
+                except Exception:
+                    continue
+                if rec and rec.get("value"):
+                    resolved[name] = rec["value"]
+            await llm_proxy.reload_config(config.backends, secrets=resolved)
 
         backend_catalog.subscribe(_reload_llm_proxy_on_catalog_change)
 
@@ -391,6 +467,18 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
             set_backend(LXCBackend())
         elif runtime in ("docker", "podman"):
             set_backend(DockerBackend(binary=runtime))
+
+        # Disk quota monitor — build and attach to app state so the route
+        # handler can reuse the same instance (preserves in-memory last_state).
+        try:
+            from tinyagentos.disk_quota import DiskQuotaMonitor
+            from tinyagentos.containers.backend import get_backend as _get_container_backend
+            _dq_backend = _get_container_backend()
+            app.state.disk_quota_monitor = DiskQuotaMonitor(config, _dq_backend, notif_store)
+        except Exception:
+            logger.exception("disk quota monitor failed to initialise — disk routes will still work")
+            app.state.disk_quota_monitor = None
+
         yield
         # NOTE: controller restart/shutdown does NOT touch agent containers —
         # agents and LiteLLM keep running independently, so there's nothing to
@@ -409,6 +497,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         except Exception:
             pass
         await app.state.mcp_supervisor.stop_all()
+        await app.state.trace_registry.close_all()
         await mcp_store.close()
         await scheduler_history_store.close()
         await benchmark_store.close()
@@ -501,6 +590,17 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     app.state.mcp_store = mcp_store
     app.state.mcp_supervisor = MCPSupervisor(mcp_store, catalog=registry, notif_store=notif_store, secrets_store=secrets_store)
     app.state.orchestrator = RestartOrchestrator(app.state)
+
+    from tinyagentos.trace_store import TraceStoreRegistry as _TraceStoreRegistry
+    app.state.trace_registry = _TraceStoreRegistry(data_dir)
+
+    from tinyagentos.bridge_session import BridgeSessionRegistry as _BridgeSessionRegistry
+    app.state.bridge_sessions = _BridgeSessionRegistry(
+        trace_registry=app.state.trace_registry,
+        chat_messages=chat_messages,
+        chat_channels=chat_channels,
+        chat_hub=chat_hub,
+    )
 
     # Detect and set container runtime (eager, so tests work without lifespan)
     try:
@@ -688,6 +788,21 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     from tinyagentos.routes.mcp import router as mcp_router
     app.include_router(mcp_router)
+
+    from tinyagentos.routes.trace import router as trace_router
+    app.include_router(trace_router)
+
+    from tinyagentos.routes.openclaw import router as openclaw_router
+    app.include_router(openclaw_router)
+
+    from tinyagentos.routes.disk_quota import router as disk_quota_router
+    app.include_router(disk_quota_router)
+
+    from tinyagentos.routes.recycle import router as recycle_router
+    app.include_router(recycle_router)
+
+    from tinyagentos.routes import admin_prompts as admin_prompts_routes
+    app.include_router(admin_prompts_routes.router)
 
     # Lobby demo (internal only — not included in public builds)
     try:

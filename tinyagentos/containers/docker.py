@@ -89,6 +89,40 @@ class DockerBackend(ContainerBackend):
             ))
         return results
 
+    async def set_root_quota(self, name: str, size_gib: int) -> dict:
+        """Set per-container rootfs quota via docker container update.
+
+        Docker supports ``--storage-opt size=<n>g`` only on drivers that
+        provide per-container quota (devicemapper, overlay2 on XFS with
+        pquota, btrfs). On overlay2 without pquota the command is
+        accepted but silently not enforced; we treat that as success with
+        a soft note.
+        """
+        size_g = f"{size_gib}g"
+        code, output = await self._run([
+            self.binary, "container", "update",
+            "--storage-opt", f"size={size_g}", name,
+        ])
+        if code != 0:
+            # Specific well-known message from overlay2 without pquota.
+            no_support_markers = (
+                "storage driver does not support",
+                "storage-opt",
+                "not supported",
+                "invalid option",
+            )
+            low = output.lower()
+            if any(m in low for m in no_support_markers):
+                logger.warning(
+                    "set_root_quota: storage driver does not enforce quota for %s "
+                    "(overlay2 without pquota?); treating as soft limit: %s",
+                    name, output.strip(),
+                )
+                return {"success": True, "note": "storage driver does not enforce quota"}
+            logger.warning("set_root_quota: docker update failed for %s: %s", name, output)
+            return {"success": False, "note": output}
+        return {"success": True, "note": f"root quota set to {size_gib} GiB"}
+
     async def create_container(
         self,
         name: str,
@@ -97,12 +131,17 @@ class DockerBackend(ContainerBackend):
         cpu_limit: int | None = None,
         mounts: list[tuple[str, str]] | None = None,
         env: dict[str, str] | None = None,
+        host_uid: int | None = None,
+        root_size_gib: int | None = None,
     ) -> dict:
         """Create and start a new container.
 
         Every bind mount and env var the container needs must be passed
-        explicitly — nothing is baked into the image. See
-        ``docs/design/framework-agnostic-runtime.md``.
+        explicitly — nothing is baked into the image.
+
+        root_size_gib: when set, call set_root_quota after the container
+        is created. Enforcement depends on the Docker storage driver;
+        on overlay2 without pquota this is accounting-only.
         """
         args = [
             self.binary, "run", "-d",
@@ -120,6 +159,16 @@ class DockerBackend(ContainerBackend):
         code, output = await self._run(args, timeout=300)
         if code != 0:
             return {"success": False, "error": output}
+
+        # Root quota — set after container exists, before it receives writes.
+        if root_size_gib is not None:
+            quota_result = await self.set_root_quota(name, root_size_gib)
+            if not quota_result["success"]:
+                logger.warning(
+                    "create_container: root quota not applied for %s: %s",
+                    name, quota_result.get("note", ""),
+                )
+
         return {"success": True, "name": name}
 
     async def exec_in_container(
@@ -138,8 +187,9 @@ class DockerBackend(ContainerBackend):
         code, output = await self._run([self.binary, "start", name])
         return {"success": code == 0, "output": output}
 
-    async def stop_container(self, name: str) -> dict:
-        code, output = await self._run([self.binary, "stop", name])
+    async def stop_container(self, name: str, force: bool = False) -> dict:
+        cmd = [self.binary, "kill", name] if force else [self.binary, "stop", name]
+        code, output = await self._run(cmd)
         return {"success": code == 0, "output": output}
 
     async def restart_container(self, name: str) -> dict:
@@ -157,3 +207,75 @@ class DockerBackend(ContainerBackend):
             self.binary, "logs", name, "--tail", str(lines),
         ])
         return output if code == 0 else f"Error getting logs: {output}"
+
+    async def rename_container(self, old_name: str, new_name: str) -> dict:
+        code, output = await self._run([self.binary, "rename", old_name, new_name])
+        return {"success": code == 0, "output": output}
+
+    async def add_proxy_device(
+        self, name: str, device_name: str, listen: str, connect: str,
+        bind_mode: str | None = None,
+    ) -> dict:
+        # Docker containers reach the host via docker-provided networking
+        # (host.docker.internal on Mac/Windows, --add-host on Linux). No
+        # proxy device equivalent; the deployer's docker path is expected
+        # to choose a different TAOS_HOST default. Return success so the
+        # deploy doesn't stall.
+        return {"success": True, "output": "proxy devices not supported on docker"}
+
+    async def snapshot_create(self, name: str, snapshot_name: str) -> dict:
+        """Create a named image snapshot via ``docker commit``.
+
+        Docker has no native snapshot primitive equivalent to incus snapshots.
+        We commit the container to an image tagged ``taos/<snapshot_name>:latest``
+        so the image survives across container deletions. Restore is not
+        currently supported (see ``snapshot_restore``).
+        """
+        image_tag = f"taos/{snapshot_name}:latest"
+        code, output = await self._run([self.binary, "commit", name, image_tag])
+        return {"success": code == 0, "output": output}
+
+    async def snapshot_restore(self, name: str, snapshot_name: str) -> dict:
+        """Docker does not support in-place snapshot restore.
+
+        Restoring from a committed image would require stopping the running
+        container, creating a new one from the image, reattaching all bind
+        mounts and env vars, and renaming — a destructive multi-step process
+        that is not safe to automate without more context. Fall back to the
+        caller's rsync-based archive path instead (per pivot doc §3.1).
+        """
+        return {
+            "success": False,
+            "output": "",
+            "note": "docker snapshot restore not supported; use rsync-based archive fallback",
+        }
+
+    async def snapshot_list(self, name: str) -> dict:
+        """List committed snapshot images in the ``taos/`` namespace."""
+        code, output = await self._run([
+            self.binary, "images", "--format", "{{.Repository}}:{{.Tag}}",
+            "--filter", "reference=taos/*",
+        ])
+        if code != 0:
+            return {"success": False, "snapshots": [], "output": output}
+        snapshots = [
+            line.strip()
+            for line in output.splitlines()
+            if line.strip()
+        ]
+        return {"success": True, "snapshots": snapshots, "output": output}
+
+    async def set_env(self, name: str, key: str, value: str) -> dict:
+        """Docker does not support per-container env changes without recreating.
+
+        Changing an environment variable on a running Docker container requires
+        stopping it, deleting it, and re-running ``docker run`` with the updated
+        ``-e`` flags plus all the original mounts and options. This is not safe
+        to automate transparently. The caller should recreate the container or
+        use a bind-mounted env file instead.
+        """
+        return {
+            "success": False,
+            "output": "",
+            "note": "docker env change requires container recreation; use a bind-mounted env file",
+        }

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Bot, Plus, Trash2, ScrollText, Play, Server, X, ChevronRight, ChevronLeft, Check, Wrench, MessageSquare, PauseCircle, RotateCcw } from "lucide-react";
+import { Bot, Plus, Trash2, ScrollText, Play, Server, X, ChevronRight, ChevronLeft, Check, Wrench, MessageSquare, PauseCircle, RotateCcw, Archive, HardDrive } from "lucide-react";
 import { AgentSkillsPanel } from "./AgentSkillsPanel";
 import { AgentMessagesPanel } from "./AgentMessagesPanel";
 import {
@@ -9,6 +9,11 @@ import {
   CLOUD_PROVIDER_TYPES,
 } from "@/lib/models";
 import { availableKvQuantOptions, type KvQuantOptions } from "@/lib/cluster";
+import {
+  defaultEmojiForFramework,
+  resolveAgentEmoji,
+  EMOJI_QUICK_PICKS,
+} from "@/lib/agent-emoji";
 import {
   Button,
   Card,
@@ -31,6 +36,7 @@ interface Agent {
   display_name?: string;
   host: string;
   color: string;
+  emoji?: string;
   status: "running" | "stopped" | "error" | "deploying";
   vectors: number;
   framework?: string;
@@ -42,11 +48,35 @@ interface Agent {
   kv_cache_quant_boundary_layers?: number;
 }
 
+interface DiskState {
+  used_gib: number;
+  quota_gib: number;
+  percent: number;
+  state: "ok" | "warn" | "hard";
+  last_checked_at: string;
+}
+
+interface ArchivedAgent {
+  id: string;
+  archived_at: string;             // "YYYYMMDDTHHMMSS"
+  archived_slug: string;
+  archive_container: string;
+  archive_dir: string;
+  original: {
+    name?: string;
+    display_name?: string;
+    color?: string;
+    emoji?: string;
+    model?: string;
+    framework?: string;
+  };
+}
+
 interface Framework {
   id: string;
   name: string;
   description: string;
-  verification_status: "tested" | "beta" | "experimental" | "broken";
+  verification_status: "beta" | "alpha" | "broken";
 }
 
 // AgentModel is defined and exported from ModelPickerFlow
@@ -77,6 +107,7 @@ const STATUS_STYLES: Record<string, string> = {
 
 function AgentRow({
   agent,
+  diskState,
   onViewLogs,
   onViewSkills,
   onViewMessages,
@@ -84,12 +115,14 @@ function AgentRow({
   onResume,
 }: {
   agent: Agent;
+  diskState?: DiskState | null;
   onViewLogs: (name: string) => void;
   onViewSkills: (name: string) => void;
   onViewMessages: (name: string) => void;
   onDelete: (name: string) => void;
   onResume: (name: string) => void;
 }) {
+  const emoji = resolveAgentEmoji(agent.emoji, agent.framework);
   return (
     <Card className="flex items-center gap-4 px-4 py-3 hover:bg-shell-surface/50 transition-colors">
       <div className="flex items-center gap-2.5 flex-1 min-w-0">
@@ -98,6 +131,12 @@ function AgentRow({
           style={{ backgroundColor: agent.color }}
           aria-label={`Color: ${agent.color}`}
         />
+        <span
+          className="text-base leading-none shrink-0"
+          aria-hidden="true"
+        >
+          {emoji}
+        </span>
         <span className="font-medium text-sm truncate">{agent.display_name || agent.name}</span>
         {agent.paused && (
           <span
@@ -106,6 +145,24 @@ function AgentRow({
           >
             <PauseCircle size={10} aria-hidden="true" />
             paused
+          </span>
+        )}
+        {diskState && diskState.state !== "ok" && (
+          <span
+            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium border ${
+              diskState.state === "hard"
+                ? "bg-red-500/20 text-red-400 border-red-500/20"
+                : "bg-amber-500/20 text-amber-400 border-amber-500/20"
+            }`}
+            title={
+              diskState.state === "hard"
+                ? "Full — agent paused until user action"
+                : `Used more than ${diskState.percent}% — needs audit or expand`
+            }
+            aria-label={`Disk usage: ${diskState.used_gib}/${diskState.quota_gib} GiB (${diskState.percent}%)`}
+          >
+            <HardDrive size={10} aria-hidden="true" />
+            {diskState.used_gib}/{diskState.quota_gib} GiB ({diskState.percent}%)
           </span>
         )}
       </div>
@@ -250,6 +307,9 @@ function AgentDetailPanel({
               style={{ backgroundColor: agent.color }}
               aria-hidden
             />
+            <span className="text-base leading-none" aria-hidden="true">
+              {resolveAgentEmoji(agent.emoji, agent.framework)}
+            </span>
             <span className="font-medium">{agentName}</span>
           </div>
           <TabsList aria-label="Agent detail tabs">
@@ -316,6 +376,11 @@ function DeployWizard({
   // Step 1
   const [name, setName] = useState("");
   const [color, setColor] = useState(COLORS[0]);
+  // Emoji defaults to the chosen framework's icon unless the user has
+  // typed their own. `emojiTouched` tracks "user edited this field", so
+  // switching frameworks only overwrites the default, never a custom pick.
+  const [emoji, setEmoji] = useState<string>(defaultEmojiForFramework(""));
+  const [emojiTouched, setEmojiTouched] = useState(false);
 
   // Step 2
   const [frameworks, setFrameworks] = useState<Framework[]>([]);
@@ -376,14 +441,19 @@ function DeployWizard({
             const visible = data.filter(
               (a: Record<string, unknown>) => a.verification_status !== "broken"
             );
-            setFrameworks(
-              visible.map((a: Record<string, unknown>) => ({
-                id: String(a.id),
-                name: String(a.name ?? a.id),
-                description: String(a.description ?? ""),
-                verification_status: (a.verification_status as Framework["verification_status"]) ?? "experimental",
-              }))
-            );
+            const mapped: Framework[] = visible.map((a: Record<string, unknown>) => ({
+              id: String(a.id),
+              name: String(a.name ?? a.id),
+              description: String(a.description ?? ""),
+              verification_status: (a.verification_status as Framework["verification_status"]) ?? "alpha",
+            }));
+            // openclaw first, then preserve API order
+            mapped.sort((a, b) => {
+              if (a.id === "openclaw") return -1;
+              if (b.id === "openclaw") return 1;
+              return 0;
+            });
+            setFrameworks(mapped);
           }
         }
       } catch { /* leave frameworks empty, wizard will show nothing selectable */ }
@@ -480,36 +550,70 @@ function DeployWizard({
         });
       } catch { /* ignore */ }
 
-      // Also fetch cloud provider models
+      // Fetch cloud provider models from LiteLLM's /v1/models passthrough —
+      // this is the authoritative list of what the proxy actually routes,
+      // so it stays in sync with provider config reloads and catches models
+      // that /api/providers misses (e.g. kilocode's "kilo-auto/free" alias
+      // when the upstream /models probe failed but the yaml seed registered).
+      // We fetch /api/providers in parallel to build an id→provider-name
+      // map so each LiteLLM entry still surfaces under the right group.
       const cloudModels: Model[] = [];
       try {
-        const res = await fetch("/api/providers", {
-          headers: { Accept: "application/json" },
-        });
-        const ct = res.headers.get("content-type") ?? "";
-        if (res.ok && ct.includes("application/json")) {
-          const providers = await res.json();
-          for (const p of (Array.isArray(providers) ? providers : [])) {
-            if (!(CLOUD_PROVIDER_TYPES as readonly string[]).includes(p.type)) continue;
-            const pModels: { id?: string; name?: string }[] = Array.isArray(p.models) ? p.models : [];
-            if (pModels.length === 0) {
-              cloudModels.push({
-                id: p.model ?? "default",
-                name: `${p.name} default`,
-                host: p.name,
-                hostKind: "cloud",
-              });
-            } else {
+        const [modelsRes, providersRes] = await Promise.all([
+          fetch("/api/providers/models?refresh=true", {
+            headers: { Accept: "application/json" },
+          }),
+          fetch("/api/providers", {
+            headers: { Accept: "application/json" },
+          }),
+        ]);
+
+        // Build id → provider-name map. Each cloud backend in /api/providers
+        // lists its advertised models; we use that to attribute a LiteLLM
+        // model entry to its source provider for display/grouping.
+        const providerByModelId = new Map<string, string>();
+        const cloudProviderNames = new Set<string>();
+        try {
+          const pct = providersRes.headers.get("content-type") ?? "";
+          if (providersRes.ok && pct.includes("application/json")) {
+            const providers = await providersRes.json();
+            for (const p of (Array.isArray(providers) ? providers : [])) {
+              if (!(CLOUD_PROVIDER_TYPES as readonly string[]).includes(p.type)) continue;
+              const pname = p.name ?? p.type;
+              cloudProviderNames.add(pname);
+              const pModels: { id?: string; name?: string }[] = Array.isArray(p.models) ? p.models : [];
               for (const m of pModels) {
-                const modelId = m.id ?? m.name ?? "unknown";
-                cloudModels.push({
-                  id: modelId,
-                  name: `${m.name ?? modelId} (${p.name})`,
-                  host: p.name,
-                  hostKind: "cloud",
-                });
+                const mid = m.id ?? m.name;
+                if (mid && !providerByModelId.has(mid)) {
+                  providerByModelId.set(mid, pname);
+                }
               }
             }
+          }
+        } catch { /* treat providers as empty, still render what LiteLLM knows */ }
+
+        const mct = modelsRes.headers.get("content-type") ?? "";
+        if (modelsRes.ok && mct.includes("application/json")) {
+          const body = await modelsRes.json();
+          const data: { id?: string }[] = Array.isArray(body?.data) ? body.data : [];
+          const seenCloud = new Set<string>();
+          for (const entry of data) {
+            const mid = entry?.id;
+            if (!mid || typeof mid !== "string") continue;
+            // Skip the internal alias entries LiteLLM exposes for routing
+            // defaults — they'd show up as a confusing "default" entry.
+            if (mid === "default" || mid === "taos-embedding-default") continue;
+            const providerName = providerByModelId.get(mid);
+            if (!providerName) continue; // not a cloud model (local/worker handled above)
+            const key = `${providerName}:${mid}`;
+            if (seenCloud.has(key)) continue;
+            seenCloud.add(key);
+            cloudModels.push({
+              id: mid,
+              name: `${mid} (${providerName})`,
+              host: providerName,
+              hostKind: "cloud",
+            });
           }
         }
       } catch { /* ignore */ }
@@ -536,6 +640,8 @@ function DeployWizard({
       setStep(0);
       setName("");
       setColor(COLORS[0]);
+      setEmoji(defaultEmojiForFramework(""));
+      setEmojiTouched(false);
       setSelectedFramework("");
       setShowExperimental(false);
       setSelectedModel("");
@@ -567,6 +673,14 @@ function DeployWizard({
     }
   }, [fallbackModels, onWorkerFailure]);
 
+  // Sync emoji default to the chosen framework, but only until the user
+  // manually edits the emoji field. After that, the user's pick wins.
+  useEffect(() => {
+    if (!emojiTouched) {
+      setEmoji(defaultEmojiForFramework(selectedFramework));
+    }
+  }, [selectedFramework, emojiTouched]);
+
   if (!open) return null;
 
   const STEPS = ["Name & Color", "Framework", "Model", "Permissions", "Failure Policy", "Review"];
@@ -595,6 +709,7 @@ function DeployWizard({
           framework: selectedFramework,
           model: selectedModel,
           color,
+          emoji: emoji.trim() || null,
           memory_limit: memoryLimit,
           cpu_limit: cpus ? parseInt(cpus, 10) : null,
           can_read_user_memory: canReadUserMemory,
@@ -720,6 +835,57 @@ function DeployWizard({
                   ))}
                 </div>
               </div>
+              <div>
+                <Label htmlFor="agent-emoji" className="mb-1.5 block">
+                  Emoji
+                  <span className="ml-1.5 font-normal text-shell-text-tertiary">
+                    (defaults to the framework icon)
+                  </span>
+                </Label>
+                <Input
+                  id="agent-emoji"
+                  type="text"
+                  value={emoji}
+                  onChange={(e) => {
+                    setEmoji(e.target.value);
+                    setEmojiTouched(true);
+                  }}
+                  placeholder="\u{1F916}"
+                  aria-describedby="agent-emoji-desc"
+                  className="max-w-[8rem] text-lg"
+                />
+                <p
+                  id="agent-emoji-desc"
+                  className="mt-1 text-xs text-shell-text-tertiary"
+                >
+                  Paste any unicode emoji, or pick one below. Leave empty to
+                  use the chosen framework&apos;s default.
+                </p>
+                <div
+                  className="flex flex-wrap gap-1.5 mt-2"
+                  role="group"
+                  aria-label="Quick-pick emojis"
+                >
+                  {EMOJI_QUICK_PICKS.map((e) => (
+                    <button
+                      key={e}
+                      type="button"
+                      onClick={() => {
+                        setEmoji(e);
+                        setEmojiTouched(true);
+                      }}
+                      className={`w-8 h-8 rounded-md text-lg leading-none transition-colors ${
+                        emoji === e
+                          ? "bg-accent/20 ring-1 ring-accent"
+                          : "bg-shell-bg-deep hover:bg-white/5"
+                      }`}
+                      aria-label={`Set emoji to ${e}`}
+                    >
+                      {e}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </Card>
           )}
 
@@ -728,10 +894,10 @@ function DeployWizard({
             <div className="space-y-2">
               <span className="block text-xs text-shell-text-secondary mb-2">Select Framework</span>
               {frameworks
-                .filter((fw) => fw.verification_status !== "experimental" || showExperimental)
+                .filter((fw) => fw.verification_status !== "alpha" || showExperimental)
                 .map((fw) => {
-                  const isExperimental = fw.verification_status === "experimental";
-                  const selectable = !isExperimental || showExperimental;
+                  const isAlpha = fw.verification_status === "alpha";
+                  const selectable = !isAlpha || showExperimental;
                   return (
                     <button
                       key={fw.id}
@@ -747,27 +913,27 @@ function DeployWizard({
                       }`}
                     >
                       <div className="flex items-center gap-2">
-                        <span className={`text-sm font-medium ${isExperimental ? "text-shell-text-tertiary" : ""}`}>
+                        <span className={`text-sm font-medium ${isAlpha ? "text-shell-text-tertiary" : ""}`}>
                           {fw.name}
                         </span>
                         {fw.verification_status === "beta" && (
                           <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/20 text-amber-400 leading-none">
-                            beta
+                            Beta
                           </span>
                         )}
-                        {fw.verification_status === "experimental" && (
+                        {fw.verification_status === "alpha" && (
                           <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-zinc-500/20 text-zinc-400 leading-none">
-                            experimental
+                            Alpha · Testing
                           </span>
                         )}
                       </div>
-                      <div className={`text-xs mt-0.5 ${isExperimental ? "text-shell-text-tertiary" : "text-shell-text-secondary"}`}>
+                      <div className={`text-xs mt-0.5 ${isAlpha ? "text-shell-text-tertiary" : "text-shell-text-secondary"}`}>
                         {fw.description}
                       </div>
                     </button>
                   );
                 })}
-              {/* Experimental toggle */}
+              {/* Alpha toggle */}
               <label
                 htmlFor="show-experimental-frameworks"
                 className="flex items-center gap-2 mt-3 cursor-pointer select-none"
@@ -781,12 +947,12 @@ function DeployWizard({
                     // Deselect if currently selected framework becomes hidden
                     if (!e.target.checked) {
                       const fw = frameworks.find((f) => f.id === selectedFramework);
-                      if (fw?.verification_status === "experimental") setSelectedFramework("");
+                      if (fw?.verification_status === "alpha") setSelectedFramework("");
                     }
                   }}
                   className="accent-accent"
                 />
-                <span className="text-xs text-shell-text-secondary">Show experimental frameworks</span>
+                <span className="text-xs text-shell-text-secondary">Show alpha / in testing frameworks</span>
               </label>
             </div>
           )}
@@ -1017,6 +1183,7 @@ function DeployWizard({
                 {[
                   ["Name", name],
                   ["Color", color],
+                  ["Emoji", emoji.trim() || defaultEmojiForFramework(selectedFramework)],
                   ["Framework", frameworks.find((f) => f.id === selectedFramework)?.name ?? selectedFramework],
                   ["Model", models.find((m) => m.id === selectedModel)?.name ?? selectedModel],
                   ["Memory", memory ? (parseInt(memory, 10) >= 1024 ? `${Math.round(parseInt(memory, 10) / 1024)} GB` : `${memory} MB`) : "Unlimited"],
@@ -1161,14 +1328,139 @@ function DeployWizard({
 }
 
 /* ------------------------------------------------------------------ */
+/*  Archived agents helpers + panel                                    */
+/* ------------------------------------------------------------------ */
+
+function parseArchiveTimestamp(ts: string): Date | null {
+  const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})$/.exec(ts);
+  if (!m) return null;
+  return new Date(Date.UTC(+m[1]!, +m[2]! - 1, +m[3]!, +m[4]!, +m[5]!, +m[6]!));
+}
+
+function relativeTimeFromTs(ts: string): string {
+  const d = parseArchiveTimestamp(ts);
+  if (!d) return ts;
+  const diff = Date.now() - d.getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return `${days}d ago`;
+  return d.toLocaleDateString();
+}
+
+function ArchivedAgentRow({
+  entry,
+  onRestore,
+  onPurge,
+}: {
+  entry: ArchivedAgent;
+  onRestore: (id: string, name: string) => void;
+  onPurge: (id: string, name: string) => void;
+}) {
+  const displayName = entry.original?.display_name || entry.original?.name || entry.archived_slug;
+  const color = entry.original?.color || "#6b7280";
+  const emoji = resolveAgentEmoji(entry.original?.emoji, entry.original?.framework);
+  const model = entry.original?.model;
+  const when = relativeTimeFromTs(entry.archived_at);
+
+  return (
+    <Card className="flex items-center gap-4 px-4 py-3 hover:bg-shell-surface/50 transition-colors opacity-80">
+      <div className="flex items-center gap-2.5 flex-1 min-w-0">
+        <span
+          className="w-2.5 h-2.5 rounded-full shrink-0"
+          style={{ backgroundColor: color }}
+          aria-hidden
+        />
+        <span className="text-base leading-none shrink-0" aria-hidden="true">
+          {emoji}
+        </span>
+        <span className="font-medium text-sm truncate">{displayName}</span>
+        {model && (
+          <span className="text-[11px] text-shell-text-tertiary truncate">{model}</span>
+        )}
+      </div>
+      <span className="text-xs text-shell-text-tertiary shrink-0">archived {when}</span>
+      <div className="flex items-center gap-1">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 hover:bg-emerald-500/15 hover:text-emerald-400"
+          onClick={() => onRestore(entry.id, displayName)}
+          aria-label={`Restore ${displayName}`}
+          title="Restore agent"
+        >
+          <RotateCcw size={15} />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 hover:bg-red-500/15 hover:text-red-400"
+          onClick={() => onPurge(entry.id, displayName)}
+          aria-label={`Permanently delete ${displayName}`}
+          title="Delete permanently"
+        >
+          <Trash2 size={15} />
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+function ArchivedAgentsPanel({
+  archived,
+  onRestore,
+  onPurge,
+}: {
+  archived: ArchivedAgent[];
+  onRestore: (id: string, name: string) => void;
+  onPurge: (id: string, name: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  if (archived.length === 0) return null;
+  return (
+    <section className="mt-4" aria-label="Archived agents">
+      <button
+        onClick={() => setExpanded(v => !v)}
+        className="flex items-center gap-2 text-xs text-shell-text-secondary hover:text-shell-text transition-colors mb-2"
+        aria-expanded={expanded}
+        aria-controls="archived-agents-panel"
+      >
+        <ChevronRight size={14} className={`transition-transform ${expanded ? "rotate-90" : ""}`} />
+        <Archive size={13} />
+        Archived ({archived.length})
+      </button>
+      <div
+        id="archived-agents-panel"
+        className={`space-y-2 ${expanded ? "" : "hidden"}`}
+      >
+        {archived.map(entry => (
+          <ArchivedAgentRow
+            key={entry.id}
+            entry={entry}
+            onRestore={onRestore}
+            onPurge={onPurge}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  AgentsApp (main)                                                   */
 /* ------------------------------------------------------------------ */
 
 export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [archived, setArchived] = useState<ArchivedAgent[]>([]);
   const [loading, setLoading] = useState(true);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [detail, setDetail] = useState<{ name: string; tab: DetailTab } | null>(null);
+  const [diskStates, setDiskStates] = useState<Record<string, DiskState>>({});
+  const [quotaErrors, setQuotaErrors] = useState<Record<string, string>>({});
 
   const fetchAgents = useCallback(async () => {
     try {
@@ -1181,8 +1473,10 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
             setAgents(
               data.map((a: Record<string, unknown>) => ({
                 name: String(a.name ?? "unknown"),
+                display_name: a.display_name ? String(a.display_name) : undefined,
                 host: String(a.host ?? "localhost"),
                 color: String(a.color ?? "#3b82f6"),
+                emoji: a.emoji ? String(a.emoji) : undefined,
                 status: String(a.status ?? "stopped") as Agent["status"],
                 vectors: Number(a.vectors ?? 0),
                 framework: a.framework ? String(a.framework) : undefined,
@@ -1202,6 +1496,44 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
     } catch { /* fall through */ }
     setAgents([]);
     setLoading(false);
+  }, []);
+
+  const fetchArchived = useCallback(async () => {
+    try {
+      const res = await fetch("/api/agents/archived");
+      if (!res.ok) return;
+      const ct = res.headers.get("content-type") ?? "";
+      if (!ct.includes("application/json")) return;
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setArchived(data as ArchivedAgent[]);
+      }
+    } catch {
+      /* network error — leave prior state */
+    }
+  }, []);
+
+  const fetchDiskStates = useCallback(async (agentNames: string[]) => {
+    if (agentNames.length === 0) return;
+    const results = await Promise.allSettled(
+      agentNames.map(async (name) => {
+        const res = await fetch(`/api/agents/${encodeURIComponent(name)}/disk`, {
+          headers: { Accept: "application/json" },
+        });
+        if (!res.ok) return null;
+        const ct = res.headers.get("content-type") ?? "";
+        if (!ct.includes("application/json")) return null;
+        const data: DiskState = await res.json();
+        return { name, data };
+      })
+    );
+    const next: Record<string, DiskState> = {};
+    for (const r of results) {
+      if (r.status === "fulfilled" && r.value) {
+        next[r.value.name] = r.value.data;
+      }
+    }
+    setDiskStates(next);
   }, []);
 
   // Listen for agent-resumed events from the notification toast
@@ -1232,12 +1564,20 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
     }
   }
 
+  // Fetch disk states whenever agent list changes
+  useEffect(() => {
+    if (agents.length > 0) {
+      fetchDiskStates(agents.map((a) => a.name));
+    }
+  }, [agents, fetchDiskStates]);
+
   useEffect(() => {
     fetchAgents();
-  }, [fetchAgents]);
+    fetchArchived();
+  }, [fetchAgents, fetchArchived]);
 
   async function handleDelete(name: string) {
-    if (!window.confirm(`Delete agent "${name}"? This cannot be undone.`)) return;
+    if (!window.confirm(`Archive "${name}"? It can be restored later from the Archived section.`)) return;
     try {
       const res = await fetch(`/api/agents/${encodeURIComponent(name)}`, {
         method: "DELETE",
@@ -1254,14 +1594,91 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
       }
       if (detail?.name === name) setDetail(null);
       fetchAgents();
+      fetchArchived();
     } catch (e) {
       window.alert(e instanceof Error ? e.message : "Network error");
     }
   }
 
+  async function handleRestore(id: string, name: string) {
+    if (!window.confirm(`Restore "${name}"?`)) return;
+    try {
+      const res = await fetch(`/api/agents/archived/${id}/restore`, { method: "POST" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        window.alert(`Restore failed: ${(err as { error?: string }).error ?? res.status}`);
+        return;
+      }
+      await fetchAgents();
+      await fetchArchived();
+    } catch (e) {
+      window.alert(`Network error: ${String(e)}`);
+    }
+  }
+
+  async function handlePurge(id: string, name: string) {
+    if (!window.confirm(`Permanently delete "${name}"? This cannot be undone.`)) return;
+    try {
+      const res = await fetch(`/api/agents/archived/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        window.alert(`Permanent delete failed: ${(err as { error?: string }).error ?? res.status}`);
+        return;
+      }
+      await fetchArchived();
+    } catch (e) {
+      window.alert(`Network error: ${String(e)}`);
+    }
+  }
+
+  async function handleExpandQuota(name: string, currentGib: number) {
+    const newGib = currentGib + 10;
+    setQuotaErrors((prev) => { const next = { ...prev }; delete next[name]; return next; });
+    try {
+      const res = await fetch(`/api/agents/${encodeURIComponent(name)}/quota`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ size_gib: newGib }),
+      });
+      if (res.status === 409) {
+        setQuotaErrors((prev) => ({
+          ...prev,
+          [name]: "Cannot resize on this storage backend — run install-time migration to btrfs",
+        }));
+        return;
+      }
+      if (!res.ok) {
+        let msg = `Expand failed (${res.status})`;
+        try { const e = await res.json(); if (e?.error) msg = String(e.error); } catch { /* ignore */ }
+        setQuotaErrors((prev) => ({ ...prev, [name]: msg }));
+        return;
+      }
+      await fetchDiskStates([name]);
+    } catch (e) {
+      setQuotaErrors((prev) => ({ ...prev, [name]: e instanceof Error ? e.message : "Network error" }));
+    }
+  }
+
+  function handleAuditWithAgent(name: string) {
+    // Find the agent's DM channel by convention (agent name is the channel id or name)
+    // Dispatch cross-app navigation event — MessagesApp listens for taos:open-messages
+    window.dispatchEvent(
+      new CustomEvent("taos:open-messages", {
+        detail: {
+          channelId: name,
+          prefillPromptName: "disk-audit",
+          prefillAgent: name,
+        },
+      })
+    );
+  }
+
   function handleWizardClose(deployed?: boolean) {
     setWizardOpen(false);
-    if (deployed) fetchAgents();
+    if (deployed) {
+      fetchAgents();
+      fetchArchived();
+    }
   }
 
   return (
@@ -1293,7 +1710,7 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
           <div className="flex items-center justify-center h-full text-shell-text-tertiary text-sm">
             Loading agents...
           </div>
-        ) : agents.length === 0 ? (
+        ) : agents.length === 0 && archived.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-4 text-shell-text-tertiary">
             <div className="w-20 h-20 rounded-2xl flex items-center justify-center"
               style={{ background: "linear-gradient(135deg, rgba(139,146,163,0.15), rgba(91,97,112,0.08))" }}
@@ -1313,19 +1730,84 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
               Deploy your first agent
             </Button>
           </div>
+        ) : agents.length === 0 ? (
+          <div className="p-4">
+            <ArchivedAgentsPanel
+              archived={archived}
+              onRestore={handleRestore}
+              onPurge={handlePurge}
+            />
+          </div>
         ) : (
-          <div className="p-4 space-y-2" role="list" aria-label="Agent list">
-            {agents.map((agent) => (
-              <AgentRow
-                key={agent.name}
-                agent={agent}
-                onViewLogs={(name) => setDetail({ name, tab: "logs" })}
-                onViewSkills={(name) => setDetail({ name, tab: "skills" })}
-                onViewMessages={(name) => setDetail({ name, tab: "messages" })}
-                onDelete={handleDelete}
-                onResume={handleResume}
-              />
-            ))}
+          <div className="p-4">
+            {/* Disk quota notification cards */}
+            {agents
+              .filter((a) => diskStates[a.name] != null && diskStates[a.name]!.state !== "ok")
+              .map((agent) => {
+                const ds = diskStates[agent.name]!;
+                const isHard = ds.state === "hard";
+                return (
+                  <div
+                    key={`quota-card-${agent.name}`}
+                    className={`mb-3 px-4 py-3 rounded-lg border ${
+                      isHard
+                        ? "bg-red-500/10 border-red-500/30"
+                        : "bg-amber-500/10 border-amber-500/30"
+                    }`}
+                    role="alert"
+                    aria-label={`Disk quota warning for ${agent.display_name || agent.name}`}
+                  >
+                    <div className={`text-xs font-medium mb-2 ${isHard ? "text-red-400" : "text-amber-400"}`}>
+                      Disk quota {isHard ? "full" : "warning"} — {agent.display_name || agent.name} at {ds.percent}%
+                    </div>
+                    {quotaErrors[agent.name] && (
+                      <div className="text-xs text-red-400 mb-2" role="alert">
+                        {quotaErrors[agent.name]}
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleExpandQuota(agent.name, ds.quota_gib)}
+                        aria-label={`Expand disk quota for ${agent.name} by 10 GB`}
+                        className={isHard ? "border-red-500/30 hover:bg-red-500/10" : "border-amber-500/30 hover:bg-amber-500/10"}
+                      >
+                        <HardDrive size={13} aria-hidden="true" />
+                        Expand +10 GB
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleAuditWithAgent(agent.name)}
+                        aria-label={`Audit disk usage with ${agent.name}`}
+                      >
+                        <MessageSquare size={13} aria-hidden="true" />
+                        Audit with agent
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            <div className="space-y-2" role="list" aria-label="Agent list">
+              {agents.map((agent) => (
+                <AgentRow
+                  key={agent.name}
+                  agent={agent}
+                  diskState={diskStates[agent.name] ?? null}
+                  onViewLogs={(name) => setDetail({ name, tab: "logs" })}
+                  onViewSkills={(name) => setDetail({ name, tab: "skills" })}
+                  onViewMessages={(name) => setDetail({ name, tab: "messages" })}
+                  onDelete={handleDelete}
+                  onResume={handleResume}
+                />
+              ))}
+            </div>
+            <ArchivedAgentsPanel
+              archived={archived}
+              onRestore={handleRestore}
+              onPurge={handlePurge}
+            />
           </div>
         )}
       </div>

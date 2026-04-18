@@ -1,6 +1,7 @@
 id: agent-zero
 name: Agent Zero
 type: agent-framework
+verification_status: alpha
 version: 0.8.0
 description: "Autonomous AI agent — self-correcting workflows, tool creation, computer control"
 homepage: https://github.com/frdel/agent-zero

@@ -23,6 +23,16 @@ DEFAULT_CONFIG = {
 
 _config_lock = asyncio.Lock()
 
+DEFAULT_ARCHIVE_CONFIG = {
+    # Where completed archive snapshots (and optional tarballs) live.
+    # "pool:" means the snapshot lives in-pool alongside the container —
+    # zero-copy on btrfs/ZFS, full rsync on dir-backed pools.
+    # "path:/abs/path" exports an incus tarball to that directory.
+    # "s3://bucket" is reserved (not yet implemented; taOS logs + skips).
+    "target": "pool:",
+}
+
+
 @dataclass
 class AppConfig:
     server: dict = field(default_factory=lambda: DEFAULT_CONFIG["server"].copy())
@@ -31,6 +41,8 @@ class AppConfig:
     agents: list[dict] = field(default_factory=list)
     metrics: dict = field(default_factory=lambda: DEFAULT_CONFIG["metrics"].copy())
     webhooks: list[dict] = field(default_factory=list)
+    archived_agents: list[dict] = field(default_factory=list)
+    archive: dict = field(default_factory=lambda: DEFAULT_ARCHIVE_CONFIG.copy())
     config_path: Path | None = None
 
     def to_dict(self) -> dict:
@@ -43,6 +55,11 @@ class AppConfig:
         }
         if self.webhooks:
             d["webhooks"] = self.webhooks
+        if self.archived_agents:
+            d["archived_agents"] = self.archived_agents
+        archive_target = (self.archive or {}).get("target", "pool:")
+        if archive_target != "pool:":
+            d["archive"] = self.archive
         return d
 
 def load_config(path: Path) -> AppConfig:
@@ -60,6 +77,10 @@ def load_config(path: Path) -> AppConfig:
     # config files without them get sensible defaults without error.
     for agent in agents:
         normalize_agent(agent)
+    archive_raw = data.get("archive", {})
+    archive_cfg = DEFAULT_ARCHIVE_CONFIG.copy()
+    if isinstance(archive_raw, dict):
+        archive_cfg.update(archive_raw)
     return AppConfig(
         server=data.get("server", DEFAULT_CONFIG["server"].copy()),
         backends=data.get("backends", []),
@@ -67,6 +88,8 @@ def load_config(path: Path) -> AppConfig:
         agents=agents,
         metrics=data.get("metrics", DEFAULT_CONFIG["metrics"].copy()),
         webhooks=data.get("webhooks", []),
+        archived_agents=data.get("archived_agents", []),
+        archive=archive_cfg,
         config_path=path,
     )
 
@@ -129,6 +152,9 @@ def normalize_agent(agent: dict) -> dict:
 
         agent = normalize_agent({...})
     """
+    import uuid as _uuid
+    if not agent.get("id"):
+        agent["id"] = _uuid.uuid4().hex[:12]
     if "fallback_models" not in agent:
         agent["fallback_models"] = []
     if "on_worker_failure" not in agent:

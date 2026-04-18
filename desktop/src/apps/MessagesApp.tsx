@@ -14,6 +14,9 @@ import {
   WifiOff,
   ChevronRight,
   PanelRight,
+  Archive,
+  Trash2,
+  RotateCcw,
 } from "lucide-react";
 import {
   Button,
@@ -27,10 +30,23 @@ import {
 } from "@/components/ui";
 import { MobileSplitView } from "@/components/mobile/MobileSplitView";
 import { useIsMobile } from "@/hooks/use-is-mobile";
+import { resolveAgentEmoji } from "@/lib/agent-emoji";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
+
+interface AdminPrompt {
+  name: string;
+  body: string;
+  description?: string;
+}
+
+interface OpenMessagesDetail {
+  channelId: string;
+  prefillPromptName?: string;
+  prefillAgent?: string;
+}
 
 interface Channel {
   id: string;
@@ -41,6 +57,56 @@ interface Channel {
   created_at?: string;
   last_message_at?: string;
   lastPreview?: string;
+  settings?: {
+    archived?: boolean;
+    archived_at?: string;
+    archived_agent_id?: string;
+    archived_agent_slug?: string;
+  };
+}
+
+interface LiveAgent {
+  name: string;
+  display_name?: string;
+  emoji?: string;
+  framework?: string;
+}
+
+interface ArchivedAgentEntry {
+  id: string;
+  archived_slug: string;
+  original?: {
+    name?: string;
+    display_name?: string;
+  };
+}
+
+/** Resolved display state for a message author. */
+export type AuthorDisplayState = "active" | "archived" | "removed";
+
+/**
+ * Resolve the display state of a message author.
+ * Pure function — exported for unit testing.
+ */
+export function resolveAuthorDisplayState(
+  authorId: string,
+  authorType: "user" | "agent",
+  liveAgents: LiveAgent[],
+  archivedAgents: ArchivedAgentEntry[],
+): AuthorDisplayState {
+  if (authorType === "user") return "active";
+  // Check live agents by name
+  if (liveAgents.some((a) => a.name === authorId)) return "active";
+  // Check archived agents by slug or original name
+  if (
+    archivedAgents.some(
+      (a) =>
+        a.archived_slug === authorId ||
+        a.original?.name === authorId,
+    )
+  )
+    return "archived";
+  return "removed";
 }
 
 interface Message {
@@ -108,6 +174,10 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
   const isMobile = useIsMobile();
 
   const [channels, setChannels] = useState<Channel[]>([]);
+  const [archivedChannels, setArchivedChannels] = useState<Channel[]>([]);
+  const [archivedExpanded, setArchivedExpanded] = useState(false);
+  const [liveAgents, setLiveAgents] = useState<LiveAgent[]>([]);
+  const [archivedAgents, setArchivedAgents] = useState<ArchivedAgentEntry[]>([]);
   const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [unread, setUnread] = useState<Record<string, number>>({});
@@ -118,6 +188,7 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
   const [showEmoji, setShowEmoji] = useState<string | null>(null); // message id
   const [viewingCanvas, setViewingCanvas] = useState<{ url: string; title?: string } | null>(null);
   const [newChannel, setNewChannel] = useState({ name: "", type: "topic" as "topic" | "group", description: "" });
+  const [prefillBanner, setPrefillBanner] = useState<{ promptName: string; agentName?: string } | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -143,6 +214,45 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
       if (unRes.ok) {
         const data = await unRes.json();
         setUnread(data.unread ?? {});
+      }
+    } catch {
+      /* offline */
+    }
+  }, []);
+
+  /* ---- fetch archived channels ---- */
+  const fetchArchivedChannels = useCallback(async () => {
+    try {
+      const res = await fetch("/api/chat/channels?archived=true");
+      if (res.ok) {
+        const data = await res.json();
+        setArchivedChannels(data.channels ?? []);
+      }
+    } catch {
+      /* offline */
+    }
+  }, []);
+
+  /* ---- fetch agent lists for author resolution ---- */
+  const fetchAgentLists = useCallback(async () => {
+    try {
+      const [liveRes, archRes] = await Promise.all([
+        fetch("/api/agents"),
+        fetch("/api/agents/archived"),
+      ]);
+      if (liveRes.ok) {
+        const ct = liveRes.headers.get("content-type") ?? "";
+        if (ct.includes("application/json")) {
+          const data = await liveRes.json();
+          if (Array.isArray(data)) setLiveAgents(data as LiveAgent[]);
+        }
+      }
+      if (archRes.ok) {
+        const ct = archRes.headers.get("content-type") ?? "";
+        if (ct.includes("application/json")) {
+          const data = await archRes.json();
+          if (Array.isArray(data)) setArchivedAgents(data as ArchivedAgentEntry[]);
+        }
       }
     } catch {
       /* offline */
@@ -280,6 +390,8 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
   /* ---- init ---- */
   useEffect(() => {
     fetchChannels();
+    fetchArchivedChannels();
+    fetchAgentLists();
     connectWs();
     return () => {
       if (wsRef.current) {
@@ -287,7 +399,46 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
         wsRef.current.close();
       }
     };
-  }, [fetchChannels, connectWs]);
+  }, [fetchChannels, fetchArchivedChannels, fetchAgentLists, connectWs]);
+
+  /* ---- cross-app open-messages event ---- */
+  useEffect(() => {
+    const handler = async (e: Event) => {
+      const detail = (e as CustomEvent<OpenMessagesDetail>).detail;
+      if (!detail?.channelId) return;
+
+      // Select the channel — try to match by id or by name (DM channels often use agent name)
+      setSelectedChannel(detail.channelId);
+
+      // Fetch the admin prompt body if requested
+      if (detail.prefillPromptName) {
+        try {
+          const res = await fetch(
+            `/api/admin-prompts/${encodeURIComponent(detail.prefillPromptName)}`,
+            { headers: { Accept: "application/json" } }
+          );
+          if (res.ok) {
+            const ct = res.headers.get("content-type") ?? "";
+            if (ct.includes("application/json")) {
+              const data: AdminPrompt = await res.json();
+              setInput(data.body ?? "");
+              setPrefillBanner({
+                promptName: detail.prefillPromptName,
+                agentName: detail.prefillAgent,
+              });
+              // Focus composer after a short delay (channel selection renders first)
+              setTimeout(() => inputRef.current?.focus(), 150);
+            }
+          }
+        } catch {
+          /* ignore — user can type manually */
+        }
+      }
+    };
+
+    window.addEventListener("taos:open-messages", handler);
+    return () => window.removeEventListener("taos:open-messages", handler);
+  }, []);
 
   /* ---- channel selection ---- */
   useEffect(() => {
@@ -412,6 +563,52 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
     }
   };
 
+  /* ---- archived channel actions ---- */
+  const handleRestoreArchivedChannel = useCallback(async (channelId: string, channelName: string) => {
+    const archivedAgent = archivedChannels.find((c) => c.id === channelId)?.settings?.archived_agent_id;
+    if (archivedAgent) {
+      // find the archived agent entry
+      const agentEntry = archivedAgents.find((a) => a.id === archivedAgent);
+      if (agentEntry) {
+        if (!window.confirm(`Restore agent "${agentEntry.original?.display_name || agentEntry.original?.name || agentEntry.archived_slug}"?`)) return;
+        try {
+          const res = await fetch(`/api/agents/archived/${archivedAgent}/restore`, { method: "POST" });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            window.alert(`Restore failed: ${(err as { error?: string }).error ?? res.status}`);
+            return;
+          }
+          await fetchChannels();
+          await fetchArchivedChannels();
+          await fetchAgentLists();
+        } catch (e) {
+          window.alert(`Network error: ${String(e)}`);
+        }
+      } else {
+        window.alert("Agent entry missing — delete only.");
+      }
+    } else {
+      window.alert(`Cannot restore channel "${channelName}": no associated agent found.`);
+    }
+  }, [archivedChannels, archivedAgents, fetchChannels, fetchArchivedChannels, fetchAgentLists]);
+
+  const handleDeleteArchivedChannel = useCallback(async (channelId: string) => {
+    if (!window.confirm("Permanently delete this chat? All messages are erased. This cannot be undone.")) return;
+    try {
+      const res = await fetch(`/api/chat/channels/${channelId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        window.alert(`Delete failed: ${(err as { error?: string }).error ?? res.status}`);
+        return;
+      }
+      // Remove from local state + refetch
+      setArchivedChannels((prev) => prev.filter((c) => c.id !== channelId));
+      if (selectedChannel === channelId) setSelectedChannel(null);
+    } catch (e) {
+      window.alert(`Network error: ${String(e)}`);
+    }
+  }, [selectedChannel, fetchArchivedChannels]);
+
   /* ---- group channels by type ---- */
   const grouped = {
     dm: channels.filter((c) => c.type === "dm"),
@@ -419,7 +616,9 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
     group: channels.filter((c) => c.type === "group"),
   };
 
-  const currentChannel = channels.find((c) => c.id === selectedChannel);
+  const allChannels = [...channels, ...archivedChannels];
+  const currentChannel = allChannels.find((c) => c.id === selectedChannel);
+  const isCurrentArchived = currentChannel?.settings?.archived === true;
 
   /* ---------------------------------------------------------------- */
   /*  Sections definition (shared between mobile + desktop lists)     */
@@ -501,6 +700,74 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
           )}
         </div>
       ))}
+
+      {/* Archived channels section — mobile */}
+      {archivedChannels.length > 0 && (
+        <div style={{ marginBottom: 20 }}>
+          <button
+            type="button"
+            onClick={() => setArchivedExpanded((v) => !v)}
+            aria-expanded={archivedExpanded}
+            aria-controls="archived-channels-mobile"
+            style={{ fontSize: 12, textTransform: "uppercase" as const, letterSpacing: 0.5, color: "rgba(255,255,255,0.35)", padding: "0 20px 6px", fontWeight: 600, display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", cursor: "pointer", width: "100%" }}
+          >
+            <ChevronRight size={12} style={{ transition: "transform 0.15s", transform: archivedExpanded ? "rotate(90deg)" : "none", color: "rgba(255,255,255,0.3)" }} aria-hidden="true" />
+            <Archive size={12} aria-hidden="true" />
+            Archived ({archivedChannels.length})
+          </button>
+          <div id="archived-channels-mobile" style={{ display: archivedExpanded ? "block" : "none" }}>
+            <div style={{ margin: "0 12px", borderRadius: 16, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", overflow: "hidden" }}>
+              {archivedChannels.map((ch, idx, arr) => {
+                const agentId = ch.settings?.archived_agent_id;
+                const hasAgent = agentId ? archivedAgents.some((a) => a.id === agentId) : false;
+                return (
+                  <div
+                    key={ch.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      borderBottom: idx === arr.length - 1 ? "none" : "1px solid rgba(255,255,255,0.04)",
+                      opacity: 0.6,
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setSelectedChannel(ch.id)}
+                      aria-label={`Archived channel ${ch.name}`}
+                      style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, padding: "12px 8px 12px 16px", background: selectedChannel === ch.id ? "rgba(59,130,246,0.12)" : "none", border: "none", cursor: "pointer", color: "inherit", textAlign: "left" as const, minWidth: 0 }}
+                    >
+                      <Archive size={11} aria-hidden="true" style={{ color: "rgba(255,255,255,0.4)", flexShrink: 0 }} />
+                      <span style={{ flex: 1, fontSize: 14, color: "rgba(255,255,255,0.7)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ch.name}</span>
+                    </button>
+                    <div style={{ display: "flex", gap: 2, paddingRight: 8 }}>
+                      <button
+                        type="button"
+                        onClick={() => handleRestoreArchivedChannel(ch.id, ch.name)}
+                        disabled={!hasAgent}
+                        aria-label={`Restore archived channel ${ch.name}`}
+                        title={hasAgent ? "Restore agent" : "Agent entry missing — delete only"}
+                        style={{ background: "none", border: "none", cursor: hasAgent ? "pointer" : "not-allowed", color: hasAgent ? "rgba(52,211,153,0.7)" : "rgba(255,255,255,0.2)", padding: "6px" }}
+                      >
+                        <RotateCcw size={13} aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteArchivedChannel(ch.id)}
+                        aria-label={`Permanently delete archived channel ${ch.name}`}
+                        title="Delete permanently"
+                        style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(248,113,113,0.7)", padding: "6px" }}
+                      >
+                        <Trash2 size={13} aria-hidden="true" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   ) : (
     /* Desktop: compact sidebar */
@@ -544,6 +811,67 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
             ))}
           </div>
         ))}
+
+        {/* Archived channels section — desktop */}
+        {archivedChannels.length > 0 && (
+          <div className="mt-2">
+            <button
+              type="button"
+              onClick={() => setArchivedExpanded((v) => !v)}
+              className="flex items-center gap-1.5 px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-white/25 hover:text-white/40 transition-colors w-full text-left"
+              aria-expanded={archivedExpanded}
+              aria-controls="archived-channels-desktop"
+            >
+              <ChevronRight size={11} className={`transition-transform ${archivedExpanded ? "rotate-90" : ""}`} aria-hidden="true" />
+              <Archive size={11} aria-hidden="true" />
+              Archived ({archivedChannels.length})
+            </button>
+            <div id="archived-channels-desktop" className={archivedExpanded ? "" : "hidden"}>
+              {archivedChannels.map((ch) => {
+                const agentId = ch.settings?.archived_agent_id;
+                const hasAgent = agentId ? archivedAgents.some((a) => a.id === agentId) : false;
+                return (
+                  <div
+                    key={ch.id}
+                    className="group relative flex items-center opacity-60 hover:opacity-80 transition-opacity"
+                  >
+                    <Button
+                      variant={selectedChannel === ch.id ? "secondary" : "ghost"}
+                      onClick={() => setSelectedChannel(ch.id)}
+                      className="flex-1 justify-start h-auto py-1.5 pl-3 pr-1 text-[13px] rounded-none font-normal min-w-0"
+                      aria-label={`Archived channel ${ch.name}`}
+                    >
+                      <Archive size={11} className="shrink-0 mr-1.5 text-white/40" aria-hidden="true" />
+                      <span className="truncate flex-1 text-left">{ch.name}</span>
+                    </Button>
+                    {/* Per-row actions — only visible on hover */}
+                    <div className="hidden group-hover:flex items-center shrink-0 pr-1">
+                      <button
+                        type="button"
+                        onClick={() => handleRestoreArchivedChannel(ch.id, ch.name)}
+                        disabled={!hasAgent}
+                        aria-label={`Restore archived channel ${ch.name}`}
+                        title={hasAgent ? "Restore agent" : "Agent entry missing — delete only"}
+                        className={`p-1 rounded transition-colors ${hasAgent ? "text-white/30 hover:text-emerald-400 hover:bg-emerald-500/10 cursor-pointer" : "text-white/15 cursor-not-allowed"}`}
+                      >
+                        <RotateCcw size={12} aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteArchivedChannel(ch.id)}
+                        aria-label={`Permanently delete archived channel ${ch.name}`}
+                        title="Delete permanently"
+                        className="p-1 rounded text-white/30 hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
+                      >
+                        <Trash2 size={12} aria-hidden="true" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -569,6 +897,24 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
             {currentChannel?.type === "topic" ? <Hash size={16} className="text-white/40" /> :
              currentChannel?.type === "group" ? <Users size={16} className="text-white/40" /> :
              <AtSign size={16} className="text-white/40" />}
+            {(() => {
+              // For DM channels, prefix the header with the paired agent's
+              // emoji (or framework default) so the user can see at a glance
+              // who they are chatting with.
+              if (currentChannel?.type !== "dm") return null;
+              const agentName = (currentChannel.members ?? []).find((m) => m !== "user");
+              if (!agentName) return null;
+              const agent = liveAgents.find((a) => a.name === agentName);
+              if (!agent) return null;
+              return (
+                <span
+                  className="text-base leading-none shrink-0"
+                  aria-hidden="true"
+                >
+                  {resolveAgentEmoji(agent.emoji, agent.framework)}
+                </span>
+              );
+            })()}
             <div className="min-w-0 flex-1">
               <div className="text-sm font-medium truncate">{currentChannel?.name ?? "Unknown"}</div>
               {currentChannel?.description && (
@@ -597,28 +943,69 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
               const isAgent = msg.author_type === "agent";
               const prev = i > 0 ? messages[i - 1] : undefined;
               const showAuthor = !prev || prev.author_id !== msg.author_id;
+              const authorState = resolveAuthorDisplayState(
+                msg.author_id,
+                msg.author_type,
+                liveAgents,
+                archivedAgents,
+              );
+              const isDeadAgent = isAgent && authorState !== "active";
+              const authorTooltip =
+                authorState === "archived"
+                  ? "Agent no longer active"
+                  : authorState === "removed"
+                    ? "Agent removed"
+                    : undefined;
               return (
                 <div
                   key={msg.id}
                   className={`group relative px-3 py-1 rounded-md transition-colors hover:bg-white/[0.03] ${
-                    isAgent ? "bg-blue-500/[0.04]" : ""
+                    isAgent && !isDeadAgent ? "bg-blue-500/[0.04]" : ""
                   } ${showAuthor ? "mt-3" : ""}`}
                 >
                   {showAuthor && (
                     <div className="flex items-center gap-2 mb-0.5">
-                      <span className={`text-[13px] font-semibold ${isAgent ? "text-blue-400" : "text-white/90"}`}>
+                      {isAgent && !isDeadAgent && (() => {
+                        const agent = liveAgents.find((a) => a.name === msg.author_id);
+                        if (!agent) return null;
+                        return (
+                          <span
+                            className="text-[14px] leading-none"
+                            aria-hidden="true"
+                          >
+                            {resolveAgentEmoji(agent.emoji, agent.framework)}
+                          </span>
+                        );
+                      })()}
+                      <span
+                        className={`text-[13px] font-semibold ${
+                          isDeadAgent
+                            ? "line-through text-white/35"
+                            : isAgent
+                              ? "text-blue-400"
+                              : "text-white/90"
+                        }`}
+                        style={isDeadAgent ? { opacity: 0.55 } : undefined}
+                        title={authorTooltip}
+                      >
                         {msg.author_id}
                       </span>
-                      {isAgent && (
+                      {isAgent && !isDeadAgent && (
                         <span className="text-[10px] bg-blue-500/20 text-blue-300 px-1.5 py-0.5 rounded font-medium flex items-center gap-0.5">
-                          <Bot size={10} /> Agent
+                          <Bot size={10} aria-hidden="true" /> Agent
                         </span>
                       )}
-                      <span className="text-[11px] text-white/25">{relativeTime(msg.created_at)}</span>
+                      {isDeadAgent && (
+                        <span className="text-[10px] bg-zinc-500/20 text-zinc-500 px-1.5 py-0.5 rounded font-medium flex items-center gap-0.5">
+                          <Bot size={10} aria-hidden="true" />
+                          {authorState === "archived" ? "inactive" : "removed"}
+                        </span>
+                      )}
+                      <span className={`text-[11px] ${isDeadAgent ? "text-white/15" : "text-white/25"}`}>{relativeTime(msg.created_at)}</span>
                       {msg.edited_at && <span className="text-[10px] text-white/20">(edited)</span>}
                     </div>
                   )}
-                  <div className="text-[13px] text-white/80 leading-relaxed whitespace-pre-wrap break-words">
+                  <div className={`text-[13px] leading-relaxed whitespace-pre-wrap break-words ${isDeadAgent ? "text-white/45" : "text-white/80"}`}>
                     {renderContent(msg.content)}
                     {msg.state === "pending" && (
                       <span className="ml-1 text-white/30">...</span>
@@ -713,32 +1100,66 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
             </div>
           )}
 
+          {/* archived banner */}
+          {isCurrentArchived && (
+            <div className="mx-4 mb-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[12px] text-amber-400/80 flex items-center gap-2 shrink-0" role="status">
+              <Archive size={13} aria-hidden="true" />
+              This chat is archived. The agent is no longer active.
+            </div>
+          )}
+
+          {/* prefill banner */}
+          {prefillBanner && (
+            <div
+              className="mx-4 mb-1 px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/20 text-[12px] text-blue-300/90 flex items-center gap-2 shrink-0"
+              role="status"
+              aria-label={`Composer prefilled from prompt: ${prefillBanner.promptName}`}
+            >
+              <span className="flex-1 truncate">
+                Prefilled from: {prefillBanner.promptName}
+                {prefillBanner.agentName ? ` for ${prefillBanner.agentName}` : ""} — edit and send
+              </span>
+              <button
+                onClick={() => {
+                  setPrefillBanner(null);
+                  setInput("");
+                }}
+                className="shrink-0 p-0.5 rounded hover:bg-white/10 transition-colors"
+                aria-label="Dismiss prefill"
+              >
+                <X size={12} aria-hidden="true" />
+              </button>
+            </div>
+          )}
+
           {/* input area */}
           <div className="px-4 py-3 border-t border-white/[0.06] shrink-0">
-            <div className="flex items-end gap-2 bg-white/[0.06] rounded-xl border border-white/[0.08] px-2 py-1.5">
+            <div className={`flex items-end gap-2 rounded-xl border px-2 py-1.5 ${isCurrentArchived ? "bg-white/[0.02] border-white/[0.04] opacity-50" : "bg-white/[0.06] border-white/[0.08]"}`}>
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={handleFileUpload}
                 className="h-8 w-8 shrink-0 mb-0.5"
                 aria-label="Upload file"
+                disabled={isCurrentArchived}
               >
                 <Paperclip size={16} />
               </Button>
               <Textarea
                 ref={inputRef}
                 value={input}
-                onChange={(e) => handleInputChange(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder={`Message #${currentChannel?.name ?? ""}...`}
+                onChange={(e) => !isCurrentArchived && handleInputChange(e.target.value)}
+                onKeyDown={(e) => !isCurrentArchived && handleKeyDown(e)}
+                placeholder={isCurrentArchived ? "This chat is archived" : `Message #${currentChannel?.name ?? ""}...`}
                 rows={1}
-                className="flex-1 bg-transparent border-0 px-1 py-1.5 min-h-0 text-[13px] focus-visible:ring-0 focus-visible:border-0 max-h-[120px]"
+                disabled={isCurrentArchived}
+                className="flex-1 bg-transparent border-0 px-1 py-1.5 min-h-0 text-[13px] focus-visible:ring-0 focus-visible:border-0 max-h-[120px] disabled:cursor-not-allowed"
                 aria-label="Message input"
               />
               <Button
                 size="icon"
                 onClick={sendMessage}
-                disabled={!input.trim()}
+                disabled={!input.trim() || isCurrentArchived}
                 className="h-8 w-8 shrink-0 mb-0.5"
                 aria-label="Send message"
               >

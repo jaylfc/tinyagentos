@@ -77,6 +77,12 @@ async def chat_ws(websocket: WebSocket):
                 await ch_store.update_last_message_at(data["channel_id"])
                 await hub.broadcast(data["channel_id"], {"type": "message", "seq": hub.next_seq(), **message})
 
+                router_svc = getattr(websocket.app.state, "agent_chat_router", None)
+                if router_svc is not None:
+                    channel = await ch_store.get_channel(data["channel_id"])
+                    if channel is not None:
+                        router_svc.dispatch(message, channel)
+
                 # Capture user message into user memory (async, non-blocking)
                 user_memory = getattr(websocket.app.state, "user_memory", None)
                 if user_memory:
@@ -228,6 +234,12 @@ async def post_message(request: Request):
         except Exception:
             pass  # Never block chat for archive failures
 
+    router_svc = getattr(request.app.state, "agent_chat_router", None)
+    if router_svc is not None:
+        channel = await ch_store.get_channel(body["channel_id"])
+        if channel is not None:
+            router_svc.dispatch(message, channel)
+
     return message
 
 
@@ -268,9 +280,13 @@ async def update_message_state(request: Request, message_id: str):
 # ── Channel CRUD ──────────────────────────────────────────────────────────────
 
 @router.get("/api/chat/channels")
-async def list_channels(request: Request, member: str | None = None):
+async def list_channels(
+    request: Request,
+    member: str | None = None,
+    archived: bool | None = None,
+):
     ch_store = request.app.state.chat_channels
-    channels = await ch_store.list_channels(member_id=member)
+    channels = await ch_store.list_channels(member_id=member, archived=archived)
     return {"channels": channels}
 
 

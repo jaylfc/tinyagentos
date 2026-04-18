@@ -1,9 +1,12 @@
 """Container backend abstraction layer."""
 from __future__ import annotations
 
+import logging
 import shutil
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -41,6 +44,20 @@ class ContainerBackend(ABC):
         ...
 
     @abstractmethod
+    async def set_root_quota(self, name: str, size_gib: int) -> dict:
+        """Set per-container rootfs quota.
+
+        On btrfs-backed LXC pools, the quota is immediately enforced via
+        btrfs qgroups. On ZFS, same. On dir-backed pools, this is
+        accounting-only (soft) because dir pools don't enforce. Docker
+        requires a supported storage driver (btrfs, ZFS, devicemapper);
+        on overlay2 the call is a no-op and logged.
+
+        Returns a dict with ``success`` (bool) and ``note`` (str).
+        """
+        ...
+
+    @abstractmethod
     async def create_container(
         self,
         name: str,
@@ -49,18 +66,25 @@ class ContainerBackend(ABC):
         cpu_limit: int | None = None,
         mounts: list[tuple[str, str]] | None = None,
         env: dict[str, str] | None = None,
+        host_uid: int | None = None,
+        root_size_gib: int | None = None,
     ) -> dict:
         """Create and start a new container.
 
-        ``mounts`` is a list of ``(host_path, container_path)`` pairs. Every
-        piece of per-agent state — memory, workspace, vector stores — enters
-        the container through one of these bind mounts. See
-        ``docs/design/framework-agnostic-runtime.md``.
+        ``mounts`` is a list of ``(host_path, container_path)`` pairs.
 
         ``env`` is a dict of environment variables injected at container
         creation time. Used for host-service endpoints (LLM proxy, embeddings,
         skills, user memory) so the container holds no baked-in config and
         can be destroyed and rebuilt without losing its wiring.
+
+        ``host_uid``: when provided, apply a UID mapping so container root
+        (uid 0) maps to this host UID.
+
+        ``root_size_gib``: when provided, set the rootfs disk quota via
+        ``set_root_quota`` after the container is created. On btrfs/ZFS
+        pools this is enforced at the kernel level; on dir-backed pools
+        and Docker overlay2 without pquota it is accounting-only.
         """
         ...
 
@@ -84,8 +108,8 @@ class ContainerBackend(ABC):
         ...
 
     @abstractmethod
-    async def stop_container(self, name: str) -> dict:
-        """Stop a running container."""
+    async def stop_container(self, name: str, force: bool = False) -> dict:
+        """Stop a running container. Pass force=True to kill immediately."""
         ...
 
     @abstractmethod
@@ -103,20 +127,110 @@ class ContainerBackend(ABC):
         """Get recent logs from a container."""
         ...
 
+    @abstractmethod
+    async def rename_container(self, old_name: str, new_name: str) -> dict:
+        """Rename a stopped container."""
+        ...
+
+    @abstractmethod
+    async def add_proxy_device(
+        self, name: str, device_name: str, listen: str, connect: str,
+        bind_mode: str | None = None,
+    ) -> dict:
+        """Attach a TCP proxy device so the container's localhost:<port>
+        transparently reaches the host's localhost:<port>.
+
+        bind_mode: incus bind_mode value ('instance' binds inside the
+        container; omit or 'host' binds on the host).  Use 'instance'
+        when the host already owns the listen port (e.g. litellm on 4000).
+        """
+        ...
+
+    @abstractmethod
+    async def snapshot_create(self, name: str, snapshot_name: str) -> dict:
+        """Create a named snapshot of the container.
+
+        LXC: ``incus snapshot create <name> <snapshot_name>``.
+        Docker: ``docker commit <name> taos/<snapshot_name>:latest``.
+
+        Returns ``{"success": bool, "output": str}`` (and optionally
+        ``"note"`` for partial-success situations).
+        """
+        ...
+
+    @abstractmethod
+    async def snapshot_restore(self, name: str, snapshot_name: str) -> dict:
+        """Restore a container to a previously-created snapshot.
+
+        LXC: ``incus snapshot restore <name> <snapshot_name>``.
+        Docker: not natively supported; returns
+        ``{"success": False, "note": "docker snapshot restore not supported"}``.
+
+        Returns ``{"success": bool, "output": str}``.
+        """
+        ...
+
+    @abstractmethod
+    async def snapshot_list(self, name: str) -> dict:
+        """List snapshots for a container.
+
+        LXC: parses ``incus info <name>`` for the Snapshots section.
+        Docker: lists ``docker images`` filtered to the ``taos/`` namespace.
+
+        Returns ``{"success": bool, "snapshots": list[str], "output": str}``.
+        """
+        ...
+
+    @abstractmethod
+    async def set_env(self, name: str, key: str, value: str) -> dict:
+        """Set a single environment variable on a container without recreating it.
+
+        LXC: ``incus config set <name> environment.<key> <value>``.  The
+        change is picked up by the container on next start (or immediately
+        if the container is already running and the process re-reads its
+        environment via systemd unit restart).
+
+        Docker: requires container recreation to change env vars; returns
+        ``{"success": False, "note": "docker env change requires recreate"}``.
+
+        Returns ``{"success": bool, "output": str}``.
+        """
+        ...
+
 
 def detect_runtime() -> str:
     """Detect the available container runtime.
 
     Checks for incus, docker, podman in priority order.
     Returns 'lxc', 'docker', 'podman', or 'none'.
+
+    Policy: LXC (incus) is preferred when multiple runtimes are present.
+    Docker and podman are supported for app-store services but never take
+    precedence over LXC for agent deployment.
     """
+    available = []
     if shutil.which("incus"):
-        return "lxc"
+        available.append("lxc")
     if shutil.which("docker"):
-        return "docker"
+        available.append("docker")
     if shutil.which("podman"):
-        return "podman"
-    return "none"
+        available.append("podman")
+
+    if "lxc" in available:
+        # LXC is preferred: full-OS containers align with taOS's host-owns-state
+        # model; Docker coexists for app-store services but never displaces LXC.
+        selected = "lxc"
+    elif available:
+        selected = available[0]
+    else:
+        selected = "none"
+
+    logger.info(
+        "detect_runtime: selected=%s, available=%s, policy=lxc-preferred",
+        selected,
+        available,
+    )
+    return selected
 
 
 _active_backend: ContainerBackend | None = None

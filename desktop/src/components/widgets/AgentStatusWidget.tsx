@@ -1,9 +1,12 @@
 import { useState, useEffect } from "react";
 import { useWidgetSize } from "@/hooks/use-widget-size";
+import { resolveAgentEmoji } from "@/lib/agent-emoji";
 
 interface Agent {
   name: string;
   status: string;
+  emoji?: string;
+  framework?: string;
 }
 
 function dotColor(status: string): string {
@@ -53,6 +56,8 @@ export function AgentStatusWidget() {
           setAgents(list.map((a: Record<string, unknown>) => ({
             name: (a.name as string) ?? (a.id as string) ?? "Unknown",
             status: (a.status as string) ?? "unknown",
+            emoji: typeof a.emoji === "string" ? a.emoji : undefined,
+            framework: typeof a.framework === "string" ? a.framework : undefined,
           })));
           setError(false);
         }
@@ -108,6 +113,9 @@ export function AgentStatusWidget() {
           {!error && agents && agents.slice(0, 2).map((agent) => (
             <div key={agent.name} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.78rem", color: "rgba(255,255,255,0.8)", marginBottom: 4 }}>
               <PulseDot color={dotColor(agent.status)} />
+              <span aria-hidden="true" style={{ fontSize: "0.95rem", lineHeight: 1 }}>
+                {resolveAgentEmoji(agent.emoji, agent.framework)}
+              </span>
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{agent.name}</span>
               <span style={dimText}>{agent.status}</span>
             </div>
@@ -139,6 +147,9 @@ export function AgentStatusWidget() {
               {agents.map((agent) => (
                 <div key={agent.name} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.8rem", color: "rgba(255,255,255,0.85)" }}>
                   <PulseDot color={dotColor(agent.status)} />
+                  <span aria-hidden="true" style={{ fontSize: "0.95rem", lineHeight: 1 }}>
+                    {resolveAgentEmoji(agent.emoji, agent.framework)}
+                  </span>
                   <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{agent.name}</span>
                   <span style={{ ...dimText, background: "rgba(255,255,255,0.06)", borderRadius: 4, padding: "1px 6px", whiteSpace: "nowrap" }}>
                     {agent.status}

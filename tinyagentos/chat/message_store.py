@@ -193,6 +193,63 @@ class ChatMessageStore(BaseStore):
         )
         await self._db.commit()
 
+    async def ensure_message(self, msg: dict) -> None:
+        """Insert a message row only if its id is not already present (idempotent).
+
+        ``msg`` must be a dict with at minimum ``id``, ``channel_id``,
+        ``author_id``, ``author_type``, and ``created_at``.  All other fields
+        fall back to their column defaults.
+        """
+        await self._db.execute(
+            """INSERT OR IGNORE INTO chat_messages
+               (id, channel_id, thread_id, author_id, author_type, content,
+                content_type, content_blocks, embeds, components, attachments,
+                reactions, state, edited_at, pinned, ephemeral, metadata, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                msg.get("id") or "",
+                msg.get("channel_id") or "",
+                msg.get("thread_id"),
+                msg.get("author_id") or "",
+                msg.get("author_type") or "user",
+                msg.get("content") or "",
+                msg.get("content_type") or "text",
+                json.dumps(msg["content_blocks"]) if isinstance(msg.get("content_blocks"), list) else msg.get("content_blocks") or "[]",
+                json.dumps(msg["embeds"]) if isinstance(msg.get("embeds"), list) else msg.get("embeds") or "[]",
+                json.dumps(msg["components"]) if isinstance(msg.get("components"), list) else msg.get("components") or "[]",
+                json.dumps(msg["attachments"]) if isinstance(msg.get("attachments"), list) else msg.get("attachments") or "[]",
+                json.dumps(msg["reactions"]) if isinstance(msg.get("reactions"), dict) else msg.get("reactions") or "{}",
+                msg.get("state") or "complete",
+                msg.get("edited_at"),
+                1 if msg.get("pinned") else 0,
+                1 if msg.get("ephemeral") else 0,
+                json.dumps(msg["metadata"]) if isinstance(msg.get("metadata"), dict) else msg.get("metadata") or "{}",
+                msg.get("created_at") or time.time(),
+            ),
+        )
+        await self._db.commit()
+
+    async def get_all_messages_for_channel(self, channel_id: str) -> list[dict]:
+        """Return every message in a channel ordered by created_at ASC.
+
+        Used for chat-export on agent archive.  Loads all rows in one query;
+        for very large histories this is acceptable since export runs once at
+        archive time, not on hot paths.
+        """
+        sql = "SELECT * FROM chat_messages WHERE channel_id = ? ORDER BY created_at ASC"
+        async with self._db.execute(sql, (channel_id,)) as cursor:
+            rows = await cursor.fetchall()
+            desc = cursor.description
+        return [_parse(r, desc) for r in rows]
+
+    async def delete_channel_messages(self, channel_id: str) -> int:
+        """Delete all messages for a channel. Returns the number of rows deleted."""
+        cursor = await self._db.execute(
+            "DELETE FROM chat_messages WHERE channel_id = ?", (channel_id,)
+        )
+        await self._db.commit()
+        return cursor.rowcount
+
     async def update_state(self, message_id: str, state: str) -> None:
         await self._db.execute(
             "UPDATE chat_messages SET state = ? WHERE id = ?", (state, message_id)

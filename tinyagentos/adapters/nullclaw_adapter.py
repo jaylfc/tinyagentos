@@ -1,6 +1,5 @@
 """NullClaw adapter — proxies messages to the NullClaw gateway."""
 import os
-import uvicorn
 from fastapi import FastAPI
 
 app = FastAPI()
@@ -26,4 +25,5 @@ async def health():
 
 
 if __name__ == "__main__":
+    import uvicorn
     uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("TAOS_ADAPTER_PORT", "9001")), log_level="warning")

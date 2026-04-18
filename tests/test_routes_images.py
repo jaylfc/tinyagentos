@@ -123,6 +123,73 @@ class TestImagesGenerate:
         assert resp.status_code == 503
         assert "Cannot connect" in resp.json()["error"]
 
+    async def test_notify_task_complete_called_on_generate_success(self, images_app, images_client):
+        """notify_task_complete must fire after a successful legacy generate call."""
+        from tinyagentos.routes import images as images_mod
+
+        fake_image = base64.b64encode(b"fake-png-data").decode()
+        mock_request = HttpxRequest("POST", "http://localhost:8080/v1/images/generations")
+        mock_response = Response(
+            status_code=200,
+            json={"data": [{"b64_json": fake_image}]},
+            request=mock_request,
+        )
+
+        called: list[str] = []
+
+        class _FakeLifecycle:
+            def notify_task_complete(self, name: str) -> None:
+                called.append(name)
+
+        images_app.state.lifecycle_manager = _FakeLifecycle()
+
+        # Stub _get_image_backend to return a known (url, type, name) triple.
+        def _fake_backend(req, model=None):
+            return "http://image.test", "rkllama", "local-test-sd"
+
+        with patch.object(images_mod, "_get_image_backend", _fake_backend), \
+             patch("tinyagentos.routes.images.httpx.AsyncClient") as MockClient:
+            mock_instance = AsyncMock()
+            mock_instance.post.return_value = mock_response
+            mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+            mock_instance.__aexit__ = AsyncMock(return_value=False)
+            MockClient.return_value = mock_instance
+
+            resp = await images_client.post("/api/images/generate", json={"prompt": "a dog", "seed": 1})
+
+        assert resp.status_code == 200
+        assert called == ["local-test-sd"]
+
+    async def test_notify_task_complete_called_on_generate_failure(self, images_app, images_client):
+        """notify_task_complete must fire even when the backend call fails (try/finally)."""
+        import httpx as real_httpx
+        from tinyagentos.routes import images as images_mod
+
+        called: list[str] = []
+
+        class _FakeLifecycle:
+            def notify_task_complete(self, name: str) -> None:
+                called.append(name)
+
+        images_app.state.lifecycle_manager = _FakeLifecycle()
+
+        def _fake_backend(req, model=None):
+            return "http://image.test", "rkllama", "local-test-sd"
+
+        with patch.object(images_mod, "_get_image_backend", _fake_backend), \
+             patch("tinyagentos.routes.images.httpx.AsyncClient") as MockClient:
+            mock_instance = AsyncMock()
+            mock_instance.post.side_effect = real_httpx.ConnectError("down")
+            mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+            mock_instance.__aexit__ = AsyncMock(return_value=False)
+            MockClient.return_value = mock_instance
+
+            resp = await images_client.post("/api/images/generate", json={"prompt": "a dog"})
+
+        assert resp.status_code == 503
+        # Notify must still fire — idle timer starts even after a failed attempt.
+        assert called == ["local-test-sd"]
+
 
 @pytest.mark.asyncio
 class TestImagesList:

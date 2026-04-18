@@ -29,7 +29,8 @@ class TestDeployAgent:
             return (0, "ok")
 
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
-             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec):
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
             mock_create.return_value = {"success": True, "name": "taos-agent-test"}
 
             result = await deploy_agent(req)
@@ -39,15 +40,106 @@ class TestDeployAgent:
             assert result["ip"] == "10.0.0.5"
             assert "deployment_complete" in result["steps"]
 
-            # Mounts and env are passed to create_container — the
-            # framework-agnostic runtime rule in action.
             call_kwargs = mock_create.call_args.kwargs
-            mounts = call_kwargs["mounts"]
-            assert (str(tmp_path / "agent-workspaces" / "test"), "/workspace") in mounts
-            assert (str(tmp_path / "agent-memory" / "test"), "/memory") in mounts
             env = call_kwargs["env"]
             assert env["TAOS_AGENT_NAME"] == "test"
             assert env["TAOS_SKILLS_URL"].endswith("/api/skill-exec")
+
+    @pytest.mark.asyncio
+    async def test_one_trace_bind_mount(self, tmp_path):
+        """After deploy, create_container receives exactly one mount: the trace dir."""
+        req = _req(data_dir=tmp_path)
+
+        async def mock_exec(name, cmd, **kwargs):
+            if "hostname -I" in " ".join(cmd):
+                return (0, "10.0.0.5")
+            return (0, "ok")
+
+        with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
+            mock_create.return_value = {"success": True, "name": "taos-agent-test"}
+            result = await deploy_agent(req)
+            assert result["success"] is True
+
+            mounts = mock_create.call_args.kwargs["mounts"]
+            assert len(mounts) == 1
+            host_path, container_path = mounts[0]
+            assert container_path == "/root/.taos/trace"
+            assert str(tmp_path / "trace" / "test") == host_path
+
+    @pytest.mark.asyncio
+    async def test_no_workspace_memory_home_mount(self, tmp_path):
+        """The three old bind mounts must NOT appear in the mounts list."""
+        req = _req(data_dir=tmp_path)
+
+        async def mock_exec(name, cmd, **kwargs):
+            if "hostname -I" in " ".join(cmd):
+                return (0, "10.0.0.5")
+            return (0, "ok")
+
+        with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
+            mock_create.return_value = {"success": True, "name": "taos-agent-test"}
+            await deploy_agent(req)
+
+            mounts = mock_create.call_args.kwargs["mounts"]
+            container_paths = [m[1] for m in mounts]
+            assert "/workspace" not in container_paths
+            assert "/memory" not in container_paths
+            assert "/root" not in container_paths
+
+    @pytest.mark.asyncio
+    async def test_root_quota_passed_through_default(self, tmp_path):
+        """create_container receives root_size_gib=40 by default."""
+        req = _req(data_dir=tmp_path)
+
+        async def mock_exec(name, cmd, **kwargs):
+            if "hostname -I" in " ".join(cmd):
+                return (0, "10.0.0.5")
+            return (0, "ok")
+
+        with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
+            mock_create.return_value = {"success": True, "name": "taos-agent-test"}
+            await deploy_agent(req)
+            assert mock_create.call_args.kwargs["root_size_gib"] == 40
+
+    @pytest.mark.asyncio
+    async def test_root_quota_custom_value_honoured(self, tmp_path):
+        """Custom root_size_gib on DeployRequest reaches create_container."""
+        req = _req(data_dir=tmp_path, root_size_gib=80)
+
+        async def mock_exec(name, cmd, **kwargs):
+            if "hostname -I" in " ".join(cmd):
+                return (0, "10.0.0.5")
+            return (0, "ok")
+
+        with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
+            mock_create.return_value = {"success": True, "name": "taos-agent-test"}
+            await deploy_agent(req)
+            assert mock_create.call_args.kwargs["root_size_gib"] == 80
+
+    @pytest.mark.asyncio
+    async def test_trace_dir_created_on_host(self, tmp_path):
+        """The trace host dir is created before container creation."""
+        req = _req(data_dir=tmp_path)
+
+        async def mock_exec(name, cmd, **kwargs):
+            if "hostname -I" in " ".join(cmd):
+                return (0, "10.0.0.5")
+            return (0, "ok")
+
+        with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
+            mock_create.return_value = {"success": True, "name": "taos-agent-test"}
+            await deploy_agent(req)
+            assert (tmp_path / "trace" / "test").is_dir()
 
     @pytest.mark.asyncio
     async def test_handles_container_creation_failure(self, tmp_path):
@@ -60,10 +152,11 @@ class TestDeployAgent:
 
     @pytest.mark.asyncio
     async def test_deployment_with_llm_proxy_injects_embedding_url(self, tmp_path):
-        """LLM proxy wired → OPENAI_BASE_URL and TAOS_EMBEDDING_URL land in env."""
+        """LLM proxy wired - OPENAI_BASE_URL and TAOS_EMBEDDING_URL land in env."""
         mock_proxy = MagicMock()
         mock_proxy.is_running.return_value = True
         mock_proxy.url = "http://localhost:4000"
+        mock_proxy.database_url = None
         mock_proxy.create_agent_key = AsyncMock(return_value="sk-test-key-123")
 
         req = _req(
@@ -79,7 +172,8 @@ class TestDeployAgent:
             return (0, "ok")
 
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
-             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn):
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
             mock_create.return_value = {"success": True, "name": "taos-agent-proxy-test"}
 
             result = await deploy_agent(req)
@@ -89,7 +183,121 @@ class TestDeployAgent:
             assert env["OPENAI_API_KEY"] == "sk-test-key-123"
             assert env["OPENAI_BASE_URL"] == "http://localhost:4000/v1"
             assert env["TAOS_EMBEDDING_URL"] == "http://localhost:4000/v1/embeddings"
-            mock_proxy.create_agent_key.assert_called_once_with("proxy-test")
+            # No model was specified on this DeployRequest, so the
+            # deployer passes models=None and create_agent_key falls
+            # back internally to its "default" alias.
+            mock_proxy.create_agent_key.assert_called_once_with(
+                "proxy-test", models=None
+            )
+
+    @pytest.mark.asyncio
+    async def test_fallback_to_master_key_when_create_returns_none(self, tmp_path):
+        """When LiteLLM runs without a Postgres DB, create_agent_key
+        returns None. The deployer must fall back to the shared master
+        key so the container still gets a non-empty LITELLM_API_KEY —
+        otherwise openclaw's gateway crashes on boot."""
+        mock_proxy = MagicMock()
+        mock_proxy.is_running.return_value = True
+        mock_proxy.url = "http://localhost:4000"
+        mock_proxy.database_url = None
+        mock_proxy.create_agent_key = AsyncMock(return_value=None)
+
+        req = _req(
+            name="routing-only",
+            data_dir=tmp_path,
+            extra_config={"llm_proxy": mock_proxy},
+        )
+
+        async def mock_exec_fn(name, cmd, **kwargs):
+            if "hostname -I" in " ".join(cmd):
+                return (0, "10.0.0.14")
+            return (0, "ok")
+
+        with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
+            mock_create.return_value = {"success": True, "name": "taos-agent-routing-only"}
+            result = await deploy_agent(req)
+            assert result["success"] is True
+            env = mock_create.call_args.kwargs["env"]
+            assert env["LITELLM_API_KEY"] == "sk-taos-master"
+            assert env["OPENAI_API_KEY"] == "sk-taos-master"
+            assert env["OPENAI_BASE_URL"] == "http://localhost:4000/v1"
+            # Embedding env must still fire under the fallback path — the
+            # LiteLLM routing-only mode serves /v1/embeddings identically.
+            assert env["TAOS_EMBEDDING_URL"] == "http://localhost:4000/v1/embeddings"
+            assert env["TAOS_EMBEDDING_MODEL"] == "taos-embedding-default"
+
+    @pytest.mark.asyncio
+    async def test_create_agent_key_called_with_agent_models(self, tmp_path):
+        """The virtual key's model scope must match what the agent is
+        allowed to call — primary + fallbacks — so LiteLLM rejects any
+        off-scope request instead of silently routing it via the master
+        key's unrestricted scope."""
+        mock_proxy = MagicMock()
+        mock_proxy.is_running.return_value = True
+        mock_proxy.url = "http://localhost:4000"
+        mock_proxy.database_url = "postgresql://u:p@h/db"
+        mock_proxy.create_agent_key = AsyncMock(return_value="sk-scoped-key")
+
+        req = _req(
+            name="scoped",
+            model="kilo-auto/free",
+            fallback_models=["kilo-auto/balanced", "kilo-auto/frontier"],
+            data_dir=tmp_path,
+            extra_config={"llm_proxy": mock_proxy},
+        )
+
+        async def mock_exec_fn(name, cmd, **kwargs):
+            if "hostname -I" in " ".join(cmd):
+                return (0, "10.0.0.77")
+            return (0, "ok")
+
+        with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
+            mock_create.return_value = {"success": True, "name": "taos-agent-scoped"}
+            result = await deploy_agent(req)
+            assert result["success"] is True
+            mock_proxy.create_agent_key.assert_called_once_with(
+                "scoped",
+                models=["kilo-auto/free", "kilo-auto/balanced", "kilo-auto/frontier"],
+            )
+
+    @pytest.mark.asyncio
+    async def test_deploy_fails_loudly_when_db_configured_but_key_mint_fails(self, tmp_path):
+        """DB configured + /key/generate returns None → deploy fails with a
+        clear error. Falling back to the master key here would hide real
+        LiteLLM bugs (migration pending, DB unreachable, master key drift)
+        and ship broken agents."""
+        mock_proxy = MagicMock()
+        mock_proxy.is_running.return_value = True
+        mock_proxy.url = "http://localhost:4000"
+        mock_proxy.database_url = "postgresql://litellm:secret@127.0.0.1:5432/litellm"
+        mock_proxy.create_agent_key = AsyncMock(return_value=None)
+
+        req = _req(
+            name="db-broken",
+            data_dir=tmp_path,
+            extra_config={"llm_proxy": mock_proxy},
+        )
+
+        async def mock_exec_fn(name, cmd, **kwargs):
+            if "hostname -I" in " ".join(cmd):
+                return (0, "10.0.0.15")
+            return (0, "ok")
+
+        with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
+            mock_create.return_value = {"success": True, "name": "taos-agent-db-broken"}
+            result = await deploy_agent(req)
+            assert result["success"] is False
+            assert "virtual key mint failed" in result["error"]
+            # Host part of the DB URL is mentioned so operators can see
+            # which DB instance is misbehaving without leaking credentials.
+            assert "127.0.0.1:5432/litellm" in result["error"]
+            assert "secret" not in result["error"]
 
     @pytest.mark.asyncio
     async def test_deployment_without_llm_proxy(self, tmp_path):
@@ -102,15 +310,299 @@ class TestDeployAgent:
             return (0, "ok")
 
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
-             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn):
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
             mock_create.return_value = {"success": True, "name": "taos-agent-no-proxy"}
 
             result = await deploy_agent(req)
             assert result["success"] is True
             assert result.get("llm_key") is None
             env = mock_create.call_args.kwargs["env"]
-            assert "OPENAI_API_KEY" not in env
             assert "TAOS_EMBEDDING_URL" not in env
+
+    @pytest.mark.asyncio
+    async def test_model_name_injected_into_env(self, tmp_path):
+        req = _req(name="with-model", model="claude-3.5-sonnet", data_dir=tmp_path)
+
+        async def mock_exec_fn(name, cmd, **kwargs):
+            if "hostname -I" in " ".join(cmd):
+                return (0, "10.0.0.8")
+            return (0, "ok")
+
+        with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
+            mock_create.return_value = {"success": True, "name": "taos-agent-with-model"}
+            result = await deploy_agent(req)
+            assert result["success"] is True
+            env = mock_create.call_args.kwargs["env"]
+            assert env["TAOS_MODEL"] == "claude-3.5-sonnet"
+
+    @pytest.mark.asyncio
+    async def test_base_deps_include_npm_and_build_essentials(self, tmp_path):
+        req = _req(name="deps", data_dir=tmp_path)
+        recorded = []
+
+        async def mock_exec_fn(name, cmd, **kwargs):
+            cmd_str = " ".join(cmd)
+            recorded.append(cmd_str)
+            if "hostname -I" in cmd_str:
+                return (0, "10.0.0.9")
+            return (0, "ok")
+
+        with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
+            mock_create.return_value = {"success": True, "name": "taos-agent-deps"}
+            await deploy_agent(req)
+
+        apt_commands = [c for c in recorded if "apt-get install" in c]
+        assert apt_commands, "expected an apt-get install command"
+        apt = apt_commands[0]
+        for pkg in ("nodejs", "npm", "build-essential", "ca-certificates", "python3"):
+            assert pkg in apt, f"{pkg} missing from apt install: {apt}"
+
+    @pytest.mark.asyncio
+    async def test_framework_install_failure_rolls_back(self, tmp_path):
+        req = _req(name="brokenfw", framework="nonexistent-pkg", data_dir=tmp_path)
+
+        async def mock_exec_fn(name, cmd, **kwargs):
+            cmd_str = " ".join(cmd)
+            if "hostname -I" in cmd_str:
+                return (0, "10.0.0.10")
+            if "pip3 install nonexistent-pkg" in cmd_str:
+                return (1, "ERROR: No matching distribution found")
+            return (0, "ok")
+
+        with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}), \
+             patch("tinyagentos.deployer.destroy_container", new_callable=AsyncMock) as mock_destroy:
+            mock_create.return_value = {"success": True, "name": "taos-agent-brokenfw"}
+            mock_destroy.return_value = {"success": True}
+            result = await deploy_agent(req)
+            assert result["success"] is False
+            assert "Framework install failed" in result["error"]
+            mock_destroy.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_manifest_pip_install(self, tmp_path):
+        mock_manifest = MagicMock()
+        mock_manifest.install = {"method": "pip", "package": "smolagents"}
+        mock_manifest.manifest_dir = tmp_path
+        mock_registry = MagicMock()
+        mock_registry.get.return_value = mock_manifest
+
+        req = _req(
+            name="pip-install", framework="smolagents", data_dir=tmp_path,
+            extra_config={"registry": mock_registry},
+        )
+
+        recorded = []
+        async def mock_exec_fn(name, cmd, **kwargs):
+            recorded.append(" ".join(cmd))
+            if "hostname -I" in " ".join(cmd):
+                return (0, "10.0.0.11")
+            return (0, "ok")
+
+        with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
+            mock_create.return_value = {"success": True, "name": "taos-agent-pip-install"}
+            result = await deploy_agent(req)
+            assert result["success"] is True
+            assert any("pip3 install smolagents" in c for c in recorded)
+            mock_registry.get.assert_called_once_with("smolagents")
+
+    @pytest.mark.asyncio
+    async def test_manifest_script_install(self, tmp_path):
+        script_dir = tmp_path / "openclaw"
+        script_dir.mkdir()
+        script_path = script_dir / "install.sh"
+        script_path.write_text("#!/bin/bash\necho installing\n")
+
+        mock_manifest = MagicMock()
+        mock_manifest.install = {"method": "script", "script": "install.sh"}
+        mock_manifest.manifest_dir = script_dir
+        mock_registry = MagicMock()
+        mock_registry.get.return_value = mock_manifest
+
+        req = _req(
+            name="scripted", framework="openclaw", data_dir=tmp_path,
+            extra_config={"registry": mock_registry},
+        )
+
+        recorded_execs = []
+        async def mock_exec_fn(name, cmd, **kwargs):
+            recorded_execs.append(" ".join(cmd))
+            if "hostname -I" in " ".join(cmd):
+                return (0, "10.0.0.12")
+            return (0, "ok")
+
+        with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}), \
+             patch("tinyagentos.deployer.push_file", new_callable=AsyncMock) as mock_push:
+            mock_create.return_value = {"success": True, "name": "taos-agent-scripted"}
+            mock_push.return_value = (0, "")
+            result = await deploy_agent(req)
+            assert result["success"] is True
+            mock_push.assert_called_once()
+            assert any("bash /tmp/install.sh" in c for c in recorded_execs)
+
+    @pytest.mark.asyncio
+    async def test_agent_home_env_set(self, tmp_path):
+        """TAOS_AGENT_HOME is always /root in the snapshot model."""
+        req = _req(name="homer", data_dir=tmp_path)
+
+        async def mock_exec_fn(name, cmd, **kwargs):
+            if "hostname -I" in " ".join(cmd):
+                return (0, "10.0.0.80")
+            return (0, "ok")
+
+        with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
+            mock_create.return_value = {"success": True, "name": "taos-agent-homer"}
+            result = await deploy_agent(req)
+            assert result["success"] is True
+            env = mock_create.call_args.kwargs["env"]
+            assert env["TAOS_AGENT_HOME"] == "/root"
+
+    @pytest.mark.asyncio
+    async def test_manifest_script_missing_file_fails(self, tmp_path):
+        mock_manifest = MagicMock()
+        mock_manifest.install = {"method": "script", "script": "install.sh"}
+        mock_manifest.manifest_dir = tmp_path
+        mock_registry = MagicMock()
+        mock_registry.get.return_value = mock_manifest
+
+        req = _req(
+            name="missingscript", framework="openclaw", data_dir=tmp_path,
+            extra_config={"registry": mock_registry},
+        )
+
+        async def mock_exec_fn(name, cmd, **kwargs):
+            if "hostname -I" in " ".join(cmd):
+                return (0, "10.0.0.13")
+            return (0, "ok")
+
+        with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}), \
+             patch("tinyagentos.deployer.destroy_container", new_callable=AsyncMock) as mock_destroy:
+            mock_create.return_value = {"success": True, "name": "taos-agent-missingscript"}
+            mock_destroy.return_value = {"success": True}
+            result = await deploy_agent(req)
+            assert result["success"] is False
+            assert "Install script missing" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_proxy_devices_attached(self, tmp_path):
+        req = _req(name="proxied", data_dir=tmp_path)
+
+        async def mock_exec_fn(name, cmd, **kwargs):
+            if "hostname -I" in " ".join(cmd):
+                return (0, "10.0.0.90")
+            return (0, "ok")
+
+        with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock) as mock_proxy:
+            mock_create.return_value = {"success": True, "name": "taos-agent-proxied"}
+            mock_proxy.return_value = {"success": True, "output": ""}
+            result = await deploy_agent(req)
+            assert result["success"] is True
+
+            calls = mock_proxy.call_args_list
+            dev_names = {c.args[1] for c in calls}
+            listens = {c.kwargs["listen"] for c in calls}
+            assert "taos-proxy-litellm" in dev_names
+            assert "taos-proxy-taos" in dev_names
+            assert "tcp:127.0.0.1:4000" in listens
+            assert "tcp:127.0.0.1:6969" in listens
+
+    @pytest.mark.asyncio
+    async def test_proxy_device_failure_rolls_back(self, tmp_path):
+        req = _req(name="noproxy", data_dir=tmp_path)
+
+        async def mock_exec_fn(name, cmd, **kwargs):
+            if "hostname -I" in " ".join(cmd):
+                return (0, "10.0.0.91")
+            return (0, "ok")
+
+        with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock) as mock_proxy, \
+             patch("tinyagentos.deployer.destroy_container", new_callable=AsyncMock) as mock_destroy:
+            mock_create.return_value = {"success": True, "name": "taos-agent-noproxy"}
+            mock_proxy.return_value = {"success": False, "output": "device already exists"}
+            mock_destroy.return_value = {"success": True}
+            result = await deploy_agent(req)
+            assert result["success"] is False
+            assert "proxy device" in result["error"]
+            mock_destroy.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_deploy_uses_base_image_when_present(self, tmp_path):
+        """When taos-openclaw-base is imported, the deployer launches from
+        that alias (not images:debian/bookworm) and sets TAOS_BASE_IMAGE_PRESENT=1."""
+        req = _req(name="cached", framework="openclaw", data_dir=tmp_path)
+        async def mock_exec_fn(name, cmd, **kwargs):
+            if "hostname -I" in " ".join(cmd):
+                return (0, "10.0.0.50")
+            return (0, "ok")
+
+        with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}), \
+             patch("tinyagentos.deployer.is_image_present", new_callable=AsyncMock, return_value=True):
+            mock_create.return_value = {"success": True, "name": "taos-agent-cached"}
+            result = await deploy_agent(req)
+            assert result["success"] is True
+            assert mock_create.call_args.kwargs["image"] == "taos-openclaw-base"
+            env = mock_create.call_args.kwargs["env"]
+            assert env["TAOS_BASE_IMAGE_PRESENT"] == "1"
+            assert "deps_skipped_base_image" in result["steps"]
+
+    @pytest.mark.asyncio
+    async def test_deploy_falls_back_when_base_image_absent(self, tmp_path):
+        """Missing cache image = legacy path: images:debian/bookworm + apt-get install."""
+        req = _req(name="cold", framework="openclaw", data_dir=tmp_path)
+        async def mock_exec_fn(name, cmd, **kwargs):
+            if "hostname -I" in " ".join(cmd):
+                return (0, "10.0.0.51")
+            return (0, "ok")
+
+        with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}), \
+             patch("tinyagentos.deployer.is_image_present", new_callable=AsyncMock, return_value=False):
+            mock_create.return_value = {"success": True, "name": "taos-agent-cold"}
+            result = await deploy_agent(req)
+            assert result["success"] is True
+            assert mock_create.call_args.kwargs["image"] == "images:debian/bookworm"
+            env = mock_create.call_args.kwargs["env"]
+            assert "TAOS_BASE_IMAGE_PRESENT" not in env
+            assert "deps_installed" in result["steps"]
+
+    @pytest.mark.asyncio
+    async def test_bridge_url_injected_into_env(self, tmp_path):
+        """TAOS_BRIDGE_URL is injected so install.sh can write the openclaw env."""
+        req = _req(name="bridge-test", data_dir=tmp_path, taos_port=6969)
+
+        async def mock_exec_fn(name, cmd, **kwargs):
+            if "hostname -I" in " ".join(cmd):
+                return (0, "10.0.0.5")
+            return (0, "ok")
+
+        with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
+            mock_create.return_value = {"success": True, "name": "taos-agent-bridge-test"}
+            await deploy_agent(req)
+            env = mock_create.call_args.kwargs["env"]
+            assert env["TAOS_BRIDGE_URL"] == "http://127.0.0.1:6969"
 
 
 class TestBackgroundDeploy:
@@ -151,3 +643,27 @@ class TestUndeployAgent:
             result = await undeploy_agent("test")
             assert result["success"] is True
             mock_destroy.assert_called_once_with("taos-agent-test")
+
+
+class TestUndeployWithStateCleanup:
+    @pytest.mark.asyncio
+    async def test_undeploy_delete_state_wipes_dirs(self, tmp_path):
+        (tmp_path / "agent-workspaces" / "wiper").mkdir(parents=True)
+        (tmp_path / "agent-memory" / "wiper").mkdir(parents=True)
+        (tmp_path / "agent-workspaces" / "wiper" / "marker.txt").write_text("x")
+
+        with patch("tinyagentos.deployer.destroy_container", new_callable=AsyncMock) as mock_destroy:
+            mock_destroy.return_value = {"success": True, "output": ""}
+            result = await undeploy_agent("wiper", data_dir=tmp_path, delete_state=True)
+            assert result["success"] is True
+            assert not (tmp_path / "agent-workspaces" / "wiper").exists()
+            assert not (tmp_path / "agent-memory" / "wiper").exists()
+
+    @pytest.mark.asyncio
+    async def test_undeploy_without_delete_state_keeps_dirs(self, tmp_path):
+        (tmp_path / "agent-workspaces" / "keeper").mkdir(parents=True)
+        with patch("tinyagentos.deployer.destroy_container", new_callable=AsyncMock) as mock_destroy:
+            mock_destroy.return_value = {"success": True, "output": ""}
+            result = await undeploy_agent("keeper", data_dir=tmp_path, delete_state=False)
+            assert result["success"] is True
+            assert (tmp_path / "agent-workspaces" / "keeper").exists()

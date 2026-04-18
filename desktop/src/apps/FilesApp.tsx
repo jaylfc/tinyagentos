@@ -20,6 +20,8 @@ import {
   RefreshCw,
   AlertCircle,
   Download,
+  Recycle,
+  RotateCcw,
 } from "lucide-react";
 import { Button, Card, Toolbar, ToolbarGroup } from "@/components/ui";
 import { MobileSplitView } from "@/components/mobile/MobileSplitView";
@@ -28,6 +30,18 @@ import { useIsMobile } from "@/hooks/use-is-mobile";
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
+
+interface RecycleItem {
+  id: string;
+  agent_name: string;
+  original_path: string;
+  deleted_at: string; // ISO string
+}
+
+interface RecycleResponse {
+  items: RecycleItem[];
+  status?: string;
+}
 
 interface FileEntry {
   name: string;
@@ -153,6 +167,12 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
   // null = showing sidebar (list pane); non-null = showing file browser (detail pane)
   const [selectedLocation, setSelectedLocation] = useState<string | null>(null);
 
+  // Recycle bin
+  const [recycleItems, setRecycleItems] = useState<RecycleItem[]>([]);
+  const [recycleContainerOffline, setRecycleContainerOffline] = useState<string[]>([]);
+  const [recycleLoading, setRecycleLoading] = useState(false);
+  const [recycleError, setRecycleError] = useState<string | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragCounter = useRef(0);
 
@@ -238,6 +258,77 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
         .catch(() => setStats(null));
     }
   }, [location]);
+
+  /* ---- Recycle bin ---- */
+  const fetchRecycle = useCallback(async () => {
+    setRecycleLoading(true);
+    setRecycleError(null);
+    try {
+      const res = await fetch("/api/recycle", { headers: { Accept: "application/json" } });
+      if (!res.ok) {
+        setRecycleError(`Failed to load recycle bin (${res.status})`);
+        return;
+      }
+      const ct = res.headers.get("content-type") ?? "";
+      if (!ct.includes("application/json")) {
+        setRecycleError("Unexpected response from server");
+        return;
+      }
+      const data: RecycleResponse = await res.json();
+      const items = Array.isArray(data.items) ? data.items : [];
+      setRecycleItems(items);
+      // Detect any per-agent offline flags (items marked with container_offline status)
+      const offlineAgents: string[] = [];
+      if (data.status === "container_offline") {
+        // top-level offline; all agents offline
+      }
+      setRecycleContainerOffline(offlineAgents);
+    } catch (e: unknown) {
+      setRecycleError(e instanceof Error ? e.message : "Failed to load recycle bin");
+    } finally {
+      setRecycleLoading(false);
+    }
+  }, []);
+
+  const handleRecycleRestore = useCallback(async (item: RecycleItem) => {
+    if (!window.confirm(`Restore \`${item.original_path}\` to its original location?`)) return;
+    try {
+      const res = await fetch(
+        `/api/agents/${encodeURIComponent(item.agent_name)}/recycle/restore`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ id: item.id }),
+        }
+      );
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        setRecycleError(`Restore failed: ${body || res.status}`);
+        return;
+      }
+      fetchRecycle();
+    } catch (e: unknown) {
+      setRecycleError(e instanceof Error ? e.message : "Restore failed");
+    }
+  }, [fetchRecycle]);
+
+  const handleRecycleDelete = useCallback(async (item: RecycleItem) => {
+    if (!window.confirm(`Permanently delete? This cannot be undone.`)) return;
+    try {
+      const res = await fetch(
+        `/api/agents/${encodeURIComponent(item.agent_name)}/recycle/${encodeURIComponent(item.id)}`,
+        { method: "DELETE", headers: { Accept: "application/json" } }
+      );
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        setRecycleError(`Delete failed: ${body || res.status}`);
+        return;
+      }
+      fetchRecycle();
+    } catch (e: unknown) {
+      setRecycleError(e instanceof Error ? e.message : "Delete failed");
+    }
+  }, [fetchRecycle]);
 
   /* ---- Actions ---- */
   const handleNewFolder = useCallback(async () => {
@@ -444,6 +535,45 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
             )}
           </>
         )}
+
+        {/* Recycle Bin */}
+        {isMobile ? (
+          <div
+            style={{ background: "rgba(255,255,255,0.05)", borderRadius: 16 }}
+            className="overflow-hidden"
+          >
+            <button
+              onClick={() => {
+                setLocation("recycle");
+                setCurrentPath("");
+                setSelectedLocation("recycle");
+                fetchRecycle();
+              }}
+              className={`w-full flex items-center justify-between px-4 py-3.5 text-sm text-shell-text active:bg-white/10 transition-colors ${location === "recycle" ? "bg-white/10" : ""}`}
+              aria-label="Recycle Bin"
+            >
+              <span className="flex items-center gap-3">
+                <Recycle size={16} className="text-shell-text-secondary" aria-hidden="true" />
+                <span>Recycle Bin</span>
+              </span>
+              <ChevronRight size={16} className="text-shell-text-tertiary" />
+            </button>
+          </div>
+        ) : (
+          <Button
+            variant={location === "recycle" ? "secondary" : "ghost"}
+            onClick={() => {
+              setLocation("recycle");
+              setCurrentPath("");
+              fetchRecycle();
+            }}
+            className="w-full justify-start mx-1.5 mt-1 px-3"
+            aria-label="Recycle Bin"
+          >
+            <Recycle size={16} aria-hidden="true" />
+            <span className="truncate">Recycle Bin</span>
+          </Button>
+        )}
       </div>
 
       <div className="flex-1" />
@@ -523,6 +653,123 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
         </Button>
       </div>
     </>
+  );
+
+  /* ---- Recycle bin UI ---- */
+  // Group items by agent name, sorted newest first within each group
+  const recycleByAgent: Record<string, RecycleItem[]> = {};
+  for (const item of recycleItems) {
+    if (!recycleByAgent[item.agent_name]) recycleByAgent[item.agent_name] = [];
+    recycleByAgent[item.agent_name]!.push(item);
+  }
+  // Sort each agent's items newest first
+  for (const key of Object.keys(recycleByAgent)) {
+    recycleByAgent[key]!.sort(
+      (a, b) => new Date(b.deleted_at).getTime() - new Date(a.deleted_at).getTime()
+    );
+  }
+
+  const recycleBinUI = (
+    <div className="w-full h-full flex flex-col min-w-0">
+      {/* Header */}
+      <div className="shrink-0 flex items-center gap-2 px-4 py-3 border-b border-white/5">
+        <Recycle size={15} className="text-shell-text-tertiary" aria-hidden="true" />
+        <span className="text-sm font-medium">Recycle Bin</span>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={fetchRecycle}
+          className="h-7 w-7 ml-auto"
+          aria-label="Refresh recycle bin"
+        >
+          <RefreshCw size={13} className={recycleLoading ? "animate-spin" : ""} aria-hidden="true" />
+        </Button>
+      </div>
+
+      {/* Error */}
+      {recycleError && (
+        <div className="mx-3 mt-2 flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/10 text-red-400 text-xs">
+          <AlertCircle size={14} className="shrink-0" aria-hidden="true" />
+          <span className="flex-1">{recycleError}</span>
+          <button onClick={() => setRecycleError(null)} className="hover:text-red-300" aria-label="Dismiss error">&times;</button>
+        </div>
+      )}
+
+      {/* Content */}
+      <div className="flex-1 overflow-auto p-3">
+        {recycleLoading && recycleItems.length === 0 && (
+          <div className="flex items-center justify-center h-full text-shell-text-tertiary">
+            <RefreshCw size={20} className="animate-spin" aria-hidden="true" />
+          </div>
+        )}
+
+        {/* Container offline notices */}
+        {recycleContainerOffline.map((agentName) => (
+          <div key={agentName} className="mb-3 px-3 py-2 rounded-lg bg-zinc-500/10 border border-zinc-500/20 text-xs text-shell-text-tertiary">
+            Agent stopped — recycle contents unavailable for <span className="font-medium">{agentName}</span>
+          </div>
+        ))}
+
+        {!recycleLoading && recycleItems.length === 0 && recycleContainerOffline.length === 0 && (
+          <div className="flex flex-col items-center justify-center h-full text-shell-text-tertiary gap-2 text-center">
+            <Recycle size={40} className="opacity-30" aria-hidden="true" />
+            <span className="text-sm">Recycle bin is empty. Deleted files land here automatically — 30-day retention.</span>
+          </div>
+        )}
+
+        {Object.keys(recycleByAgent).map((agentName) => (
+          <section key={agentName} className="mb-4" aria-label={`Recycle bin items for agent ${agentName}`}>
+            <div className="flex items-center gap-1.5 mb-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-shell-text-tertiary">
+                {agentName}
+              </span>
+            </div>
+            <div className="space-y-1.5">
+              {recycleByAgent[agentName]!.map((item) => (
+                <Card
+                  key={item.id}
+                  className="flex items-center gap-3 px-3 py-2.5 hover:bg-shell-surface/50 transition-colors"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs truncate font-mono" title={item.original_path}>
+                      {item.original_path}
+                    </div>
+                    <div className="text-[10px] text-shell-text-tertiary mt-0.5">
+                      {formatDate(Math.floor(new Date(item.deleted_at).getTime() / 1000))}
+                    </div>
+                  </div>
+                  <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-shell-surface border border-white/5 text-shell-text-tertiary">
+                    {item.agent_name}
+                  </span>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 hover:bg-emerald-500/15 hover:text-emerald-400"
+                      onClick={() => handleRecycleRestore(item)}
+                      aria-label={`Restore ${item.original_path}`}
+                      title="Restore"
+                    >
+                      <RotateCcw size={13} aria-hidden="true" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 hover:bg-red-500/15 hover:text-red-400"
+                      onClick={() => handleRecycleDelete(item)}
+                      aria-label={`Permanently delete ${item.original_path}`}
+                      title="Delete permanently"
+                    >
+                      <Trash2 size={13} aria-hidden="true" />
+                    </Button>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+    </div>
   );
 
   /* ---- Main file browser (detail pane) ---- */
@@ -881,11 +1128,11 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
     <div className="flex h-full bg-shell-bg text-shell-text text-sm overflow-hidden">
       <MobileSplitView
         list={sidebarUI}
-        detail={mainContentUI}
+        detail={location === "recycle" ? recycleBinUI : mainContentUI}
         selectedId={selectedLocation}
         onBack={() => setSelectedLocation(null)}
         listTitle="Files"
-        detailTitle={location === "workspace" ? "Workspace" : location}
+        detailTitle={location === "recycle" ? "Recycle Bin" : location === "workspace" ? "Workspace" : location}
         listWidth={208}
       />
     </div>

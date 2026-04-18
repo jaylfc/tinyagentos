@@ -154,3 +154,33 @@ Body: {content, title, collection, metadata}
 - Automatic summarisation of memory (future — needs local LLM)
 - Memory retention policies (auto-delete after N days)
 - Memory sharing between users
+
+## Relationship to per-agent trace capture
+
+User memory (this doc) and per-agent trace capture are distinct layers that
+the taOSmd librarian bridges.
+
+**User memory** is the user's own long-lived context — notes, clipboard
+snippets, file activity, search history. It is owned by the user, scoped to
+the user, and persists indefinitely unless the user deletes it.
+
+**Per-agent trace capture** records every LLM call, message boundary, tool
+invocation, and lifecycle event for a specific agent. Traces live in the
+agent's home folder at `{data_dir}/agent-home/{slug}/.taos/trace/` and
+travel with the agent on archive, restore, and backup. See
+`docs/design/framework-agnostic-runtime.md` ("Per-agent trace capture") for
+the path layout, envelope schema, and zero-loss contract.
+
+**The librarian (taOSmd) bridges both.** Trace events feed the librarian's
+zero-loss layer — every LLM call, message boundary, and (when available)
+tool call and reasoning block is captured before the librarian decides what
+to summarise vs. store verbatim. The librarian reads traces via
+`GET /api/agents/{name}/trace` or direct SQLite and may cross-reference user
+memory when the agent has `can_read_user_memory` permission. The librarian
+summarises and annotates but does not delete raw trace envelopes.
+
+The two layers intentionally do not share a schema. User memory entries
+represent facts the user wants to keep; trace envelopes represent events that
+happened during an agent run. An agent memory summary (stored in QMD) may
+derive from traces, but the trace store and the QMD index are separate
+stores on separate paths.

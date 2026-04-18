@@ -1,6 +1,7 @@
 id: langroid
 name: Langroid
 type: agent-framework
+verification_status: alpha
 version: 0.30.0
 description: "Multi-agent message-passing framework with built-in vector store and local LLM support"
 homepage: https://github.com/langroid/langroid

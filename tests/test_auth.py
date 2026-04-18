@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import stat
 import time
 
 import pytest
@@ -591,4 +592,101 @@ class TestMultiUser:
         await auth_client.delete("/auth/users/henry", cookies=login_admin.cookies)
         # Henry's session should be invalid now
         resp = await auth_client.get("/api/system", cookies=henry_cookies)
+        assert resp.status_code == 401
+
+
+class TestLocalToken:
+    def test_token_created_on_first_access(self, tmp_path):
+        mgr = AuthManager(tmp_path)
+        token = mgr.get_local_token()
+        assert len(token) >= 32
+        path = mgr.local_token_path()
+        assert path.exists()
+        assert path.read_text().strip() == token
+
+    def test_token_stable_across_calls(self, tmp_path):
+        mgr = AuthManager(tmp_path)
+        t1 = mgr.get_local_token()
+        t2 = mgr.get_local_token()
+        assert t1 == t2
+
+    def test_token_file_permissions_are_0600(self, tmp_path):
+        mgr = AuthManager(tmp_path)
+        mgr.get_local_token()
+        mode = mgr.local_token_path().stat().st_mode
+        assert stat.S_IMODE(mode) == 0o600
+
+    def test_validate_local_token_accepts_match(self, tmp_path):
+        mgr = AuthManager(tmp_path)
+        tok = mgr.get_local_token()
+        assert mgr.validate_local_token(tok) is True
+
+    def test_validate_local_token_rejects_mismatch(self, tmp_path):
+        mgr = AuthManager(tmp_path)
+        mgr.get_local_token()
+        assert mgr.validate_local_token("wrong") is False
+        assert mgr.validate_local_token("") is False
+
+
+@pytest_asyncio.fixture
+async def no_cookie_client(app):
+    """Async client without any session cookie — for testing unauthenticated Bearer paths."""
+    store = app.state.metrics
+    if store._db is not None:
+        await store.close()
+    await store.init()
+    notif_store = app.state.notifications
+    if notif_store._db is not None:
+        await notif_store.close()
+    await notif_store.init()
+    await app.state.qmd_client.init()
+    secrets_store = app.state.secrets
+    if secrets_store._db is not None:
+        await secrets_store.close()
+    await secrets_store.init()
+    scheduler = app.state.scheduler
+    if scheduler._db is not None:
+        await scheduler.close()
+    await scheduler.init()
+    channel_store = app.state.channels
+    if channel_store._db is not None:
+        await channel_store.close()
+    await channel_store.init()
+    relationship_mgr = app.state.relationships
+    if relationship_mgr._db is not None:
+        await relationship_mgr.close()
+    await relationship_mgr.init()
+    # Configure auth so the app isn't in onboarding mode
+    app.state.auth.setup_user("admin", "Test Admin", "", "testpass")
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c
+    await relationship_mgr.close()
+    await channel_store.close()
+    await scheduler.close()
+    await secrets_store.close()
+    await notif_store.close()
+    await store.close()
+    await app.state.qmd_client.close()
+    await app.state.http_client.aclose()
+
+
+class TestMiddlewareBearerPath:
+    """Middleware accepts Bearer <local-token> and rejects bad tokens."""
+
+    @pytest.mark.asyncio
+    async def test_bearer_accepted(self, app, no_cookie_client):
+        tok = app.state.auth.get_local_token()
+        resp = await no_cookie_client.get(
+            "/api/agents",
+            headers={"Authorization": f"Bearer {tok}"},
+        )
+        assert resp.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_bearer_bad_token_rejected(self, no_cookie_client):
+        resp = await no_cookie_client.get(
+            "/api/agents",
+            headers={"Authorization": "Bearer nope"},
+        )
         assert resp.status_code == 401

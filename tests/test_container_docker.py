@@ -108,6 +108,51 @@ class TestDockerLifecycle:
             assert code == 0
 
 
+class TestDockerSetRootQuota:
+    @pytest.mark.asyncio
+    async def test_quota_success(self):
+        backend = DockerBackend()
+        with patch.object(backend, "_run", new_callable=AsyncMock) as mock:
+            mock.return_value = (0, "")
+            result = await backend.set_root_quota("agent-test", 40)
+            assert result["success"] is True
+            assert "40" in result["note"]
+            cmd = mock.call_args[0][0]
+            assert "--storage-opt" in cmd
+            assert "size=40g" in cmd
+
+    @pytest.mark.asyncio
+    async def test_quota_overlay2_no_pquota_returns_soft(self):
+        """overlay2 without pquota: treat as success with note, not hard failure."""
+        backend = DockerBackend()
+        with patch.object(backend, "_run", new_callable=AsyncMock) as mock:
+            mock.return_value = (1, "storage driver does not support storage-opt")
+            result = await backend.set_root_quota("agent-test", 40)
+            assert result["success"] is True
+            assert "storage driver does not enforce quota" in result["note"]
+
+    @pytest.mark.asyncio
+    async def test_quota_genuine_failure(self):
+        backend = DockerBackend()
+        with patch.object(backend, "_run", new_callable=AsyncMock) as mock:
+            mock.return_value = (1, "connection refused")
+            result = await backend.set_root_quota("agent-test", 40)
+            assert result["success"] is False
+
+    @pytest.mark.asyncio
+    async def test_create_container_with_root_size_gib(self):
+        backend = DockerBackend()
+        run_calls = []
+        async def mock_run(cmd, timeout=120):
+            run_calls.append(cmd)
+            return (0, "")
+        with patch.object(backend, "_run", side_effect=mock_run):
+            result = await backend.create_container("agent-test", root_size_gib=40)
+        assert result["success"] is True
+        quota_calls = [c for c in run_calls if "--storage-opt" in c]
+        assert quota_calls, "expected a docker container update --storage-opt call"
+
+
 class TestPodmanBinary:
     @pytest.mark.asyncio
     async def test_uses_podman_binary(self):

@@ -1,6 +1,7 @@
 id: hermes
 name: Hermes Function Calling
 type: agent-framework
+verification_status: alpha
 version: 1.0.0
 description: "Nous Research function calling framework — structured tool use with Hermes models"
 homepage: https://github.com/NousResearch/Hermes-Function-Calling

@@ -1,7 +1,6 @@
 """OpenClaw adapter — translates messages to OpenClaw agent calls via its HTTP API."""
 import os
 import httpx
-import uvicorn
 from fastapi import FastAPI
 
 app = FastAPI()
@@ -34,5 +33,6 @@ async def health():
 
 
 if __name__ == "__main__":
+    import uvicorn
     port = int(os.environ.get("TAOS_ADAPTER_PORT", "9001"))
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
