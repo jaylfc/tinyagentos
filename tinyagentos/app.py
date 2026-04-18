@@ -671,6 +671,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     from tinyagentos.routes.agents import router as agents_router
     app.include_router(agents_router)
 
+    from tinyagentos.routes.librarian import router as librarian_router
+    app.include_router(librarian_router)
+
     from tinyagentos.routes.memory import router as memory_router
     app.include_router(memory_router)
 
