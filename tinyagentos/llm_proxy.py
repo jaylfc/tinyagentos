@@ -385,10 +385,13 @@ class LLMProxy:
             return True
 
         # Detect any foreign process on our port and terminate it so we
-        # can spawn with the current config + master key.
+        # can spawn with the current config + master key. Use
+        # ``/health/readiness`` — ``/health`` gates on the master-key and
+        # returns 401 without auth, which would look like a "port in use"
+        # signal on a perfectly-fine LiteLLM and trigger a needless SIGKILL.
         try:
             async with httpx.AsyncClient(timeout=3) as client:
-                resp = await client.get(f"{self.url}/health")
+                resp = await client.get(f"{self.url}/health/readiness")
                 port_in_use = resp.status_code < 500
         except Exception:
             port_in_use = False
@@ -489,11 +492,13 @@ class LLMProxy:
             # Wait for startup. LiteLLM on a fresh Pi DB runs
             # ``prisma migrate deploy`` against an empty database before
             # opening its HTTP port — that can take 45-60s on ARM.
+            # Poll ``/health/readiness`` (public) rather than ``/health``
+            # (requires master key → 401 for the polling client).
             for _ in range(120):
                 await asyncio.sleep(1)
                 try:
                     async with httpx.AsyncClient(timeout=3) as client:
-                        resp = await client.get(f"{self.url}/health")
+                        resp = await client.get(f"{self.url}/health/readiness")
                         if resp.status_code == 200:
                             logger.info(f"LiteLLM proxy started on port {self.port}")
                             return True
@@ -521,27 +526,20 @@ class LLMProxy:
         backends: list[dict],
         secrets: dict[str, str] | None = None,
     ) -> bool:
-        """Rewrite the LiteLLM config with a new backend list and signal
-        the proxy to re-read it via SIGHUP. Falls back to a full restart
-        if signalling fails — in that case ``secrets`` is forwarded to
-        ``start`` so newly-added provider keys reach the subprocess env.
+        """Rewrite the LiteLLM config with a new backend list and restart
+        the proxy so it re-reads the file.
+
+        Earlier this sent SIGHUP, but single-worker uvicorn (what LiteLLM
+        runs as — no ``--workers``) does not register a SIGHUP handler,
+        so the default action fires: the process terminates. A full
+        stop+start is the only reliable way to pick up config changes.
         """
         new_path = self.write_config(backends)
         if not self.is_running():
             return False
-
-        try:
-            assert self._process is not None
-            self._process.send_signal(signal.SIGHUP)
-            logger.info("LiteLLM proxy reloaded via SIGHUP (config %s)", new_path)
-            return True
-        except Exception as exc:
-            logger.warning(
-                "LiteLLM SIGHUP reload failed (%s) — falling back to restart",
-                exc,
-            )
-            self.stop()
-            return await self.start(backends, secrets=secrets)
+        logger.info("LiteLLM proxy restarting for config reload (%s)", new_path)
+        self.stop()
+        return await self.start(backends, secrets=secrets)
 
     async def create_agent_key(self, agent_name: str, models: list[str] | None = None,
                                 max_budget: float | None = None) -> str | None:
