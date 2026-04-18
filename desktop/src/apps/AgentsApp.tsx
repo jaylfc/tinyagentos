@@ -28,6 +28,7 @@ import { ModelPickerModal } from "@/components/ModelPickerModal";
 import { PersonaPicker } from "@/components/persona-picker/PersonaPicker";
 import type { PersonaSelection } from "@/components/persona-picker/types";
 import { slugifyClient, isValidSlug, SLUG_REGEX } from "@/lib/slug";
+import { MigrationBanner } from "@/components/MigrationBanner";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -51,6 +52,7 @@ interface Agent {
   soul_md?: string;
   agent_md?: string;
   source_persona_id?: string | null;
+  migrated_to_v2_personas?: boolean;
 }
 
 interface DiskState {
@@ -299,8 +301,20 @@ function AgentDetailPanel({
     }
   }, [logs]);
 
+  const dismissMigrationBanner = async () => {
+    await fetch(`/api/agents/${encodeURIComponent(agentName)}/dismiss-migration-banner`, { method: "POST" });
+    onAgentUpdated();
+  };
+
+  const addPersonaClick = async () => {
+    await dismissMigrationBanner();
+    setTab("persona");
+  };
+
   return (
-    <Tabs
+    <>
+      <MigrationBanner agent={agent} onDismiss={dismissMigrationBanner} onAddPersona={addPersonaClick} />
+      <Tabs
       value={tab}
       onValueChange={(v) => setTab(v as DetailTab)}
       className="border-t border-white/5 bg-shell-bg-deep flex flex-col"
@@ -378,6 +392,7 @@ function AgentDetailPanel({
         </TabsContent>
       </div>
     </Tabs>
+    </>
   );
 }
 
