@@ -333,10 +333,13 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
             break;
 
           case "typing":
+            // Only show typing indicator for agents, not for human users
+            // (showing a user their own "is typing" label is wrong UX)
+            if ((data.user_type ?? "user") !== "agent") break;
             setTypingUsers((prev) => {
               const exists = prev.some((t) => t.user === data.user_id);
               if (exists) return prev;
-              return [...prev, { user: data.user_id, type: data.user_type ?? "user" }];
+              return [...prev, { user: data.user_id, type: "agent" }];
             });
             // expire after 5s
             setTimeout(() => {
