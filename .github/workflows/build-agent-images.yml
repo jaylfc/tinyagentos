@@ -41,12 +41,17 @@ jobs:
           sudo apt-get install -y -qq incus incus-tools
           sudo incus admin init --auto
           # GHA's default FORWARD=DROP drops bridge traffic even though
-          # DNS (UDP) piggybacks through the host resolver. Explicitly
-          # accept incusbr0 forward + ensure nf masquerade for NAT.
-          sudo iptables -P FORWARD ACCEPT || true
+          # DNS (UDP) piggybacks through the host resolver. Use explicit
+          # ACCEPT rules for incusbr0 instead of flipping the chain
+          # default to ACCEPT (which would broadly disable forward
+          # filtering for everything else on this runner).
           sudo iptables -I FORWARD -i incusbr0 -j ACCEPT || true
           sudo iptables -I FORWARD -o incusbr0 -j ACCEPT || true
-          sudo iptables -t nat -A POSTROUTING -o $(ip route get 1.1.1.1 | awk '{print $5; exit}') -j MASQUERADE || true
+          # Capture the outbound interface once so a default-route flip
+          # mid-job can't redirect the masquerade to a different NIC.
+          OUT_IF=$(ip route get 1.1.1.1 | awk '{print $5; exit}')
+          echo "outbound interface for masquerade: $OUT_IF"
+          sudo iptables -t nat -A POSTROUTING -o "$OUT_IF" -j MASQUERADE || true
 
       - name: Disable AppArmor profiles that block nested container ops
         run: |
