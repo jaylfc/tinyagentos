@@ -170,13 +170,22 @@ class AutoUpdateService:
 
     async def _auto_apply(self, new_commit: str) -> None:
         """Pull + install + notify restart needed."""
+        from tinyagentos.update_runner import update_to_master
+
         logger.info("Auto-applying update to %s", new_commit[:7])
 
-        rc, out = await _run(
-            ["git", "pull", "--ff-only", "origin", "master"], self._project_dir
-        )
-        if rc != 0:
-            logger.error("auto-update pull failed: %s", out[:500])
+        result = await update_to_master(self._project_dir)
+
+        # If fetch failed, new_sha will be empty and previous_sha will also be
+        # empty — surface the error and bail without running pip.
+        if not result.new_sha:
+            logger.error("auto-update failed: %s", result.message)
+            await self._notif.emit_event(
+                event_type="system.update",
+                title="taOS update failed",
+                message=result.message,
+                level="error",
+            )
             return
 
         pip_cmd = str(Path(sys.executable).parent / "pip")
@@ -194,7 +203,7 @@ class AutoUpdateService:
             await self._notif.emit_event(
                 event_type="system.update",
                 title="taOS updated automatically",
-                message=f"Pulled {new_commit[:7]}. Restart the server to finish applying.",
+                message=result.message,
                 level="info",
             )
 
