@@ -19,6 +19,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from tinyagentos.agent_image import BASE_IMAGE_ALIAS, is_image_present
 from tinyagentos.containers import (
     create_container, exec_in_container, push_file,
     start_container, stop_container, destroy_container,
@@ -175,12 +176,29 @@ async def deploy_agent(req: DeployRequest) -> dict:
     if "LITELLM_API_KEY" not in env:
         env["LITELLM_API_KEY"] = ""
 
+    # Pre-built base image fast-path — see tinyagentos/agent_image.py.
+    # When the cached image is imported locally we launch from it and
+    # install.sh skips the openclaw/apt steps; on a cold host we fall
+    # back to images:debian/bookworm and install.sh does the full run.
+    base_image_ready = False
+    if req.framework == "openclaw":
+        try:
+            base_image_ready = await is_image_present(BASE_IMAGE_ALIAS)
+        except Exception:
+            base_image_ready = False
+    launch_image = BASE_IMAGE_ALIAS if base_image_ready else "images:debian/bookworm"
+    if base_image_ready:
+        env["TAOS_BASE_IMAGE_PRESENT"] = "1"
+        logger.info(f"Deploy {req.name}: using cached base image {BASE_IMAGE_ALIAS}")
+    else:
+        logger.info(f"Deploy {req.name}: cached base image not present, using {launch_image}")
+
     # Step 1: Create container with trace mount + env baked in at launch time.
     # root_size_gib applies the disk quota (40 GiB default per §10.10).
     logger.info(f"Creating container {container_name}")
     result = await create_container(
         container_name,
-        image="images:debian/bookworm",
+        image=launch_image,
         memory_limit=req.memory_limit,
         cpu_limit=req.cpu_limit,
         mounts=mounts,
@@ -221,16 +239,22 @@ async def deploy_agent(req: DeployRequest) -> dict:
             await asyncio.sleep(2)
         steps.append("network_ready")
 
-        # Step 3: Install base dependencies (framework needs these)
-        logger.info(f"Installing dependencies in {container_name}")
-        code, output = await exec_in_container(
-            container_name,
-            ["bash", "-c", "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends python3 python3-pip python3-venv python3-dev git curl wget ca-certificates gnupg build-essential nodejs npm"],
-            timeout=900,
-        )
-        if code != 0:
-            raise RuntimeError(f"Dependency install failed: {output}")
-        steps.append("deps_installed")
+        # Step 3: Install base dependencies (framework needs these).
+        # Skipped entirely when the pre-built openclaw base image is in
+        # use — everything this apt-get pulls is already baked in.
+        if base_image_ready:
+            logger.info(f"Skipping dep install in {container_name} (base image already has them)")
+            steps.append("deps_skipped_base_image")
+        else:
+            logger.info(f"Installing dependencies in {container_name}")
+            code, output = await exec_in_container(
+                container_name,
+                ["bash", "-c", "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends python3 python3-pip python3-venv python3-dev git curl wget ca-certificates gnupg build-essential nodejs npm"],
+                timeout=900,
+            )
+            if code != 0:
+                raise RuntimeError(f"Dependency install failed: {output}")
+            steps.append("deps_installed")
 
         # Step 4: Install agent framework (if specified and not just "none").
         if req.framework and req.framework != "none":

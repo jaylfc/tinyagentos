@@ -1,0 +1,152 @@
+name: Build agent base images
+
+on:
+  push:
+    branches: [master, fix/agent-creation-flow]
+    paths:
+      - 'app-catalog/agents/openclaw/**'
+      - '.github/workflows/build-agent-images.yml'
+  repository_dispatch:
+    types: [openclaw-fork-published]
+  workflow_dispatch: {}
+  schedule:
+    # Weekly refresh for security updates - Mondays 03:00 UTC.
+    - cron: '0 3 * * 1'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: x64
+            debarch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+            debarch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Approach A: install incus in the runner and build the base image
+      # by launching a real container. GitHub's ubuntu-latest and
+      # ubuntu-24.04-arm runners support nested unprivileged containers.
+      - name: Install incus
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq incus incus-tools
+          sudo incus admin init --auto
+
+      - name: Disable AppArmor profiles that block nested container ops
+        run: |
+          sudo systemctl stop apparmor.service || true
+          sudo aa-teardown || true
+
+      - name: Launch build container
+        run: |
+          sudo incus launch images:debian/13 build-base
+          for i in $(seq 1 30); do
+            if sudo incus exec build-base -- getent hosts github.com >/dev/null 2>&1; then
+              break
+            fi
+            sleep 2
+          done
+
+      - name: Install dependencies + openclaw inside the base container
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          sudo incus exec build-base --env ARCH="$ARCH" -- bash -eux <<'BASH'
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends \
+            curl ca-certificates gnupg file git \
+            python3 python3-pip python3-venv python3-dev \
+            build-essential wget trash-cli
+
+          # Node 22.x via NodeSource (Debian 13 default is older).
+          curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+          apt-get install -y -qq --no-install-recommends nodejs
+
+          # openclaw prebuilt tarball from the fork's rolling release.
+          TARBALL="/tmp/openclaw-taos-fork-${ARCH}.tgz"
+          curl -fsSL --max-time 120 \
+            -o "$TARBALL" \
+            "https://github.com/jaylfc/openclaw/releases/latest/download/openclaw-taos-fork-linux-${ARCH}.tgz"
+          file "$TARBALL" | grep -qE "gzip|compressed"
+          npm install -g --unsafe-perm --ignore-scripts "$TARBALL"
+          rm -f "$TARBALL"
+
+          # Sanity check
+          test -f /usr/lib/node_modules/openclaw/dist/entry.js \
+            || test -f /usr/lib/node_modules/openclaw/dist/entry.mjs
+
+          # Recycle-bin scaffolding (install.sh Layer 1).
+          mkdir -p /var/recycle-bin/files /var/recycle-bin/info
+          chmod 1777 /var/recycle-bin /var/recycle-bin/files /var/recycle-bin/info
+
+          # Shrink the image footprint.
+          apt-get clean
+          rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb /tmp/* /root/.npm
+          BASH
+
+      - name: Publish image as alias and export tarball
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          sudo incus stop build-base
+          sudo incus publish build-base --alias taos-openclaw-base \
+            description="taOS openclaw base image ($ARCH)"
+          sudo incus image export taos-openclaw-base "./taos-openclaw-base-linux-$ARCH"
+          ls -la "./taos-openclaw-base-linux-$ARCH"*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: taos-openclaw-base-${{ matrix.arch }}
+          path: taos-openclaw-base-linux-${{ matrix.arch }}.tar.gz
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: taos-openclaw-base-*
+          merge-multiple: true
+
+      - name: List downloaded assets
+        run: ls -la taos-openclaw-base-linux-*.tar.gz
+
+      - name: Compute build identifier
+        id: id
+        run: |
+          echo "ts=$(date -u +%Y%m%dT%H%M%S)" >> "$GITHUB_OUTPUT"
+          echo "sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: rolling-images
+          name: "taOS openclaw base image (${{ steps.id.outputs.ts }} - ${{ steps.id.outputs.sha }})"
+          body: |
+            Pre-built LXC base image for openclaw agents.
+
+            Consumers (taOS deployer): import once with
+            `curl -fsSL <url> | incus image import - --alias taos-openclaw-base`.
+
+            Assets:
+            - `taos-openclaw-base-linux-arm64.tar.gz`
+            - `taos-openclaw-base-linux-x64.tar.gz`
+
+            Commit: ${{ github.sha }}
+          files: |
+            taos-openclaw-base-linux-arm64.tar.gz
+            taos-openclaw-base-linux-x64.tar.gz
+          make_latest: false
+          prerelease: false

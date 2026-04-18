@@ -544,6 +544,49 @@ class TestDeployAgent:
             mock_destroy.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_deploy_uses_base_image_when_present(self, tmp_path):
+        """When taos-openclaw-base is imported, the deployer launches from
+        that alias (not images:debian/bookworm) and sets TAOS_BASE_IMAGE_PRESENT=1."""
+        req = _req(name="cached", framework="openclaw", data_dir=tmp_path)
+        async def mock_exec_fn(name, cmd, **kwargs):
+            if "hostname -I" in " ".join(cmd):
+                return (0, "10.0.0.50")
+            return (0, "ok")
+
+        with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}), \
+             patch("tinyagentos.deployer.is_image_present", new_callable=AsyncMock, return_value=True):
+            mock_create.return_value = {"success": True, "name": "taos-agent-cached"}
+            result = await deploy_agent(req)
+            assert result["success"] is True
+            assert mock_create.call_args.kwargs["image"] == "taos-openclaw-base"
+            env = mock_create.call_args.kwargs["env"]
+            assert env["TAOS_BASE_IMAGE_PRESENT"] == "1"
+            assert "deps_skipped_base_image" in result["steps"]
+
+    @pytest.mark.asyncio
+    async def test_deploy_falls_back_when_base_image_absent(self, tmp_path):
+        """Missing cache image = legacy path: images:debian/bookworm + apt-get install."""
+        req = _req(name="cold", framework="openclaw", data_dir=tmp_path)
+        async def mock_exec_fn(name, cmd, **kwargs):
+            if "hostname -I" in " ".join(cmd):
+                return (0, "10.0.0.51")
+            return (0, "ok")
+
+        with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
+             patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}), \
+             patch("tinyagentos.deployer.is_image_present", new_callable=AsyncMock, return_value=False):
+            mock_create.return_value = {"success": True, "name": "taos-agent-cold"}
+            result = await deploy_agent(req)
+            assert result["success"] is True
+            assert mock_create.call_args.kwargs["image"] == "images:debian/bookworm"
+            env = mock_create.call_args.kwargs["env"]
+            assert "TAOS_BASE_IMAGE_PRESENT" not in env
+            assert "deps_installed" in result["steps"]
+
+    @pytest.mark.asyncio
     async def test_bridge_url_injected_into_env(self, tmp_path):
         """TAOS_BRIDGE_URL is injected so install.sh can write the openclaw env."""
         req = _req(name="bridge-test", data_dir=tmp_path, taos_port=6969)

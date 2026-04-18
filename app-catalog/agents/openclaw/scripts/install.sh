@@ -7,7 +7,17 @@
 # The fork's .github/workflows/release.yml builds per-arch tarballs on every push.
 set -euo pipefail
 
-echo "[openclaw] installing Node 22.x (NodeSource) + openclaw prebuilt from GitHub Releases"
+# When the deployer launched this container from the pre-built
+# taos-openclaw-base image, Node + openclaw + recycle-bin are already
+# installed. In that case skip everything up to the config/env writes
+# and the systemd unit — those still need per-deploy values.
+# See tinyagentos/agent_image.py and .github/workflows/build-agent-images.yml.
+TAOS_BASE_IMAGE_PRESENT="${TAOS_BASE_IMAGE_PRESENT:-0}"
+if [ "$TAOS_BASE_IMAGE_PRESENT" = "1" ]; then
+  echo "[openclaw] base image present — skipping Node + openclaw install"
+else
+  echo "[openclaw] installing Node 22.x (NodeSource) + openclaw prebuilt from GitHub Releases"
+fi
 
 # ---------------------------------------------------------------------------
 # 1. Node 22.14+ via NodeSource (Debian bookworm default is Node 18, too old).
@@ -16,16 +26,20 @@ echo "[openclaw] installing Node 22.x (NodeSource) + openclaw prebuilt from GitH
 #    - 'git' is present — openclaw's transitive dep libsignal
 #      (@whiskeysockets/baileys -> libsignal@git+https://github.com/...)
 #      is a git-URL dependency and npm needs git to fetch it at install time.
+#
+#    All three are baked into the pre-built base image; skip when it's present.
 # ---------------------------------------------------------------------------
-if ! command -v node >/dev/null 2>&1 || [ "$(node -v | sed 's/^v//; s/\..*//')" -lt 22 ]; then
-  curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nodejs
-fi
-if ! command -v file >/dev/null 2>&1; then
-  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends file
-fi
-if ! command -v git >/dev/null 2>&1; then
-  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git
+if [ "$TAOS_BASE_IMAGE_PRESENT" != "1" ]; then
+  if ! command -v node >/dev/null 2>&1 || [ "$(node -v | sed 's/^v//; s/\..*//')" -lt 22 ]; then
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nodejs
+  fi
+  if ! command -v file >/dev/null 2>&1; then
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends file
+  fi
+  if ! command -v git >/dev/null 2>&1; then
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git
+  fi
 fi
 
 # ----------------------------------------------------------------------
@@ -41,63 +55,73 @@ fi
 # reliable, not to paper over its absence.
 # ----------------------------------------------------------------------
 
-# Architecture detection
-ARCH=$(uname -m)
-case "$ARCH" in
-  aarch64|arm64) NPM_ARCH=arm64 ;;
-  x86_64|amd64)  NPM_ARCH=x64 ;;
-  *)
-    echo "[openclaw] FATAL: unsupported architecture $ARCH"
-    echo "[openclaw] supported: aarch64, x86_64"
-    echo "[openclaw] open an issue at github.com/jaylfc/openclaw if you need another arch."
+if [ "$TAOS_BASE_IMAGE_PRESENT" = "1" ]; then
+  # Base image already has openclaw installed globally. Just verify.
+  if [ ! -f /usr/lib/node_modules/openclaw/dist/entry.js ] && [ ! -f /usr/lib/node_modules/openclaw/dist/entry.mjs ]; then
+    echo "[openclaw] FATAL: base image claims openclaw installed but dist/entry.{js,mjs} missing"
+    ls -la /usr/lib/node_modules/openclaw/dist/ 2>/dev/null | head -10
     exit 1
-    ;;
-esac
+  fi
+  echo "[openclaw] using baked-in openclaw from base image"
+else
+  # Architecture detection
+  ARCH=$(uname -m)
+  case "$ARCH" in
+    aarch64|arm64) NPM_ARCH=arm64 ;;
+    x86_64|amd64)  NPM_ARCH=x64 ;;
+    *)
+      echo "[openclaw] FATAL: unsupported architecture $ARCH"
+      echo "[openclaw] supported: aarch64, x86_64"
+      echo "[openclaw] open an issue at github.com/jaylfc/openclaw if you need another arch."
+      exit 1
+      ;;
+  esac
 
-TARBALL_URL="https://github.com/jaylfc/openclaw/releases/latest/download/openclaw-taos-fork-linux-${NPM_ARCH}.tgz"
-TARBALL_DEST="/tmp/openclaw-taos-fork-${NPM_ARCH}.tgz"
+  TARBALL_URL="https://github.com/jaylfc/openclaw/releases/latest/download/openclaw-taos-fork-linux-${NPM_ARCH}.tgz"
+  TARBALL_DEST="/tmp/openclaw-taos-fork-${NPM_ARCH}.tgz"
 
-echo "[openclaw] downloading prebuilt tarball for ${NPM_ARCH} from GitHub Releases"
-if ! curl -fsSL --max-time 120 -o "$TARBALL_DEST" "$TARBALL_URL"; then
-  echo "[openclaw] FATAL: cannot download $TARBALL_URL"
-  echo "[openclaw] check network connectivity to github.com from inside this container."
-  echo "[openclaw] cf. docs/runbooks/openclaw-install-troubleshooting.md"
-  exit 1
+  echo "[openclaw] downloading prebuilt tarball for ${NPM_ARCH} from GitHub Releases"
+  if ! curl -fsSL --max-time 120 -o "$TARBALL_DEST" "$TARBALL_URL"; then
+    echo "[openclaw] FATAL: cannot download $TARBALL_URL"
+    echo "[openclaw] check network connectivity to github.com from inside this container."
+    echo "[openclaw] cf. docs/runbooks/openclaw-install-troubleshooting.md"
+    exit 1
+  fi
+
+  # Sanity check the file we got
+  if ! [ -s "$TARBALL_DEST" ]; then
+    echo "[openclaw] FATAL: downloaded tarball is empty"
+    exit 1
+  fi
+  file "$TARBALL_DEST" | grep -qE "gzip|compressed" || {
+    echo "[openclaw] FATAL: downloaded file is not a gzipped tarball:"
+    file "$TARBALL_DEST"
+    head -c 500 "$TARBALL_DEST"
+    exit 1
+  }
+
+  # Install from the local file (no network re-fetch, no build).
+  # --ignore-scripts: the tarball already has dist/ built by CI; we must NOT
+  # run the prepare script because it tries to spawn git (for hook setup) and
+  # falls back to pnpm build:docker — both of which are wrong and unnecessary
+  # when installing a prebuilt tarball.
+  echo "[openclaw] installing $TARBALL_DEST"
+  npm install -g --unsafe-perm --ignore-scripts "$TARBALL_DEST"
+
+  # Cleanup the downloaded tarball — keeps container small
+  rm -f "$TARBALL_DEST"
+
+  # Verify entry exists
+  if [ ! -f /usr/lib/node_modules/openclaw/dist/entry.js ] && [ ! -f /usr/lib/node_modules/openclaw/dist/entry.mjs ]; then
+    echo "[openclaw] FATAL: install completed but dist/entry.{js,mjs} missing"
+    echo "[openclaw] this means the published tarball is broken. report at:"
+    echo "  github.com/jaylfc/openclaw/issues — include the URL above and the build SHA."
+    ls -la /usr/lib/node_modules/openclaw/dist/ | head -10
+    exit 1
+  fi
+
+  echo "[openclaw] install OK"
 fi
-
-# Sanity check the file we got
-if ! [ -s "$TARBALL_DEST" ]; then
-  echo "[openclaw] FATAL: downloaded tarball is empty"
-  exit 1
-fi
-file "$TARBALL_DEST" | grep -qE "gzip|compressed" || {
-  echo "[openclaw] FATAL: downloaded file is not a gzipped tarball:"
-  file "$TARBALL_DEST"
-  head -c 500 "$TARBALL_DEST"
-  exit 1
-}
-
-# Install from the local file (no network re-fetch, no build).
-# --ignore-scripts: the tarball already has dist/ built by CI; we must NOT
-# run the prepare script because it tries to spawn git (for hook setup) and
-# falls back to pnpm build:docker — both of which are wrong and unnecessary
-# when installing a prebuilt tarball.
-echo "[openclaw] installing $TARBALL_DEST"
-npm install -g --unsafe-perm --ignore-scripts "$TARBALL_DEST"
-
-# Cleanup the downloaded tarball — keeps container small
-rm -f "$TARBALL_DEST"
-
-# Verify entry exists
-if [ ! -f /usr/lib/node_modules/openclaw/dist/entry.js ] && [ ! -f /usr/lib/node_modules/openclaw/dist/entry.mjs ]; then
-  echo "[openclaw] FATAL: install completed but dist/entry.{js,mjs} missing"
-  echo "[openclaw] this means the published tarball is broken. report at:"
-  echo "  github.com/jaylfc/openclaw/issues — include the URL above and the build SHA."
-  ls -la /usr/lib/node_modules/openclaw/dist/ | head -10
-  exit 1
-fi
-
-echo "[openclaw] install OK"
 
 # ------------------------------------------------------------------
 # 2a. Bootstrap config + env for the openclaw bridge. Written from env
@@ -189,8 +213,10 @@ chmod 600 /root/.openclaw/env
 # Install taOS recycle-bin (Layer 1). Shared across agent frameworks.
 echo "[recycle-bin] installing trash-cli and shadow rm wrapper"
 
-# 1. trash-cli
-DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends trash-cli
+# 1. trash-cli — baked into base image; skip the apt step when present.
+if [ "$TAOS_BASE_IMAGE_PRESENT" != "1" ]; then
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends trash-cli
+fi
 
 # 2. Point trash-cli at /var/recycle-bin (XDG_DATA_HOME/Trash convention)
 mkdir -p /var/recycle-bin/files /var/recycle-bin/info

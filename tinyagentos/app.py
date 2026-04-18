@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -42,6 +43,7 @@ from tinyagentos.computer_use import ComputerUseManager
 from tinyagentos.webhook_notifier import WebhookNotifier
 from tinyagentos.llm_proxy import LLMProxy
 from tinyagentos.litellm_migrate import migrate as _litellm_migrate
+from tinyagentos.agent_image import ensure_image_present as _ensure_agent_image_present
 from tinyagentos.auto_update import AutoUpdateService
 from tinyagentos.restart_orchestrator import RestartOrchestrator, apply_pending_restart_check, resume_agents_from_notes
 from tinyagentos.channel_hub.router import MessageRouter
@@ -319,6 +321,13 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
                 _litellm_migrate(data_dir)
             except Exception:
                 logger.exception("litellm prisma migration failed — virtual keys will not work")
+            # Kick off the one-time agent base image import in the background.
+            # Non-fatal — if GitHub is unreachable or the tarball isn't
+            # published yet, deploys fall back to images:debian/bookworm.
+            try:
+                asyncio.create_task(_ensure_agent_image_present())
+            except Exception:
+                logger.exception("agent base image bootstrap scheduling failed")
             resolved_secrets: dict[str, str] = {}
             for backend in config.backends:
                 name = backend.get("api_key_secret")
