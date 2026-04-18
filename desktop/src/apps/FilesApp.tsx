@@ -24,7 +24,7 @@ import {
   RotateCcw,
   Bot,
 } from "lucide-react";
-import { Button, Card, Toolbar, ToolbarGroup } from "@/components/ui";
+import { Button, Card, Toolbar, ToolbarGroup, ToolbarSpacer } from "@/components/ui";
 import { MobileSplitView } from "@/components/mobile/MobileSplitView";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import { resolveAgentEmoji } from "@/lib/agent-emoji";
@@ -965,10 +965,11 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
     <div className="w-full h-full flex flex-col min-w-0">
       {/* Toolbar — hidden on mobile when inside MobileSplitView (nav bar handles actions) */}
       {!isMobile && (
-        <Toolbar className="shrink-0 flex-nowrap w-full">
-          {/* Left group — back button + breadcrumb trail. Grows to fill
-              available space so the actions on the right hit the edge. */}
-          <div className="flex items-center gap-1 min-w-0 flex-1 overflow-hidden">
+        <Toolbar className="shrink-0">
+          {/* Left group — back button + breadcrumb trail. The
+              ToolbarSpacer below grows to push the actions group to the
+              right edge regardless of path depth (macOS Finder pattern). */}
+          <div className="flex items-center gap-1 min-w-0 overflow-hidden">
             {currentPath && (
               <Button
                 variant="ghost"
@@ -1012,7 +1013,9 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
             </nav>
           </div>
 
-          <ToolbarGroup className="shrink-0 ml-auto">{toolbarActions}</ToolbarGroup>
+          <ToolbarSpacer />
+
+          <ToolbarGroup className="shrink-0">{toolbarActions}</ToolbarGroup>
         </Toolbar>
       )}
 
