@@ -28,6 +28,7 @@ import { ModelPickerFlow, type AgentModel } from "@/components/ModelPickerFlow";
 import { ModelPickerModal } from "@/components/ModelPickerModal";
 import { PersonaPicker } from "@/components/persona-picker/PersonaPicker";
 import type { PersonaSelection } from "@/components/persona-picker/types";
+import { slugifyClient, isValidSlug, SLUG_REGEX } from "@/lib/slug";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -380,6 +381,8 @@ function DeployWizard({
 
   // Step 1
   const [name, setName] = useState("");
+  const [customSlug, setCustomSlug] = useState<string | null>(null);
+  const [editingSlug, setEditingSlug] = useState(false);
   const [color, setColor] = useState(COLORS[0]);
   // Emoji defaults to the chosen framework's icon unless the user has
   // typed their own. `emojiTouched` tracks "user edited this field", so
@@ -645,6 +648,8 @@ function DeployWizard({
       setStep(0);
       setPersona(null);
       setName("");
+      setCustomSlug(null);
+      setEditingSlug(false);
       setColor(COLORS[0]);
       setEmoji(defaultEmojiForFramework(""));
       setEmojiTouched(false);
@@ -693,7 +698,11 @@ function DeployWizard({
 
   const canNext = () => {
     if (step === 0) return persona !== null;
-    if (step === 1) return name.trim().length > 0;
+    if (step === 1) {
+      if (name.trim().length === 0) return false;
+      if (customSlug !== null && !isValidSlug(customSlug)) return false;
+      return true;
+    }
     if (step === 2) return selectedFramework.length > 0;
     if (step === 3) return selectedModel.length > 0;
     return true;
@@ -712,7 +721,7 @@ function DeployWizard({
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({
-          name: name.trim(),
+          name: customSlug || name.trim(),
           framework: selectedFramework,
           model: selectedModel,
           color,
@@ -839,6 +848,43 @@ function DeployWizard({
                   placeholder="my-agent"
                   autoFocus
                 />
+                {(() => {
+                  const derivedSlug = slugifyClient(name);
+                  const slug = customSlug ?? derivedSlug;
+                  const slugInvalid = customSlug !== null && !isValidSlug(customSlug);
+                  return (
+                    <>
+                      <div className="text-xs opacity-60 mt-1">
+                        Slug: <code>{slug || "—"}</code>{" "}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCustomSlug(customSlug ?? derivedSlug);
+                            setEditingSlug(true);
+                          }}
+                          className="text-blue-400 hover:underline"
+                        >
+                          edit
+                        </button>
+                      </div>
+                      {editingSlug && (
+                        <Input
+                          value={customSlug ?? derivedSlug}
+                          onChange={(e) => setCustomSlug(e.target.value)}
+                          onBlur={() => setEditingSlug(false)}
+                          className="mt-1 text-sm"
+                          aria-label="Edit slug"
+                          pattern={SLUG_REGEX.source}
+                        />
+                      )}
+                      {slugInvalid && (
+                        <p className="mt-1 text-xs text-red-400">
+                          Slug must match <code>[a-z0-9][a-z0-9-]&#123;0,62&#125;</code>
+                        </p>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
               <div>
                 <Label className="mb-1.5 block">Color</Label>
