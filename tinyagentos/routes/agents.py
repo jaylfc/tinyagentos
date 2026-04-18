@@ -1224,6 +1224,29 @@ async def resume_agent(request: Request, name: str):
     return {"status": "resumed", "name": name, "paused": False}
 
 
+class PersonaPatch(BaseModel):
+    soul_md: str | None = None
+    agent_md: str | None = None
+    source_persona_id: str | None = None
+
+
+@router.patch("/api/agents/{slug}/persona")
+async def patch_agent_persona(request: Request, slug: str, body: PersonaPatch):
+    """Partially update an agent's persona fields (soul_md, agent_md, source_persona_id)."""
+    config = request.app.state.config
+    agent = find_agent(config, slug)
+    if not agent:
+        return JSONResponse({"error": "agent not found"}, status_code=404)
+    if body.soul_md is not None:
+        agent["soul_md"] = body.soul_md
+    if body.agent_md is not None:
+        agent["agent_md"] = body.agent_md
+    if body.source_persona_id is not None:
+        agent["source_persona_id"] = body.source_persona_id
+    await save_config_locked(config, config.config_path)
+    return {"status": "ok", "agent": agent}
+
+
 class AgentModelUpdate(BaseModel):
     model: str
 
