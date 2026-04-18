@@ -33,6 +33,7 @@ const CATEGORIES: Category[] = [
   { id: "all", label: "All Apps", icon: <ShoppingBag size={16} />, types: [], description: "Browse everything" },
   { id: "frameworks", label: "Agent Frameworks", icon: <Bot size={16} />, types: ["agent-framework"], description: "Execution engines for your AI agents" },
   { id: "models", label: "Models", icon: <Brain size={16} />, types: ["model"], description: "Language models for inference" },
+  { id: "memory", label: "Memory", icon: <Brain size={16} />, types: ["memory"], description: "Memory backends and knowledge stores for agents" },
   { id: "plugins", label: "Plugins", icon: <Plug size={16} />, types: ["plugin"], description: "Tools and capabilities for agents" },
   { id: "mcp-server", label: "MCP Servers", icon: <Cpu size={16} />, types: ["mcp"], description: "Model Context Protocol servers" },
   { id: "services", label: "Services", icon: <Server size={16} />, types: ["service"], description: "Infrastructure and backends" },
@@ -641,6 +642,10 @@ export function StoreApp({ windowId: _windowId }: { windowId: string }) {
           {loading ? (
             <div className="flex items-center justify-center h-40">
               <Loader2 className="w-6 h-6 text-shell-text-tertiary animate-spin" />
+            </div>
+          ) : filtered.length === 0 && activeCategory === "memory" ? (
+            <div className="p-6 text-center opacity-70">
+              No third-party memory plugins yet. <b>taOSmd</b> is installed by default and available on every agent.
             </div>
           ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-40 text-shell-text-tertiary text-sm gap-2">
