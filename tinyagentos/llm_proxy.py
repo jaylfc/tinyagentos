@@ -290,7 +290,14 @@ def generate_litellm_config(backends: list[dict], default_model: str = "default"
             "master_key": TAOS_LITELLM_MASTER_KEY,
             "background_health_checks": False,
             "disable_spend_logs": True,
-            "custom_callbacks": ["tinyagentos.litellm_callback.taos_callback"],
+        },
+        # LiteLLM's proxy reads custom logger classes from
+        # ``litellm_settings.callbacks``. The loader (get_instance_fn) resolves
+        # the dotted path relative to the config file's directory — so the
+        # sibling ``taos_callback.py`` shim written by ``write_config`` below
+        # imports our installed module and re-exports the instance.
+        "litellm_settings": {
+            "callbacks": "taos_callback.proxy_handler_instance",
         },
     }
 
@@ -332,13 +339,26 @@ class LLMProxy:
         return self._process.poll() is None
 
     def write_config(self, backends: list[dict]) -> Path:
-        """Generate and write LiteLLM config file."""
+        """Generate and write LiteLLM config file.
+
+        Also writes a sibling ``taos_callback.py`` shim so LiteLLM's
+        ``get_instance_fn`` can load the CustomLogger instance via its
+        config-dir-relative importer. The shim re-exports the instance
+        from the installed ``tinyagentos`` package — keeping the real
+        callback code in one place.
+        """
         self.config_dir.mkdir(parents=True, exist_ok=True)
         config = generate_litellm_config(backends)
         config_path = self.config_dir / "litellm_config.yaml"
 
         import yaml
         config_path.write_text(yaml.dump(config, default_flow_style=False))
+
+        shim_path = self.config_dir / "taos_callback.py"
+        shim_path.write_text(
+            "from tinyagentos.litellm_callback import taos_callback "
+            "as proxy_handler_instance\n"
+        )
         return config_path
 
     async def start(

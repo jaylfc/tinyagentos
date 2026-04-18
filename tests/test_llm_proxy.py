@@ -228,6 +228,35 @@ class TestCloudBackends:
         assert chat["litellm_params"]["api_base"] == "http://localhost:11434"
 
 
+class TestCallbackWiring:
+    def test_config_emits_callbacks_under_litellm_settings(self):
+        """Callbacks must be emitted under ``litellm_settings.callbacks`` as a
+        single dotted path string so LiteLLM's ``get_instance_fn`` loader can
+        resolve it relative to the config file directory. Historically the
+        callback lived in ``general_settings.custom_callbacks`` which LiteLLM
+        silently ignored — leaving trace events empty."""
+        result = generate_litellm_config([])
+        assert result["litellm_settings"]["callbacks"] == (
+            "taos_callback.proxy_handler_instance"
+        )
+        assert "custom_callbacks" not in result["general_settings"]
+
+    def test_write_config_creates_callback_shim(self, tmp_path):
+        """``write_config`` writes a sibling ``taos_callback.py`` next to
+        the generated yaml, re-exporting the installed callback instance as
+        ``proxy_handler_instance`` — so LiteLLM's config-dir-relative import
+        succeeds without duplicating the callback source."""
+        proxy = LLMProxy(port=14000, config_dir=tmp_path)
+        proxy.write_config([])
+        shim = tmp_path / "taos_callback.py"
+        assert shim.exists()
+        contents = shim.read_text()
+        assert (
+            "from tinyagentos.litellm_callback import taos_callback "
+            "as proxy_handler_instance"
+        ) in contents
+
+
 class TestLLMProxy:
     def test_proxy_not_running_initially(self):
         proxy = LLMProxy(port=14000)
