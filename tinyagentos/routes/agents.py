@@ -433,6 +433,12 @@ class DeployAgentRequest(BaseModel):
     # Worker failure policy fields (added in worker-failure-handling).
     on_worker_failure: str = "pause"
     fallback_models: list[str] = []
+    # Persona fields (v2 persona system).
+    soul_md: str = ""
+    agent_md: str = ""
+    memory_plugin: str = "taosmd"
+    source_persona_id: str | None = None
+    save_to_library: dict | None = None  # {"name": str, "description": str|None}
 
 
 @router.post("/api/agents/deploy")
@@ -597,8 +603,26 @@ async def deploy_agent_endpoint(request: Request, body: DeployAgentRequest):
         "model": body.model,
         "framework": body.framework,
     })
+    # Apply persona fields to the agent record.
+    new_agent["soul_md"] = body.soul_md
+    new_agent["agent_md"] = body.agent_md
+    new_agent["memory_plugin"] = body.memory_plugin
+    new_agent["source_persona_id"] = body.source_persona_id
+    new_agent["migrated_to_v2_personas"] = True
+
     config.agents.append(new_agent)
     await save_config_locked(config, config.config_path)
+
+    # Write to user persona library if requested.
+    if body.save_to_library:
+        store = getattr(request.app.state, "user_persona_store", None)
+        if store is not None:
+            store.create(
+                name=body.save_to_library.get("name") or body.name,
+                description=body.save_to_library.get("description"),
+                soul_md=body.soul_md,
+                agent_md=body.agent_md,
+            )
 
     # Record deploy task
     deploy_tasks = request.app.state.deploy_tasks
