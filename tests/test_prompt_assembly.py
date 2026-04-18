@@ -55,3 +55,26 @@ def test_missing_agent_rules_logs_and_returns_empty(monkeypatch, caplog):
     assert "SOUL" in out
     # When memory rules missing, the directive still ships.
     assert out.startswith(STRICT_READ_DIRECTIVE)
+
+def test_load_agent_rules_warns_when_taosmd_missing(monkeypatch, caplog):
+    import sys
+    from tinyagentos import prompt_assembly
+    monkeypatch.setitem(sys.modules, "taosmd", None)
+    caplog.set_level("WARNING", logger="tinyagentos.prompt_assembly")
+    out = prompt_assembly._load_agent_rules()
+    assert out == ""
+    assert any("taosmd" in r.message for r in caplog.records)
+
+def test_load_agent_rules_warns_when_file_missing(monkeypatch, tmp_path, caplog):
+    import sys, types
+    from tinyagentos import prompt_assembly
+    fake_taosmd_pkg_dir = tmp_path / "taosmd"
+    fake_taosmd_pkg_dir.mkdir()
+    (fake_taosmd_pkg_dir / "__init__.py").write_text("")
+    fake_mod = types.ModuleType("taosmd")
+    fake_mod.__file__ = str(fake_taosmd_pkg_dir / "__init__.py")
+    monkeypatch.setitem(sys.modules, "taosmd", fake_mod)
+    caplog.set_level("WARNING", logger="tinyagentos.prompt_assembly")
+    out = prompt_assembly._load_agent_rules()
+    assert out == ""
+    assert any("agent-rules.md" in r.message for r in caplog.records)
