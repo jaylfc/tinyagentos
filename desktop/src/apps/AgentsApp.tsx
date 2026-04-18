@@ -26,6 +26,8 @@ import {
 } from "@/components/ui";
 import { ModelPickerFlow, type AgentModel } from "@/components/ModelPickerFlow";
 import { ModelPickerModal } from "@/components/ModelPickerModal";
+import { PersonaPicker } from "@/components/persona-picker/PersonaPicker";
+import type { PersonaSelection } from "@/components/persona-picker/types";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -373,6 +375,9 @@ function DeployWizard({
 }) {
   const [step, setStep] = useState(0);
 
+  // Step 0 — Persona
+  const [persona, setPersona] = useState<PersonaSelection | null>(null);
+
   // Step 1
   const [name, setName] = useState("");
   const [color, setColor] = useState(COLORS[0]);
@@ -638,6 +643,7 @@ function DeployWizard({
   useEffect(() => {
     if (open) {
       setStep(0);
+      setPersona(null);
       setName("");
       setColor(COLORS[0]);
       setEmoji(defaultEmojiForFramework(""));
@@ -683,12 +689,13 @@ function DeployWizard({
 
   if (!open) return null;
 
-  const STEPS = ["Name & Color", "Framework", "Model", "Permissions", "Failure Policy", "Review"];
+  const STEPS = ["Persona", "Name & Color", "Framework", "Model", "Permissions", "Failure Policy", "Review"];
 
   const canNext = () => {
-    if (step === 0) return name.trim().length > 0;
-    if (step === 1) return selectedFramework.length > 0;
-    if (step === 2) return selectedModel.length > 0;
+    if (step === 0) return persona !== null;
+    if (step === 1) return name.trim().length > 0;
+    if (step === 2) return selectedFramework.length > 0;
+    if (step === 3) return selectedModel.length > 0;
     return true;
   };
 
@@ -718,6 +725,10 @@ function DeployWizard({
           kv_cache_quant_k: kvCacheQuantK,
           kv_cache_quant_v: kvCacheQuantV,
           kv_cache_quant_boundary_layers: kvCacheQuantBoundaryLayers,
+          soul_md: persona?.soul_md ?? "",
+          agent_md: persona?.agent_md ?? "",
+          source_persona_id: persona?.source_persona_id ?? null,
+          save_to_library: persona?.save_to_library ?? null,
         }),
       });
       if (!res.ok) {
@@ -801,8 +812,20 @@ function DeployWizard({
 
         {/* Body */}
         <div className="px-5 py-5 flex-1 min-h-0 overflow-y-auto">
-          {/* Step 0: Name + Color */}
+          {/* Step 0: Persona */}
           {step === 0 && (
+            <Card className="p-0 border-0 bg-transparent shadow-none">
+              <PersonaPicker
+                onSelect={(s) => {
+                  setPersona(s);
+                  setStep(1);
+                }}
+              />
+            </Card>
+          )}
+
+          {/* Step 1: Name + Color */}
+          {step === 1 && (
             <Card className="p-0 border-0 bg-transparent shadow-none space-y-4">
               <div>
                 <Label htmlFor="agent-name" className="mb-1.5 block">
@@ -889,8 +912,8 @@ function DeployWizard({
             </Card>
           )}
 
-          {/* Step 1: Framework */}
-          {step === 1 && (
+          {/* Step 2: Framework */}
+          {step === 2 && (
             <div className="space-y-2">
               <span className="block text-xs text-shell-text-secondary mb-2">Select Framework</span>
               {frameworks
@@ -957,8 +980,8 @@ function DeployWizard({
             </div>
           )}
 
-          {/* Step 2: Model */}
-          {step === 2 && (
+          {/* Step 3: Model */}
+          {step === 3 && (
             <div className="space-y-2">
               {selectedModel ? (
                 /* Summary card — shown after a model is picked */
@@ -993,14 +1016,14 @@ function DeployWizard({
                   models={models}
                   modelsLoaded={modelsLoaded}
                   onSelect={(id) => setSelectedModel(id)}
-                  onBack={() => setStep(1)}
+                  onBack={() => setStep(2)}
                 />
               )}
             </div>
           )}
 
-          {/* Step 3: Permissions */}
-          {step === 3 && (
+          {/* Step 4: Permissions */}
+          {step === 4 && (
             <div className="space-y-4">
               <span className="block text-xs text-shell-text-secondary mb-2">Permissions</span>
               <label
@@ -1032,8 +1055,8 @@ function DeployWizard({
             </div>
           )}
 
-          {/* Step 4: Failure Policy */}
-          {step === 4 && (
+          {/* Step 5: Failure Policy */}
+          {step === 5 && (
             <div className="space-y-4">
               <span className="block text-xs text-shell-text-secondary mb-2">Worker Failure Policy</span>
               <div>
@@ -1175,8 +1198,8 @@ function DeployWizard({
             </div>
           )}
 
-          {/* Step 5: Review */}
-          {step === 5 && (
+          {/* Step 6: Review */}
+          {step === 6 && (
             <div className="space-y-3">
               <span className="block text-xs text-shell-text-secondary mb-2">Review Configuration</span>
               <div className="rounded-lg bg-shell-bg-deep border border-white/5 divide-y divide-white/5">
@@ -1289,7 +1312,7 @@ function DeployWizard({
         )}
 
         {/* Footer — hidden while the inline model picker is active (has its own nav) */}
-        {!(step === 2 && !selectedModel) && (
+        {!(step === 3 && !selectedModel) && (
         <div className="flex items-center justify-between px-5 py-3 border-t border-white/5 shrink-0">
           <Button
             variant="outline"
