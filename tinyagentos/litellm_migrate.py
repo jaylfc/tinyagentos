@@ -1,19 +1,22 @@
-"""Auto-apply LiteLLM's Prisma schema at taOS startup.
+"""Ensure LiteLLM's Prisma Python client is importable at taOS startup.
 
-LiteLLM ships a ``schema.prisma`` inside its installed package but does
-not run migrations itself. On a fresh install with Postgres configured,
-the ``/key/generate`` endpoint fails until somebody manually runs:
+LiteLLM ships its own ``prisma/migrations/`` directory and runs ``prisma
+migrate deploy`` against it during proxy startup — that's the
+authoritative path for creating/upgrading LiteLLM's tables. Our only
+job here is to make sure ``import prisma`` works (i.e. the generated
+Python client exists under ``site-packages/prisma/``) so LiteLLM's
+own runtime can talk to the DB.
 
-    pip install prisma
-    prisma generate --schema=<litellm>/schema.prisma
-    DATABASE_URL=... prisma db push --accept-data-loss --schema=<litellm>/schema.prisma
+Previously this module also ran ``prisma db push --accept-data-loss``
+to set up the schema ourselves. That DDLs the tables directly without
+seeding ``_prisma_migrations``, which made LiteLLM's own
+``migrate deploy`` try to apply migration #1 on top of already-existing
+objects and fail with "type JobStatus already exists" in a loop —
+leaving the proxy permanently unhealthy. The fix is to get out of the
+DB's way entirely.
 
-This module does that automatically — idempotently — on every boot when
-``data/.litellm_db_url`` is present. If the expected LiteLLM table is
-already there, it no-ops.
-
-Must run BEFORE ``LLMProxy.start()`` so LiteLLM sees a ready schema when
-it connects.
+Must run BEFORE ``LLMProxy.start()`` so the prisma client is importable
+by the time LiteLLM's proxy boots.
 """
 from __future__ import annotations
 
@@ -22,14 +25,8 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
-
-# Any LiteLLM table works as a "schema present" probe. VerificationToken
-# is core to /key/generate and has been stable across the LiteLLM
-# versions taOS targets (>=1.50).
-_PROBE_TABLE = "LiteLLM_VerificationToken"
 
 
 def _prisma_cli() -> str:
@@ -61,129 +58,59 @@ def _schema_path() -> Path | None:
     return path
 
 
-def _schema_already_applied(db_url: str) -> bool:
-    """True iff the probe table exists in the target database.
+def _prisma_client_importable() -> bool:
+    """True iff ``import prisma.client`` works — i.e. generate has been run.
 
-    Tries psycopg (2 or 3) first, then falls back to ``psql`` as a pure-
-    CLI check. Either path must never raise: on any error it returns
-    False so the migration runs and surfaces the real problem. The psql
-    fallback is what lets taOS boot on a fresh Pi where no python
-    Postgres driver is installed in the venv.
+    The ``prisma`` pip package ships an empty ``prisma/`` namespace that
+    only gains a ``client`` submodule after ``prisma generate`` writes
+    the generated artifacts. So the presence of ``prisma.client`` is a
+    reliable "client is ready" signal.
     """
     try:
-        try:
-            import psycopg2  # type: ignore
-            conn = psycopg2.connect(db_url)
-        except ImportError:
-            import psycopg  # type: ignore
-            conn = psycopg.connect(db_url)
-        try:
-            cur = conn.cursor()
-            cur.execute(
-                "SELECT to_regclass(%s) IS NOT NULL",
-                (f"public.\"{_PROBE_TABLE}\"",),
-            )
-            row = cur.fetchone()
-            return bool(row and row[0])
-        finally:
-            conn.close()
+        import importlib
+
+        importlib.import_module("prisma.client")
+        return True
     except ImportError:
-        return _schema_already_applied_psql(db_url)
-    except Exception as exc:
-        logger.debug("litellm_migrate: probe failed (%s) — will attempt migration", exc)
         return False
-
-
-def _schema_already_applied_psql(db_url: str) -> bool:
-    """psql fallback for ``_schema_already_applied``. Returns False on any
-    error — including psql being absent — so the caller retries migration
-    and surfaces the underlying issue.
-    """
-    import shutil
-    psql = shutil.which("psql")
-    if not psql:
-        logger.debug("litellm_migrate: no psycopg and no psql — probe returns False")
-        return False
-    try:
-        result = subprocess.run(
-            [
-                psql, db_url, "-tAc",
-                f'SELECT to_regclass(\'public."{_PROBE_TABLE}"\') IS NOT NULL',
-            ],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-    except Exception as exc:
-        logger.debug("litellm_migrate: psql probe subprocess failed (%s)", exc)
-        return False
-    if result.returncode != 0:
-        logger.debug(
-            "litellm_migrate: psql probe exited %d: %s",
-            result.returncode, result.stderr.strip(),
-        )
-        return False
-    return result.stdout.strip().lower() == "t"
-
-
-def _run(cmd: list[str], env: dict[str, str]) -> None:
-    """Run a subprocess, log output, raise on non-zero exit.
-
-    We want taOS boot to fail loudly if migration fails — LiteLLM will
-    otherwise serve requests but silently 500 on /key/generate, which
-    is far worse than a visible startup error.
-    """
-    logger.info("litellm_migrate: running %s", " ".join(cmd))
-    result = subprocess.run(
-        cmd,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.stdout.strip():
-        logger.info("litellm_migrate stdout: %s", result.stdout.strip())
-    if result.stderr.strip():
-        logger.info("litellm_migrate stderr: %s", result.stderr.strip())
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"litellm_migrate: {' '.join(cmd)} exited {result.returncode}"
-        )
 
 
 def migrate(data_dir: Path) -> str:
-    """Apply LiteLLM's Prisma schema if Postgres is configured.
+    """Ensure LiteLLM's prisma Python client is importable.
+
+    LiteLLM handles its own DB migrations on startup via
+    ``prisma migrate deploy`` — do NOT run ``prisma db push`` here; that
+    bypasses the ``_prisma_migrations`` history table and causes
+    LiteLLM's native migrator to loop on duplicate-type errors.
 
     Returns a short status string for logging/tests:
-        - "no-db"          → no ``.litellm_db_url`` file, nothing to do
-        - "already-applied" → probe table exists, no migration needed
-        - "applied"        → prisma generate + db push ran successfully
+        - "no-db-configured"   → no ``.litellm_db_url`` file, nothing to do
+        - "already-generated"  → ``prisma.client`` already importable
+        - "generated"          → ran ``prisma generate`` successfully
 
-    Raises on any failure of the CLI subprocess calls so the error
-    surfaces at taOS boot instead of later at /key/generate time.
+    Raises on failure of ``prisma generate`` or if the client is still
+    not importable afterwards, so boot fails loudly instead of LiteLLM
+    silently 500ing on every request.
     """
     db_url_path = data_dir / ".litellm_db_url"
     if not db_url_path.exists():
         logger.info("litellm_migrate: no .litellm_db_url — skipping")
-        return "no-db"
+        return "no-db-configured"
     db_url = db_url_path.read_text().strip()
     if not db_url:
         logger.info("litellm_migrate: .litellm_db_url empty — skipping")
-        return "no-db"
+        return "no-db-configured"
+
+    if _prisma_client_importable():
+        logger.info("litellm_migrate: prisma.client already importable — skipping generate")
+        return "already-generated"
 
     schema = _schema_path()
     if schema is None:
-        # Error already logged in _schema_path.
-        return "no-schema"
-
-    if _schema_already_applied(db_url):
-        logger.info(
-            "litellm_migrate: %s present in %s — migration already applied",
-            _PROBE_TABLE,
-            urlparse(db_url).path.lstrip("/") or "<db>",
+        raise RuntimeError(
+            "litellm_migrate: cannot locate LiteLLM's schema.prisma — "
+            "is litellm[proxy] installed?"
         )
-        return "already-applied"
 
     cli = _prisma_cli()
     if not Path(cli).exists():
@@ -193,7 +120,6 @@ def migrate(data_dir: Path) -> str:
         )
 
     env = os.environ.copy()
-    env["DATABASE_URL"] = db_url
     # Prisma's node CLI shells out to ``prisma-client-py`` via ``/bin/sh``
     # during ``generate``. That subprocess inherits PATH, and under systemd
     # the unit file doesn't put the venv's bin/ on PATH by default — so the
@@ -204,12 +130,22 @@ def migrate(data_dir: Path) -> str:
     if venv_bin not in existing_path.split(os.pathsep):
         env["PATH"] = venv_bin + os.pathsep + existing_path if existing_path else venv_bin
 
-    _run([cli, "generate", f"--schema={schema}"], env)
-    _run([cli, "db", "push", "--accept-data-loss", f"--schema={schema}"], env)
-
-    if not _schema_already_applied(db_url):
+    cmd = [cli, "generate", f"--schema={schema}"]
+    logger.info("litellm_migrate: running %s", " ".join(cmd))
+    result = subprocess.run(cmd, env=env, capture_output=True, text=True, check=False)
+    if result.stdout.strip():
+        logger.info("litellm_migrate stdout: %s", result.stdout.strip())
+    if result.stderr.strip():
+        logger.info("litellm_migrate stderr: %s", result.stderr.strip())
+    if result.returncode != 0:
         raise RuntimeError(
-            "litellm_migrate: migration ran but probe table still missing"
+            f"litellm_migrate: prisma generate exited {result.returncode}"
         )
-    logger.info("litellm_migrate: migration applied against %s", schema)
-    return "applied"
+
+    if not _prisma_client_importable():
+        raise RuntimeError(
+            "litellm_migrate: prisma generate succeeded but prisma.client "
+            "is still not importable — check site-packages/prisma/"
+        )
+    logger.info("litellm_migrate: prisma client generated from %s", schema)
+    return "generated"
