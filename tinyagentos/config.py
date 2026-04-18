@@ -187,6 +187,12 @@ def normalize_agent(agent: dict) -> dict:
         agent["kv_cache_quant_v"] = legacy if legacy else "fp16"
     if "kv_cache_quant_boundary_layers" not in agent:
         agent["kv_cache_quant_boundary_layers"] = 0
+    agent.setdefault("soul_md", "")
+    agent.setdefault("agent_md", "")
+    agent.setdefault("memory_plugin", "taosmd")
+    agent.setdefault("source_persona_id", None)
+    # False for pre-existing rows; new deploys flip to True explicitly.
+    agent.setdefault("migrated_to_v2_personas", False)
     return agent
 
 def save_config(config: AppConfig, path: Path) -> None:
