@@ -534,6 +534,12 @@ export function StoreApp({ windowId: _windowId }: { windowId: string }) {
     return () => { cancelled = true; };
   }, [fetchCatalog]);
 
+  useEffect(() => {
+    const qs = new URLSearchParams(window.location.hash.split("?")[1] || "");
+    const cat = qs.get("category");
+    if (cat) setActiveCategory(cat);
+  }, []);
+
   const activeCat = CATEGORIES.find((c) => c.id === activeCategory);
 
   const filtered = apps.filter((app) => {
