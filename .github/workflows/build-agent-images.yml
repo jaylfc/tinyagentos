@@ -40,6 +40,13 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq incus incus-tools
           sudo incus admin init --auto
+          # GHA's default FORWARD=DROP drops bridge traffic even though
+          # DNS (UDP) piggybacks through the host resolver. Explicitly
+          # accept incusbr0 forward + ensure nf masquerade for NAT.
+          sudo iptables -P FORWARD ACCEPT || true
+          sudo iptables -I FORWARD -i incusbr0 -j ACCEPT || true
+          sudo iptables -I FORWARD -o incusbr0 -j ACCEPT || true
+          sudo iptables -t nat -A POSTROUTING -o $(ip route get 1.1.1.1 | awk '{print $5; exit}') -j MASQUERADE || true
 
       - name: Disable AppArmor profiles that block nested container ops
         run: |
@@ -49,12 +56,20 @@ jobs:
       - name: Launch build container
         run: |
           sudo incus launch images:debian/13 build-base
+          # Wait for real HTTP reachability to Debian mirror (not just DNS).
           for i in $(seq 1 30); do
-            if sudo incus exec build-base -- getent hosts github.com >/dev/null 2>&1; then
+            if sudo incus exec build-base -- \
+                 bash -c 'curl -fsS --max-time 5 -o /dev/null http://deb.debian.org/debian/dists/trixie/Release' \
+                 >/dev/null 2>&1; then
+              echo "container reached deb.debian.org on iteration $i"
               break
             fi
             sleep 2
           done
+          # Diagnostics regardless — useful if this step ever regresses.
+          sudo incus exec build-base -- ip a || true
+          sudo incus exec build-base -- ip route || true
+          sudo iptables -L FORWARD -n -v | head -20 || true
 
       - name: Install dependencies + openclaw inside the base container
         env:
