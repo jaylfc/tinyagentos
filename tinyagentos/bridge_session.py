@@ -405,6 +405,19 @@ class BridgeSessionRegistry:
                     channel_id=channel_id,
                     payload={"stage": "openclaw", "message": error_text},
                 )
+            if self._archive is not None:
+                try:
+                    await self._archive.record(
+                        event_type="error",
+                        data={
+                            "error": error_text,
+                            "trace_id": trace_id,
+                        },
+                        agent_name=slug,
+                        summary=error_text,
+                    )
+                except Exception:
+                    logger.exception("archive dual-write failed (error)")
             # Set any pending message to error state.
             pending_msg_id = session.pop_pending_msg(trace_id)
             if pending_msg_id and self._chat_messages:
@@ -427,6 +440,19 @@ class BridgeSessionRegistry:
                     channel_id=channel_id,
                     payload={"text": content},
                 )
+            if self._archive is not None:
+                try:
+                    await self._archive.record(
+                        event_type="reasoning",
+                        data={
+                            "text": content,
+                            "trace_id": trace_id,
+                        },
+                        agent_name=slug,
+                        summary=content[:120] if content else "",
+                    )
+                except Exception:
+                    logger.exception("archive dual-write failed (reasoning)")
         # "delta" without a matching kind is silently ignored.
 
     async def _resolve_channel(self, slug: str) -> str | None:

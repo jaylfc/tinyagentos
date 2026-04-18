@@ -1,4 +1,4 @@
-"""Tests: archive dual-write for tool_call / tool_result events in BridgeSessionRegistry."""
+"""Tests: archive dual-write for tool_call / tool_result / error / reasoning events in BridgeSessionRegistry."""
 from __future__ import annotations
 
 import asyncio
@@ -131,6 +131,98 @@ async def test_no_archive_is_tolerated():
         "trace_id": "t4",
         "tool": "t",
         "args": {},
+    })
+
+    assert len(tr._store.events) == 1
+
+
+# ---------------------------------------------------------------------------
+# error dual-write
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_error_event_dual_writes_to_archive():
+    archive = AsyncMock()
+    reg, tr = _make_registry(archive=archive)
+
+    await reg.record_reply("atlas", {
+        "kind": "error",
+        "trace_id": "t5",
+        "error": "something went wrong",
+    })
+
+    # Trace store still called
+    assert len(tr._store.events) == 1
+    assert tr._store.events[0]["kind"] == "error"
+
+    # Archive receives
+    archive.record.assert_called_once()
+    kwargs = archive.record.call_args.kwargs
+    assert kwargs["event_type"] == "error"
+    assert kwargs["agent_name"] == "atlas"
+    assert kwargs["data"]["error"] == "something went wrong"
+    assert kwargs["data"]["trace_id"] == "t5"
+
+
+# ---------------------------------------------------------------------------
+# reasoning dual-write
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_reasoning_event_dual_writes_to_archive():
+    archive = AsyncMock()
+    reg, tr = _make_registry(archive=archive)
+
+    await reg.record_reply("atlas", {
+        "kind": "reasoning",
+        "trace_id": "t6",
+        "content": "I should check the file first",
+    })
+
+    # Trace store still called
+    assert len(tr._store.events) == 1
+    assert tr._store.events[0]["kind"] == "reasoning"
+
+    # Archive receives
+    archive.record.assert_called_once()
+    kwargs = archive.record.call_args.kwargs
+    assert kwargs["event_type"] == "reasoning"
+    assert kwargs["agent_name"] == "atlas"
+    assert kwargs["data"]["text"] == "I should check the file first"
+    assert kwargs["data"]["trace_id"] == "t6"
+
+
+# ---------------------------------------------------------------------------
+# Archive failure must not break trace write for error/reasoning
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_archive_failure_on_error_does_not_break_trace():
+    archive = AsyncMock()
+    archive.record.side_effect = RuntimeError("archive down")
+    reg, tr = _make_registry(archive=archive)
+
+    # Must not raise — trace write is the load-bearing path
+    await reg.record_reply("atlas", {
+        "kind": "error",
+        "trace_id": "t7",
+        "error": "boom",
+    })
+
+    assert len(tr._store.events) == 1
+
+
+@pytest.mark.asyncio
+async def test_archive_failure_on_reasoning_does_not_break_trace():
+    archive = AsyncMock()
+    archive.record.side_effect = RuntimeError("archive down")
+    reg, tr = _make_registry(archive=archive)
+
+    # Must not raise — trace write is the load-bearing path
+    await reg.record_reply("atlas", {
+        "kind": "reasoning",
+        "trace_id": "t8",
+        "content": "thinking...",
     })
 
     assert len(tr._store.events) == 1
