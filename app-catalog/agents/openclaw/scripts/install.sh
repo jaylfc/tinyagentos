@@ -259,7 +259,12 @@ for arg in "$@"; do
   esac
 done
 EOF
-chmod 755 /usr/local/bin/rm
+# Defensive: explicitly clear setuid/setgid bits even though 0755 wouldn't
+# set them. Belt-and-suspenders against future edits accidentally bumping
+# this to 4755/2755 — this is a root-shadow rm, so any SUID would be a
+# textbook escalation primitive.
+chmod 0755 /usr/local/bin/rm
+chmod a-s /usr/local/bin/rm
 
 # 4. 30-day retention sweep: /usr/local/bin/taos-recycle-sweep + systemd timer
 cat > /usr/local/bin/taos-recycle-sweep <<'EOF'

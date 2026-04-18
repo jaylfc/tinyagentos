@@ -403,11 +403,16 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
 
   /* ---- cross-app open-messages event ---- */
   useEffect(() => {
+    // Guard against the component unmounting while an admin-prompt
+    // fetch is in flight — without this, setState fires on an
+    // unmounted component (React warns and React 18+ may bail out).
+    let cancelled = false;
     const handler = async (e: Event) => {
       const detail = (e as CustomEvent<OpenMessagesDetail>).detail;
       if (!detail?.channelId) return;
 
       // Select the channel — try to match by id or by name (DM channels often use agent name)
+      if (cancelled) return;
       setSelectedChannel(detail.channelId);
 
       // Fetch the admin prompt body if requested
@@ -417,17 +422,21 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
             `/api/admin-prompts/${encodeURIComponent(detail.prefillPromptName)}`,
             { headers: { Accept: "application/json" } }
           );
+          if (cancelled) return;
           if (res.ok) {
             const ct = res.headers.get("content-type") ?? "";
             if (ct.includes("application/json")) {
               const data: AdminPrompt = await res.json();
+              if (cancelled) return;
               setInput(data.body ?? "");
               setPrefillBanner({
                 promptName: detail.prefillPromptName,
                 agentName: detail.prefillAgent,
               });
               // Focus composer after a short delay (channel selection renders first)
-              setTimeout(() => inputRef.current?.focus(), 150);
+              setTimeout(() => {
+                if (!cancelled) inputRef.current?.focus();
+              }, 150);
             }
           }
         } catch {
@@ -437,7 +446,10 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
     };
 
     window.addEventListener("taos:open-messages", handler);
-    return () => window.removeEventListener("taos:open-messages", handler);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("taos:open-messages", handler);
+    };
   }, []);
 
   /* ---- channel selection ---- */
