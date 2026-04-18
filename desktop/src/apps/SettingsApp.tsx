@@ -2,15 +2,12 @@ import { useState, useEffect, useCallback, useRef, type ReactNode } from "react"
 import {
   Settings,
   HardDrive,
-  Server,
   Download,
   Upload,
   RefreshCw,
   Code,
   Info,
   Plus,
-  Wifi,
-  WifiOff,
   Check,
   AlertCircle,
   ChevronLeft,
@@ -39,7 +36,7 @@ import { useServerPreference } from "@/hooks/use-server-preference";
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
-type Section = "system" | "storage" | "providers" | "memory" | "backup" | "updates" | "advanced" | "shortcuts" | "accessibility" | "desktop" | "users";
+type Section = "system" | "storage" | "memory" | "backup" | "updates" | "advanced" | "shortcuts" | "accessibility" | "desktop" | "users";
 
 interface SectionDef {
   id: Section;
@@ -63,14 +60,6 @@ interface StorageItem {
   maxBytes: number;
 }
 
-interface Provider {
-  id: string;
-  name: string;
-  type: string;
-  url: string;
-  status: "online" | "offline" | "unknown";
-}
-
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
 /* ------------------------------------------------------------------ */
@@ -78,7 +67,6 @@ interface Provider {
 const SECTIONS: SectionDef[] = [
   { id: "system", label: "System Info", icon: Info },
   { id: "storage", label: "Storage", icon: HardDrive },
-  { id: "providers", label: "Providers", icon: Server },
   { id: "memory", label: "Memory", icon: Brain },
   { id: "backup", label: "Backup & Restore", icon: Download },
   { id: "updates", label: "Updates", icon: RefreshCw },
@@ -118,21 +106,6 @@ async function safeFetch<T>(url: string, fallback: T): Promise<T> {
   } catch {
     return fallback;
   }
-}
-
-function StatusDot({ status }: { status: string }) {
-  const color =
-    status === "online"
-      ? "bg-emerald-400"
-      : status === "offline"
-        ? "bg-red-400"
-        : "bg-zinc-500";
-  return (
-    <span
-      className={`inline-block h-2 w-2 rounded-full ${color}`}
-      aria-label={status}
-    />
-  );
 }
 
 function ProgressBar({ value, max }: { value: number; max: number }) {
@@ -313,151 +286,6 @@ function StorageSection() {
           </Card>
         ))}
       </div>
-    </section>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  Providers                                                          */
-/* ------------------------------------------------------------------ */
-
-function ProvidersSection() {
-  const [providers, setProviders] = useState<Provider[]>([]);
-  const [testing, setTesting] = useState<string | null>(null);
-  const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({ name: "", type: "openai", url: "" });
-
-  useEffect(() => {
-    safeFetch<Provider[] | null>("/api/settings/providers", null).then((data) => {
-      if (data && Array.isArray(data)) setProviders(data);
-      else
-        setProviders([
-          { id: "local-rkllama", name: "RKLlama (Local)", type: "rkllama", url: "http://localhost:8080", status: "online" },
-          { id: "openai-compat", name: "OpenAI Compatible", type: "openai", url: "https://api.example.com/v1", status: "unknown" },
-        ]);
-    });
-  }, []);
-
-  const testProvider = async (id: string) => {
-    setTesting(id);
-    try {
-      const res = await fetch(`/api/settings/providers/${id}/test`, { method: "POST" });
-      const ok = res.ok;
-      setProviders((prev) =>
-        prev.map((p) => (p.id === id ? { ...p, status: ok ? "online" : "offline" } : p)),
-      );
-    } catch {
-      setProviders((prev) =>
-        prev.map((p) => (p.id === id ? { ...p, status: "offline" } : p)),
-      );
-    }
-    setTesting(null);
-  };
-
-  const addProvider = () => {
-    if (!form.name || !form.url) return;
-    const newP: Provider = {
-      id: form.name.toLowerCase().replace(/\s+/g, "-"),
-      name: form.name,
-      type: form.type,
-      url: form.url,
-      status: "unknown",
-    };
-    setProviders((prev) => [...prev, newP]);
-    setForm({ name: "", type: "openai", url: "" });
-    setShowAdd(false);
-  };
-
-  return (
-    <section aria-label="Inference providers">
-      <h2 className="text-lg font-semibold mb-5">Inference Providers</h2>
-      <div className="space-y-2">
-        {providers.map((p) => (
-          <Card key={p.id} className="flex items-center gap-3 p-3.5">
-            <StatusDot status={p.status} />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">{p.name}</p>
-              <p className="text-xs text-shell-text-tertiary truncate">
-                {p.type} &middot; {p.url}
-              </p>
-            </div>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => testProvider(p.id)}
-              disabled={testing === p.id}
-              aria-label={`Test connection to ${p.name}`}
-            >
-              {testing === p.id ? (
-                <RefreshCw size={12} className="animate-spin" />
-              ) : p.status === "online" ? (
-                <Wifi size={12} />
-              ) : (
-                <WifiOff size={12} />
-              )}
-              Test
-            </Button>
-          </Card>
-        ))}
-      </div>
-
-      {showAdd ? (
-        <Card className="mt-3 p-4 space-y-3">
-          <div>
-            <Label htmlFor="provider-name">Name</Label>
-            <Input
-              id="provider-name"
-              type="text"
-              value={form.name}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              className="mt-1"
-              placeholder="My Provider"
-            />
-          </div>
-          <div>
-            <Label htmlFor="provider-type">Type</Label>
-            <select
-              id="provider-type"
-              value={form.type}
-              onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}
-              className="mt-1 flex h-9 w-full rounded-lg border border-white/10 bg-shell-bg-deep px-3 py-1 text-sm text-shell-text focus-visible:outline-none focus-visible:border-accent/40 focus-visible:ring-2 focus-visible:ring-accent/20 transition-colors"
-            >
-              <option value="openai">OpenAI Compatible</option>
-              <option value="rkllama">RKLlama</option>
-              <option value="ollama">Ollama</option>
-              <option value="vllm">vLLM</option>
-            </select>
-          </div>
-          <div>
-            <Label htmlFor="provider-url">URL</Label>
-            <Input
-              id="provider-url"
-              type="url"
-              value={form.url}
-              onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
-              className="mt-1"
-              placeholder="http://localhost:8080"
-            />
-          </div>
-          <div className="flex gap-2">
-            <Button size="sm" onClick={addProvider}>
-              <Check size={14} /> Add
-            </Button>
-            <Button variant="secondary" size="sm" onClick={() => setShowAdd(false)}>
-              Cancel
-            </Button>
-          </div>
-        </Card>
-      ) : (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setShowAdd(true)}
-          className="mt-3"
-        >
-          <Plus size={14} /> Add Provider
-        </Button>
-      )}
     </section>
   );
 }
@@ -1925,7 +1753,6 @@ export function SettingsApp({ windowId: _windowId }: { windowId: string }) {
   const content: Record<Section, ReactNode> = {
     system: <SystemInfoSection />,
     storage: <StorageSection />,
-    providers: <ProvidersSection />,
     memory: <MemorySection />,
     backup: <BackupSection />,
     updates: <UpdatesSection />,
