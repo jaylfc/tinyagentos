@@ -1,0 +1,32 @@
+import { useState } from "react";
+import type { PersonaSelection } from "./types";
+
+type Tab = "browse" | "create" | "blank";
+
+export function PersonaPicker({
+  onSelect: _onSelect,
+}: {
+  onSelect: (s: PersonaSelection) => void;
+}) {
+  const [tab, setTab] = useState<Tab>("browse");
+  return (
+    <div className="flex flex-col gap-3">
+      <div role="tablist" className="flex gap-2 border-b">
+        {(["browse", "create", "blank"] as const).map((t) => (
+          <button
+            key={t}
+            role="tab"
+            aria-selected={tab === t}
+            onClick={() => setTab(t)}
+            className={`px-3 py-1.5 ${tab === t ? "border-b-2 border-blue-400 text-blue-400" : "opacity-60"}`}
+          >
+            {t === "browse" ? "Browse" : t === "create" ? "Create new" : "Blank"}
+          </button>
+        ))}
+      </div>
+      {tab === "browse" && <div aria-label="Browse tab placeholder">Browse (coming in Task 6.2)</div>}
+      {tab === "create" && <div aria-label="Create tab placeholder">Create (coming in Task 6.3)</div>}
+      {tab === "blank" && <div aria-label="Blank tab placeholder">Blank (coming in Task 6.4)</div>}
+    </div>
+  );
+}
