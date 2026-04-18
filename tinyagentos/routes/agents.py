@@ -35,6 +35,7 @@ class AgentUpdate(BaseModel):
     host: str | None = None
     qmd_index: str | None = None
     color: str | None = None
+    emoji: str | None = None
     can_read_user_memory: bool | None = None
 
 
@@ -133,6 +134,9 @@ async def update_agent(request: Request, name: str, body: AgentUpdate):
         agent["qmd_index"] = body.qmd_index
     if body.color is not None:
         agent["color"] = body.color
+    if body.emoji is not None:
+        emoji = body.emoji.strip()
+        agent["emoji"] = emoji if emoji else None
     if body.can_read_user_memory is not None:
         agent["can_read_user_memory"] = body.can_read_user_memory
     await save_config_locked(config, config.config_path)
@@ -346,6 +350,10 @@ class DeployAgentRequest(BaseModel):
     framework: str = "none"
     model: str | None = None
     color: str = "#888888"
+    # Optional unicode emoji shown next to the agent in the UI.  Stored on
+    # the agent record; the frontend falls back to a framework-specific
+    # default when unset.
+    emoji: str | None = None
     memory_limit: str | None = None
     cpu_limit: int | None = None
     can_read_user_memory: bool = False
@@ -506,11 +514,13 @@ async def deploy_agent_endpoint(request: Request, body: DeployAgentRequest):
     # the bind-mounted per-agent SQLite at /memory. See
     # docs/design/framework-agnostic-runtime.md.
     from tinyagentos.config import normalize_agent
+    emoji = (body.emoji or "").strip() or None
     new_agent = normalize_agent({
         "name": body.name,
         "display_name": display_name,
         "host": "",
         "color": body.color,
+        "emoji": emoji,
         "status": "deploying",
         "can_read_user_memory": body.can_read_user_memory,
         "on_worker_failure": body.on_worker_failure,
@@ -537,6 +547,7 @@ async def deploy_agent_endpoint(request: Request, body: DeployAgentRequest):
                 model=body.model,
                 data_dir=data_dir,
                 color=body.color,
+                emoji=emoji,
                 memory_limit=body.memory_limit,
                 cpu_limit=body.cpu_limit,
                 extra_config={

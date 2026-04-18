@@ -322,6 +322,75 @@ class TestDeployPersistence:
         assert agent["status"] == "running"
         assert agent["id"]
 
+    async def test_deploy_accepts_and_persists_emoji(self, client, app, monkeypatch):
+        captured: dict = {}
+
+        async def fake_deploy(req):
+            captured["emoji"] = req.emoji
+            return {"success": True, "name": req.name, "ip": "10.0.0.45",
+                    "llm_key": None, "steps": ["deployment_complete"],
+                    "container": f"taos-agent-{req.name}"}
+        monkeypatch.setattr("tinyagentos.deployer.deploy_agent", fake_deploy)
+
+        class _FakeCatalog:
+            def all_models(self, capability=None):
+                return [{"name": "test-model", "id": "test-model"}]
+        app.state.backend_catalog = _FakeCatalog()
+        app.state.cluster_manager._workers.clear()
+
+        resp = await client.post("/api/agents/deploy", json={
+            "name": "emoji-agent",
+            "framework": "none",
+            "model": "test-model",
+            "color": "#abcdef",
+            "emoji": "\U0001f98a",  # 🦊
+        })
+        assert resp.status_code == 200
+        import asyncio
+        await asyncio.sleep(0.2)
+
+        # DeployRequest received the emoji.
+        assert captured["emoji"] == "\U0001f98a"
+
+        # GET /api/agents/{name} returns the stored emoji.
+        detail = await client.get("/api/agents/emoji-agent")
+        assert detail.status_code == 200
+        assert detail.json()["emoji"] == "\U0001f98a"
+
+        # GET /api/agents (list) also exposes it.
+        listing = await client.get("/api/agents")
+        assert listing.status_code == 200
+        match = [a for a in listing.json() if a["name"] == "emoji-agent"]
+        assert match and match[0].get("emoji") == "\U0001f98a"
+
+    async def test_deploy_emoji_optional(self, client, app, monkeypatch):
+        async def fake_deploy(req):
+            return {"success": True, "name": req.name, "ip": "10.0.0.46",
+                    "llm_key": None, "steps": ["deployment_complete"],
+                    "container": f"taos-agent-{req.name}"}
+        monkeypatch.setattr("tinyagentos.deployer.deploy_agent", fake_deploy)
+
+        class _FakeCatalog:
+            def all_models(self, capability=None):
+                return [{"name": "test-model", "id": "test-model"}]
+        app.state.backend_catalog = _FakeCatalog()
+        app.state.cluster_manager._workers.clear()
+
+        resp = await client.post("/api/agents/deploy", json={
+            "name": "no-emoji-agent",
+            "framework": "none",
+            "model": "test-model",
+            "color": "#abcdef",
+        })
+        assert resp.status_code == 200
+        import asyncio
+        await asyncio.sleep(0.2)
+
+        detail = await client.get("/api/agents/no-emoji-agent")
+        assert detail.status_code == 200
+        # emoji is optional — stored as None (or omitted) when not provided.
+        assert detail.json().get("emoji") is None
+
     async def test_deploy_creates_dm_channel(self, client, monkeypatch):
         async def fake_deploy(req):
             return {"success": True, "name": req.name, "ip": "10.0.0.43",

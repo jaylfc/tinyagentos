@@ -36,6 +36,9 @@ class DeployRequest:
     data_dir: Path        # host data dir — trace and shared state live here
     fallback_models: list[str] = field(default_factory=list)
     color: str = "#888888"
+    # Optional unicode emoji shown next to the agent in the UI. Purely
+    # presentation — never consumed by the container or worker.
+    emoji: str | None = None
     memory_limit: str | None = None
     cpu_limit: int | None = None
     extra_config: dict | None = None
