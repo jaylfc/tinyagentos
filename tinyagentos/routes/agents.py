@@ -703,7 +703,26 @@ async def deploy_agent_endpoint(request: Request, body: DeployAgentRequest):
             await save_config_locked(config, config.config_path)
 
     asyncio.create_task(_background_deploy())
-    return {"status": "deploying", "name": body.name}
+
+    # Archive smoke-check: verify trace path end-to-end after provisioning.
+    # A failure here does NOT abort the deploy — it surfaces a warning flag.
+    archive = getattr(request.app.state, "archive", None)
+    smoke_ok = False
+    if archive is not None:
+        try:
+            await archive.record(
+                event_type="agent_deployed",
+                data={"slug": unique_slug, "framework": body.framework},
+                agent_name=unique_slug,
+                summary=f"deployed {unique_slug}",
+            )
+            rows = await archive.query(agent_name=unique_slug, limit=1)
+            smoke_ok = bool(rows)
+        except Exception:
+            logger.exception("archive smoke-check failed for %s", unique_slug)
+            smoke_ok = False
+
+    return {"status": "deploying", "name": body.name, "archive_smoke_ok": smoke_ok}
 
 
 @router.post("/api/agents/bulk/start")
