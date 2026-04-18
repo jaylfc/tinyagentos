@@ -161,6 +161,15 @@ def migrate(data_dir: Path) -> str:
 
     env = os.environ.copy()
     env["DATABASE_URL"] = db_url
+    # Prisma's node CLI shells out to ``prisma-client-py`` via ``/bin/sh``
+    # during ``generate``. That subprocess inherits PATH, and under systemd
+    # the unit file doesn't put the venv's bin/ on PATH by default — so the
+    # generator fails with "prisma-client-py: not found". Prepend the bin
+    # directory holding the prisma binary so the child shell resolves it.
+    venv_bin = str(Path(cli).parent)
+    existing_path = env.get("PATH", "")
+    if venv_bin not in existing_path.split(os.pathsep):
+        env["PATH"] = venv_bin + os.pathsep + existing_path if existing_path else venv_bin
 
     _run([cli, "generate", f"--schema={schema}"], env)
     _run([cli, "db", "push", "--accept-data-loss", f"--schema={schema}"], env)

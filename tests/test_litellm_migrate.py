@@ -79,6 +79,36 @@ def test_missing_tables_triggers_generate_and_push(tmp_path):
     assert push_env["DATABASE_URL"] == "postgresql://u:p@h/db"
 
 
+def test_generate_env_prepends_venv_bin_to_path(tmp_path, monkeypatch):
+    """Prisma's node CLI shells out to ``prisma-client-py`` during generate;
+    under systemd the PATH default doesn't include the venv's bin/. We must
+    prepend the prisma CLI's bin directory to PATH so the child shell can
+    resolve ``prisma-client-py`` without a global install."""
+    data_dir = _write_db_url(tmp_path)
+    fake_schema = tmp_path / "schema.prisma"
+    fake_schema.write_text("// fake")
+    fake_cli = tmp_path / "fake-venv" / "bin" / "prisma"
+    fake_cli.parent.mkdir(parents=True)
+    fake_cli.write_text("#!/bin/sh\nexit 0\n")
+    fake_cli.chmod(0o755)
+
+    # Seed a PATH that omits the venv's bin — simulates systemd's default.
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+
+    probe_results = iter([False, True])
+    with patch.object(litellm_migrate, "_schema_path", return_value=fake_schema), \
+         patch.object(litellm_migrate, "_schema_already_applied",
+                      side_effect=lambda _url: next(probe_results)), \
+         patch.object(litellm_migrate, "_prisma_cli", return_value=str(fake_cli)), \
+         patch.object(litellm_migrate, "_run") as run_mock:
+        litellm_migrate.migrate(data_dir)
+
+    gen_env = run_mock.call_args_list[0][0][1]
+    venv_bin = str(fake_cli.parent)
+    # The venv bin must appear at the front, ahead of the ambient PATH.
+    assert gen_env["PATH"].startswith(venv_bin + ":"), gen_env["PATH"]
+
+
 def test_nonzero_exit_raises(tmp_path):
     """A failing prisma subprocess must raise so taOS boot surfaces it."""
     data_dir = _write_db_url(tmp_path)
