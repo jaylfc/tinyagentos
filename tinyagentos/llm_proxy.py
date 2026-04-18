@@ -317,10 +317,17 @@ class LLMProxy:
         port: int = 4000,
         config_dir: Path | None = None,
         database_url: str | None = None,
+        local_token: str | None = None,
     ):
         self.port = port
         self.config_dir = config_dir or Path("/tmp/taos-litellm")
         self.database_url = database_url
+        # Local auth token for taOS callbacks (POST /api/trace). Exported
+        # to the LiteLLM subprocess as ``TAOS_LOCAL_TOKEN`` so the custom
+        # logger in ``tinyagentos.litellm_callback`` can authenticate to
+        # the taOS bridge — without it, every llm_call event lands a 401
+        # and trace rows never get ``llm_call`` entries.
+        self.local_token = local_token
         self._process: subprocess.Popen | None = None
 
     @property
@@ -447,6 +454,10 @@ class LLMProxy:
         # deployer uses when auth'ing /key/generate and agent requests.
         env = os.environ.copy()
         env["LITELLM_MASTER_KEY"] = TAOS_LITELLM_MASTER_KEY
+        # Forward the local auth token so the TaosLiteLLMCallback inside
+        # the subprocess can POST to taOS's /api/trace (otherwise 401).
+        if self.local_token:
+            env["TAOS_LOCAL_TOKEN"] = self.local_token
         # LiteLLM's CLI shells out to a bare ``prisma`` during startup to
         # detect whether Prisma is runnable before calling PrismaManager.
         # Under systemd the unit file doesn't put the venv's bin/ on PATH,

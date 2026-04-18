@@ -148,7 +148,12 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     # docs/design/framework-agnostic-runtime.md.
     db_url_path = data_dir / ".litellm_db_url"
     db_url = db_url_path.read_text().strip() if db_url_path.exists() else None
-    llm_proxy = LLMProxy(port=4000, database_url=db_url)
+    # Read the local auth token so LLMProxy can forward it to LiteLLM's
+    # subprocess — otherwise the taOS callback can't POST llm_call events
+    # back to /api/trace and the 401s fill the log instead of trace rows.
+    local_token_path = data_dir / ".auth_local_token"
+    local_token = local_token_path.read_text().strip() if local_token_path.exists() else None
+    llm_proxy = LLMProxy(port=4000, database_url=db_url, local_token=local_token)
     channel_hub_router = MessageRouter()
     adapter_manager = AdapterManager(channel_hub_router)
     chat_messages = ChatMessageStore(data_dir / "chat.db")
