@@ -24,9 +24,30 @@ import json
 import logging
 import time
 import uuid
+from types import SimpleNamespace
 from typing import Any, AsyncIterator
 
+from tinyagentos.prompt_assembly import assemble_system_prompt
+
 logger = logging.getLogger(__name__)
+
+
+def build_bootstrap_system_prompt(agent) -> str:
+    """Assemble the system prompt from an agent record.
+
+    Accepts either a dict (YAML-loaded config shape) or any object exposing
+    the expected attributes (``slug``, ``soul_md``, ``agent_md``,
+    ``memory_plugin``). The dict's ``name`` field is used as ``slug`` since
+    the taOS config uses ``name`` as the container-safe slug.
+    """
+    if isinstance(agent, dict):
+        agent = SimpleNamespace(
+            slug=agent.get("name"),
+            soul_md=agent.get("soul_md", ""),
+            agent_md=agent.get("agent_md", ""),
+            memory_plugin=agent.get("memory_plugin", "taosmd"),
+        )
+    return assemble_system_prompt(agent)
 
 # Sentinel pushed to a subscriber queue to tell its generator to exit.
 _DISCONNECT = object()
