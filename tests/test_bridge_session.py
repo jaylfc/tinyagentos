@@ -119,6 +119,54 @@ async def test_enqueue_and_receive():
 
 
 @pytest.mark.asyncio
+async def test_enqueue_records_message_in_trace():
+    """enqueue_user_message must write a message_in trace event under the slug."""
+    reg, msg_store, ch_store, hub, tr = _make_registry()
+
+    await reg.enqueue_user_message("bot1", {
+        "id": "u42",
+        "trace_id": "u42",
+        "channel_id": "ch1",
+        "from": "user-abc",
+        "text": "hello agent",
+        "created_at": 123.0,
+    })
+
+    in_events = [e for e in tr._store.events if e["kind"] == "message_in"]
+    assert len(in_events) == 1
+    ev = in_events[0]
+    assert ev["trace_id"] == "u42"
+    assert ev["channel_id"] == "ch1"
+    assert ev["payload"]["from"] == "user-abc"
+    assert ev["payload"]["text"] == "hello agent"
+    assert ev["payload"]["message_id"] == "u42"
+    assert ev["payload"]["author_type"] == "user"
+
+
+@pytest.mark.asyncio
+async def test_enqueue_unknown_slug_no_trace():
+    """Enqueueing to an empty or _unknown_ slug must not record a trace event."""
+    reg, msg_store, ch_store, hub, tr = _make_registry()
+
+    await reg.enqueue_user_message("", {"id": "x", "text": "nope"})
+    await reg.enqueue_user_message("_unknown_", {"id": "y", "text": "also nope"})
+
+    assert [e for e in tr._store.events if e["kind"] == "message_in"] == []
+
+
+@pytest.mark.asyncio
+async def test_enqueue_without_trace_registry_still_queues():
+    """If trace_registry is None, enqueue must still push to the SSE queue."""
+    reg = BridgeSessionRegistry()  # no deps
+    await reg.enqueue_user_message("bot1", {"id": "u1", "text": "hi"})
+    # Pull the session queue directly — should contain the user_message event.
+    session = reg._sessions["bot1"]
+    item = session.queue.get_nowait()
+    assert item["event"] == "user_message"
+    assert item["data"]["id"] == "u1"
+
+
+@pytest.mark.asyncio
 async def test_subscribe_replaces_old():
     """Second subscriber disconnects the first."""
     reg, *_ = _make_registry()

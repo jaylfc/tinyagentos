@@ -107,14 +107,46 @@ class BridgeSessionRegistry:
         """Push a user_message event onto the agent's SSE queue.
 
         Called by the chat router when a message is dispatched to the
-        openclaw-backed agent.
+        openclaw-backed agent. Also records a ``message_in`` trace event so
+        the agent's trace captures both sides of the conversation.
         """
+        if not slug or slug == "_unknown_":
+            # Defensive: never write orphan trace entries under a slug we
+            # don't recognise. The chat router already validates via
+            # find_agent() before calling here; this guard is a belt-and-
+            # braces check.
+            return
         async with self._lock:
             session = self._get_or_create(slug)
         await session.queue.put({
             "event": "user_message",
             "data": msg,
         })
+
+        # Record a message_in trace event so the transcript captures both
+        # sides in order. Envelope payload follows ENVELOPE_V1_SCHEMA's
+        # message_in shape ({from, text, ...}); extra fields (message_id,
+        # author_type, delivery) are informational.
+        if self._trace_registry is None:
+            return
+        try:
+            store = await self._trace_registry.get(slug)
+            await store.record(
+                "message_in",
+                trace_id=msg.get("trace_id") or msg.get("id"),
+                channel_id=msg.get("channel_id"),
+                payload={
+                    "from": msg.get("from", "user"),
+                    "text": msg.get("text", ""),
+                    "message_id": msg.get("id"),
+                    "author_type": msg.get("author_type", "user"),
+                    "delivery": "queued",
+                },
+            )
+        except Exception:
+            logger.exception(
+                "bridge_session: message_in trace write failed for %s", slug,
+            )
 
     async def subscribe(self, slug: str) -> AsyncIterator[str]:
         """Async generator yielding raw SSE text frames.
