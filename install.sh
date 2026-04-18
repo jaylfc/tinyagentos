@@ -37,7 +37,49 @@ echo "Python version: $PYTHON_VERSION"
 if [ -d "$INSTALL_DIR/.git" ]; then
     echo "Updating TinyAgentOS..."
     cd "$INSTALL_DIR"
-    git pull --ff-only
+    # Robust update — handles non-master branch, dirty tree, diverged history.
+    # Every destructive step preceded by a recovery tag so nothing is lost silently.
+    if ! git fetch origin master; then
+        echo "WARNING: git fetch failed — cannot reach remote. Skipping update to avoid destroying local state."
+    else
+        _taos_ts=$(date +%s)
+        _taos_branch=$(git rev-parse --abbrev-ref HEAD)
+
+        # If on a non-master branch, tag and switch
+        if [ "$_taos_branch" != "master" ]; then
+            _taos_safe_branch=$(echo "$_taos_branch" | tr '/' '-')
+            _taos_branch_tag="taos-pre-update-${_taos_safe_branch}-${_taos_ts}"
+            git tag "$_taos_branch_tag" HEAD
+            echo "Tagged non-master branch tip as: $_taos_branch_tag"
+            git checkout master
+        fi
+
+        # Stash any dirty working tree (including untracked files)
+        _taos_stashed=0
+        if [ -n "$(git status --porcelain -u)" ]; then
+            _taos_stash_msg="taos-update-${_taos_ts}"
+            git stash push -u -m "$_taos_stash_msg"
+            _taos_stashed=1
+        fi
+
+        # Attempt fast-forward; on failure tag and hard-reset
+        if ! git merge --ff-only origin/master; then
+            _taos_short=$(git rev-parse --short HEAD)
+            _taos_recovery_tag="taos-pre-update-${_taos_short}-${_taos_ts}"
+            git tag "$_taos_recovery_tag" HEAD
+            echo "Diverged history detected. Local commits saved as tag: $_taos_recovery_tag"
+            git reset --hard origin/master
+        fi
+
+        # Restore stash if we saved one
+        if [ "$_taos_stashed" = "1" ]; then
+            if ! git stash pop; then
+                echo "WARNING: stash restore had conflicts. Your local changes are preserved in stash."
+                echo "  Use 'git stash list' to find them (look for message: $_taos_stash_msg)."
+                echo "  Apply manually with 'git stash pop' when ready."
+            fi
+        fi
+    fi
 else
     echo "Installing TinyAgentOS to $INSTALL_DIR..."
     git clone "$CATALOG_REPO" "$INSTALL_DIR"
