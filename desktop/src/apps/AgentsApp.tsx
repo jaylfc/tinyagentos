@@ -10,6 +10,11 @@ import {
 } from "@/lib/models";
 import { availableKvQuantOptions, type KvQuantOptions } from "@/lib/cluster";
 import {
+  defaultEmojiForFramework,
+  resolveAgentEmoji,
+  EMOJI_QUICK_PICKS,
+} from "@/lib/agent-emoji";
+import {
   Button,
   Card,
   Input,
@@ -31,6 +36,7 @@ interface Agent {
   display_name?: string;
   host: string;
   color: string;
+  emoji?: string;
   status: "running" | "stopped" | "error" | "deploying";
   vectors: number;
   framework?: string;
@@ -60,6 +66,7 @@ interface ArchivedAgent {
     name?: string;
     display_name?: string;
     color?: string;
+    emoji?: string;
     model?: string;
     framework?: string;
   };
@@ -115,6 +122,7 @@ function AgentRow({
   onDelete: (name: string) => void;
   onResume: (name: string) => void;
 }) {
+  const emoji = resolveAgentEmoji(agent.emoji, agent.framework);
   return (
     <Card className="flex items-center gap-4 px-4 py-3 hover:bg-shell-surface/50 transition-colors">
       <div className="flex items-center gap-2.5 flex-1 min-w-0">
@@ -123,6 +131,12 @@ function AgentRow({
           style={{ backgroundColor: agent.color }}
           aria-label={`Color: ${agent.color}`}
         />
+        <span
+          className="text-base leading-none shrink-0"
+          aria-hidden="true"
+        >
+          {emoji}
+        </span>
         <span className="font-medium text-sm truncate">{agent.display_name || agent.name}</span>
         {agent.paused && (
           <span
@@ -293,6 +307,9 @@ function AgentDetailPanel({
               style={{ backgroundColor: agent.color }}
               aria-hidden
             />
+            <span className="text-base leading-none" aria-hidden="true">
+              {resolveAgentEmoji(agent.emoji, agent.framework)}
+            </span>
             <span className="font-medium">{agentName}</span>
           </div>
           <TabsList aria-label="Agent detail tabs">
@@ -359,6 +376,11 @@ function DeployWizard({
   // Step 1
   const [name, setName] = useState("");
   const [color, setColor] = useState(COLORS[0]);
+  // Emoji defaults to the chosen framework's icon unless the user has
+  // typed their own. `emojiTouched` tracks "user edited this field", so
+  // switching frameworks only overwrites the default, never a custom pick.
+  const [emoji, setEmoji] = useState<string>(defaultEmojiForFramework(""));
+  const [emojiTouched, setEmojiTouched] = useState(false);
 
   // Step 2
   const [frameworks, setFrameworks] = useState<Framework[]>([]);
@@ -618,6 +640,8 @@ function DeployWizard({
       setStep(0);
       setName("");
       setColor(COLORS[0]);
+      setEmoji(defaultEmojiForFramework(""));
+      setEmojiTouched(false);
       setSelectedFramework("");
       setShowExperimental(false);
       setSelectedModel("");
@@ -649,6 +673,14 @@ function DeployWizard({
     }
   }, [fallbackModels, onWorkerFailure]);
 
+  // Sync emoji default to the chosen framework, but only until the user
+  // manually edits the emoji field. After that, the user's pick wins.
+  useEffect(() => {
+    if (!emojiTouched) {
+      setEmoji(defaultEmojiForFramework(selectedFramework));
+    }
+  }, [selectedFramework, emojiTouched]);
+
   if (!open) return null;
 
   const STEPS = ["Name & Color", "Framework", "Model", "Permissions", "Failure Policy", "Review"];
@@ -677,6 +709,7 @@ function DeployWizard({
           framework: selectedFramework,
           model: selectedModel,
           color,
+          emoji: emoji.trim() || null,
           memory_limit: memoryLimit,
           cpu_limit: cpus ? parseInt(cpus, 10) : null,
           can_read_user_memory: canReadUserMemory,
@@ -799,6 +832,57 @@ function DeployWizard({
                       aria-checked={color === c}
                       aria-label={c}
                     />
+                  ))}
+                </div>
+              </div>
+              <div>
+                <Label htmlFor="agent-emoji" className="mb-1.5 block">
+                  Emoji
+                  <span className="ml-1.5 font-normal text-shell-text-tertiary">
+                    (defaults to the framework icon)
+                  </span>
+                </Label>
+                <Input
+                  id="agent-emoji"
+                  type="text"
+                  value={emoji}
+                  onChange={(e) => {
+                    setEmoji(e.target.value);
+                    setEmojiTouched(true);
+                  }}
+                  placeholder="\u{1F916}"
+                  aria-describedby="agent-emoji-desc"
+                  className="max-w-[8rem] text-lg"
+                />
+                <p
+                  id="agent-emoji-desc"
+                  className="mt-1 text-xs text-shell-text-tertiary"
+                >
+                  Paste any unicode emoji, or pick one below. Leave empty to
+                  use the chosen framework&apos;s default.
+                </p>
+                <div
+                  className="flex flex-wrap gap-1.5 mt-2"
+                  role="group"
+                  aria-label="Quick-pick emojis"
+                >
+                  {EMOJI_QUICK_PICKS.map((e) => (
+                    <button
+                      key={e}
+                      type="button"
+                      onClick={() => {
+                        setEmoji(e);
+                        setEmojiTouched(true);
+                      }}
+                      className={`w-8 h-8 rounded-md text-lg leading-none transition-colors ${
+                        emoji === e
+                          ? "bg-accent/20 ring-1 ring-accent"
+                          : "bg-shell-bg-deep hover:bg-white/5"
+                      }`}
+                      aria-label={`Set emoji to ${e}`}
+                    >
+                      {e}
+                    </button>
                   ))}
                 </div>
               </div>
@@ -1099,6 +1183,7 @@ function DeployWizard({
                 {[
                   ["Name", name],
                   ["Color", color],
+                  ["Emoji", emoji.trim() || defaultEmojiForFramework(selectedFramework)],
                   ["Framework", frameworks.find((f) => f.id === selectedFramework)?.name ?? selectedFramework],
                   ["Model", models.find((m) => m.id === selectedModel)?.name ?? selectedModel],
                   ["Memory", memory ? (parseInt(memory, 10) >= 1024 ? `${Math.round(parseInt(memory, 10) / 1024)} GB` : `${memory} MB`) : "Unlimited"],
@@ -1277,6 +1362,7 @@ function ArchivedAgentRow({
 }) {
   const displayName = entry.original?.display_name || entry.original?.name || entry.archived_slug;
   const color = entry.original?.color || "#6b7280";
+  const emoji = resolveAgentEmoji(entry.original?.emoji, entry.original?.framework);
   const model = entry.original?.model;
   const when = relativeTimeFromTs(entry.archived_at);
 
@@ -1288,6 +1374,9 @@ function ArchivedAgentRow({
           style={{ backgroundColor: color }}
           aria-hidden
         />
+        <span className="text-base leading-none shrink-0" aria-hidden="true">
+          {emoji}
+        </span>
         <span className="font-medium text-sm truncate">{displayName}</span>
         {model && (
           <span className="text-[11px] text-shell-text-tertiary truncate">{model}</span>
@@ -1384,8 +1473,10 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
             setAgents(
               data.map((a: Record<string, unknown>) => ({
                 name: String(a.name ?? "unknown"),
+                display_name: a.display_name ? String(a.display_name) : undefined,
                 host: String(a.host ?? "localhost"),
                 color: String(a.color ?? "#3b82f6"),
+                emoji: a.emoji ? String(a.emoji) : undefined,
                 status: String(a.status ?? "stopped") as Agent["status"],
                 vectors: Number(a.vectors ?? 0),
                 framework: a.framework ? String(a.framework) : undefined,

@@ -30,6 +30,7 @@ import {
 } from "@/components/ui";
 import { MobileSplitView } from "@/components/mobile/MobileSplitView";
 import { useIsMobile } from "@/hooks/use-is-mobile";
+import { resolveAgentEmoji } from "@/lib/agent-emoji";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -67,6 +68,8 @@ interface Channel {
 interface LiveAgent {
   name: string;
   display_name?: string;
+  emoji?: string;
+  framework?: string;
 }
 
 interface ArchivedAgentEntry {
@@ -894,6 +897,24 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
             {currentChannel?.type === "topic" ? <Hash size={16} className="text-white/40" /> :
              currentChannel?.type === "group" ? <Users size={16} className="text-white/40" /> :
              <AtSign size={16} className="text-white/40" />}
+            {(() => {
+              // For DM channels, prefix the header with the paired agent's
+              // emoji (or framework default) so the user can see at a glance
+              // who they are chatting with.
+              if (currentChannel?.type !== "dm") return null;
+              const agentName = (currentChannel.members ?? []).find((m) => m !== "user");
+              if (!agentName) return null;
+              const agent = liveAgents.find((a) => a.name === agentName);
+              if (!agent) return null;
+              return (
+                <span
+                  className="text-base leading-none shrink-0"
+                  aria-hidden="true"
+                >
+                  {resolveAgentEmoji(agent.emoji, agent.framework)}
+                </span>
+              );
+            })()}
             <div className="min-w-0 flex-1">
               <div className="text-sm font-medium truncate">{currentChannel?.name ?? "Unknown"}</div>
               {currentChannel?.description && (
@@ -944,6 +965,18 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
                 >
                   {showAuthor && (
                     <div className="flex items-center gap-2 mb-0.5">
+                      {isAgent && !isDeadAgent && (() => {
+                        const agent = liveAgents.find((a) => a.name === msg.author_id);
+                        if (!agent) return null;
+                        return (
+                          <span
+                            className="text-[14px] leading-none"
+                            aria-hidden="true"
+                          >
+                            {resolveAgentEmoji(agent.emoji, agent.framework)}
+                          </span>
+                        );
+                      })()}
                       <span
                         className={`text-[13px] font-semibold ${
                           isDeadAgent
