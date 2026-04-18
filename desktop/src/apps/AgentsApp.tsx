@@ -9,10 +9,8 @@ import {
   CLOUD_PROVIDER_TYPES,
 } from "@/lib/models";
 import { availableKvQuantOptions, type KvQuantOptions } from "@/lib/cluster";
-import {
-  resolveAgentEmoji,
-  EMOJI_QUICK_PICKS,
-} from "@/lib/agent-emoji";
+import { resolveAgentEmoji } from "@/lib/agent-emoji";
+import { EmojiPickerField } from "@/components/EmojiPicker";
 import {
   Button,
   Card,
@@ -913,31 +911,11 @@ function DeployWizard({
                   id="agent-emoji-desc"
                   className="mt-1 text-xs text-shell-text-tertiary"
                 >
-                  Paste any unicode emoji, or pick one below. Leave empty to
+                  Paste any unicode emoji, or use the picker. Leave empty to
                   show no emoji.
                 </p>
-                <div
-                  className="flex flex-wrap gap-1.5 mt-2"
-                  role="group"
-                  aria-label="Quick-pick emojis"
-                >
-                  {EMOJI_QUICK_PICKS.map((e) => (
-                    <button
-                      key={e}
-                      type="button"
-                      onClick={() => {
-                        setEmoji(e);
-                      }}
-                      className={`w-8 h-8 rounded-md text-lg leading-none transition-colors ${
-                        emoji === e
-                          ? "bg-accent/20 ring-1 ring-accent"
-                          : "bg-shell-bg-deep hover:bg-white/5"
-                      }`}
-                      aria-label={`Set emoji to ${e}`}
-                    >
-                      {e}
-                    </button>
-                  ))}
+                <div className="mt-2">
+                  <EmojiPickerField value={emoji} onChange={setEmoji} />
                 </div>
               </div>
             </Card>
