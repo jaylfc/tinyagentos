@@ -64,15 +64,13 @@ def _schema_path() -> Path | None:
 def _schema_already_applied(db_url: str) -> bool:
     """True iff the probe table exists in the target database.
 
-    Uses psycopg's pure-Python path if available; falls back to a raw
-    socket-less check by asking Postgres via ``psql`` if present. The
-    helper must never raise: on any error it returns False so the
-    migration runs and surfaces the real problem.
+    Tries psycopg (2 or 3) first, then falls back to ``psql`` as a pure-
+    CLI check. Either path must never raise: on any error it returns
+    False so the migration runs and surfaces the real problem. The psql
+    fallback is what lets taOS boot on a fresh Pi where no python
+    Postgres driver is installed in the venv.
     """
     try:
-        # psycopg2 / psycopg3 either: LiteLLM pulls one of them in as a
-        # transitive dep, so importing here is safe on any system that
-        # has LiteLLM proxy installed.
         try:
             import psycopg2  # type: ignore
             conn = psycopg2.connect(db_url)
@@ -89,9 +87,44 @@ def _schema_already_applied(db_url: str) -> bool:
             return bool(row and row[0])
         finally:
             conn.close()
+    except ImportError:
+        return _schema_already_applied_psql(db_url)
     except Exception as exc:
         logger.debug("litellm_migrate: probe failed (%s) — will attempt migration", exc)
         return False
+
+
+def _schema_already_applied_psql(db_url: str) -> bool:
+    """psql fallback for ``_schema_already_applied``. Returns False on any
+    error — including psql being absent — so the caller retries migration
+    and surfaces the underlying issue.
+    """
+    import shutil
+    psql = shutil.which("psql")
+    if not psql:
+        logger.debug("litellm_migrate: no psycopg and no psql — probe returns False")
+        return False
+    try:
+        result = subprocess.run(
+            [
+                psql, db_url, "-tAc",
+                f'SELECT to_regclass(\'public."{_PROBE_TABLE}"\') IS NOT NULL',
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except Exception as exc:
+        logger.debug("litellm_migrate: psql probe subprocess failed (%s)", exc)
+        return False
+    if result.returncode != 0:
+        logger.debug(
+            "litellm_migrate: psql probe exited %d: %s",
+            result.returncode, result.stderr.strip(),
+        )
+        return False
+    return result.stdout.strip().lower() == "t"
 
 
 def _run(cmd: list[str], env: dict[str, str]) -> None:

@@ -79,6 +79,69 @@ def test_missing_tables_triggers_generate_and_push(tmp_path):
     assert push_env["DATABASE_URL"] == "postgresql://u:p@h/db"
 
 
+def test_probe_falls_back_to_psql_when_psycopg_missing(tmp_path, monkeypatch):
+    """Systems with no python Postgres driver installed must still get an
+    accurate "schema already applied?" answer via the ``psql`` CLI —
+    otherwise every boot re-runs migration then raises on the post-probe
+    that always returns False."""
+    # Force both psycopg imports to fail so we fall through to psql.
+    import builtins
+    real_import = builtins.__import__
+
+    def _no_psycopg(name, *args, **kwargs):
+        if name in ("psycopg2", "psycopg"):
+            raise ImportError(f"stubbed: no {name}")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _no_psycopg)
+
+    # Stub out shutil.which to pretend psql is available…
+    monkeypatch.setattr(litellm_migrate, "subprocess", litellm_migrate.subprocess)
+    fake_psql = tmp_path / "psql"
+    fake_psql.write_text("#!/bin/sh\nexit 0\n")
+    fake_psql.chmod(0o755)
+
+    import shutil as _shutil
+    monkeypatch.setattr(_shutil, "which", lambda name: str(fake_psql) if name == "psql" else None)
+
+    # …and stub out the psql subprocess to return "t" (exists).
+    class _Result:
+        returncode = 0
+        stdout = "t\n"
+        stderr = ""
+
+    monkeypatch.setattr(litellm_migrate.subprocess, "run", lambda *a, **kw: _Result())
+
+    assert litellm_migrate._schema_already_applied("postgresql://x") is True
+
+
+def test_probe_psql_returns_false_when_table_missing(tmp_path, monkeypatch):
+    """psql fallback returns False when the probe SQL says the table is
+    absent, so migrate() proceeds to generate+push."""
+    import builtins
+    real_import = builtins.__import__
+
+    def _no_psycopg(name, *args, **kwargs):
+        if name in ("psycopg2", "psycopg"):
+            raise ImportError(f"stubbed: no {name}")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _no_psycopg)
+    fake_psql = tmp_path / "psql"
+    fake_psql.write_text("#!/bin/sh\nexit 0\n")
+    fake_psql.chmod(0o755)
+    import shutil as _shutil
+    monkeypatch.setattr(_shutil, "which", lambda name: str(fake_psql) if name == "psql" else None)
+
+    class _Result:
+        returncode = 0
+        stdout = "f\n"
+        stderr = ""
+
+    monkeypatch.setattr(litellm_migrate.subprocess, "run", lambda *a, **kw: _Result())
+    assert litellm_migrate._schema_already_applied("postgresql://x") is False
+
+
 def test_generate_env_prepends_venv_bin_to_path(tmp_path, monkeypatch):
     """Prisma's node CLI shells out to ``prisma-client-py`` during generate;
     under systemd the PATH default doesn't include the venv's bin/. We must
