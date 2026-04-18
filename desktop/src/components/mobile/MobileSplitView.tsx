@@ -58,10 +58,14 @@ export function MobileSplitView({
     return () => mql.removeEventListener("change", update);
   }, [breakpoint]);
 
-  // Desktop: traditional side-by-side layout
+  // Desktop: traditional side-by-side layout.
+  // flex-1 + min-w-0 so the split view fills its flex-container parent —
+  // without these, a flex item's default flex-basis:auto makes the split
+  // view shrink to the intrinsic (min-content) size of its children,
+  // starving the detail pane's toolbar of horizontal space.
   if (!isMobile) {
     return (
-      <div className="flex h-full min-h-0 overflow-hidden">
+      <div className="flex h-full min-h-0 overflow-hidden flex-1 min-w-0">
         <aside
           style={{ width: listWidth }}
           className="shrink-0 border-r border-white/5 overflow-y-auto"
