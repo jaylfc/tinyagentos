@@ -180,7 +180,7 @@ async def _archive_agent_fully(request: Request, name: str) -> dict:
     can re-raise as JSONResponse.
     """
     import json as _json
-    from tinyagentos.containers import stop_container, snapshot_create
+    from tinyagentos.containers import container_exists, stop_container, snapshot_create
 
     config = request.app.state.config
     agent = find_agent(config, name)
@@ -200,6 +200,75 @@ async def _archive_agent_fully(request: Request, name: str) -> dict:
     data_dir = request.app.state.data_dir
     archive_subdir = f"{slug}-{ts}"
     archive_base = data_dir / "archive" / archive_subdir
+
+    # 0) Probe container existence first. A failed deploy can leave a config
+    #    row with no container behind it; in that case we skip stop/snapshot
+    #    entirely and decide between hard-delete and tombstone based on
+    #    whether there is any history worth preserving.
+    has_container = await container_exists(container)
+
+    if not has_container:
+        # Hard-delete when the agent has no chat history and no trace dir —
+        # a tombstone for a never-used failed deploy is just archive clutter.
+        # Otherwise create a tombstone (no snapshot) so the user can still
+        # see it in Archived and purge from there.
+        has_chat_history = False
+        channel_id = agent.get("chat_channel_id")
+        if channel_id:
+            try:
+                msg_store = request.app.state.chat_messages
+                msgs = await msg_store.get_all_messages_for_channel(channel_id)
+                has_chat_history = bool(msgs)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("archive(orphan): chat check failed for %s: %s", slug, exc)
+        trace_dir = data_dir / "trace" / slug
+        has_trace_history = trace_dir.exists() and any(trace_dir.iterdir())
+
+        # Always revoke LiteLLM key first (best effort, same as below).
+        llm_key = agent.get("llm_key")
+        llm_proxy = getattr(request.app.state, "llm_proxy", None)
+        if llm_key and llm_proxy and llm_proxy.is_running():
+            try:
+                await llm_proxy.delete_agent_key(llm_key)
+            except Exception:
+                pass
+
+        if not has_chat_history and not has_trace_history:
+            # Hard-delete: drop the config row and return. No tombstone for
+            # orphan rows from a never-used failed deploy.
+            config.agents = [a for a in config.agents if a["name"] != name]
+            await save_config_locked(config, config.config_path)
+            return {
+                "status": "deleted",
+                "name": slug,
+                "id": agent_id,
+                "note": "orphan config row (no container); hard-deleted",
+            }
+
+        # Tombstone path: write an archive entry with no snapshot so the
+        # user can purge it from the Archived view.
+        original_snapshot = dict(agent)
+        archive_entry = {
+            "id": agent_id,
+            "archived_at": ts,
+            "archived_slug": slug,
+            "snapshot_name": None,
+            "export_path": None,
+            "archive_dir": f"archive/{archive_subdir}",
+            "original": original_snapshot,
+        }
+        config.agents = [a for a in config.agents if a["name"] != name]
+        config.archived_agents.append(archive_entry)
+        await save_config_locked(config, config.config_path)
+        return {
+            "status": "archived",
+            "name": slug,
+            "id": agent_id,
+            "archived_at": ts,
+            "snapshot_name": None,
+            "export_path": None,
+            "note": "orphan config row (no container); tombstone created",
+        }
 
     # 1) Force-stop the container. Best-effort — container may not exist
     #    (partial deploy), which is fine; the snapshot step below is the gate.

@@ -3,6 +3,17 @@ from tinyagentos.config import load_config
 from tinyagentos.cluster.worker_protocol import WorkerInfo
 
 
+@pytest.fixture(autouse=True)
+def _default_container_exists(monkeypatch):
+    """Default to "container present" for DELETE/archive flows so the
+    happy-path tests below don't need to patch container_exists themselves.
+    Orphan-specific tests override this with their own monkeypatch.
+    """
+    async def _exists(name):
+        return True
+    monkeypatch.setattr("tinyagentos.containers.container_exists", _exists)
+
+
 @pytest.mark.asyncio
 class TestAgentsPage:
     async def test_list_agents_api(self, client):
@@ -1002,3 +1013,143 @@ class TestArchivedChatPersistence:
 
         archive_base = tmp_data_dir / entry["archive_dir"]
         assert not archive_base.exists()
+
+
+@pytest.mark.asyncio
+class TestOrphanAgentDeletion:
+    """DELETE /api/agents/{name} must tolerate orphan config rows where the
+    LXC container was never fully created (failed deploy left only config)."""
+
+    async def test_delete_agent_with_missing_container_succeeds(
+        self, client, tmp_data_dir, monkeypatch
+    ):
+        """Orphan with no chat + no trace is hard-deleted; no 500."""
+        async def _no_container(name):
+            return False
+        monkeypatch.setattr("tinyagentos.containers.container_exists", _no_container)
+
+        async def fake_stop(name, force=False):
+            raise AssertionError("stop_container should not be called for orphans")
+
+        async def fake_snapshot_create(name, snapshot_name):
+            raise AssertionError("snapshot_create should not be called for orphans")
+
+        monkeypatch.setattr("tinyagentos.containers.stop_container", fake_stop)
+        monkeypatch.setattr("tinyagentos.containers.snapshot_create", fake_snapshot_create)
+
+        resp = await client.delete("/api/agents/test-agent")
+        assert resp.status_code == 200
+
+        config = load_config(tmp_data_dir / "config.yaml")
+        assert not any(a["name"] == "test-agent" for a in config.agents)
+
+    async def test_delete_agent_with_missing_container_skips_snapshot(
+        self, client, monkeypatch
+    ):
+        """Recording mock: snapshot_create and stop_container never invoked."""
+        async def _no_container(name):
+            return False
+        monkeypatch.setattr("tinyagentos.containers.container_exists", _no_container)
+
+        stop_calls = []
+        snap_calls = []
+
+        async def fake_stop(name, force=False):
+            stop_calls.append(name)
+            return {"success": True, "output": ""}
+
+        async def fake_snapshot_create(name, snapshot_name):
+            snap_calls.append((name, snapshot_name))
+            return {"success": True, "output": ""}
+
+        monkeypatch.setattr("tinyagentos.containers.stop_container", fake_stop)
+        monkeypatch.setattr("tinyagentos.containers.snapshot_create", fake_snapshot_create)
+
+        resp = await client.delete("/api/agents/test-agent")
+        assert resp.status_code == 200
+
+        assert stop_calls == []
+        assert snap_calls == []
+
+    async def test_delete_orphan_hard_deletes_when_no_history(
+        self, client, tmp_data_dir, monkeypatch
+    ):
+        """No chat_channel_id and no trace dir -> hard-delete, no tombstone."""
+        async def _no_container(name):
+            return False
+        monkeypatch.setattr("tinyagentos.containers.container_exists", _no_container)
+
+        resp = await client.delete("/api/agents/test-agent")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "deleted"
+
+        config = load_config(tmp_data_dir / "config.yaml")
+        assert not any(a["name"] == "test-agent" for a in config.agents)
+        # Hard-delete: no archive tombstone created.
+        assert not any(
+            a.get("archived_slug") == "test-agent" for a in config.archived_agents
+        )
+
+    async def test_delete_orphan_creates_tombstone_when_trace_history_exists(
+        self, client, tmp_data_dir, monkeypatch
+    ):
+        """Trace dir present -> keep a tombstone (no snapshot) so user can purge."""
+        async def _no_container(name):
+            return False
+        monkeypatch.setattr("tinyagentos.containers.container_exists", _no_container)
+
+        # Seed a trace dir for the agent so the orphan path records a tombstone.
+        trace_dir = tmp_data_dir / "trace" / "test-agent"
+        trace_dir.mkdir(parents=True, exist_ok=True)
+        (trace_dir / "2026-04-17T13.db").write_text("")
+
+        resp = await client.delete("/api/agents/test-agent")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "archived"
+        assert data["snapshot_name"] is None
+
+        config = load_config(tmp_data_dir / "config.yaml")
+        assert not any(a["name"] == "test-agent" for a in config.agents)
+        tombstones = [a for a in config.archived_agents if a.get("archived_slug") == "test-agent"]
+        assert len(tombstones) == 1
+        assert tombstones[0]["snapshot_name"] is None
+
+    async def test_purge_archived_with_missing_snapshot_succeeds(
+        self, client, tmp_data_dir, monkeypatch
+    ):
+        """Tombstone (snapshot_name=None) purge returns 200 and removes record."""
+        async def _no_container(name):
+            return False
+        monkeypatch.setattr("tinyagentos.containers.container_exists", _no_container)
+
+        # Seed trace history so DELETE yields a tombstone.
+        trace_dir = tmp_data_dir / "trace" / "test-agent"
+        trace_dir.mkdir(parents=True, exist_ok=True)
+        (trace_dir / "bucket.db").write_text("")
+
+        destroyed = []
+
+        async def fake_destroy(name):
+            # Even called for tombstones; must not raise — container is gone.
+            destroyed.append(name)
+            return {"success": False, "output": "Error: Not Found"}
+
+        monkeypatch.setattr("tinyagentos.containers.destroy_container", fake_destroy)
+
+        del_resp = await client.delete("/api/agents/test-agent")
+        assert del_resp.status_code == 200
+        assert del_resp.json()["status"] == "archived"
+
+        archived = (await client.get("/api/agents/archived")).json()
+        assert len(archived) == 1
+        archive_id = archived[0]["id"]
+        assert archived[0]["snapshot_name"] is None
+
+        purge_resp = await client.delete(f"/api/agents/archived/{archive_id}")
+        assert purge_resp.status_code == 200
+        assert purge_resp.json()["status"] == "purged"
+
+        archived_after = (await client.get("/api/agents/archived")).json()
+        assert archived_after == []

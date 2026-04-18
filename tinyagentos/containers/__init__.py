@@ -38,6 +38,26 @@ async def _run(cmd: list[str], timeout: int = 120) -> tuple[int, str]:
 # ``patch("tinyagentos.containers._run")`` correctly intercepts them.
 # ---------------------------------------------------------------------------
 
+async def container_exists(name: str) -> bool:
+    """Return True iff a container with the given name is known to the runtime.
+
+    Uses ``incus list --format=csv -c n --filter=name=<name>`` and checks
+    the output for an exact name match. Errors (incus not installed, daemon
+    down, malformed output) are treated as "unknown" and return False so
+    callers can take the safer no-container path rather than blocking on
+    cleanup of an orphan config row.
+    """
+    code, output = await _run(
+        ["incus", "list", "--format=csv", "-c", "n", f"--filter=name={name}"]
+    )
+    if code != 0:
+        return False
+    for line in output.splitlines():
+        if line.strip() == name:
+            return True
+    return False
+
+
 async def list_containers(prefix: str = "taos-agent-") -> list[ContainerInfo]:
     """List all agent containers."""
     code, output = await _run(["incus", "list", "-f", "json"])
@@ -337,6 +357,7 @@ __all__ = [
     "set_backend",
     "LXCBackend",
     "DockerBackend",
+    "container_exists",
     "list_containers",
     "set_root_quota",
     "create_container",
