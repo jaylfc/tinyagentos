@@ -160,3 +160,100 @@ class TestProviderAPI:
             for m in kilo_entry["models"]
         ]
         assert "kilo-auto/free" in kilo_ids
+
+
+@pytest.mark.asyncio
+class TestModelsPassthrough:
+    async def test_get_models_endpoint_passthrough(self, client, app):
+        """``GET /api/providers/models`` returns LiteLLM's /v1/models payload
+        verbatim under ``data``, plus ``object``, ``cached_at``, ``refreshed``.
+        """
+        fake_models = [{"id": "alpha/model-1"}, {"id": "beta/model-2"}]
+        with patch(
+            "tinyagentos.routes.providers._fetch_litellm_models",
+            new=AsyncMock(return_value=fake_models),
+        ), patch(
+            "tinyagentos.routes.providers._refresh_all_cloud_backends",
+            new=AsyncMock(return_value=0),
+        ):
+            resp = await client.get("/api/providers/models")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["data"] == fake_models
+        assert body["object"] == "list"
+        assert "cached_at" in body
+        assert "refreshed" in body
+
+    async def test_get_models_refresh_triggers_discovery(self, client, app):
+        """``?refresh=true`` always re-probes cloud backends before fetching."""
+        refresh_mock = AsyncMock(return_value=1)
+        with patch(
+            "tinyagentos.routes.providers._refresh_all_cloud_backends",
+            new=refresh_mock,
+        ), patch(
+            "tinyagentos.routes.providers._fetch_litellm_models",
+            new=AsyncMock(return_value=[{"id": "x"}]),
+        ):
+            resp = await client.get("/api/providers/models?refresh=true")
+        assert resp.status_code == 200
+        assert refresh_mock.await_count == 1
+        assert resp.json()["refreshed"] is True
+
+    async def test_get_models_cache_hit_skips_refresh(self, client, app):
+        """A recent cache entry skips the refresh probe and returns
+        ``refreshed=false``."""
+        app.state.litellm_models_cache = {
+            "data": [{"id": "cached/model"}],
+            "object": "list",
+        }
+        # Fresh monotonic timestamp — well inside the 60s TTL window.
+        import time as _time
+        app.state.litellm_models_cache_at = _time.monotonic()
+        app.state.litellm_models_cache_wallclock = _time.time()
+
+        refresh_mock = AsyncMock(return_value=0)
+        fetch_mock = AsyncMock(return_value=[])
+        with patch(
+            "tinyagentos.routes.providers._refresh_all_cloud_backends",
+            new=refresh_mock,
+        ), patch(
+            "tinyagentos.routes.providers._fetch_litellm_models",
+            new=fetch_mock,
+        ):
+            resp = await client.get("/api/providers/models")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["refreshed"] is False
+        assert body["data"] == [{"id": "cached/model"}]
+        # Neither probe should have fired on a cache hit.
+        assert refresh_mock.await_count == 0
+        assert fetch_mock.await_count == 0
+
+    async def test_patch_provider_reprobes_cloud_backend(self, client, app):
+        """PATCH on a cloud provider re-probes its /models endpoint so the
+        new URL/key is live without requiring a full app restart."""
+        # Seed a kilocode provider so we can PATCH it.
+        with patch(
+            "tinyagentos.routes.providers._discover_provider_models",
+            new=AsyncMock(return_value=[]),
+        ):
+            add_resp = await client.post("/api/providers", json={
+                "name": "kilo-patch-target",
+                "type": "kilocode",
+                "api_key_secret": "provider-kilo-patch-key",
+            })
+            assert add_resp.status_code == 200
+
+        refresh_mock = AsyncMock(side_effect=lambda state, b, timeout=3.0: b)
+        with patch(
+            "tinyagentos.routes.providers._refresh_backend",
+            new=refresh_mock,
+        ):
+            patch_resp = await client.patch(
+                "/api/providers/kilo-patch-target",
+                json={"enabled": True},
+            )
+        assert patch_resp.status_code == 200
+        assert refresh_mock.await_count == 1
+        called_backend = refresh_mock.await_args.args[1]
+        assert called_backend.get("name") == "kilo-patch-target"

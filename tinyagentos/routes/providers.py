@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 
 import httpx
 from fastapi import APIRouter, Request
@@ -9,6 +11,7 @@ from pydantic import BaseModel
 from tinyagentos.backend_adapters import get_adapter
 from tinyagentos.config import save_config_locked, VALID_BACKEND_TYPES
 from tinyagentos.lifecycle_manager import LifecycleManager
+from tinyagentos.llm_proxy import TAOS_LITELLM_MASTER_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +100,104 @@ async def _discover_provider_models(
         return []
 
 
+# Short TTL for the /api/providers/models cache. Opens of the agent-
+# creation dialog in quick succession (e.g. user closes + reopens) share
+# the probe cost. A refresh=true query string always bypasses it.
+MODELS_CACHE_TTL_SECONDS = 60.0
+
+# Per-provider probe timeout when fanning out in _refresh_all_cloud_backends
+# — short enough that one dead cloud endpoint doesn't hold up the whole
+# dialog, long enough that a slow first request (TLS, DNS) still lands.
+_REFRESH_PROBE_TIMEOUT = 3.0
+
+
+async def _resolve_api_key_for_backend(app_state, backend: dict) -> str | None:
+    """Resolve ``backend.api_key_secret`` against the secrets store, falling
+    back to the inline ``api_key`` field. Returns ``None`` when neither is
+    configured or lookup fails."""
+    secret_name = backend.get("api_key_secret")
+    if secret_name:
+        secrets_store = getattr(app_state, "secrets", None)
+        if secrets_store is not None:
+            try:
+                rec = await secrets_store.get(secret_name)
+                if rec and rec.get("value"):
+                    return rec["value"]
+            except Exception as exc:
+                logger.warning(
+                    "secret lookup for %s failed during backend refresh: %s",
+                    secret_name, exc,
+                )
+    return backend.get("api_key")
+
+
+async def _refresh_backend(
+    app_state, backend: dict, timeout: float = _REFRESH_PROBE_TIMEOUT,
+) -> dict:
+    """Re-probe a single cloud backend's ``/models`` endpoint and update
+    its declared models list in place. No-op for non-cloud types or for
+    entries missing a URL. Returns the (possibly updated) backend dict.
+    """
+    if backend.get("type") not in CLOUD_TYPES:
+        return backend
+    url = backend.get("url")
+    if not url:
+        return backend
+    api_key = await _resolve_api_key_for_backend(app_state, backend)
+    discovered = await _discover_provider_models(url, api_key, timeout=timeout)
+    if discovered:
+        backend["models"] = discovered
+    return backend
+
+
+async def _refresh_all_cloud_backends(app_state, config, proxy) -> int:
+    """Re-probe every cloud backend in ``config.backends`` in parallel,
+    update their ``models`` lists, persist the config, and SIGHUP LiteLLM
+    so the new ``model_list`` takes effect. Returns the number of cloud
+    backends that were probed.
+    """
+    cloud = [b for b in config.backends if b.get("type") in CLOUD_TYPES]
+    if not cloud:
+        return 0
+    await asyncio.gather(
+        *(_refresh_backend(app_state, b) for b in cloud),
+        return_exceptions=True,
+    )
+    await save_config_locked(config, config.config_path)
+    if proxy and proxy.is_running():
+        resolved = await _resolve_backend_secrets(app_state, config.backends)
+        await proxy.reload_config(config.backends, secrets=resolved)
+    return len(cloud)
+
+
+async def _fetch_litellm_models(proxy) -> list[dict]:
+    """Fetch ``/v1/models`` from the running LiteLLM proxy using the master
+    key. Returns the raw ``data`` list (list of dicts) or ``[]`` on any
+    failure. LiteLLM's response shape is OpenAI-compatible:
+    ``{"data": [{"id": "...", ...}], "object": "list"}``.
+    """
+    if not proxy or not proxy.is_running():
+        return []
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(
+                f"{proxy.url}/v1/models",
+                headers={"Authorization": f"Bearer {TAOS_LITELLM_MASTER_KEY}"},
+            )
+        if resp.status_code != 200:
+            logger.warning(
+                "LiteLLM /v1/models returned HTTP %d: %.200s",
+                resp.status_code, resp.text,
+            )
+            return []
+        body = resp.json()
+        data = body.get("data") if isinstance(body, dict) else None
+        return data if isinstance(data, list) else []
+    except Exception as exc:
+        logger.warning("LiteLLM /v1/models fetch failed: %s", exc)
+        return []
+
+
 def _categorise(provider: dict) -> str:
     """Return the UI category for a provider entry.
 
@@ -127,6 +228,12 @@ class ProviderPatch(BaseModel):
     enabled: bool | None = None
     auto_manage: bool | None = None
     keep_alive_minutes: int | None = None
+    # Routing-affecting fields — when any are set, PATCH re-probes the
+    # provider's /models endpoint and reloads LiteLLM so the new URL / key
+    # is live without needing a full app restart.
+    url: str | None = None
+    api_key_secret: str | None = None
+    api_key: str | None = None
 
 class ProviderStop(BaseModel):
     force: bool = False
@@ -310,7 +417,13 @@ async def add_provider(request: Request, body: ProviderCreate):
 
 @router.patch("/api/providers/{name}")
 async def patch_provider(request: Request, name: str, body: ProviderPatch):
-    """Update lifecycle settings for a local provider."""
+    """Update a provider's config. Re-probes ``/models`` and reloads
+    LiteLLM when routing-affecting fields (url/api_key_secret/api_key)
+    change, so the new config is live without an app restart.
+
+    Also invalidates the models cache so the next ``/api/providers/models``
+    call re-reads LiteLLM's fresh model_list.
+    """
     config = request.app.state.config
     backend = next((b for b in config.backends if b.get("name") == name), None)
     if backend is None:
@@ -321,12 +434,89 @@ async def patch_provider(request: Request, name: str, body: ProviderPatch):
         backend["auto_manage"] = body.auto_manage
     if body.keep_alive_minutes is not None:
         backend["keep_alive_minutes"] = body.keep_alive_minutes
+    routing_changed = False
+    if body.url is not None:
+        backend["url"] = body.url
+        routing_changed = True
+    if body.api_key_secret is not None:
+        backend["api_key_secret"] = body.api_key_secret
+        routing_changed = True
+    if body.api_key is not None:
+        backend["api_key"] = body.api_key
+        routing_changed = True
+    # Re-probe cloud providers on any PATCH — a no-op change (e.g.
+    # `enabled=true` that was already true) still validates the current
+    # model list is fresh and costs one cheap /models call.
+    if backend.get("type") in CLOUD_TYPES:
+        await _refresh_backend(request.app.state, backend)
     await save_config_locked(config, config.config_path)
     proxy = getattr(request.app.state, "llm_proxy", None)
     if proxy and proxy.is_running():
         resolved = await _resolve_backend_secrets(request.app.state, config.backends)
         await proxy.reload_config(config.backends, secrets=resolved)
+    # Invalidate the models cache so the next dialog open re-reads LiteLLM
+    # with the updated routing. Best-effort — cache is optional.
+    try:
+        request.app.state.litellm_models_cache_at = 0.0
+    except Exception:
+        pass
+    _ = routing_changed  # retained for future use; currently all PATCHes re-probe
     return {"status": "updated", "name": name}
+
+
+@router.get("/api/providers/models")
+async def get_litellm_models(request: Request, refresh: bool = False):
+    """Return LiteLLM's ``/v1/models`` passthrough — the single source of
+    truth for "what models can an agent use".
+
+    - ``refresh=true``: re-probe every cloud provider in parallel, reload
+      LiteLLM, then fetch ``/v1/models``. Use this when the agent-creation
+      dialog opens so the list reflects the current state of every
+      provider's catalogue.
+    - Default: serve the cached payload if fresh (``MODELS_CACHE_TTL_SECONDS``),
+      otherwise behave like ``refresh=true``.
+
+    Response shape::
+
+        {
+          "data": [{"id": "...", ...}, ...],
+          "object": "list",
+          "cached_at": 1234567890.0,
+          "refreshed": true,
+        }
+    """
+    app_state = request.app.state
+    now = time.monotonic()
+    cached_at = getattr(app_state, "litellm_models_cache_at", 0.0)
+    cached_payload = getattr(app_state, "litellm_models_cache", None)
+    stale = (now - cached_at) >= MODELS_CACHE_TTL_SECONDS
+    do_refresh = bool(refresh) or stale or cached_payload is None
+
+    proxy = getattr(app_state, "llm_proxy", None)
+    config = app_state.config
+    if do_refresh:
+        await _refresh_all_cloud_backends(app_state, config, proxy)
+        data = await _fetch_litellm_models(proxy)
+        payload = {
+            "data": data,
+            "object": "list",
+        }
+        # Cache absolute wall-clock for the client; monotonic for the TTL check.
+        import time as _time
+        app_state.litellm_models_cache = payload
+        app_state.litellm_models_cache_at = now
+        app_state.litellm_models_cache_wallclock = _time.time()
+        return {
+            **payload,
+            "cached_at": getattr(app_state, "litellm_models_cache_wallclock", 0.0),
+            "refreshed": True,
+        }
+
+    return {
+        **cached_payload,
+        "cached_at": getattr(app_state, "litellm_models_cache_wallclock", 0.0),
+        "refreshed": False,
+    }
 
 
 @router.post("/api/providers/{name}/start")
