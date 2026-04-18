@@ -468,6 +468,12 @@ class LLMProxy:
                 if name and value:
                     env[name] = value
 
+        # Capture LiteLLM's stderr to a sibling log file so boot failures
+        # (prisma errors, config parse errors, model-router load errors)
+        # are visible instead of silently discarded. stdout stays on
+        # DEVNULL — it's mostly noisy per-request logs we don't need.
+        stderr_log_path = config_path.parent / "litellm.stderr.log"
+        stderr_handle = stderr_log_path.open("a", buffering=1)
         try:
             self._process = subprocess.Popen(
                 [
@@ -477,7 +483,7 @@ class LLMProxy:
                     "--host", "127.0.0.1",
                 ],
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stderr=stderr_handle,
                 env=env,
             )
             # Wait for startup. LiteLLM on a fresh Pi DB runs
