@@ -1247,6 +1247,30 @@ async def patch_agent_persona(request: Request, slug: str, body: PersonaPatch):
     return {"status": "ok", "agent": agent}
 
 
+class MemoryPatch(BaseModel):
+    memory_plugin: str
+
+
+_VALID_MEMORY_PLUGINS = {"taosmd", "none"}
+
+
+@router.patch("/api/agents/{slug}/memory")
+async def patch_agent_memory(request: Request, slug: str, body: MemoryPatch):
+    """Set the memory_plugin for an agent. Valid values: 'taosmd', 'none'."""
+    if body.memory_plugin not in _VALID_MEMORY_PLUGINS:
+        return JSONResponse(
+            {"error": f"Invalid memory_plugin '{body.memory_plugin}'. Must be one of: {sorted(_VALID_MEMORY_PLUGINS)}"},
+            status_code=400,
+        )
+    config = request.app.state.config
+    agent = find_agent(config, slug)
+    if not agent:
+        return JSONResponse({"error": "agent not found"}, status_code=404)
+    agent["memory_plugin"] = body.memory_plugin
+    await save_config_locked(config, config.config_path)
+    return {"status": "ok", "agent": agent}
+
+
 class AgentModelUpdate(BaseModel):
     model: str
 
