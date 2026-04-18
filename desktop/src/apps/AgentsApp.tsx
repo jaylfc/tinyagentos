@@ -3,6 +3,7 @@ import { Bot, Plus, Trash2, ScrollText, Play, Server, X, ChevronRight, ChevronLe
 import { AgentSkillsPanel } from "./AgentSkillsPanel";
 import { AgentMessagesPanel } from "./AgentMessagesPanel";
 import { PersonaTab } from "@/components/agent-settings/PersonaTab";
+import { MemoryTab } from "@/components/agent-settings/MemoryTab";
 import {
   fetchClusterWorkers,
   workersToAggregated,
@@ -245,7 +246,7 @@ function AgentRow({
 /*  AgentDetailPanel (Logs + Skills tabs)                              */
 /* ------------------------------------------------------------------ */
 
-type DetailTab = "logs" | "persona" | "skills" | "messages";
+type DetailTab = "logs" | "persona" | "memory" | "skills" | "messages";
 
 function AgentDetailPanel({
   agent,
@@ -327,6 +328,10 @@ function AgentDetailPanel({
               <Bot size={13} className="mr-1.5" />
               Persona
             </TabsTrigger>
+            <TabsTrigger value="memory">
+              <Archive size={13} className="mr-1.5" />
+              Memory
+            </TabsTrigger>
             <TabsTrigger value="skills">
               <Wrench size={13} className="mr-1.5" />
               Skills
@@ -358,6 +363,9 @@ function AgentDetailPanel({
         </TabsContent>
         <TabsContent value="persona" className="h-full mt-0">
           <PersonaTab agent={agent} onUpdated={onAgentUpdated} />
+        </TabsContent>
+        <TabsContent value="memory" className="h-full mt-0">
+          <MemoryTab agent={agent} onUpdated={onAgentUpdated} />
         </TabsContent>
         <TabsContent value="skills" className="h-full mt-0">
           <AgentSkillsPanel
