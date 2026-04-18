@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { Bot, Plus, Trash2, ScrollText, Play, Server, X, ChevronRight, ChevronLeft, Check, Wrench, MessageSquare, PauseCircle, RotateCcw, Archive, HardDrive } from "lucide-react";
 import { AgentSkillsPanel } from "./AgentSkillsPanel";
 import { AgentMessagesPanel } from "./AgentMessagesPanel";
+import { PersonaTab } from "@/components/agent-settings/PersonaTab";
 import {
   fetchClusterWorkers,
   workersToAggregated,
@@ -46,6 +47,9 @@ interface Agent {
   kv_cache_quant_k?: string;
   kv_cache_quant_v?: string;
   kv_cache_quant_boundary_layers?: number;
+  soul_md?: string;
+  agent_md?: string;
+  source_persona_id?: string | null;
 }
 
 interface DiskState {
@@ -241,16 +245,18 @@ function AgentRow({
 /*  AgentDetailPanel (Logs + Skills tabs)                              */
 /* ------------------------------------------------------------------ */
 
-type DetailTab = "logs" | "skills" | "messages";
+type DetailTab = "logs" | "persona" | "skills" | "messages";
 
 function AgentDetailPanel({
   agent,
   initialTab,
   onClose,
+  onAgentUpdated,
 }: {
   agent: Agent;
   initialTab: DetailTab;
   onClose: () => void;
+  onAgentUpdated: () => void;
 }) {
   const [tab, setTab] = useState<DetailTab>(initialTab);
   const [logs, setLogs] = useState<string>("Fetching logs...");
@@ -317,6 +323,10 @@ function AgentDetailPanel({
               <ScrollText size={13} className="mr-1.5" />
               Logs
             </TabsTrigger>
+            <TabsTrigger value="persona">
+              <Bot size={13} className="mr-1.5" />
+              Persona
+            </TabsTrigger>
             <TabsTrigger value="skills">
               <Wrench size={13} className="mr-1.5" />
               Skills
@@ -345,6 +355,9 @@ function AgentDetailPanel({
           >
             {logs}
           </pre>
+        </TabsContent>
+        <TabsContent value="persona" className="h-full mt-0">
+          <PersonaTab agent={agent} onUpdated={onAgentUpdated} />
         </TabsContent>
         <TabsContent value="skills" className="h-full mt-0">
           <AgentSkillsPanel
@@ -1871,6 +1884,7 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
             agent={agent}
             initialTab={detail.tab}
             onClose={() => setDetail(null)}
+            onAgentUpdated={fetchAgents}
           />
         );
       })()}
