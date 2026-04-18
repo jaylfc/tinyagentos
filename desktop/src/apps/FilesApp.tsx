@@ -22,10 +22,12 @@ import {
   Download,
   Recycle,
   RotateCcw,
+  Bot,
 } from "lucide-react";
 import { Button, Card, Toolbar, ToolbarGroup } from "@/components/ui";
 import { MobileSplitView } from "@/components/mobile/MobileSplitView";
 import { useIsMobile } from "@/hooks/use-is-mobile";
+import { resolveAgentEmoji } from "@/lib/agent-emoji";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -57,6 +59,13 @@ interface SharedFolder {
   description: string;
   agents: { name: string; permission: string }[];
   created_at?: string;
+}
+
+interface AgentSummary {
+  name: string;
+  display_name?: string;
+  emoji?: string;
+  framework?: string;
 }
 
 interface WorkspaceStats {
@@ -115,11 +124,84 @@ function isImage(name: string): boolean {
   return IMAGE_EXTS.has(ext);
 }
 
+const AGENT_LOCATION_PREFIX = "agent:";
+
+function isAgentLocation(location: string): boolean {
+  return location.startsWith(AGENT_LOCATION_PREFIX);
+}
+
+function agentSlug(location: string): string {
+  return location.slice(AGENT_LOCATION_PREFIX.length);
+}
+
 function fileUrl(location: "workspace" | string, path: string): string {
   const encoded = encodeURIComponent(path);
-  return location === "workspace"
-    ? `/api/workspace/files/${encoded}`
-    : `/api/shared-folders/${encodeURIComponent(location)}/files/${encoded}`;
+  if (location === "workspace") {
+    return `/api/workspace/files/${encoded}`;
+  }
+  if (isAgentLocation(location)) {
+    return `/api/agents/${encodeURIComponent(agentSlug(location))}/workspace/files/${encoded}`;
+  }
+  return `/api/shared-folders/${encodeURIComponent(location)}/files/${encoded}`;
+}
+
+/**
+ * Build endpoint URLs for the three workspace root kinds:
+ *   - "workspace"       → user workspace
+ *   - "agent:<slug>"    → per-agent workspace
+ *   - "<folder-name>"   → shared folder
+ * Centralising the fan-out here keeps fetch/upload/mkdir/delete/watch in sync.
+ */
+function workspaceListUrl(location: "workspace" | string, path: string): string {
+  const qs = path ? `?path=${encodeURIComponent(path)}` : "";
+  if (location === "workspace") return `/api/workspace/files${qs}`;
+  if (isAgentLocation(location)) {
+    return `/api/agents/${encodeURIComponent(agentSlug(location))}/workspace/files${qs}`;
+  }
+  return `/api/shared-folders/${encodeURIComponent(location)}/files`;
+}
+
+function workspaceWatchUrl(location: "workspace" | string, path: string): string | null {
+  const qs = path ? `?path=${encodeURIComponent(path)}` : "";
+  if (location === "workspace") return `/api/workspace/files/watch${qs}`;
+  if (isAgentLocation(location)) {
+    return `/api/agents/${encodeURIComponent(agentSlug(location))}/workspace/files/watch${qs}`;
+  }
+  return null;
+}
+
+function workspaceUploadUrl(location: "workspace" | string, path: string): string {
+  const qs = path ? `?path=${encodeURIComponent(path)}` : "";
+  if (location === "workspace") return `/api/workspace/files/upload${qs}`;
+  if (isAgentLocation(location)) {
+    return `/api/agents/${encodeURIComponent(agentSlug(location))}/workspace/files/upload${qs}`;
+  }
+  return `/api/shared-folders/${encodeURIComponent(location)}/upload`;
+}
+
+function workspaceMkdirUrl(location: "workspace" | string): string | null {
+  if (location === "workspace") return `/api/workspace/mkdir`;
+  if (isAgentLocation(location)) {
+    return `/api/agents/${encodeURIComponent(agentSlug(location))}/workspace/mkdir`;
+  }
+  return null;
+}
+
+function workspaceDeleteUrl(location: "workspace" | string, path: string): string | null {
+  const encoded = encodeURIComponent(path);
+  if (location === "workspace") return `/api/workspace/files/${encoded}`;
+  if (isAgentLocation(location)) {
+    return `/api/agents/${encodeURIComponent(agentSlug(location))}/workspace/files/${encoded}`;
+  }
+  return null;
+}
+
+function workspaceStatsUrl(location: "workspace" | string): string | null {
+  if (location === "workspace") return `/api/workspace/stats`;
+  if (isAgentLocation(location)) {
+    return `/api/agents/${encodeURIComponent(agentSlug(location))}/workspace/stats`;
+  }
+  return null;
 }
 
 function getFileIcon(name: string, isDir: boolean) {
@@ -156,6 +238,8 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
   const [location, setLocation] = useState<"workspace" | string>("workspace");
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [sharedFolders, setSharedFolders] = useState<SharedFolder[]>([]);
+  const [agents, setAgents] = useState<AgentSummary[] | null>(null);
+  const [agentsExpanded, setAgentsExpanded] = useState(true);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -176,17 +260,28 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragCounter = useRef(0);
 
+  // Workspace locations (user + per-agent) allow mutations and the stats
+  // endpoint. Shared folders and the recycle bin are read-only here.
+  const isWritable = location === "workspace" || isAgentLocation(location);
+  const locationTitle =
+    location === "recycle"
+      ? "Recycle Bin"
+      : location === "workspace"
+        ? "Workspace"
+        : isAgentLocation(location)
+          ? agents?.find((a) => a.name === agentSlug(location))?.display_name ?? agentSlug(location)
+          : location;
+
   /* ---- Fetch files ---- */
   const fetchFiles = useCallback(async (path = "") => {
     setLoading(true);
     setError(null);
     try {
-      if (location === "workspace") {
-        const qs = path ? `?path=${encodeURIComponent(path)}` : "";
-        const data = await apiFetch<FileEntry[]>(`/api/workspace/files${qs}`);
+      const data = await apiFetch<FileEntry[]>(workspaceListUrl(location, path));
+      if (location === "workspace" || isAgentLocation(location)) {
         setFiles(Array.isArray(data) ? data : []);
       } else {
-        const data = await apiFetch<FileEntry[]>(`/api/shared-folders/${encodeURIComponent(location)}/files`);
+        // Shared folders return a shallower shape; normalise for the UI.
         setFiles(Array.isArray(data) ? data.map((f) => ({ ...f, is_dir: f.is_dir ?? false, path: f.path ?? f.name })) : []);
       }
     } catch (e: unknown) {
@@ -215,11 +310,12 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
     fetchFiles(currentPath);
   }, [currentPath, fetchFiles]);
 
-  // Live updates via SSE
+  // Live updates via SSE — supports both the user workspace and per-agent
+  // workspaces. Shared folders don't expose a watch stream, so the SSE setup
+  // is skipped for them (workspaceWatchUrl returns null).
   useEffect(() => {
-    if (location !== "workspace") return;
-    const qs = currentPath ? `?path=${encodeURIComponent(currentPath)}` : "";
-    const url = `/api/workspace/files/watch${qs}`;
+    const url = workspaceWatchUrl(location, currentPath);
+    if (!url) return;
     let eventSource: EventSource | null = null;
     try {
       eventSource = new EventSource(url);
@@ -252,11 +348,20 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
   }, []);
 
   useEffect(() => {
-    if (location === "workspace") {
-      apiFetch<WorkspaceStats>("/api/workspace/stats")
-        .then(setStats)
-        .catch(() => setStats(null));
+    apiFetch<AgentSummary[]>("/api/agents")
+      .then((d) => setAgents(Array.isArray(d) ? d : []))
+      .catch(() => setAgents([]));
+  }, []);
+
+  useEffect(() => {
+    const url = workspaceStatsUrl(location);
+    if (!url) {
+      setStats(null);
+      return;
     }
+    apiFetch<WorkspaceStats>(url)
+      .then(setStats)
+      .catch(() => setStats(null));
   }, [location]);
 
   /* ---- Recycle bin ---- */
@@ -332,11 +437,13 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
 
   /* ---- Actions ---- */
   const handleNewFolder = useCallback(async () => {
+    const mkdirUrl = workspaceMkdirUrl(location);
+    if (!mkdirUrl) return;
     const name = prompt("New folder name:");
     if (!name?.trim()) return;
     const fullPath = currentPath ? `${currentPath}/${name.trim()}` : name.trim();
     try {
-      await apiFetch("/api/workspace/mkdir", {
+      await apiFetch(mkdirUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path: fullPath }),
@@ -346,25 +453,20 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
       const msg = e instanceof Error ? e.message : "Failed to create folder";
       setError(msg);
     }
-  }, [currentPath, fetchFiles]);
+  }, [currentPath, fetchFiles, location]);
 
   const handleUpload = useCallback(async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return;
     setUploading(true);
     setError(null);
     try {
+      const uploadUrl = workspaceUploadUrl(location, currentPath);
       for (let i = 0; i < fileList.length; i++) {
         const file = fileList.item(i);
         if (!file) continue;
         const form = new FormData();
         form.append("file", file);
-
-        if (location === "workspace") {
-          const qs = currentPath ? `?path=${encodeURIComponent(currentPath)}` : "";
-          await apiFetch(`/api/workspace/files/upload${qs}`, { method: "POST", body: form });
-        } else {
-          await apiFetch(`/api/shared-folders/${encodeURIComponent(location)}/upload`, { method: "POST", body: form });
-        }
+        await apiFetch(uploadUrl, { method: "POST", body: form });
       }
       fetchFiles(currentPath);
     } catch (e: unknown) {
@@ -376,15 +478,17 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
   }, [currentPath, location, fetchFiles]);
 
   const handleDelete = useCallback(async (filePath: string) => {
+    const delUrl = workspaceDeleteUrl(location, filePath);
+    if (!delUrl) return;
     try {
-      await apiFetch(`/api/workspace/files/${encodeURIComponent(filePath)}`, { method: "DELETE" });
+      await apiFetch(delUrl, { method: "DELETE" });
       setDeleteConfirm(null);
       fetchFiles(currentPath);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Delete failed";
       setError(msg);
     }
-  }, [currentPath, fetchFiles]);
+  }, [currentPath, fetchFiles, location]);
 
   /* ---- Drag and drop ---- */
   const onDragEnter = useCallback((e: React.DragEvent) => {
@@ -536,6 +640,90 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
           </>
         )}
 
+        {/* Agents — per-agent workspace browser. Loading state shows a small
+            skeleton; empty state hides the group entirely so the sidebar
+            stays tidy when nothing is deployed. */}
+        {isMobile ? (
+          agents === null ? (
+            <div className="h-10 rounded-2xl bg-white/[0.04] animate-pulse" aria-hidden="true" />
+          ) : agents.length > 0 ? (
+            <div>
+              <div className="px-1 pb-1 text-xs font-semibold text-shell-text-tertiary uppercase tracking-wider">
+                Agents
+              </div>
+              <div
+                style={{ background: "rgba(255,255,255,0.05)", borderRadius: 16 }}
+                className="overflow-hidden divide-y divide-white/[0.04]"
+              >
+                {agents.map((a) => {
+                  const locKey = `${AGENT_LOCATION_PREFIX}${a.name}`;
+                  const label = a.display_name || a.name;
+                  return (
+                    <button
+                      key={a.name}
+                      onClick={() => {
+                        setLocation(locKey);
+                        setCurrentPath("");
+                        setSelectedLocation(locKey);
+                      }}
+                      className="w-full flex items-center justify-between px-4 py-3.5 text-sm text-shell-text active:bg-white/10 transition-colors"
+                      aria-label={`Agent workspace: ${label}`}
+                    >
+                      <span className="flex items-center gap-3 min-w-0">
+                        <span className="text-base leading-none shrink-0" aria-hidden="true">
+                          {resolveAgentEmoji(a.emoji, a.framework)}
+                        </span>
+                        <span className="truncate">{label}</span>
+                      </span>
+                      <ChevronRight size={16} className="text-shell-text-tertiary" />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null
+        ) : (
+          agents === null ? (
+            <div className="mx-1.5 mt-1 h-8 rounded-md bg-white/[0.04] animate-pulse" aria-hidden="true" />
+          ) : agents.length > 0 ? (
+            <>
+              <Button
+                variant="ghost"
+                onClick={() => setAgentsExpanded(!agentsExpanded)}
+                className="w-full justify-start mx-1.5 mt-1 px-3"
+                aria-label="Toggle agents"
+              >
+                <Bot size={16} />
+                <span className="flex-1 truncate text-left">Agents</span>
+                <ChevronRight size={14} className={`transition-transform ${agentsExpanded ? "rotate-90" : ""}`} />
+              </Button>
+
+              {agentsExpanded && (
+                <div className="ml-5 mr-1.5">
+                  {agents.map((a) => {
+                    const locKey = `${AGENT_LOCATION_PREFIX}${a.name}`;
+                    const label = a.display_name || a.name;
+                    return (
+                      <Button
+                        key={a.name}
+                        variant={location === locKey ? "secondary" : "ghost"}
+                        onClick={() => { setLocation(locKey); setCurrentPath(""); }}
+                        className="w-full justify-start px-3 py-1.5 h-auto text-xs font-normal"
+                        aria-label={`Agent workspace: ${label}`}
+                      >
+                        <span className="text-sm leading-none" aria-hidden="true">
+                          {resolveAgentEmoji(a.emoji, a.framework)}
+                        </span>
+                        <span className="truncate">{label}</span>
+                      </Button>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          ) : null
+        )}
+
         {/* Recycle Bin */}
         {isMobile ? (
           <div
@@ -579,7 +767,7 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
       <div className="flex-1" />
 
       {/* Stats */}
-      {stats && location === "workspace" && (
+      {stats && isWritable && (
         <div className="px-3 py-3 border-t border-white/5 text-xs text-shell-text-tertiary space-y-1">
           <div>{stats.total_files} files</div>
           <div>{formatSize(stats.total_size)} used</div>
@@ -591,7 +779,7 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
   /* ---- Toolbar actions (shared between mobile and desktop) ---- */
   const toolbarActions = (
     <>
-      {location === "workspace" && (
+      {isWritable && (
         <Button
           variant="ghost"
           size="icon"
@@ -802,7 +990,7 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
                 onClick={() => navigateTo("")}
                 className={`h-7 px-2 shrink-0 ${!currentPath ? "text-shell-text font-medium" : ""}`}
               >
-                {location === "workspace" ? "Workspace" : location}
+                {locationTitle}
               </Button>
               {pathSegments.map((seg, i) => {
                 const segPath = pathSegments.slice(0, i + 1).join("/");
@@ -849,7 +1037,7 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
               onClick={() => navigateTo("")}
               className={`h-7 px-1.5 shrink-0 ${!currentPath ? "text-shell-text font-medium" : ""}`}
             >
-              {location === "workspace" ? "Workspace" : location}
+              {locationTitle}
             </Button>
             {pathSegments.map((seg, i) => {
               const segPath = pathSegments.slice(0, i + 1).join("/");
@@ -941,8 +1129,8 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
                     }
                   }}
                   onDoubleClick={() => {
-                    if (!f.is_dir && location === "workspace") {
-                      window.open(`/api/workspace/files/${encodeURIComponent(f.path || f.name)}`, "_blank");
+                    if (!f.is_dir && isWritable) {
+                      window.open(fileUrl(location, f.path || f.name), "_blank");
                     }
                   }}
                   className="flex flex-col items-center gap-2 p-3 text-center w-full rounded-xl"
@@ -982,7 +1170,7 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
                   )}
 
                   {/* Delete button overlay */}
-                  {location === "workspace" && (
+                  {isWritable && (
                     <span
                       role="button"
                       tabIndex={0}
@@ -1077,9 +1265,9 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
                     </td>
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-1">
-                        {!f.is_dir && location === "workspace" && (
+                        {!f.is_dir && isWritable && (
                           <a
-                            href={`/api/workspace/files/${encodeURIComponent(f.path || f.name)}`}
+                            href={fileUrl(location, f.path || f.name)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="p-1 rounded-md opacity-0 group-hover:opacity-100 hover:bg-shell-surface transition-all text-shell-text-tertiary hover:text-shell-text"
@@ -1088,7 +1276,7 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
                             <Download size={13} />
                           </a>
                         )}
-                        {location === "workspace" && (
+                        {isWritable && (
                           <Button
                             variant="ghost"
                             size="icon"
@@ -1132,7 +1320,7 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
         selectedId={selectedLocation}
         onBack={() => setSelectedLocation(null)}
         listTitle="Files"
-        detailTitle={location === "recycle" ? "Recycle Bin" : location === "workspace" ? "Workspace" : location}
+        detailTitle={locationTitle}
         listWidth={208}
       />
     </div>
