@@ -23,10 +23,14 @@ class _CacheAwareStaticFiles(StaticFiles):
 
     async def get_response(self, path, scope):
         response = await super().get_response(path, scope)
-        lowered = path.lower()
+        filename = path.rsplit("/", 1)[-1].lower()
+        is_manifest_json = (
+            filename.startswith("manifest") and filename.endswith(".json")
+        )
         if (
-            lowered.endswith((".html", ".webmanifest", "sw.js"))
-            or ("manifest" in lowered and lowered.endswith(".json"))
+            filename.endswith((".html", ".webmanifest"))
+            or filename == "sw.js"
+            or is_manifest_json
         ):
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         else:

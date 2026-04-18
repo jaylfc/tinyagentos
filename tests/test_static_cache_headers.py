@@ -16,6 +16,10 @@ def static_app(tmp_path):
     (tmp_path / "sw.js").write_text("// stub")
     (tmp_path / "icon-192.png").write_bytes(b"\x89PNG\r\n\x1a\n")
 
+    unrelated = tmp_path / "store-icons"
+    unrelated.mkdir()
+    (unrelated / "app-with-manifest-in-name.json").write_text("{}")
+
     app = FastAPI()
     app.mount("/static", _CacheAwareStaticFiles(directory=str(tmp_path)), name="static")
     return TestClient(app)
@@ -45,3 +49,11 @@ def test_icon_cacheable(static_app):
     assert r.status_code == 200
     assert "public" in r.headers["cache-control"]
     assert "max-age" in r.headers["cache-control"]
+
+
+def test_unrelated_json_with_manifest_in_path_is_cacheable(static_app):
+    # A JSON file whose filename doesn't start with "manifest" should not
+    # be no-cache'd just because "manifest" appears elsewhere.
+    r = static_app.get("/static/store-icons/app-with-manifest-in-name.json")
+    assert r.status_code == 200
+    assert "no-cache" not in r.headers["cache-control"]

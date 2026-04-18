@@ -20,8 +20,6 @@ self.addEventListener('activate', (event) => {
         await Promise.all(keys.map((k) => caches.delete(k)));
         await self.registration.unregister();
         const clients = await self.clients.matchAll({ includeUncontrolled: true });
-        for (const client of clients) {
-            client.navigate(client.url);
-        }
+        await Promise.all(clients.map((client) => client.navigate(client.url)));
     })());
 });
