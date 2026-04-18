@@ -528,36 +528,70 @@ function DeployWizard({
         });
       } catch { /* ignore */ }
 
-      // Also fetch cloud provider models
+      // Fetch cloud provider models from LiteLLM's /v1/models passthrough —
+      // this is the authoritative list of what the proxy actually routes,
+      // so it stays in sync with provider config reloads and catches models
+      // that /api/providers misses (e.g. kilocode's "kilo-auto/free" alias
+      // when the upstream /models probe failed but the yaml seed registered).
+      // We fetch /api/providers in parallel to build an id→provider-name
+      // map so each LiteLLM entry still surfaces under the right group.
       const cloudModels: Model[] = [];
       try {
-        const res = await fetch("/api/providers", {
-          headers: { Accept: "application/json" },
-        });
-        const ct = res.headers.get("content-type") ?? "";
-        if (res.ok && ct.includes("application/json")) {
-          const providers = await res.json();
-          for (const p of (Array.isArray(providers) ? providers : [])) {
-            if (!(CLOUD_PROVIDER_TYPES as readonly string[]).includes(p.type)) continue;
-            const pModels: { id?: string; name?: string }[] = Array.isArray(p.models) ? p.models : [];
-            if (pModels.length === 0) {
-              cloudModels.push({
-                id: p.model ?? "default",
-                name: `${p.name} default`,
-                host: p.name,
-                hostKind: "cloud",
-              });
-            } else {
+        const [modelsRes, providersRes] = await Promise.all([
+          fetch("/api/providers/models?refresh=true", {
+            headers: { Accept: "application/json" },
+          }),
+          fetch("/api/providers", {
+            headers: { Accept: "application/json" },
+          }),
+        ]);
+
+        // Build id → provider-name map. Each cloud backend in /api/providers
+        // lists its advertised models; we use that to attribute a LiteLLM
+        // model entry to its source provider for display/grouping.
+        const providerByModelId = new Map<string, string>();
+        const cloudProviderNames = new Set<string>();
+        try {
+          const pct = providersRes.headers.get("content-type") ?? "";
+          if (providersRes.ok && pct.includes("application/json")) {
+            const providers = await providersRes.json();
+            for (const p of (Array.isArray(providers) ? providers : [])) {
+              if (!(CLOUD_PROVIDER_TYPES as readonly string[]).includes(p.type)) continue;
+              const pname = p.name ?? p.type;
+              cloudProviderNames.add(pname);
+              const pModels: { id?: string; name?: string }[] = Array.isArray(p.models) ? p.models : [];
               for (const m of pModels) {
-                const modelId = m.id ?? m.name ?? "unknown";
-                cloudModels.push({
-                  id: modelId,
-                  name: `${m.name ?? modelId} (${p.name})`,
-                  host: p.name,
-                  hostKind: "cloud",
-                });
+                const mid = m.id ?? m.name;
+                if (mid && !providerByModelId.has(mid)) {
+                  providerByModelId.set(mid, pname);
+                }
               }
             }
+          }
+        } catch { /* treat providers as empty, still render what LiteLLM knows */ }
+
+        const mct = modelsRes.headers.get("content-type") ?? "";
+        if (modelsRes.ok && mct.includes("application/json")) {
+          const body = await modelsRes.json();
+          const data: { id?: string }[] = Array.isArray(body?.data) ? body.data : [];
+          const seenCloud = new Set<string>();
+          for (const entry of data) {
+            const mid = entry?.id;
+            if (!mid || typeof mid !== "string") continue;
+            // Skip the internal alias entries LiteLLM exposes for routing
+            // defaults — they'd show up as a confusing "default" entry.
+            if (mid === "default" || mid === "taos-embedding-default") continue;
+            const providerName = providerByModelId.get(mid);
+            if (!providerName) continue; // not a cloud model (local/worker handled above)
+            const key = `${providerName}:${mid}`;
+            if (seenCloud.has(key)) continue;
+            seenCloud.add(key);
+            cloudModels.push({
+              id: mid,
+              name: `${mid} (${providerName})`,
+              host: providerName,
+              hostKind: "cloud",
+            });
           }
         }
       } catch { /* ignore */ }
