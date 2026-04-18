@@ -19,6 +19,7 @@ import asyncio
 import logging
 import os
 import platform
+import tempfile
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ async def is_image_present(alias: str = BASE_IMAGE_ALIAS) -> bool:
         proc = await asyncio.create_subprocess_exec(
             "incus", "image", "list",
             "--format=csv", "-c", "f",
-            f"--filter=alias={alias}",
+            alias,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
         )
@@ -92,8 +93,12 @@ async def ensure_image_present(
     The image is ~300-500 MB so expect this to take a minute on first
     run; subsequent taOS boots are no-ops.
 
-    Streams curl stdout directly into ``incus image import -``; no
-    shell involved so the URL cannot be weaponised for injection.
+    Downloads to a temp file then calls ``incus image import <path>``.
+    Incus 6.x rejects both ``-`` (stdin) and bare HTTPS URLs (expects
+    an incus image server, not a plain tarball), so staging through
+    disk is the only reliable path. The temp file lives in the system
+    temp dir so it lands on the same filesystem as /var/tmp and can be
+    imported without extra copying.
     """
     if await is_image_present(alias):
         return True
@@ -102,51 +107,51 @@ async def ensure_image_present(
         "agent_image: importing base image %s from %s (one-time bootstrap, ~300-500MB)",
         alias, import_url,
     )
-    # Connect curl's stdout directly to incus's stdin via an OS-level
-    # pipe so the tarball never buffers in Python. Keeps memory flat
-    # even for 500MB images. Each end is explicitly closed in the
-    # parent once passed to the child, so when curl exits incus sees EOF.
-    read_fd, write_fd = os.pipe()
+    tmp_fd, tmp_path = tempfile.mkstemp(prefix="taos-image-", suffix=".tar.gz")
+    os.close(tmp_fd)
     try:
         try:
             curl = await asyncio.create_subprocess_exec(
-                "curl", "-fsSL", "--max-time", "600", import_url,
-                stdout=write_fd,
-                stderr=asyncio.subprocess.PIPE,
-            )
-        finally:
-            os.close(write_fd)
-        try:
-            incus = await asyncio.create_subprocess_exec(
-                "incus", "image", "import", "-", "--alias", alias,
-                stdin=read_fd,
+                "curl", "-fsSL", "--max-time", "600", "-o", tmp_path, import_url,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
             )
-        finally:
-            os.close(read_fd)
-        incus_out, _ = await asyncio.wait_for(incus.communicate(), timeout=900)
-        curl_rc = await asyncio.wait_for(curl.wait(), timeout=30)
-    except (FileNotFoundError, asyncio.TimeoutError) as exc:
-        logger.warning("agent_image: import failed for %s: %s", alias, exc)
-        return False
+            curl_out, _ = await asyncio.wait_for(curl.communicate(), timeout=900)
+        except (FileNotFoundError, asyncio.TimeoutError) as exc:
+            logger.warning("agent_image: download failed for %s: %s", alias, exc)
+            return False
+        if curl.returncode != 0:
+            logger.warning(
+                "agent_image: curl for %s exited %s: %s (is the image published yet?)",
+                alias, curl.returncode, (curl_out or b"").decode()[:300],
+            )
+            return False
+        try:
+            incus = await asyncio.create_subprocess_exec(
+                "incus", "image", "import", tmp_path, "--alias", alias,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+            incus_out, _ = await asyncio.wait_for(incus.communicate(), timeout=300)
+        except (FileNotFoundError, asyncio.TimeoutError) as exc:
+            logger.warning("agent_image: import failed for %s: %s", alias, exc)
+            return False
+        if incus.returncode != 0:
+            logger.warning(
+                "agent_image: incus image import of %s returned %s: %s",
+                alias, incus.returncode, (incus_out or b"").decode()[:500],
+            )
+            return False
+        logger.info("agent_image: %s imported OK", alias)
+        return True
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning("agent_image: import failed for %s: %s", alias, exc)
         return False
-    if curl_rc != 0:
-        logger.warning(
-            "agent_image: curl for %s exited %s (is the image published yet?)",
-            alias, curl_rc,
-        )
-        return False
-    if incus.returncode != 0:
-        logger.warning(
-            "agent_image: incus image import of %s returned %s: %s",
-            alias, incus.returncode, (incus_out or b"").decode()[:500],
-        )
-        return False
-    logger.info("agent_image: %s imported OK", alias)
-    return True
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
 
 
 __all__ = [

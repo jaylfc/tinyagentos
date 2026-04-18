@@ -93,7 +93,7 @@ class TestEnsureImagePresent:
         ), patch("asyncio.create_subprocess_exec", new=_launch):
             ok = await ensure_image_present(url="http://example.test/img.tar.gz")
         assert ok is True
-        curl_proc.wait.assert_awaited()
+        curl_proc.communicate.assert_awaited()
         incus_proc.communicate.assert_awaited()
 
     @pytest.mark.asyncio
