@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { PersonaPicker } from "../persona-picker/PersonaPicker";
+import type { PersonaSelection } from "../persona-picker/types";
 
 interface PersonaTabProps {
   agent: {
@@ -14,6 +16,8 @@ export function PersonaTab({ agent, onUpdated }: PersonaTabProps) {
   const [soul, setSoul] = useState(agent.soul_md ?? "");
   const [agentMd, setAgentMd] = useState(agent.agent_md ?? "");
   const [saving, setSaving] = useState(false);
+  const [showPicker, setShowPicker] = useState(false);
+  const [pendingSelection, setPendingSelection] = useState<PersonaSelection | null>(null);
 
   useEffect(() => {
     setSoul(agent.soul_md ?? "");
@@ -31,6 +35,33 @@ export function PersonaTab({ agent, onUpdated }: PersonaTabProps) {
     onUpdated();
   };
 
+  const confirmSwap = async () => {
+    if (!pendingSelection) return;
+    const patch =
+      pendingSelection.kind === "blank"
+        ? { soul_md: "", source_persona_id: null }
+        : {
+            soul_md: pendingSelection.soul_md,
+            source_persona_id: pendingSelection.source_persona_id ?? null,
+          };
+    await fetch(`/api/agents/${agent.name}/persona`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    setSoul(patch.soul_md);
+    setPendingSelection(null);
+    setShowPicker(false);
+    onUpdated();
+  };
+
+  const pendingName =
+    pendingSelection?.kind === "blank"
+      ? "Blank"
+      : pendingSelection?.kind === "custom"
+        ? "Custom"
+        : (pendingSelection?.save_to_library?.name ?? pendingSelection?.source_persona_id ?? "this persona");
+
   const sourceLabel = agent.source_persona_id
     ? `From: ${agent.source_persona_id}`
     : soul || agentMd
@@ -41,7 +72,12 @@ export function PersonaTab({ agent, onUpdated }: PersonaTabProps) {
     <div className="h-full overflow-auto p-4 flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <span className="text-xs uppercase opacity-60">{sourceLabel}</span>
-        {/* Swap button added in Task 8.2 */}
+        <button
+          onClick={() => setShowPicker(true)}
+          className="text-xs px-2 py-1 rounded border border-white/10 hover:bg-white/5 transition-colors"
+        >
+          Swap persona…
+        </button>
       </div>
       <label className="flex flex-col gap-1">
         <span className="text-xs uppercase opacity-60">Soul</span>
@@ -70,6 +106,62 @@ export function PersonaTab({ agent, onUpdated }: PersonaTabProps) {
       >
         {saving ? "Saving…" : "Save"}
       </button>
+
+      {/* Swap persona modal */}
+      {showPicker && (
+        <div
+          className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
+          onClick={() => { setPendingSelection(null); setShowPicker(false); }}
+        >
+          <div
+            className="bg-shell-bg border border-white/10 rounded-lg p-4 w-[480px] max-h-[80vh] overflow-auto flex flex-col gap-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Swap persona</span>
+              <button
+                onClick={() => { setPendingSelection(null); setShowPicker(false); }}
+                className="text-xs opacity-60 hover:opacity-100"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+            <PersonaPicker onSelect={setPendingSelection} />
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation dialog */}
+      {pendingSelection && (
+        <div
+          className="fixed inset-0 bg-black/70 flex items-center justify-center z-60"
+          onClick={() => setPendingSelection(null)}
+        >
+          <div
+            className="bg-shell-bg border border-white/10 rounded-lg p-5 w-[360px] flex flex-col gap-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-sm">
+              Replace Soul with <strong>{pendingName}</strong>? Agent.md stays as-is.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setPendingSelection(null)}
+                className="text-xs px-3 py-1.5 rounded border border-white/10 hover:bg-white/5 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmSwap}
+                className="text-xs px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white transition-colors"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
