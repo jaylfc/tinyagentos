@@ -444,6 +444,17 @@ class LLMProxy:
         # deployer uses when auth'ing /key/generate and agent requests.
         env = os.environ.copy()
         env["LITELLM_MASTER_KEY"] = TAOS_LITELLM_MASTER_KEY
+        # LiteLLM's CLI shells out to a bare ``prisma`` during startup to
+        # detect whether Prisma is runnable before calling PrismaManager.
+        # Under systemd the unit file doesn't put the venv's bin/ on PATH,
+        # so that lookup raises FileNotFoundError and LiteLLM prints
+        # "prisma package not found" and skips DB setup entirely. Prepend
+        # the venv bin that hosts our litellm binary so the child resolves
+        # both ``prisma`` and ``prisma-client-py``.
+        venv_bin = str(Path(litellm_cmd).parent)
+        existing_path = env.get("PATH", "")
+        if venv_bin not in existing_path.split(os.pathsep):
+            env["PATH"] = venv_bin + os.pathsep + existing_path if existing_path else venv_bin
         # DATABASE_URL enables Postgres-backed virtual keys. Without it
         # LiteLLM still routes chat/embeddings fine but /key/generate
         # returns a server error.
@@ -469,8 +480,10 @@ class LLMProxy:
                 stderr=subprocess.DEVNULL,
                 env=env,
             )
-            # Wait for startup
-            for _ in range(30):
+            # Wait for startup. LiteLLM on a fresh Pi DB runs
+            # ``prisma migrate deploy`` against an empty database before
+            # opening its HTTP port — that can take 45-60s on ARM.
+            for _ in range(120):
                 await asyncio.sleep(1)
                 try:
                     async with httpx.AsyncClient(timeout=3) as client:
@@ -480,7 +493,7 @@ class LLMProxy:
                             return True
                 except Exception:
                     pass
-            logger.error("LiteLLM proxy failed to start within 30s")
+            logger.error("LiteLLM proxy failed to start within 120s")
             return False
         except FileNotFoundError:
             logger.warning("LiteLLM not installed — proxy disabled. Install with: pip install litellm[proxy]")
