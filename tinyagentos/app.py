@@ -44,7 +44,7 @@ from tinyagentos.backend_fallback import BackendFallback
 from tinyagentos.capabilities import CapabilityChecker
 from tinyagentos.cluster.manager import ClusterManager
 from tinyagentos.cluster.router import TaskRouter
-from tinyagentos.config import auto_register_from_manifest, load_config, save_config
+from tinyagentos.config import auto_register_from_manifest, load_config, save_config, save_config_locked
 from tinyagentos.lifecycle_manager import LifecycleManager
 from tinyagentos.channels import ChannelStore
 from tinyagentos.download_manager import DownloadManager
@@ -270,6 +270,17 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.config = config
         app.state.config_path = config_path
         app.state.data_dir = data_dir
+
+        # Backfill all agents to the v2 persona shape and register each with
+        # taosmd.  Idempotent — safe to run on every startup.
+        try:
+            from tinyagentos.migrations import migrate_persona_v2
+            import taosmd.agents as _tm_agents
+            migrate_persona_v2(config.agents, register_fn=_tm_agents.register_agent)
+            if config.config_path and config.config_path.exists():
+                await save_config_locked(config, config.config_path)
+        except Exception:
+            logger.exception("persona_v2 startup migration failed")
         # Per-agent state lives on the host and is mounted into containers.
         # See docs/design/framework-agnostic-runtime.md.
         app.state.agent_workspaces_dir = data_dir / "agent-workspaces"
