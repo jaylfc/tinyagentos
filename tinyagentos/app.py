@@ -708,6 +708,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     from tinyagentos.routes.user_workspace import router as user_workspace_router
     app.include_router(user_workspace_router)
 
+    from tinyagentos.routes.agent_workspace import router as agent_workspace_router
+    app.include_router(agent_workspace_router)
+
     from tinyagentos.routes.shared_folders import router as shared_folders_router
     app.include_router(shared_folders_router)
 

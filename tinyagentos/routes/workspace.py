@@ -1,30 +1,14 @@
 from __future__ import annotations
 
-import asyncio
 import logging
-import os
-import shutil
-from pathlib import Path
 
-from fastapi import APIRouter, Request, UploadFile, File
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-
-from tinyagentos.agent_db import find_agent
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-WORKSPACE_DIR_NAME = "agent-workspaces"
-
-
-def _workspace_dir(request: Request, agent_name: str) -> Path:
-    """Resolve the workspace directory for an agent, creating on first access."""
-    data_dir = request.app.state.config_path.parent
-    ws = data_dir / WORKSPACE_DIR_NAME / agent_name
-    ws.mkdir(parents=True, exist_ok=True)
-    return ws
 
 
 class SendMessageRequest(BaseModel):
@@ -74,73 +58,8 @@ async def api_send_message(request: Request, name: str, body: SendMessageRequest
 
 
 # ---------------------------------------------------------------------------
-# Files view
+# Files view — routes live in tinyagentos/routes/agent_workspace.py.
 # ---------------------------------------------------------------------------
-
-
-@router.get("/api/agents/{name}/workspace/files")
-async def api_workspace_files(request: Request, name: str):
-    """List files in agent's workspace directory."""
-    ws_dir = _workspace_dir(request, name)
-    files = []
-    for f in sorted(ws_dir.iterdir()):
-        if f.is_file():
-            stat = f.stat()
-            files.append({
-                "name": f.name,
-                "size": stat.st_size,
-                "modified": stat.st_mtime,
-            })
-    return files
-
-
-@router.post("/api/agents/{name}/workspace/files/upload")
-async def api_workspace_upload(request: Request, name: str, file: UploadFile = File(...)):
-    """Upload a file to agent's workspace directory."""
-    ws_dir = _workspace_dir(request, name)
-    dest = ws_dir / file.filename
-    content = await file.read()
-    dest.write_bytes(content)
-
-    # Capture file activity into user memory (async, non-blocking)
-    user_memory = getattr(request.app.state, "user_memory", None)
-    if user_memory:
-        async def _capture():
-            try:
-                settings = await user_memory.get_settings("user")
-                if not settings.get("capture_files"):
-                    return
-                await user_memory.save_chunk(
-                    "user",
-                    content=f"File uploaded to agent {name}: {file.filename}",
-                    title=file.filename or "",
-                    collection="files",
-                    metadata={
-                        "path": str(dest),
-                        "size": len(content),
-                        "action": "upload",
-                        "agent": name,
-                    },
-                )
-            except Exception as e:
-                logger.debug(f"user memory file capture failed: {e}")
-        asyncio.create_task(_capture())
-
-    return {"name": file.filename, "size": len(content), "status": "uploaded"}
-
-
-@router.delete("/api/agents/{name}/workspace/files/{filename}")
-async def api_workspace_delete(request: Request, name: str, filename: str):
-    """Delete a file from agent's workspace directory."""
-    ws_dir = _workspace_dir(request, name)
-    target = ws_dir / filename
-    # Prevent path traversal
-    if not target.resolve().is_relative_to(ws_dir.resolve()):
-        return JSONResponse({"error": "Invalid filename"}, status_code=400)
-    if not target.exists():
-        return JSONResponse({"error": f"File '{filename}' not found"}, status_code=404)
-    target.unlink()
-    return {"name": filename, "status": "deleted"}
 
 
 # ---------------------------------------------------------------------------
