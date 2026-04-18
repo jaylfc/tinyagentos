@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { PersonaSelection } from "./types";
 import { PersonaBrowse } from "./PersonaBrowse";
 import { PersonaCreate } from "./PersonaCreate";
+import { PersonaBlank } from "./PersonaBlank";
 
 type Tab = "browse" | "create" | "blank";
 
@@ -28,7 +29,7 @@ export function PersonaPicker({
       </div>
       {tab === "browse" && <PersonaBrowse onSelect={onSelect} />}
       {tab === "create" && <PersonaCreate onSelect={onSelect} />}
-      {tab === "blank" && <div aria-label="Blank tab placeholder">Blank (coming in Task 6.4)</div>}
+      {tab === "blank" && <PersonaBlank onSelect={onSelect} />}
     </div>
   );
 }
