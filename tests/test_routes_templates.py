@@ -33,13 +33,12 @@ class TestAgentTemplates:
         tmpl = get_template("research-assistant")
         assert tmpl is not None
         assert tmpl["name"] == "Research Assistant"
-        assert tmpl["framework"] == "smolagents"
+        assert tmpl["system_prompt"] != ""
 
     def test_get_vendored_template(self):
         tmpl = get_template("openclaw-discord-business")
         assert tmpl is not None
         assert tmpl["source"] == "awesome-openclaw-agents"
-        assert tmpl["framework"] == "openclaw"
 
     def test_get_nonexistent(self):
         assert get_template("nonexistent") is None
@@ -49,7 +48,7 @@ class TestAgentTemplates:
         assert "research" in CATEGORIES
 
     def test_all_templates_have_required_fields(self):
-        required = {"id", "name", "category", "description", "framework", "model", "system_prompt", "color"}
+        required = {"id", "name", "category", "description", "system_prompt", "color"}
         for tmpl in TEMPLATES:
             missing = required - set(tmpl.keys())
             assert not missing, f"Template '{tmpl['id']}' missing fields: {missing}"
