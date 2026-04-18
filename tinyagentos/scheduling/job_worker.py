@@ -16,6 +16,8 @@ import json
 import logging
 import time
 
+from taosmd.session_catalog import SessionCatalog
+
 from .job_queue import (
     JobQueue, JOB_EMBED, JOB_EXTRACT, JOB_ENRICH, JOB_CRYSTALLIZE,
     JOB_SPLIT, JOB_INDEX,
@@ -112,9 +114,8 @@ class JobWorker:
 
     async def _do_enrich(self, payload: dict) -> dict:
         """Execute an enrichment job."""
-        from taosmd.session_catalog import SessionCatalog
-
         session_id = payload["session_id"]
+        agent_name = payload.get("agent_name")
         model = payload.get("model", "qwen3:4b")
         tier = payload.get("tier", 2)
         llm_url = payload.get("llm_url", self._llm_url)
@@ -128,6 +129,7 @@ class JobWorker:
                 llm_url=llm_url,
                 model=model,
                 tier=tier,
+                agent_name=agent_name,
             )
             return {"status": "enriched", "session_id": session_id, **result}
         finally:
