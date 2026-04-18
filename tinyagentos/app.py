@@ -81,6 +81,7 @@ from tinyagentos.chat.hub import ChatHub
 from tinyagentos.chat.canvas import CanvasStore
 from tinyagentos.desktop_settings import DesktopSettingsStore
 from tinyagentos.user_memory import UserMemoryStore
+from tinyagentos.user_personas import UserPersonaStore
 from tinyagentos.installed_apps import InstalledAppsStore
 from tinyagentos.skills import SkillStore
 from tinyagentos.knowledge_store import KnowledgeStore
@@ -191,6 +192,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     canvas_store = CanvasStore(data_dir / "canvas.db")
     desktop_settings = DesktopSettingsStore(data_dir / "desktop.db")
     user_memory = UserMemoryStore(data_dir / "user_memory.db")
+    user_personas = UserPersonaStore(data_dir / "user_personas.db")
     installed_apps = InstalledAppsStore(data_dir / "installed_apps.db")
     skills = SkillStore(data_dir / "skills.db")
     knowledge_store = KnowledgeStore(
@@ -319,6 +321,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.canvas_store = canvas_store
         app.state.desktop_settings = desktop_settings
         app.state.user_memory = user_memory
+        app.state.user_personas = user_personas
         app.state.installed_apps = installed_apps
         app.state.skills = skills
         app.state.benchmark_store = benchmark_store
@@ -610,6 +613,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     app.state.canvas_store = canvas_store
     app.state.desktop_settings = desktop_settings
     app.state.user_memory = user_memory
+    app.state.user_personas = user_personas
     app.state.installed_apps = installed_apps
     app.state.skills = skills
     app.state.knowledge_store = knowledge_store
@@ -679,6 +683,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     from tinyagentos.routes.user_memory import router as user_memory_router
     app.include_router(user_memory_router)
+
+    from tinyagentos.routes.user_personas import router as user_personas_router
+    app.include_router(user_personas_router)
 
     from tinyagentos.routes.settings import router as settings_router
     app.include_router(settings_router)
