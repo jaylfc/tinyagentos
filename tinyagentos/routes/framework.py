@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import platform
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -10,6 +11,7 @@ from tinyagentos.agent_db import find_agent
 from tinyagentos.config import save_config_locked
 from tinyagentos.frameworks import FRAMEWORKS
 from tinyagentos import framework_update as _runner
+import tinyagentos.auto_update as _auto_update
 
 router = APIRouter()
 
@@ -86,3 +88,16 @@ async def post_update(request: Request, slug: str, body: UpdateRequest):
     asyncio.create_task(_runner.start_update(agent, manifest, latest, save_config=_save))
     return JSONResponse({"status": "accepted", "update_status": "updating"},
                          status_code=202)
+
+
+@router.get("/api/frameworks/latest")
+async def get_latest(request: Request, refresh: bool = False):
+    state = request.app.state
+    if refresh:
+        await _auto_update.poll_frameworks(
+            FRAMEWORKS,
+            http_client=state.http_client,
+            arch=getattr(state, "host_arch", platform.machine()),
+            cache=state.latest_framework_versions,
+        )
+    return state.latest_framework_versions

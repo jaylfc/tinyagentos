@@ -86,3 +86,22 @@ async def test_post_update_400_unknown_target(client, app):
     r = await client.post("/api/agents/atlas-bad-target/framework/update",
                            json={"target_version": "NONE"})
     assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_get_latest_returns_cache(client, app):
+    app.state.latest_framework_versions = {"openclaw": {"tag": "T", "sha": "s"}}
+    r = await client.get("/api/frameworks/latest")
+    assert r.status_code == 200
+    assert r.json()["openclaw"]["tag"] == "T"
+
+
+@pytest.mark.asyncio
+async def test_get_latest_refresh_triggers_poll(client, app, monkeypatch):
+    app.state.latest_framework_versions = {}
+    async def fake_poll(manifests, *, http_client, arch, cache):
+        cache["openclaw"] = {"tag": "FRESH", "sha": "s"}
+    monkeypatch.setattr("tinyagentos.auto_update.poll_frameworks", fake_poll)
+    r = await client.get("/api/frameworks/latest?refresh=true")
+    assert r.status_code == 200
+    assert r.json()["openclaw"]["tag"] == "FRESH"
