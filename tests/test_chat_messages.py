@@ -213,3 +213,28 @@ async def test_content_blocks(store):
     msg = await _send(store, content_blocks=blocks)
     fetched = await store.get_message(msg["id"])
     assert fetched["content_blocks"] == blocks
+
+
+@pytest.mark.asyncio
+async def test_send_message_persists_hops_metadata(tmp_path):
+    store = ChatMessageStore(tmp_path / "msgs.db")
+    await store.init()
+    msg = await store.send_message(
+        channel_id="c1", author_id="tom", author_type="agent",
+        content="yo", content_type="text", state="complete",
+        metadata={"hops_since_user": 2, "other": "x"},
+    )
+    assert msg["metadata"]["hops_since_user"] == 2
+    assert msg["metadata"]["other"] == "x"
+
+
+@pytest.mark.asyncio
+async def test_send_message_defaults_hops_zero_when_absent(tmp_path):
+    store = ChatMessageStore(tmp_path / "msgs.db")
+    await store.init()
+    msg = await store.send_message(
+        channel_id="c1", author_id="user", author_type="user",
+        content="hi", content_type="text", state="complete",
+        metadata=None,
+    )
+    assert msg["metadata"].get("hops_since_user", 0) == 0

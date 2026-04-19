@@ -5,7 +5,7 @@
 
 ## Goal
 
-One sentence: agents in a group channel see each other's messages, decide per-message whether to respond, can't loop-spam the channel, and respect `@mention` / `@all` addressing plus reactions and slash-command controls.
+One sentence: agents in a group channel see each other's messages, decide per-message whether to respond, can't loop-spam the channel, respect `@mention` / `@all` addressing, and expose channel controls (mode, mute, topic, etc.) via REST admin endpoints the UI drives from right-click menus.
 
 ## Background
 
@@ -22,7 +22,7 @@ message sent (user or agent)
   │
   └─▶ AgentChatRouter.dispatch
         │
-        ├─ slash command? → slash_commands.execute → system message, skip fanout
+        ├─ bare slash in non-DM? → 400 guardrail (must @<slug> or @all)
         │
         ├─ parse mentions (@slug, @all, @humans)
         │
@@ -102,6 +102,8 @@ Rules:
 - Special tokens: `@all` (case-insensitive) → sets `all=True`; `@humans` → sets `humans=True`. These take precedence over treating `all`/`humans` as slugs even if a member happens to be named that.
 - Slugs that aren't current channel members are silently treated as plain text (not added to `explicit`).
 - Output is deterministic: `explicit` is sorted, deduplicated.
+
+> Callers (the POST /api/chat/messages handler) also use `parse_mentions` to enforce the bare-slash guardrail: a `/`-prefixed message in a non-DM channel must have `mentions.explicit or mentions.all`, else the message is rejected with 400.
 
 ## Router Fanout (`tinyagentos/agent_chat_router.py`)
 
@@ -283,7 +285,7 @@ The `user_message` event payload enqueued by the router now carries:
 
 ### Window
 
-Before enqueuing, the router asks `message_store` for the channel's last messages with `limit=20`, oldest-first. It then truncates to `max_tokens=4000` using a naive 4-chars-per-token heuristic, dropping oldest first until under budget. System messages (slash-command echoes) are excluded. The current message is NOT duplicated in `context` — it's always the last turn.
+Before enqueuing, the router asks `message_store` for the channel's last messages with `limit=20`, oldest-first. It then truncates to `max_tokens=4000` using a naive 4-chars-per-token heuristic, dropping oldest first until under budget. System messages (admin-endpoint echoes, system notifications) are excluded. The current message is NOT duplicated in `context` — it's always the last turn.
 
 ### Bridge consumption
 
@@ -319,63 +321,45 @@ Two special-cased after `add_reaction`:
 
 All other emojis are purely decorative.
 
-## Slash Commands (`tinyagentos/chat/slash_commands.py`)
+## Slash commands (design change: UI-driven, not text-intercepted)
 
-### Command registry
+Earlier drafts of this spec had taOS intercept `/mute @tom`, `/lively`,
+etc. as text messages and dispatch them to a backend handler. That
+collides with agent-framework command namespaces (OpenClaw, SmolAgents,
+Hermes all have their own `/` commands) — taOS would either mask the
+framework's command or be stuck maintaining a blocklist.
 
-```python
-COMMANDS: dict[str, SlashCommand] = {
-    "mute":     mute_cmd,      # /mute @slug
-    "unmute":   unmute_cmd,    # /unmute @slug
-    "leave":    leave_cmd,     # /leave
-    "summon":   summon_cmd,    # /summon @slug
-    "quiet":    quiet_cmd,     # /quiet
-    "lively":   lively_cmd,    # /lively
-    "hops":     hops_cmd,      # /hops N (clamp 1..10)
-    "cooldown": cooldown_cmd,  # /cooldown Ns (clamp 0..60)
-    "topic":    topic_cmd,     # /topic <text>
-    "rename":   rename_cmd,    # /rename <name>
-    "help":     help_cmd,      # /help
-}
-```
+Resolved design:
+- taOS does **not** intercept `/` at all. Framework slash commands
+  (`/help`, `/clear`, etc.) pass through as plain text and reach agents
+  via normal routing.
+- Channel admin (mute, mode, topic, etc.) happens via REST endpoints
+  that the UI (Phase 2) drives from right-click menus and channel
+  settings popovers.
+- **Guardrail:** in a non-DM channel, a message whose content starts
+  with `/` (after `lstrip()`) must `@<slug>` or `@all` at least one
+  agent. Otherwise the POST handler returns 400. This prevents a bare
+  `/help` from broadcasting to every agent in the channel.
 
-Each handler signature:
+### REST admin endpoints
 
-```python
-async def handler(
-    ctx: SlashContext,  # {channel, author_id, author_type, raw_args, state}
-) -> SlashResult       # {system_message_text, mutations: list[ChannelMutation]}
-```
+- `PATCH /api/chat/channels/{id}` — body may include `response_mode`,
+  `max_hops`, `cooldown_seconds`, `topic`, `name`. Each optional. Returns
+  400 on validation failure.
+- `POST /api/chat/channels/{id}/members` — body `{action, slug}` with
+  `action` in `{"add","remove"}`.
+- `POST /api/chat/channels/{id}/muted` — body `{action, slug}` with
+  `action` in `{"add","remove"}`.
 
-### Detection
+### Phase 2 follow-up (separate spec)
 
-In `routes/chat.py`, the POST `/api/chat/messages` handler, before `send_message`:
-
-```python
-content = body.get("content", "")
-if content.startswith("/") and " " not in content.split("\n")[0][:40]:
-    # Potential slash command. Parse first token.
-    cmd, *rest = content[1:].split(maxsplit=1)
-    cmd = cmd.lower()
-    if cmd in COMMANDS:
-        raw_args = rest[0] if rest else ""
-        result = await slash_commands.execute(cmd, ctx)
-        await _emit_system_message(channel_id, result.system_message_text)
-        return {"ok": True, "handled": "slash"}
-    # Unknown /foo → fall through, treat as plain text
-```
-
-The "first line first-token starts with `/` and command is known" check keeps multi-line messages and `/path/like/this` from being misinterpreted.
-
-### System message format
-
-Slash handlers emit a system message authored by `"system"` with `author_type="system"`. Example: "`lively mode enabled by @jay`" or "`@tom muted in this channel by @jay`". These messages are rendered distinctly by the UI (existing system-message styling).
-
-### Bad args / unknown
-
-- Unknown `/foo` after `/` → plain text, sent normally.
-- Known command with malformed args → system message describing usage: "`/hops N — N must be 1..10, got 'abc'`". No mutation.
-- `/summon @slug` where slug is not a known agent → system message error; no mutation.
+- Slash autocomplete menu in the composer: typing `/` opens a picker
+  grouped by agent (`tom: /help, /clear …`). Picking an entry sends
+  `@<slug> /<cmd>`. Cancel (Esc) closes the picker without sending.
+- Per-framework command discovery. Likely approach: static manifest
+  (`tinyagentos/frameworks.py` gains a `slash_commands` field per
+  entry) as the initial version, with a bridge `/capabilities`
+  endpoint as the long-term direction.
 
 ## Components Summary
 
@@ -385,20 +369,20 @@ Slash handlers emit a system message authored by `"system"` with `author_type="s
 |---|---|
 | `tinyagentos/chat/mentions.py` | `parse_mentions(text, members) -> MentionSet` |
 | `tinyagentos/chat/group_policy.py` | Cooldown + rate-cap tracker |
-| `tinyagentos/chat/slash_commands.py` | Registry + 11 handlers + dispatcher |
 | `tinyagentos/chat/reactions.py` | Semantic-reaction dispatcher (👎 regenerate, 🙋 wants_reply) |
 | `tests/test_chat_mentions.py` | Parser unit tests |
 | `tests/test_chat_group_policy.py` | Policy unit tests |
-| `tests/test_chat_slash_commands.py` | Command dispatch unit tests |
 | `tests/test_chat_reactions.py` | Reactions handler unit tests |
+| `tests/test_routes_chat_slash_guard.py` | Bare-slash guardrail tests |
+| `tests/test_routes_chat_admin.py` | Admin endpoint tests |
 
 **Modified:**
 
 | Path | Change |
 |---|---|
 | `tinyagentos/agent_chat_router.py` | Accept agent-authored messages, mention-aware fanout, hop propagation, call group_policy |
-| `tinyagentos/routes/chat.py` | Slash-command interception; reactions POST/DELETE; re-dispatch on agent reply |
-| `tinyagentos/bridge_session.py` | Accept `force_respond`, `context`, `hops_since_user` in event payload; call router.dispatch on agent reply; trace `message_suppressed` |
+| `tinyagentos/routes/chat.py` | Bare-slash guardrail; admin endpoints (PATCH channel, POST members/muted); reactions POST/DELETE |
+| `tinyagentos/bridge_session.py` | Accept `force_respond`, `context`, `hops_since_user` in event payload; re-dispatch agent reply via router; trace `message_suppressed` |
 | `tinyagentos/routes/openclaw.py` | Event payload includes new fields; reply endpoint accepts optional `regenerate` |
 | `tinyagentos/chat/channel_store.py` | Default-settings backfill on read; new helpers: `set_response_mode`, `set_hops`, `set_cooldown`, `mute`, `unmute` |
 | `tinyagentos/chat/message_store.py` | Propagate `metadata.hops_since_user` on send; no schema change (jsonb) |
@@ -411,8 +395,8 @@ Slash handlers emit a system message authored by `"system"` with `author_type="s
 
 ## Error Handling
 
-- Unknown slash command → pass-through as plain text (no error).
-- Known slash command with bad args → system message describing usage.
+- Bare `/` in non-DM channel without `@<slug>` or `@all` → 400 with a user-facing message; client surfaces inline.
+- Admin endpoint bad args → 400 with a specific error (e.g., `invalid response_mode: foo`).
 - `message_store` context fetch fails → enqueue with `context: []`, log WARNING.
 - Rate cap hit → silent drop; trace records a suppressed-due-to-rate-cap event for the agent.
 - Bridge returns NO_RESPONSE when `force_respond=true` (agent violating contract) → log WARNING, treat as empty reply but still POST a visible placeholder `"(no reply)"`; don't re-dispatch.

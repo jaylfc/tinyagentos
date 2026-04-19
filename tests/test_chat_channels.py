@@ -45,7 +45,9 @@ async def test_create_channel(store):
     assert ch["type"] == "text"
     assert ch["created_by"] == "user1"
     assert ch["members"] == []
-    assert ch["settings"] == {}
+    # settings now always includes Phase 1 defaults
+    assert ch["settings"]["response_mode"] == "quiet"
+    assert ch["settings"]["max_hops"] == 3
 
 
 @pytest.mark.asyncio

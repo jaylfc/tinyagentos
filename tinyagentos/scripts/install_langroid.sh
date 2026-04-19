@@ -18,37 +18,60 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [langroid-bridge] %(
 log = logging.getLogger("langroid-bridge")
 BRIDGE_URL = os.environ["TAOS_BRIDGE_URL"]; AGENT_NAME = os.environ["TAOS_AGENT_NAME"]
 LOCAL_TOKEN = os.environ["TAOS_LOCAL_TOKEN"]; MODEL = os.environ.get("TAOS_MODEL", "kilo-auto/free")
-_pool = ThreadPoolExecutor(max_workers=2); _agent = None
+_pool = ThreadPoolExecutor(max_workers=2)
 _SYSTEM_PROMPT = (
     f"You are {AGENT_NAME}, an agent running inside the Langroid framework "
     "on taOS. If asked what framework you run on, say Langroid. The model "
     "weights routed through taOS's LiteLLM proxy are an implementation "
     "detail — don't describe yourself as Claude/GPT/etc."
 )
-def _build():
-    global _agent
-    if _agent: return _agent
+
+def _render_context(ctx):
+    if not ctx:
+        return ""
+    lines = []
+    for m in ctx:
+        who = m.get("author_id") or "?"
+        lines.append(f"{who}: {m.get('content','')}")
+    return "\n".join(lines)
+
+def _suppress(reply, force):
+    if force:
+        return reply
+    stripped = (reply or "").strip().lower().strip(".!,;:")
+    return None if stripped == "no_response" else reply
+
+def _build(force_respond=False):
     import langroid as lr
-    _agent = lr.ChatAgent(lr.ChatAgentConfig(
+    sysmsg = _SYSTEM_PROMPT + (" You were directly addressed; reply naturally, do not output NO_RESPONSE."
+        if force_respond else
+        " If this message isn't for you, reply with exactly NO_RESPONSE. Otherwise reply.")
+    return lr.ChatAgent(lr.ChatAgentConfig(
         llm=lr.language_models.OpenAIGPTConfig(chat_model=MODEL),
-        system_message=_SYSTEM_PROMPT,
+        system_message=sysmsg,
     ))
-    return _agent
-def _run(text: str) -> str:
+
+def _run(text, force):
     try:
-        a = _build(); r = a.llm_response(text)
+        a = _build(force); r = a.llm_response(text)
         return r.content if r else "(no response)"
     except Exception as e: return f"[langroid error: {e}]"
 async def fetch_boot(c): r = await c.get(f"{BRIDGE_URL}/api/openclaw/bootstrap?agent={AGENT_NAME}", headers={"Authorization": f"Bearer {LOCAL_TOKEN}"}, timeout=30); r.raise_for_status(); return r.json()
 async def post_reply(c, u, t, mid, tid, txt, cid=None):
-    try: await c.post(u, json={"kind":"final","id":mid,"trace_id":tid,"content":txt}, headers={"Authorization":f"Bearer {t}"}, timeout=30)
+    body = {"kind":"final","id":mid,"trace_id":tid,"content":txt}
+    if cid: body["channel_id"] = cid
+    try: await c.post(u, json=body, headers={"Authorization":f"Bearer {t}"}, timeout=30)
     except Exception as e: log.warning("reply: %s", e)
 async def handle(c, evt, ch):
-    mid=evt.get("id",""); tid=evt.get("trace_id",mid); txt=evt.get("text","")
-    log.info("user_message id=%s text=%r", mid, txt[:80])
-    loop = asyncio.get_running_loop()
-    reply = await loop.run_in_executor(_pool, _run, txt)
-    await post_reply(c, ch["reply_url"], ch["auth_bearer"], mid, tid, reply)
+    mid = evt.get("id",""); tid = evt.get("trace_id", mid); text = evt.get("text","")
+    force = bool(evt.get("force_respond"))
+    ctx = _render_context(evt.get("context") or [])
+    full = (f"Recent conversation:\n{ctx}\n\nCurrent: {text}") if ctx else text
+    log.info("user_message id=%s text=%r force=%s", mid, text[:80], force)
+    reply = await asyncio.get_running_loop().run_in_executor(_pool, _run, full, force)
+    final = _suppress(reply, force)
+    if final is None: return
+    await post_reply(c, ch["reply_url"], ch["auth_bearer"], mid, tid, final, evt.get("channel_id"))
 async def sse(c, ch, stop):
     while not stop.is_set():
         try:

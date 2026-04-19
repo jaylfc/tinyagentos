@@ -359,6 +359,10 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.chat_messages = chat_messages
         app.state.chat_channels = chat_channels
         app.state.chat_hub = chat_hub
+        from tinyagentos.chat.group_policy import GroupPolicy
+        app.state.group_policy = GroupPolicy()
+        from tinyagentos.chat.reactions import WantsReplyRegistry
+        app.state.wants_reply = WantsReplyRegistry()
         from tinyagentos.agent_chat_router import AgentChatRouter
         app.state.agent_chat_router = AgentChatRouter(app.state)
         app.state.canvas_store = canvas_store
@@ -464,6 +468,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
             chat_hub=chat_hub,
             archive=getattr(app.state, "archive", None),
         )
+        app.state.bridge_sessions._router = app.state.agent_chat_router
 
         # After the first probe, mark auto-managed backends that are not
         # currently reachable as "stopped" so the scheduler knows to start
@@ -653,6 +658,8 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     app.state.chat_messages = chat_messages
     app.state.chat_channels = chat_channels
     app.state.chat_hub = chat_hub
+    from tinyagentos.chat.reactions import WantsReplyRegistry as _WantsReplyRegistry
+    app.state.wants_reply = _WantsReplyRegistry()
     app.state.canvas_store = canvas_store
     app.state.desktop_settings = desktop_settings
     app.state.user_memory = user_memory

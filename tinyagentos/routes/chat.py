@@ -9,6 +9,8 @@ from pathlib import Path
 from fastapi import APIRouter, File, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 
+from tinyagentos.chat.reactions import maybe_trigger_semantic
+
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
@@ -181,11 +183,32 @@ async def post_message(request: Request):
     ch_store = request.app.state.chat_channels
     hub = request.app.state.chat_hub
 
+    channel_id = body["channel_id"]
+    content = body.get("content") or ""
+
+    # Guardrail: in a non-DM channel, a / message must address at least one
+    # agent explicitly (@<slug> or @all). Otherwise a framework slash command
+    # would broadcast to every agent in the channel, producing N different
+    # /help outputs and (in some frameworks) triggering destructive side effects
+    # like /clear on unaddressed agents.
+    stripped = content.lstrip()
+    if stripped.startswith("/"):
+        channel = await ch_store.get_channel(channel_id)
+        if channel and channel.get("type") != "dm":
+            from tinyagentos.chat.mentions import parse_mentions
+            members = list(channel.get("members") or [])
+            mentions = parse_mentions(content, members)
+            if not mentions.explicit and not mentions.all:
+                return JSONResponse(
+                    {"error": "slash commands in group channels must address an agent: use @<agent> /<cmd> or @all /<cmd>"},
+                    status_code=400,
+                )
+
     message = await msg_store.send_message(
-        channel_id=body["channel_id"],
+        channel_id=channel_id,
         author_id=body["author_id"],
         author_type=body.get("author_type", "agent"),
-        content=body.get("content", ""),
+        content=content,
         content_type=body.get("content_type", "text"),
         thread_id=body.get("thread_id"),
         embeds=body.get("embeds"),
@@ -195,8 +218,8 @@ async def post_message(request: Request):
         metadata=body.get("metadata"),
         state=body.get("state", "complete"),
     )
-    await ch_store.update_last_message_at(body["channel_id"])
-    await hub.broadcast(body["channel_id"], {"type": "message", "seq": hub.next_seq(), **message})
+    await ch_store.update_last_message_at(channel_id)
+    await hub.broadcast(channel_id, {"type": "message", "seq": hub.next_seq(), **message})
 
     # Capture user messages into user memory (skip agent messages)
     if body.get("author_type", "agent") == "user":
@@ -204,11 +227,11 @@ async def post_message(request: Request):
         if user_memory:
             asyncio.create_task(_capture_user_memory(
                 user_memory,
-                content=body.get("content", ""),
-                title=f"Message in {body['channel_id']}",
+                content=content,
+                title=f"Message in {channel_id}",
                 collection="conversations",
                 metadata={
-                    "channel_id": body["channel_id"],
+                    "channel_id": channel_id,
                     "message_id": message.get("id"),
                     "timestamp": message.get("created_at"),
                 },
@@ -222,21 +245,21 @@ async def post_message(request: Request):
             await archive.record(
                 "conversation",
                 {
-                    "content": body.get("content", ""),
-                    "channel_id": body["channel_id"],
+                    "content": content,
+                    "channel_id": channel_id,
                     "message_id": message.get("id"),
                     "author_id": body["author_id"],
                     "author_type": body.get("author_type", "agent"),
                 },
                 agent_name=body["author_id"] if body.get("author_type") == "agent" else None,
-                summary=body.get("content", "")[:100],
+                summary=content[:100],
             )
         except Exception:
             pass  # Never block chat for archive failures
 
     router_svc = getattr(request.app.state, "agent_chat_router", None)
     if router_svc is not None:
-        channel = await ch_store.get_channel(body["channel_id"])
+        channel = await ch_store.get_channel(channel_id)
         if channel is not None:
             router_svc.dispatch(message, channel)
 
@@ -348,19 +371,87 @@ async def get_channel_messages(
     return {"messages": messages}
 
 
-@router.post("/api/chat/channels/{channel_id}/members")
-async def add_channel_member(request: Request, channel_id: str):
-    body = await request.json()
-    ch_store = request.app.state.chat_channels
-    await ch_store.add_member(channel_id, body["member_id"])
-    return {"status": "added"}
-
-
 @router.delete("/api/chat/channels/{channel_id}/members/{member_id}")
 async def remove_channel_member(request: Request, channel_id: str, member_id: str):
     ch_store = request.app.state.chat_channels
     await ch_store.remove_member(channel_id, member_id)
     return {"status": "removed"}
+
+
+# ── Admin endpoints (UI-driven channel control-plane) ─────────────────────────
+
+@router.patch("/api/chat/channels/{channel_id}")
+async def update_channel_settings(channel_id: str, body: dict, request: Request):
+    """Update channel settings. Body may include: response_mode, max_hops,
+    cooldown_seconds, topic, name. Each is optional; only provided keys are
+    applied. Returns 400 on validation failure."""
+    state = request.app.state
+    chs = state.chat_channels
+    ch = await chs.get_channel(channel_id)
+    if ch is None:
+        return JSONResponse({"error": "channel not found"}, status_code=404)
+    try:
+        if "response_mode" in body:
+            await chs.set_response_mode(channel_id, body["response_mode"])
+        if "max_hops" in body:
+            await chs.set_max_hops(channel_id, int(body["max_hops"]))
+        if "cooldown_seconds" in body:
+            await chs.set_cooldown_seconds(channel_id, int(body["cooldown_seconds"]))
+        if "topic" in body:
+            topic = str(body["topic"])
+            if len(topic) > 500:
+                return JSONResponse({"error": "topic must be <= 500 chars"}, status_code=400)
+            await chs.update_channel(channel_id, topic=topic)
+        if "name" in body:
+            name = str(body["name"]).strip()
+            if not name or len(name) > 100:
+                return JSONResponse({"error": "name must be 1..100 chars"}, status_code=400)
+            await chs.update_channel(channel_id, name=name)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    return JSONResponse({"ok": True}, status_code=200)
+
+
+@router.post("/api/chat/channels/{channel_id}/members")
+async def modify_channel_members(channel_id: str, body: dict, request: Request):
+    """Add or remove a member. Body: {"action": "add" | "remove", "slug": "..."}."""
+    action = (body.get("action") or "").lower()
+    slug = (body.get("slug") or "").lstrip("@")
+    if action not in ("add", "remove") or not slug:
+        return JSONResponse({"error": "action must be add|remove, slug required"}, status_code=400)
+    state = request.app.state
+    chs = state.chat_channels
+    ch = await chs.get_channel(channel_id)
+    if ch is None:
+        return JSONResponse({"error": "channel not found"}, status_code=404)
+    if action == "add":
+        known = {a.get("name") for a in getattr(state.config, "agents", []) or []}
+        if slug != "user" and slug not in known:
+            return JSONResponse({"error": f"unknown agent: {slug}"}, status_code=400)
+        await chs.add_member(channel_id, slug)
+    else:
+        await chs.remove_member(channel_id, slug)
+    return JSONResponse({"ok": True}, status_code=200)
+
+
+@router.post("/api/chat/channels/{channel_id}/muted")
+async def modify_channel_muted(channel_id: str, body: dict, request: Request):
+    """Add or remove an agent from the channel's muted list.
+    Body: {"action": "add" | "remove", "slug": "..."}."""
+    action = (body.get("action") or "").lower()
+    slug = (body.get("slug") or "").lstrip("@")
+    if action not in ("add", "remove") or not slug:
+        return JSONResponse({"error": "action must be add|remove, slug required"}, status_code=400)
+    state = request.app.state
+    chs = state.chat_channels
+    ch = await chs.get_channel(channel_id)
+    if ch is None:
+        return JSONResponse({"error": "channel not found"}, status_code=404)
+    if action == "add":
+        await chs.mute_agent(channel_id, slug)
+    else:
+        await chs.unmute_agent(channel_id, slug)
+    return JSONResponse({"ok": True}, status_code=200)
 
 
 # ── File upload / serve ───────────────────────────────────────────────────────
@@ -427,6 +518,59 @@ async def mark_read(request: Request, channel_id: str):
     ch_store = request.app.state.chat_channels
     await ch_store.update_read_position("user", channel_id, body.get("message_id", ""))
     return {"status": "marked"}
+
+
+# ── Reactions ────────────────────────────────────────────────────────────────
+
+@router.post("/api/chat/messages/{message_id}/reactions")
+async def add_reaction(message_id: str, body: dict, request: Request):
+    emoji = body.get("emoji")
+    author_id = body.get("author_id")
+    author_type = body.get("author_type", "user")
+    if not emoji or not author_id:
+        return JSONResponse({"error": "emoji and author_id required"}, status_code=400)
+    state = request.app.state
+    msg = await state.chat_messages.get_message(message_id)
+    if msg is None:
+        return JSONResponse({"error": "message not found"}, status_code=404)
+    await state.chat_messages.add_reaction(message_id, emoji, author_id)
+    channel = await state.chat_channels.get_channel(msg["channel_id"])
+    await state.chat_hub.broadcast(msg["channel_id"], {
+        "type": "reaction_added",
+        "message_id": message_id,
+        "emoji": emoji,
+        "author_id": author_id,
+    })
+    if channel is not None:
+        await maybe_trigger_semantic(
+            emoji=emoji, message=msg,
+            reactor_id=author_id, reactor_type=author_type,
+            channel=channel, state=state,
+        )
+    return JSONResponse({"ok": True}, status_code=200)
+
+
+@router.delete("/api/chat/messages/{message_id}/reactions/{emoji}")
+async def remove_reaction(message_id: str, emoji: str, author_id: str, request: Request):
+    state = request.app.state
+    await state.chat_messages.remove_reaction(message_id, emoji, author_id)
+    msg = await state.chat_messages.get_message(message_id)
+    if msg:
+        await state.chat_hub.broadcast(msg["channel_id"], {
+            "type": "reaction_removed",
+            "message_id": message_id,
+            "emoji": emoji,
+            "author_id": author_id,
+        })
+    return JSONResponse({"ok": True}, status_code=200)
+
+
+@router.get("/api/chat/channels/{channel_id}/wants_reply")
+async def list_wants_reply(channel_id: str, request: Request):
+    reg = getattr(request.app.state, "wants_reply", None)
+    if reg is None:
+        return JSONResponse({"slugs": []})
+    return JSONResponse({"slugs": reg.list(channel_id)})
 
 
 # ── Canvas ───────────────────────────────────────────────────────────────────

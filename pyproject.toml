@@ -47,4 +47,5 @@ taos-gui = "tinyagentos.app:gui"
 [tool.pytest.ini_options]
 markers = [
     "e2e: End-to-end browser tests (require running server)",
+    "slow: Tests requiring a live stack (skipped in local CI; run with pytest -m slow)",
 ]
