@@ -51,6 +51,19 @@ def _suppress(reply, force):
     stripped = (reply or "").strip().lower().strip(".!,;:")
     return None if stripped == "no_response" else reply
 
+async def _thinking(c: httpx.AsyncClient, ch_id, state: str) -> None:
+    if not ch_id:
+        return
+    try:
+        await c.post(
+            f"{BRIDGE_URL}/api/chat/channels/{ch_id}/thinking",
+            json={"slug": AGENT_NAME, "state": state},
+            headers={"Authorization": f"Bearer {LOCAL_TOKEN}"},
+            timeout=5,
+        )
+    except Exception:
+        pass  # best-effort; never block a reply on an indicator
+
 def _run(text, force):
     try:
         agent = _build()
@@ -74,12 +87,17 @@ async def handle(c, evt, ch):
     force = bool(evt.get("force_respond"))
     ctx = _render_context(evt.get("context") or [])
     full = (f"Recent conversation:\n{ctx}\n\nCurrent: {text}") if ctx else text
+    cid = evt.get("channel_id")
     log.info("user_message id=%s text=%r force=%s", mid, text[:80], force)
-    reply = await asyncio.get_running_loop().run_in_executor(_pool, _run, full, force)
+    await _thinking(c, cid, "start")
+    try:
+        reply = await asyncio.get_running_loop().run_in_executor(_pool, _run, full, force)
+    finally:
+        await _thinking(c, cid, "end")
     final = _suppress(reply, force)
     if final is None:
         log.info("suppressed id=%s", mid); return
-    await post_reply(c, ch["reply_url"], ch["auth_bearer"], mid, tid, final, evt.get("channel_id"))
+    await post_reply(c, ch["reply_url"], ch["auth_bearer"], mid, tid, final, cid)
 async def sse(c, ch, stop):
     while not stop.is_set():
         try:
