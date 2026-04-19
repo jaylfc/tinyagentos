@@ -39,5 +39,7 @@ def test_build_empty():
 
 def test_estimate_tokens_4chars_per_token():
     assert estimate_tokens("") == 0
+    assert estimate_tokens("a") == 1
+    assert estimate_tokens("abc") == 1
     assert estimate_tokens("abcd") == 1
     assert estimate_tokens("a" * 100) == 25

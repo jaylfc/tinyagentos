@@ -11,7 +11,7 @@ from __future__ import annotations
 def estimate_tokens(text: str) -> int:
     if not text:
         return 0
-    return len(text) // 4
+    return max(1, len(text) // 4)
 
 
 def build_context_window(messages: list[dict], *, limit: int, max_tokens: int) -> list[dict]:

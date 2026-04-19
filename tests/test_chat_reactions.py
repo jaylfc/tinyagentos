@@ -33,7 +33,8 @@ async def test_regenerate_triggered_for_thumbs_down_on_agent_reply():
 
 @pytest.mark.asyncio
 async def test_thumbs_down_from_agent_is_noop():
-    bridge = MagicMock(); bridge.enqueue_user_message = AsyncMock()
+    bridge = MagicMock()
+    bridge.enqueue_user_message = AsyncMock()
     state = MagicMock(bridge_sessions=bridge)
     state.wants_reply = WantsReplyRegistry()
     message = {"id": "m1", "channel_id": "c1", "author_id": "tom",

@@ -22,7 +22,7 @@ message sent (user or agent)
   │
   └─▶ AgentChatRouter.dispatch
         │
-        ├─ slash command? → slash_commands.execute → system message, skip fanout
+        ├─ bare slash in non-DM? → 400 guardrail (must @<slug> or @all)
         │
         ├─ parse mentions (@slug, @all, @humans)
         │
@@ -381,8 +381,8 @@ Resolved design:
 | Path | Change |
 |---|---|
 | `tinyagentos/agent_chat_router.py` | Accept agent-authored messages, mention-aware fanout, hop propagation, call group_policy |
-| `tinyagentos/routes/chat.py` | Bare-slash guardrail; admin endpoints (PATCH channel, POST members/muted); reactions POST/DELETE; re-dispatch on agent reply |
-| `tinyagentos/bridge_session.py` | Accept `force_respond`, `context`, `hops_since_user` in event payload; call router.dispatch on agent reply; trace `message_suppressed` |
+| `tinyagentos/routes/chat.py` | Bare-slash guardrail; admin endpoints (PATCH channel, POST members/muted); reactions POST/DELETE |
+| `tinyagentos/bridge_session.py` | Accept `force_respond`, `context`, `hops_since_user` in event payload; re-dispatch agent reply via router; trace `message_suppressed` |
 | `tinyagentos/routes/openclaw.py` | Event payload includes new fields; reply endpoint accepts optional `regenerate` |
 | `tinyagentos/chat/channel_store.py` | Default-settings backfill on read; new helpers: `set_response_mode`, `set_hops`, `set_cooldown`, `mute`, `unmute` |
 | `tinyagentos/chat/message_store.py` | Propagate `metadata.hops_since_user` on send; no schema change (jsonb) |

@@ -35,8 +35,11 @@ async def test_handle_reply_sets_hops_on_persisted_reply_metadata():
         "author_type": "agent", "content": "yo", "created_at": 1.0,
         "metadata": {"hops_since_user": 1},
     })
-    chans = MagicMock(); chans.update_last_message_at = AsyncMock()
-    hub = MagicMock(); hub.broadcast = AsyncMock(); hub.next_seq = MagicMock(return_value=1)
+    chans = MagicMock()
+    chans.update_last_message_at = AsyncMock()
+    hub = MagicMock()
+    hub.broadcast = AsyncMock()
+    hub.next_seq = MagicMock(return_value=1)
     reg = BridgeSessionRegistry(chat_messages=store, chat_channels=chans, chat_hub=hub)
     # Prime the pending-hops map by simulating enqueue
     await reg.enqueue_user_message("tom", {
