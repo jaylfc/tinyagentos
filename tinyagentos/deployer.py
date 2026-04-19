@@ -271,11 +271,39 @@ async def deploy_agent(req: DeployRequest) -> dict:
 
             logger.info(f"Installing framework {req.framework} via {method} in {container_name}")
 
-            if method == "pip":
-                pkg = package if manifest is not None else req.framework
+            # If a framework ships an in-repo install script at
+            # tinyagentos/scripts/install_<framework>.sh, prefer that over the
+            # generic pip path. These scripts drop the full per-framework bridge
+            # (NO_RESPONSE handling, context rendering, force_respond) and the
+            # upstream framework itself; pip alone cannot wire those pieces.
+            from pathlib import Path as _P
+            _script = _P(__file__).parent / "scripts" / f"install_{req.framework}.sh"
+            if _script.exists():
+                logger.info(f"Pushing install script {_script.name} into {container_name}")
+                _push_rc, _push_out = await push_file(
+                    container_name, str(_script), f"/tmp/install_{req.framework}.sh",
+                )
+                if _push_rc != 0:
+                    raise RuntimeError(
+                        f"Failed to push install script (rc={_push_rc}): {_push_out[-300:]}"
+                    )
                 code, output = await exec_in_container(
                     container_name,
-                    ["pip3", "install", pkg],
+                    ["bash", f"/tmp/install_{req.framework}.sh"],
+                    timeout=900,
+                )
+                if code != 0:
+                    raise RuntimeError(
+                        f"Framework install (script) failed ({code}): {output[-1500:]}"
+                    )
+            elif method == "pip":
+                pkg = package if manifest is not None else req.framework
+                # PEP 668: Debian 13+ base images refuse system-wide pip
+                # installs without this flag, so container deploys otherwise
+                # stall on 'externally-managed-environment'.
+                code, output = await exec_in_container(
+                    container_name,
+                    ["pip3", "install", "--break-system-packages", pkg],
                     timeout=300,
                 )
                 if code != 0:
