@@ -16,12 +16,21 @@ FRAMEWORKS: dict[str, dict] = {
         "release_asset_pattern": "openclaw-taos-fork-linux-{arch}.tgz",
         "install_script": "/usr/local/bin/taos-framework-update",
         "service_name": "openclaw",
+        "slash_commands": [
+            {"name": "help", "description": "List OpenClaw commands"},
+            {"name": "clear", "description": "Clear conversation history"},
+            {"name": "compact", "description": "Summarise and compact context"},
+            {"name": "cost", "description": "Show token spend for this session"},
+        ],
     },
     "smolagents": {
         "id": "smolagents",
         "name": "SmolAgents",
         "description": "Lightweight code-first agent framework by Hugging Face — taOS SSE bridge verified in group chat",
         "verification_status": "beta",
+        "slash_commands": [
+            {"name": "help", "description": "Show SmolAgents help"},
+        ],
     },
     "generic": {
         "id": "generic",
@@ -34,24 +43,38 @@ FRAMEWORKS: dict[str, dict] = {
         "name": "PocketFlow",
         "description": "Graph-based flow execution with OpenAI-compatible backend — taOS SSE bridge verified in group chat",
         "verification_status": "beta",
+        "slash_commands": [
+            {"name": "help", "description": "Show PocketFlow help"},
+        ],
     },
     "langroid": {
         "id": "langroid",
         "name": "Langroid",
         "description": "Task-based multi-agent framework using Langroid ChatAgent — taOS SSE bridge verified in group chat",
         "verification_status": "beta",
+        "slash_commands": [
+            {"name": "help", "description": "Show Langroid help"},
+        ],
     },
     "openai-agents-sdk": {
         "id": "openai-agents-sdk",
         "name": "OpenAI Agents SDK",
         "description": "OpenAI Agents SDK with OpenAIChatCompletionsModel — taOS SSE bridge verified in group chat",
         "verification_status": "beta",
+        "slash_commands": [
+            {"name": "help", "description": "Show Agents SDK help"},
+        ],
     },
     "hermes": {
         "id": "hermes",
         "name": "Hermes",
         "description": "Hermes Agent Gateway (NousResearch) — taOS bridge to api_server on :8642",
         "verification_status": "beta",
+        "slash_commands": [
+            {"name": "help", "description": "List available commands"},
+            {"name": "clear", "description": "Clear the session context"},
+            {"name": "model", "description": "Show or change active model"},
+        ],
     },
     "agent_zero": {
         "id": "agent_zero",

@@ -26,3 +26,23 @@ def test_all_frameworks_with_release_source_pass_validation():
     for fw_id, entry in FRAMEWORKS.items():
         if entry.get("release_source"):
             validate_framework_manifest(fw_id, entry, require_update_fields=True)
+
+
+def test_slash_commands_field_shape():
+    """Every framework entry's slash_commands field (if present) is a list of
+    {name, description} dicts with non-empty names."""
+    for fw_id, entry in FRAMEWORKS.items():
+        cmds = entry.get("slash_commands")
+        if cmds is None:
+            continue
+        assert isinstance(cmds, list), f"{fw_id}: slash_commands must be a list"
+        for c in cmds:
+            assert isinstance(c, dict), f"{fw_id}: each command must be a dict"
+            assert c.get("name"), f"{fw_id}: command missing name"
+            assert isinstance(c.get("description", ""), str)
+
+
+def test_hermes_has_slash_commands():
+    from tinyagentos.frameworks import FRAMEWORKS
+    assert "slash_commands" in FRAMEWORKS["hermes"]
+    assert len(FRAMEWORKS["hermes"]["slash_commands"]) > 0
