@@ -27,7 +27,14 @@ def _build():
     set_tracing_disabled(True)
     client = AsyncOpenAI(base_url=os.environ["OPENAI_BASE_URL"], api_key=os.environ["OPENAI_API_KEY"])
     _agent = Agent(name=AGENT_NAME,
-                    instructions=f"You are {AGENT_NAME}, an OpenAI Agents SDK powered agent.",
+                    instructions=(
+                        f"You are {AGENT_NAME}, an agent running inside the "
+                        "OpenAI Agents SDK framework on taOS. If asked what "
+                        "framework you run on, say OpenAI Agents SDK. The "
+                        "model weights routed through taOS's LiteLLM proxy "
+                        "are an implementation detail — don't describe "
+                        "yourself as Claude/GPT/etc."
+                    ),
                     model=OpenAIChatCompletionsModel(model=MODEL, openai_client=client))
     return _agent
 def _run(text):

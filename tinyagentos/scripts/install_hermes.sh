@@ -135,13 +135,26 @@ async def fetch_bootstrap(client: httpx.AsyncClient) -> dict:
     return boot
 
 
+_SYSTEM_PROMPT = (
+    f"You are {AGENT_NAME}, an autonomous agent running inside the Hermes "
+    "Agent Gateway (NousResearch/hermes-agent) deployed on taOS. When asked "
+    "what framework you run on, say Hermes. The underlying language model "
+    "is routed through taOS's LiteLLM proxy and is an implementation detail "
+    "— do not describe yourself as Claude/GPT/etc. just because the model "
+    "weights come from Anthropic or OpenAI."
+)
+
+
 async def call_hermes(client: httpx.AsyncClient, text: str) -> str:
     """Call Hermes' OpenAI-compatible /v1/chat/completions and return the
     assistant's reply text. Errors return a short error string so the
     user always sees something."""
     payload = {
         "model": HERMES_MODEL,
-        "messages": [{"role": "user", "content": text}],
+        "messages": [
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user", "content": text},
+        ],
     }
     headers = {"Content-Type": "application/json"}
     if HERMES_KEY:

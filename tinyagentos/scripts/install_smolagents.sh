@@ -19,6 +19,12 @@ log = logging.getLogger("smol-bridge")
 BRIDGE_URL=os.environ["TAOS_BRIDGE_URL"]; AGENT_NAME=os.environ["TAOS_AGENT_NAME"]
 LOCAL_TOKEN=os.environ["TAOS_LOCAL_TOKEN"]; MODEL=os.environ.get("TAOS_MODEL","kilo-auto/free")
 _pool=ThreadPoolExecutor(max_workers=2); _agent=None
+_FRAMEWORK_PREAMBLE = (
+    f"You are the agent named {AGENT_NAME}, running inside the SmolAgents "
+    "framework (HuggingFace) on taOS. If asked what framework you run on, "
+    "answer SmolAgents. The model weights routing is an implementation "
+    "detail of taOS's proxy — don't claim to be Claude/GPT/etc.\n\nTask: "
+)
 def _build():
     global _agent
     if _agent: return _agent
@@ -32,7 +38,7 @@ def _build():
     return _agent
 def _run(text: str) -> str:
     try:
-        agent = _build(); return str(agent.run(text))
+        agent = _build(); return str(agent.run(_FRAMEWORK_PREAMBLE + text))
     except Exception as e: return f"[smolagents error: {e}]"
 async def fetch_boot(c):
     r = await c.get(f"{BRIDGE_URL}/api/openclaw/bootstrap?agent={AGENT_NAME}",

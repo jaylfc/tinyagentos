@@ -19,12 +19,21 @@ log = logging.getLogger("pf-bridge")
 BRIDGE_URL=os.environ["TAOS_BRIDGE_URL"]; AGENT_NAME=os.environ["TAOS_AGENT_NAME"]
 LOCAL_TOKEN=os.environ["TAOS_LOCAL_TOKEN"]; MODEL=os.environ.get("TAOS_MODEL","kilo-auto/free")
 _pool=ThreadPoolExecutor(max_workers=2)
+_SYSTEM_PROMPT = (
+    f"You are {AGENT_NAME}, an agent running inside the PocketFlow framework "
+    "on taOS. If asked what framework you run on, say PocketFlow. The model "
+    "weights routed through taOS's LiteLLM proxy are an implementation "
+    "detail — don't describe yourself as Claude/GPT/etc."
+)
 def _run(text: str) -> str:
     try:
         from pocketflow import Node, Flow
         import openai
         client = openai.OpenAI()
-        resp = client.chat.completions.create(model=MODEL, messages=[{"role":"user","content":text}])
+        resp = client.chat.completions.create(model=MODEL, messages=[
+            {"role":"system","content":_SYSTEM_PROMPT},
+            {"role":"user","content":text},
+        ])
         return resp.choices[0].message.content or "(empty)"
     except Exception as e: return f"[pocketflow error: {e}]"
 async def fetch_boot(c): r=await c.get(f"{BRIDGE_URL}/api/openclaw/bootstrap?agent={AGENT_NAME}", headers={"Authorization":f"Bearer {LOCAL_TOKEN}"}, timeout=30); r.raise_for_status(); return r.json()

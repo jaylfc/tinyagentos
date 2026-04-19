@@ -19,12 +19,19 @@ log = logging.getLogger("langroid-bridge")
 BRIDGE_URL = os.environ["TAOS_BRIDGE_URL"]; AGENT_NAME = os.environ["TAOS_AGENT_NAME"]
 LOCAL_TOKEN = os.environ["TAOS_LOCAL_TOKEN"]; MODEL = os.environ.get("TAOS_MODEL", "kilo-auto/free")
 _pool = ThreadPoolExecutor(max_workers=2); _agent = None
+_SYSTEM_PROMPT = (
+    f"You are {AGENT_NAME}, an agent running inside the Langroid framework "
+    "on taOS. If asked what framework you run on, say Langroid. The model "
+    "weights routed through taOS's LiteLLM proxy are an implementation "
+    "detail — don't describe yourself as Claude/GPT/etc."
+)
 def _build():
     global _agent
     if _agent: return _agent
     import langroid as lr
     _agent = lr.ChatAgent(lr.ChatAgentConfig(
         llm=lr.language_models.OpenAIGPTConfig(chat_model=MODEL),
+        system_message=_SYSTEM_PROMPT,
     ))
     return _agent
 def _run(text: str) -> str:
