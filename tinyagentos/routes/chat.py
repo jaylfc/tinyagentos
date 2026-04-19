@@ -190,6 +190,29 @@ async def post_message(request: Request):
     channel_id = body["channel_id"]
     content = body.get("content") or ""
 
+    if content.startswith("/help"):
+        from tinyagentos.chat.help import handle_help
+        args = content[len("/help"):].lstrip()
+        system_text = handle_help(args)
+        sys_msg = await msg_store.send_message(
+            channel_id=channel_id,
+            author_id="system",
+            author_type="system",
+            content=system_text,
+            content_type="text",
+            state="complete",
+            metadata=None,
+        )
+        await ch_store.update_last_message_at(channel_id)
+        await hub.broadcast(
+            channel_id,
+            {"type": "message", "seq": hub.next_seq(), **sys_msg},
+        )
+        return JSONResponse(
+            {"ok": True, "handled": "help", "system_message": sys_msg},
+            status_code=200,
+        )
+
     # Guardrail: in a non-DM channel, a / message must address at least one
     # agent explicitly (@<slug> or @all). Otherwise a framework slash command
     # would broadcast to every agent in the channel, producing N different
