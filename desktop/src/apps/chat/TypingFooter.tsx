@@ -1,5 +1,3 @@
-import React from "react";
-
 /**
  * Two-line strip rendered between the last message and the composer.
  * Line 1: humans-typing. Line 2: agent-thinking.

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type Cmd = { name: string; description: string };
 export type SlashCommandsBySlug = Record<string, Cmd[]>;
@@ -53,7 +53,7 @@ export function SlashMenu({
       {rows.length === 0 ? (
         <div className="px-3 py-2 text-xs text-shell-text-tertiary">(no commands available)</div>
       ) : (
-        rows.map((row, i) => {
+        rows.map((row) => {
           if (row.kind === "header") {
             return (
               <div key={`h-${row.slug}`} className="px-3 py-1 text-[11px] uppercase tracking-wider text-shell-text-tertiary bg-white/5">
