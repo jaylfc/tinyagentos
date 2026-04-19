@@ -644,6 +644,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     app.state.mcp_store = mcp_store
     app.state.mcp_supervisor = MCPSupervisor(mcp_store, catalog=registry, notif_store=notif_store, secrets_store=secrets_store)
     app.state.orchestrator = RestartOrchestrator(app.state)
+    app.state.latest_framework_versions = {}
+    import platform as _platform
+    app.state.host_arch = _platform.machine()
 
     from tinyagentos.trace_store import TraceStoreRegistry as _TraceStoreRegistry
     app.state.trace_registry = _TraceStoreRegistry(data_dir)
@@ -867,6 +870,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     from tinyagentos.routes import admin_prompts as admin_prompts_routes
     app.include_router(admin_prompts_routes.router)
+
+    from tinyagentos.routes import framework as framework_routes
+    app.include_router(framework_routes.router)
 
     # Lobby demo (internal only — not included in public builds)
     try:
