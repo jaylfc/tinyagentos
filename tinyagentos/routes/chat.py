@@ -208,6 +208,30 @@ async def post_message(request: Request):
                     status_code=400,
                 )
 
+    attachments = (body or {}).get("attachments") or []
+    if not isinstance(attachments, list):
+        return JSONResponse({"error": "attachments must be a list"}, status_code=400)
+    if len(attachments) > 10:
+        return JSONResponse({"error": "max 10 attachments per message"}, status_code=400)
+    data_dir = Path(getattr(request.app.state, "data_dir",
+                            Path(os.environ.get("TAOS_DATA_DIR", "./data"))))
+    chat_files = data_dir / "chat-files"
+    for att in attachments:
+        if not isinstance(att, dict):
+            return JSONResponse({"error": "each attachment must be a dict"}, status_code=400)
+        url = att.get("url", "")
+        if not url.startswith("/api/chat/files/"):
+            return JSONResponse(
+                {"error": "attachment url must be served from /api/chat/files/"},
+                status_code=400,
+            )
+        stored_name = url.rsplit("/", 1)[-1]
+        if not (chat_files / stored_name).exists():
+            return JSONResponse(
+                {"error": f"attachment file not found: {stored_name}"},
+                status_code=400,
+            )
+
     message = await msg_store.send_message(
         channel_id=channel_id,
         author_id=body["author_id"],
@@ -217,7 +241,7 @@ async def post_message(request: Request):
         thread_id=body.get("thread_id"),
         embeds=body.get("embeds"),
         components=body.get("components"),
-        attachments=body.get("attachments"),
+        attachments=attachments,
         content_blocks=body.get("content_blocks"),
         metadata=body.get("metadata"),
         state=body.get("state", "complete"),

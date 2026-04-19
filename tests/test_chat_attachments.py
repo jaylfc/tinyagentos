@@ -115,6 +115,112 @@ async def test_from_path_rejects_traversal(tmp_path):
         assert r.status_code in (400, 403)
 
 
+from tinyagentos.app import create_app
+
+
+async def _authed_msg_client(tmp_path):
+    """Create an app + authenticated client with DB stores pre-initialized.
+    ASGITransport in httpx 0.28 does not fire lifespan events, so we init
+    the chat stores manually before returning."""
+    app = _make_from_path_app(tmp_path)
+    await app.state.chat_channels.init()
+    await app.state.chat_messages.init()
+    app.state.auth.setup_user("admin", "Test Admin", "", "testpass")
+    rec = app.state.auth.find_user("admin")
+    token = app.state.auth.create_session(user_id=rec["id"], long_lived=True)
+    client = AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        cookies={"taos_session": token},
+    )
+    return app, client
+
+
+@pytest.mark.asyncio
+async def test_send_message_with_attachments_persists(tmp_path, monkeypatch):
+    monkeypatch.setenv("TAOS_DATA_DIR", str(tmp_path))
+    # seed a file that /api/chat/files/ would serve
+    (tmp_path / "chat-files").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "chat-files" / "abc-file.png").write_bytes(b"x")
+
+    app, client = await _authed_msg_client(tmp_path)
+    async with client:
+        ch_r = await client.post(
+            "/api/chat/channels",
+            json={"name": "g", "type": "group", "members": ["user", "tom"],
+                  "created_by": "user"},
+        )
+        assert ch_r.status_code in (200, 201), ch_r.json()
+        ch_id = ch_r.json()["id"]
+        r = await client.post(
+            "/api/chat/messages",
+            json={
+                "channel_id": ch_id, "author_id": "user",
+                "author_type": "user", "content": "here",
+                "content_type": "text",
+                "attachments": [
+                    {"filename": "file.png", "mime_type": "image/png",
+                     "size": 1, "url": "/api/chat/files/abc-file.png",
+                     "source": "disk"},
+                ],
+            },
+        )
+        assert r.status_code in (200, 201)
+        body = r.json()
+        assert body["attachments"][0]["filename"] == "file.png"
+
+
+@pytest.mark.asyncio
+async def test_send_message_rejects_more_than_10_attachments(tmp_path, monkeypatch):
+    monkeypatch.setenv("TAOS_DATA_DIR", str(tmp_path))
+    (tmp_path / "chat-files").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "chat-files" / "f.png").write_bytes(b"x")
+    app, client = await _authed_msg_client(tmp_path)
+    async with client:
+        ch_r = await client.post(
+            "/api/chat/channels",
+            json={"name": "g", "type": "group", "members": ["user"],
+                  "created_by": "user"},
+        )
+        assert ch_r.status_code in (200, 201), ch_r.json()
+        ch_id = ch_r.json()["id"]
+        atts = [{"filename": "f.png", "mime_type": "image/png", "size": 1,
+                 "url": "/api/chat/files/f.png", "source": "disk"}] * 11
+        r = await client.post(
+            "/api/chat/messages",
+            json={"channel_id": ch_id, "author_id": "user",
+                  "author_type": "user", "content": "overflow",
+                  "content_type": "text", "attachments": atts},
+        )
+        assert r.status_code == 400
+        assert "10" in r.json().get("error", "")
+
+
+@pytest.mark.asyncio
+async def test_send_message_rejects_bad_url_prefix(tmp_path, monkeypatch):
+    monkeypatch.setenv("TAOS_DATA_DIR", str(tmp_path))
+    app, client = await _authed_msg_client(tmp_path)
+    async with client:
+        ch_r = await client.post(
+            "/api/chat/channels",
+            json={"name": "g", "type": "group", "members": ["user"],
+                  "created_by": "user"},
+        )
+        assert ch_r.status_code in (200, 201), ch_r.json()
+        ch_id = ch_r.json()["id"]
+        r = await client.post(
+            "/api/chat/messages",
+            json={"channel_id": ch_id, "author_id": "user",
+                  "author_type": "user", "content": "bad",
+                  "content_type": "text",
+                  "attachments": [
+                      {"filename": "f", "mime_type": "x", "size": 1,
+                       "url": "https://evil.example/f", "source": "disk"}
+                  ]},
+        )
+        assert r.status_code == 400
+
+
 @pytest.mark.asyncio
 async def test_from_path_rejects_oversize(tmp_path):
     ws = tmp_path / "agent-workspaces" / "user"
