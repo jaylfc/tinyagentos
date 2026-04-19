@@ -31,8 +31,16 @@ export function FrameworkTab({ agent, onUpdated }: { agent: { name: string }; on
 
   async function doUpdate() {
     setSubmitting(true);
-    try { await startFrameworkUpdate(agent.name); await load(); onUpdated(); }
-    catch (e: any) { setErr(String(e)); }
+    try {
+      // Pin the request to the exact tag the user just confirmed so the
+      // backend can't drift to a newer release if its cache advances mid-click.
+      await startFrameworkUpdate(agent.name, state?.latest?.tag);
+      // Optimistically flip to "updating" so the polling effect arms even
+      // if a racing load() reads an idle status before the backend writes.
+      setState((prev) => prev ? { ...prev, update_status: "updating", update_started_at: Math.floor(Date.now() / 1000) } : prev);
+      await load();
+      onUpdated();
+    } catch (e: any) { setErr(String(e)); }
     finally { setSubmitting(false); setConfirming(false); }
   }
 
@@ -87,7 +95,7 @@ export function FrameworkTab({ agent, onUpdated }: { agent: { name: string }; on
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
           <div className="bg-shell-bg border border-white/10 rounded p-4 max-w-sm">
             <p className="text-sm mb-3">
-              Update {agent.name}'s {state.framework} to <code>{state.latest?.tag}</code>?
+              Update {agent.name}'s {state.framework} to <code>{state.latest?.tag ?? "latest"}</code>?
               The agent will go offline for up to 2 minutes. Messages will queue.
             </p>
             <div className="flex justify-end gap-2">
