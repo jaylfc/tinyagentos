@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { ShoppingBag, Search, Download, Trash2, Check, Package, Loader2, Bot, Brain, Server, Plug, Wrench, Image, Music, Video, Globe, Home, Cpu } from "lucide-react";
 import { Button, Card, CardContent, CardFooter, CardHeader, Input } from "@/components/ui";
+import { fetchLatestFrameworks, LatestVersion } from "@/lib/framework-api";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -392,7 +393,7 @@ function resolveIconUrl(appId: string): string | null {
 /*  AppCard                                                            */
 /* ------------------------------------------------------------------ */
 
-function AppCard({ app, onInstall, onUninstall }: { app: CatalogApp; onInstall: (id: string) => void; onUninstall: (id: string) => void }) {
+function AppCard({ app, affected, onInstall, onUninstall }: { app: CatalogApp; affected: number; onInstall: (id: string) => void; onUninstall: (id: string) => void }) {
   const [busy, setBusy] = useState(false);
   const [iconFailed, setIconFailed] = useState(false);
 
@@ -448,9 +449,14 @@ function AppCard({ app, onInstall, onUninstall }: { app: CatalogApp; onInstall: 
               )}
             </div>
             <div className="min-w-0">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-medium text-white/90 truncate text-sm">{app.name}</span>
                 {app.installed && <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
+                {affected > 0 && (
+                  <span className="bg-yellow-700/30 text-yellow-200 text-xs px-2 py-0.5 rounded ml-2 shrink-0">
+                    Update available · {affected} {affected === 1 ? "agent" : "agents"}
+                  </span>
+                )}
               </div>
               <span className="text-[11px] text-white/30">v{app.version}</span>
             </div>
@@ -497,6 +503,8 @@ export function StoreApp({ windowId: _windowId }: { windowId: string }) {
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("all");
   const [loading, setLoading] = useState(true);
+  const [latest, setLatest] = useState<Record<string, LatestVersion>>({});
+  const [agentList, setAgentList] = useState<any[]>([]);
 
   const fetchCatalog = useCallback(async () => {
     try {
@@ -538,6 +546,14 @@ export function StoreApp({ windowId: _windowId }: { windowId: string }) {
     const qs = new URLSearchParams(window.location.hash.split("?")[1] || "");
     const cat = qs.get("category");
     if (cat) setActiveCategory(cat);
+  }, []);
+
+  useEffect(() => {
+    fetchLatestFrameworks().then(setLatest).catch(() => {});
+    fetch("/api/agents")
+      .then((r) => r.ok ? r.json() : [])
+      .then((j) => setAgentList(Array.isArray(j) ? j : (j?.agents ?? [])))
+      .catch(() => {});
   }, []);
 
   const activeCat = CATEGORIES.find((c) => c.id === activeCategory);
@@ -660,9 +676,21 @@ export function StoreApp({ windowId: _windowId }: { windowId: string }) {
             </div>
           ) : (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-4">
-              {filtered.map((app) => (
-                <AppCard key={app.id} app={app} onInstall={handleInstall} onUninstall={handleUninstall} />
-              ))}
+              {filtered.map((app) => {
+                const latestForApp = latest[app.id];
+                const affected = app.type === "agent-framework"
+                  ? agentList.filter(
+                      (a: any) =>
+                        a.framework === app.id &&
+                        a.framework_version_sha &&
+                        latestForApp &&
+                        latestForApp.sha !== a.framework_version_sha
+                    ).length
+                  : 0;
+                return (
+                  <AppCard key={app.id} app={app} affected={affected} onInstall={handleInstall} onUninstall={handleUninstall} />
+                );
+              })}
             </div>
           )}
         </div>
