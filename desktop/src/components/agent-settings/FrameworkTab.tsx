@@ -1,0 +1,106 @@
+import { useEffect, useState } from "react";
+import { fetchFrameworkState, FrameworkState, startFrameworkUpdate } from "@/lib/framework-api";
+
+export function FrameworkTab({ agent, onUpdated }: { agent: { name: string }; onUpdated: () => void }) {
+  const [state, setState] = useState<FrameworkState | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+
+  async function load() {
+    try { setState(await fetchFrameworkState(agent.name)); setErr(null); }
+    catch (e: any) { setErr(String(e)); }
+  }
+
+  useEffect(() => { load(); }, [agent.name]);
+
+  useEffect(() => {
+    if (state?.update_status !== "updating") return;
+    const id = setInterval(() => { load(); }, 2000);
+    return () => clearInterval(id);
+  }, [state?.update_status]);
+
+  useEffect(() => {
+    if (state?.update_status !== "updating" || !state.update_started_at) { setElapsed(0); return; }
+    const tick = () => setElapsed(Math.floor(Date.now() / 1000) - (state.update_started_at ?? 0));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [state?.update_status, state?.update_started_at]);
+
+  async function doUpdate() {
+    setSubmitting(true);
+    try { await startFrameworkUpdate(agent.name); await load(); onUpdated(); }
+    catch (e: any) { setErr(String(e)); }
+    finally { setSubmitting(false); setConfirming(false); }
+  }
+
+  if (err) return <div className="p-4 text-sm text-red-400">Error: {err}</div>;
+  if (!state) return <div className="p-4 text-sm opacity-60">Loading…</div>;
+
+  return (
+    <div className="flex flex-col gap-4 p-4">
+      <div className="text-sm">This agent runs <b>{state.framework}</b></div>
+      <dl className="grid grid-cols-[120px_1fr] gap-y-1 text-sm">
+        <dt className="opacity-60">Installed</dt>
+        <dd><code>{state.installed.tag ?? "(unknown)"}</code> · <code>{state.installed.sha ?? "—"}</code></dd>
+        <dt className="opacity-60">Latest</dt>
+        <dd>
+          {state.latest
+            ? <><code>{state.latest.tag}</code> · <code>{state.latest.sha}</code>
+                {state.latest.published_at && <span className="opacity-60 ml-2">published {state.latest.published_at}</span>}</>
+            : <span className="opacity-60">(not available)</span>}
+        </dd>
+      </dl>
+
+      {state.update_available && state.update_status === "idle" && (
+        <div className="flex items-center gap-2">
+          <span className="bg-yellow-700/30 text-yellow-200 px-2 py-0.5 rounded text-xs">Update available</span>
+          <button onClick={() => setConfirming(true)} disabled={submitting}
+                  className="bg-blue-600 px-3 py-1.5 rounded text-sm">
+            Update Framework
+          </button>
+        </div>
+      )}
+
+      {!state.update_available && state.update_status === "idle" && state.latest && (
+        <div className="text-sm text-green-400">✓ You're on the latest version</div>
+      )}
+
+      {state.update_status === "updating" && (
+        <div className="bg-white/5 border border-white/10 rounded px-3 py-2 text-sm">
+          Updating {state.framework}… started {elapsed}s ago.
+        </div>
+      )}
+
+      {state.update_status === "failed" && (
+        <div className="bg-red-950/40 border border-red-800 rounded px-3 py-2 text-sm">
+          <div>Update failed: {state.last_error}</div>
+          {state.last_snapshot && (
+            <div className="opacity-70 mt-1">Snapshot retained: <code>{state.last_snapshot}</code></div>
+          )}
+        </div>
+      )}
+
+      {confirming && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-shell-bg border border-white/10 rounded p-4 max-w-sm">
+            <p className="text-sm mb-3">
+              Update {agent.name}'s {state.framework} to <code>{state.latest?.tag}</code>?
+              The agent will go offline for up to 2 minutes. Messages will queue.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setConfirming(false)} className="opacity-60 text-sm">Cancel</button>
+              <button onClick={doUpdate} disabled={submitting} className="bg-blue-600 px-3 py-1.5 rounded text-sm">
+                {submitting ? "Starting…" : "Update"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="mt-auto pt-4 text-xs opacity-50">Switch framework — coming soon</div>
+    </div>
+  );
+}

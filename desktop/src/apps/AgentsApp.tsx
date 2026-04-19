@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Bot, Plus, Trash2, ScrollText, Play, Server, X, ChevronRight, ChevronLeft, Check, Wrench, MessageSquare, PauseCircle, RotateCcw, Archive, HardDrive } from "lucide-react";
+import { Bot, Box, Plus, Trash2, ScrollText, Play, Server, X, ChevronRight, ChevronLeft, Check, Wrench, MessageSquare, PauseCircle, RotateCcw, Archive, HardDrive } from "lucide-react";
 import { AgentSkillsPanel } from "./AgentSkillsPanel";
 import { AgentMessagesPanel } from "./AgentMessagesPanel";
 import { PersonaTab } from "@/components/agent-settings/PersonaTab";
 import { MemoryTab } from "@/components/agent-settings/MemoryTab";
+import { FrameworkTab } from "@/components/agent-settings/FrameworkTab";
 import {
   fetchClusterWorkers,
   workersToAggregated,
@@ -248,7 +249,7 @@ function AgentRow({
 /*  AgentDetailPanel (Logs + Skills tabs)                              */
 /* ------------------------------------------------------------------ */
 
-type DetailTab = "logs" | "persona" | "memory" | "skills" | "messages";
+type DetailTab = "logs" | "persona" | "memory" | "framework" | "skills" | "messages";
 
 function AgentDetailPanel({
   agent,
@@ -346,6 +347,10 @@ function AgentDetailPanel({
               <Archive size={13} className="mr-1.5" />
               Memory
             </TabsTrigger>
+            <TabsTrigger value="framework">
+              <Box size={13} className="mr-1.5" />
+              Framework
+            </TabsTrigger>
             <TabsTrigger value="skills">
               <Wrench size={13} className="mr-1.5" />
               Skills
@@ -380,6 +385,9 @@ function AgentDetailPanel({
         </TabsContent>
         <TabsContent value="memory" className="h-full mt-0">
           <MemoryTab agent={agent} onUpdated={onAgentUpdated} />
+        </TabsContent>
+        <TabsContent value="framework" className="h-full mt-0">
+          <FrameworkTab agent={agent} onUpdated={onAgentUpdated} />
         </TabsContent>
         <TabsContent value="skills" className="h-full mt-0">
           <AgentSkillsPanel
