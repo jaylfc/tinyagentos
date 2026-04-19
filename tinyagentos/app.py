@@ -89,6 +89,7 @@ from tinyagentos.knowledge_ingest import IngestPipeline
 from tinyagentos.knowledge_categories import CategoryEngine
 from tinyagentos.knowledge_monitor import MonitorService
 from tinyagentos.mcp import MCPServerStore, MCPSupervisor
+from tinyagentos.frameworks import FRAMEWORKS, FrameworkManifestError, validate_framework_manifest
 
 PROJECT_DIR = Path(__file__).parent.parent
 
@@ -126,6 +127,16 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
             # Persist newly registered backends to config.yaml synchronously
             # (lifespan hasn't started yet so we use the sync save).
             save_config(config, config.config_path)
+
+    for fw_id, entry in FRAMEWORKS.items():
+        try:
+            validate_framework_manifest(
+                fw_id, entry,
+                require_update_fields=bool(entry.get("release_source")),
+            )
+        except FrameworkManifestError:
+            logger.exception("framework manifest validation failed")
+            # Do NOT raise — legacy manifests can still run agents; only update paths are disabled.
 
     catalog_dir = catalog_dir or PROJECT_DIR / "app-catalog"
     hardware_path = data_dir / "hardware.json"
