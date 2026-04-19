@@ -261,3 +261,73 @@ async def test_hop_cap_overridden_by_mention():
     slugs = sorted(c[0] for c in bridge.calls)
     assert slugs == ["don"]
     assert bridge.calls[0][1]["force_respond"] is True
+
+
+@pytest.mark.asyncio
+async def test_at_all_resets_and_forces_everyone():
+    bridge = _FakeBridge()
+    state = _state_for({"name": "tom", "status": "running"}, bridge=bridge)
+    state.config.agents = [{"name": "tom", "status": "running"},
+                           {"name": "don", "status": "running"}]
+    from tinyagentos.chat.group_policy import GroupPolicy
+    state.group_policy = GroupPolicy()
+    router = AgentChatRouter(state)
+    msg = {"id": "m", "author_id": "user", "author_type": "user",
+           "content": "@all wake up", "metadata": {"hops_since_user": 0}}
+    ch = _channel(["user", "tom", "don"], "lively")
+    await router._route(msg, ch)
+    assert sorted(c[0] for c in bridge.calls) == ["don", "tom"]
+    assert all(c[1]["force_respond"] is True for c in bridge.calls)
+
+
+@pytest.mark.asyncio
+async def test_cooldown_blocks_subsequent_unforced():
+    bridge = _FakeBridge()
+    state = _state_for({"name": "tom", "status": "running"}, bridge=bridge)
+    state.config.agents = [{"name": "tom", "status": "running"}]
+    from tinyagentos.chat.group_policy import GroupPolicy
+    state.group_policy = GroupPolicy()
+    router = AgentChatRouter(state)
+    msg = {"id": "m1", "author_id": "user", "author_type": "user",
+           "content": "hi", "metadata": {"hops_since_user": 0}}
+    ch = _channel(["user", "tom"], "lively")
+    await router._route(msg, ch)
+    # Second message, no mention: cooldown applies
+    msg2 = {**msg, "id": "m2", "content": "again"}
+    await router._route(msg2, ch)
+    # Only one enqueue because the second was blocked
+    assert len(bridge.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_cooldown_skipped_when_mentioned():
+    bridge = _FakeBridge()
+    state = _state_for({"name": "tom", "status": "running"}, bridge=bridge)
+    state.config.agents = [{"name": "tom", "status": "running"}]
+    from tinyagentos.chat.group_policy import GroupPolicy
+    state.group_policy = GroupPolicy()
+    router = AgentChatRouter(state)
+    msg = {"id": "m1", "author_id": "user", "author_type": "user",
+           "content": "hi", "metadata": {"hops_since_user": 0}}
+    ch = _channel(["user", "tom"], "lively")
+    await router._route(msg, ch)
+    msg2 = {**msg, "id": "m2", "content": "@tom still there?"}
+    await router._route(msg2, ch)
+    assert len(bridge.calls) == 2
+    assert bridge.calls[1][1]["force_respond"] is True
+
+
+@pytest.mark.asyncio
+async def test_dm_always_forces_respond():
+    bridge = _FakeBridge()
+    state = _state_for({"name": "tom", "status": "running"}, bridge=bridge)
+    state.config.agents = [{"name": "tom", "status": "running"}]
+    from tinyagentos.chat.group_policy import GroupPolicy
+    state.group_policy = GroupPolicy()
+    router = AgentChatRouter(state)
+    msg = {"id": "m", "author_id": "user", "author_type": "user",
+           "content": "ping", "metadata": {"hops_since_user": 0}}
+    ch = _channel(["user", "tom"], mode="quiet", ctype="dm")
+    await router._route(msg, ch)
+    assert len(bridge.calls) == 1
+    assert bridge.calls[0][1]["force_respond"] is True
