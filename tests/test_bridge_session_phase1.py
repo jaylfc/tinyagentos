@@ -51,3 +51,24 @@ async def test_handle_reply_sets_hops_on_persisted_reply_metadata():
     # send_message should have been called with metadata including hops_since_user=1
     call = store.send_message.await_args
     assert call.kwargs["metadata"]["hops_since_user"] == 1
+
+
+@pytest.mark.asyncio
+async def test_enqueue_passes_thread_id_and_attachments():
+    reg = BridgeSessionRegistry()
+    await reg.enqueue_user_message("tom", {
+        "id": "m1", "trace_id": "m1", "channel_id": "c1",
+        "from": "user", "text": "see file", "hops_since_user": 0,
+        "force_respond": False, "context": [],
+        "thread_id": "t-parent",
+        "attachments": [
+            {"filename": "a.png", "mime_type": "image/png",
+             "size": 1, "url": "/api/chat/files/abc.png"},
+        ],
+    })
+    frames = []
+    async for frame in reg.subscribe("tom"):
+        frames.append(frame)
+        break
+    assert "thread_id" in frames[0]
+    assert "a.png" in frames[0]
