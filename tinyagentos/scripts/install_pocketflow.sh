@@ -25,13 +25,31 @@ _SYSTEM_PROMPT = (
     "weights routed through taOS's LiteLLM proxy are an implementation "
     "detail — don't describe yourself as Claude/GPT/etc."
 )
-def _run(text: str) -> str:
+
+def _render_context(ctx):
+    if not ctx:
+        return ""
+    lines = []
+    for m in ctx:
+        who = m.get("author_id") or "?"
+        lines.append(f"{who}: {m.get('content','')}")
+    return "\n".join(lines)
+
+def _suppress(reply, force):
+    if force:
+        return reply
+    stripped = (reply or "").strip().lower().strip(".!,;:")
+    return None if stripped == "no_response" else reply
+
+def _run(text, force):
     try:
-        from pocketflow import Node, Flow
         import openai
         client = openai.OpenAI()
+        rule = (" You were directly addressed, reply normally."
+                if force else
+                " If this message isn't for you, reply with exactly NO_RESPONSE.")
         resp = client.chat.completions.create(model=MODEL, messages=[
-            {"role":"system","content":_SYSTEM_PROMPT},
+            {"role":"system","content":_SYSTEM_PROMPT + rule},
             {"role":"user","content":text},
         ])
         return resp.choices[0].message.content or "(empty)"
@@ -41,10 +59,15 @@ async def post_reply(c, u, t, mid, tid, txt, cid=None):
     try: await c.post(u, json={"kind":"final","id":mid,"trace_id":tid,"content":txt}, headers={"Authorization":f"Bearer {t}"}, timeout=30)
     except Exception as e: log.warning("reply: %s", e)
 async def handle(c, evt, ch):
-    mid=evt.get("id",""); tid=evt.get("trace_id",mid); txt=evt.get("text","")
-    log.info("user_message id=%s text=%r", mid, txt[:80])
-    reply = await asyncio.get_running_loop().run_in_executor(_pool, _run, txt)
-    await post_reply(c, ch["reply_url"], ch["auth_bearer"], mid, tid, reply)
+    mid = evt.get("id",""); tid = evt.get("trace_id", mid); text = evt.get("text","")
+    force = bool(evt.get("force_respond"))
+    ctx = _render_context(evt.get("context") or [])
+    full = (f"Recent conversation:\n{ctx}\n\nCurrent: {text}") if ctx else text
+    log.info("user_message id=%s text=%r force=%s", mid, text[:80], force)
+    reply = await asyncio.get_running_loop().run_in_executor(_pool, _run, full, force)
+    final = _suppress(reply, force)
+    if final is None: return
+    await post_reply(c, ch["reply_url"], ch["auth_bearer"], mid, tid, final, evt.get("channel_id"))
 async def sse(c, ch, stop):
     while not stop.is_set():
         try:

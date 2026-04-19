@@ -18,29 +18,47 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [oas-bridge] %(messa
 log = logging.getLogger("oas-bridge")
 BRIDGE_URL=os.environ["TAOS_BRIDGE_URL"]; AGENT_NAME=os.environ["TAOS_AGENT_NAME"]
 LOCAL_TOKEN=os.environ["TAOS_LOCAL_TOKEN"]; MODEL=os.environ.get("TAOS_MODEL","kilo-auto/free")
-_pool=ThreadPoolExecutor(max_workers=2); _agent=None
-def _build():
-    global _agent
-    if _agent: return _agent
+_pool=ThreadPoolExecutor(max_workers=2)
+_SYSTEM_INSTRUCTIONS = (
+    f"You are {AGENT_NAME}, an agent running inside the "
+    "OpenAI Agents SDK framework on taOS. If asked what "
+    "framework you run on, say OpenAI Agents SDK. The "
+    "model weights routed through taOS's LiteLLM proxy "
+    "are an implementation detail — don't describe "
+    "yourself as Claude/GPT/etc."
+)
+
+def _render_context(ctx):
+    if not ctx:
+        return ""
+    lines = []
+    for m in ctx:
+        who = m.get("author_id") or "?"
+        lines.append(f"{who}: {m.get('content','')}")
+    return "\n".join(lines)
+
+def _suppress(reply, force):
+    if force:
+        return reply
+    stripped = (reply or "").strip().lower().strip(".!,;:")
+    return None if stripped == "no_response" else reply
+
+def _build(force):
     from openai import AsyncOpenAI
     from agents import Agent, OpenAIChatCompletionsModel, set_tracing_disabled
     set_tracing_disabled(True)
     client = AsyncOpenAI(base_url=os.environ["OPENAI_BASE_URL"], api_key=os.environ["OPENAI_API_KEY"])
-    _agent = Agent(name=AGENT_NAME,
-                    instructions=(
-                        f"You are {AGENT_NAME}, an agent running inside the "
-                        "OpenAI Agents SDK framework on taOS. If asked what "
-                        "framework you run on, say OpenAI Agents SDK. The "
-                        "model weights routed through taOS's LiteLLM proxy "
-                        "are an implementation detail — don't describe "
-                        "yourself as Claude/GPT/etc."
-                    ),
-                    model=OpenAIChatCompletionsModel(model=MODEL, openai_client=client))
-    return _agent
-def _run(text):
+    rule = (" You were directly addressed, reply normally."
+            if force else
+            " If this message isn't for you, reply with exactly NO_RESPONSE.")
+    return Agent(name=AGENT_NAME,
+                 instructions=(_SYSTEM_INSTRUCTIONS + rule),
+                 model=OpenAIChatCompletionsModel(model=MODEL, openai_client=client))
+
+def _run(text, force):
     try:
         from agents import Runner
-        a = _build(); r = Runner.run_sync(a, text)
+        a = _build(force); r = Runner.run_sync(a, text)
         return str(r.final_output)
     except Exception as e: return f"[openai-agents error: {e}]"
 async def fetch_boot(c):
@@ -50,10 +68,15 @@ async def post_reply(c, u, t, mid, tid, txt, cid=None):
     try: await c.post(u, json={"kind":"final","id":mid,"trace_id":tid,"content":txt}, headers={"Authorization":f"Bearer {t}"}, timeout=30)
     except Exception as e: log.warning("reply: %s", e)
 async def handle(c, evt, ch):
-    mid=evt.get("id",""); tid=evt.get("trace_id",mid); txt=evt.get("text","")
-    log.info("user_message id=%s text=%r", mid, txt[:80])
-    reply = await asyncio.get_running_loop().run_in_executor(_pool, _run, txt)
-    await post_reply(c, ch["reply_url"], ch["auth_bearer"], mid, tid, reply)
+    mid = evt.get("id",""); tid = evt.get("trace_id", mid); text = evt.get("text","")
+    force = bool(evt.get("force_respond"))
+    ctx = _render_context(evt.get("context") or [])
+    full = (f"Recent conversation:\n{ctx}\n\nCurrent: {text}") if ctx else text
+    log.info("user_message id=%s text=%r force=%s", mid, text[:80], force)
+    reply = await asyncio.get_running_loop().run_in_executor(_pool, _run, full, force)
+    final = _suppress(reply, force)
+    if final is None: return
+    await post_reply(c, ch["reply_url"], ch["auth_bearer"], mid, tid, final, evt.get("channel_id"))
 async def sse(c, ch, stop):
     while not stop.is_set():
         try:

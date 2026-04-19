@@ -145,16 +145,29 @@ _SYSTEM_PROMPT = (
 )
 
 
-async def call_hermes(client: httpx.AsyncClient, text: str) -> str:
+def _render_context(ctx):
+    if not ctx:
+        return ""
+    lines = []
+    for m in ctx:
+        who = m.get("author_id") or "?"
+        lines.append(f"{who}: {m.get('content','')}")
+    return "\n".join(lines)
+
+def _suppress(reply, force):
+    if force:
+        return reply
+    stripped = (reply or "").strip().lower().strip(".!,;:")
+    return None if stripped == "no_response" else reply
+
+
+async def call_hermes(client: httpx.AsyncClient, messages: list) -> str:
     """Call Hermes' OpenAI-compatible /v1/chat/completions and return the
     assistant's reply text. Errors return a short error string so the
     user always sees something."""
     payload = {
         "model": HERMES_MODEL,
-        "messages": [
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": text},
-        ],
+        "messages": messages,
     }
     headers = {"Content-Type": "application/json"}
     if HERMES_KEY:
@@ -189,10 +202,23 @@ async def handle_user_message(client: httpx.AsyncClient, evt: dict, channel: dic
     msg_id = evt.get("id", "")
     trace_id = evt.get("trace_id", msg_id)
     text = evt.get("text", "")
-    log.info("user_message id=%s text=%r", msg_id, text[:80])
-    reply = await call_hermes(client, text)
+    force = bool(evt.get("force_respond"))
+    ctx = _render_context(evt.get("context") or [])
+    log.info("user_message id=%s text=%r force=%s", msg_id, text[:80], force)
+    system = _SYSTEM_PROMPT + ("\n\nYou were directly addressed. Reply naturally; do not output NO_RESPONSE."
+        if force else
+        "\n\nIf you were not explicitly @mentioned and this message is not for you, reply with exactly: NO_RESPONSE\nOtherwise reply naturally. Keep it short in group chats.")
+    messages = [{"role": "system", "content": system}]
+    if ctx:
+        messages.append({"role": "user", "content": f"Recent conversation:\n{ctx}"})
+    messages.append({"role": "user", "content": text})
+    reply = await call_hermes(client, messages)
+    final = _suppress(reply, force)
+    if final is None:
+        log.info("suppressed NO_RESPONSE for id=%s", msg_id)
+        return
     await post_reply(client, channel["reply_url"], channel["auth_bearer"],
-                     msg_id, trace_id, reply, evt.get("channel_id"))
+                     msg_id, trace_id, final, evt.get("channel_id"))
 
 
 async def sse_loop(client: httpx.AsyncClient, channel: dict, stop: asyncio.Event) -> None:

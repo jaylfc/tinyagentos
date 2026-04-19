@@ -36,10 +36,30 @@ def _build():
     )
     _agent = CodeAgent(tools=[], model=model)
     return _agent
-def _run(text: str) -> str:
+def _render_context(ctx):
+    if not ctx:
+        return ""
+    lines = []
+    for m in ctx:
+        who = m.get("author_id") or "?"
+        lines.append(f"{who}: {m.get('content','')}")
+    return "\n".join(lines)
+
+def _suppress(reply, force):
+    if force:
+        return reply
+    stripped = (reply or "").strip().lower().strip(".!,;:")
+    return None if stripped == "no_response" else reply
+
+def _run(text, force):
     try:
-        agent = _build(); return str(agent.run(_FRAMEWORK_PREAMBLE + text))
-    except Exception as e: return f"[smolagents error: {e}]"
+        agent = _build()
+        rule = (" You were directly addressed, reply normally."
+                if force else
+                " If this message isn't for you, reply with exactly NO_RESPONSE.")
+        return str(agent.run(_FRAMEWORK_PREAMBLE + rule + "\n\nTask: " + text))
+    except Exception as e:
+        return f"[smolagents error: {e}]"
 async def fetch_boot(c):
     r = await c.get(f"{BRIDGE_URL}/api/openclaw/bootstrap?agent={AGENT_NAME}",
                      headers={"Authorization": f"Bearer {LOCAL_TOKEN}"}, timeout=30)
@@ -50,10 +70,16 @@ async def post_reply(c, u, t, mid, tid, txt, cid=None):
     try: await c.post(u, json=body, headers={"Authorization": f"Bearer {t}"}, timeout=30)
     except Exception as e: log.warning("reply: %s", e)
 async def handle(c, evt, ch):
-    mid=evt.get("id",""); tid=evt.get("trace_id",mid); txt=evt.get("text","")
-    log.info("user_message id=%s text=%r", mid, txt[:80])
-    reply = await asyncio.get_running_loop().run_in_executor(_pool, _run, txt)
-    await post_reply(c, ch["reply_url"], ch["auth_bearer"], mid, tid, reply)
+    mid=evt.get("id",""); tid=evt.get("trace_id",mid); text=evt.get("text","")
+    force = bool(evt.get("force_respond"))
+    ctx = _render_context(evt.get("context") or [])
+    full = (f"Recent conversation:\n{ctx}\n\nCurrent: {text}") if ctx else text
+    log.info("user_message id=%s text=%r force=%s", mid, text[:80], force)
+    reply = await asyncio.get_running_loop().run_in_executor(_pool, _run, full, force)
+    final = _suppress(reply, force)
+    if final is None:
+        log.info("suppressed id=%s", mid); return
+    await post_reply(c, ch["reply_url"], ch["auth_bearer"], mid, tid, final, evt.get("channel_id"))
 async def sse(c, ch, stop):
     while not stop.is_set():
         try:
