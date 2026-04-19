@@ -154,6 +154,15 @@ def _render_context(ctx):
         lines.append(f"{who}: {m.get('content','')}")
     return "\n".join(lines)
 
+def _render_attachments(atts):
+    if not atts:
+        return ""
+    parts = []
+    for a in atts:
+        size_kb = max(1, int(a.get("size", 0) / 1024))
+        parts.append(f"{a.get('filename','file')} ({a.get('mime_type','?')}, {size_kb} KB)")
+    return "User attached: " + ", ".join(parts)
+
 def _suppress(reply, force):
     if force:
         return reply
@@ -218,6 +227,7 @@ async def handle_user_message(client: httpx.AsyncClient, evt: dict, channel: dic
     text = evt.get("text", "")
     force = bool(evt.get("force_respond"))
     ctx = _render_context(evt.get("context") or [])
+    attach_line = _render_attachments(evt.get("attachments") or [])
     cid = evt.get("channel_id")
     log.info("user_message id=%s text=%r force=%s", msg_id, text[:80], force)
     system = _SYSTEM_PROMPT + ("\n\nYou were directly addressed. Reply naturally; do not output NO_RESPONSE."
@@ -227,6 +237,8 @@ async def handle_user_message(client: httpx.AsyncClient, evt: dict, channel: dic
     if ctx:
         messages.append({"role": "user", "content": f"Recent conversation:\n{ctx}"})
     messages.append({"role": "user", "content": text})
+    if attach_line:
+        messages.append({"role": "user", "content": attach_line})
     await _thinking(client, cid, "start")
     try:
         reply = await call_hermes(client, messages)
