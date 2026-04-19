@@ -359,6 +359,8 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.chat_messages = chat_messages
         app.state.chat_channels = chat_channels
         app.state.chat_hub = chat_hub
+        from tinyagentos.chat.group_policy import GroupPolicy
+        app.state.group_policy = GroupPolicy()
         from tinyagentos.agent_chat_router import AgentChatRouter
         app.state.agent_chat_router = AgentChatRouter(app.state)
         app.state.canvas_store = canvas_store
