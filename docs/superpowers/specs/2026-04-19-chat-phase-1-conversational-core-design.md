@@ -5,7 +5,7 @@
 
 ## Goal
 
-One sentence: agents in a group channel see each other's messages, decide per-message whether to respond, can't loop-spam the channel, and respect `@mention` / `@all` addressing plus reactions and slash-command controls.
+One sentence: agents in a group channel see each other's messages, decide per-message whether to respond, can't loop-spam the channel, respect `@mention` / `@all` addressing, and expose channel controls (mode, mute, topic, etc.) via REST admin endpoints the UI drives from right-click menus.
 
 ## Background
 
@@ -285,7 +285,7 @@ The `user_message` event payload enqueued by the router now carries:
 
 ### Window
 
-Before enqueuing, the router asks `message_store` for the channel's last messages with `limit=20`, oldest-first. It then truncates to `max_tokens=4000` using a naive 4-chars-per-token heuristic, dropping oldest first until under budget. System messages (slash-command echoes) are excluded. The current message is NOT duplicated in `context` — it's always the last turn.
+Before enqueuing, the router asks `message_store` for the channel's last messages with `limit=20`, oldest-first. It then truncates to `max_tokens=4000` using a naive 4-chars-per-token heuristic, dropping oldest first until under budget. System messages (admin-endpoint echoes, system notifications) are excluded. The current message is NOT duplicated in `context` — it's always the last turn.
 
 ### Bridge consumption
 
@@ -395,8 +395,8 @@ Resolved design:
 
 ## Error Handling
 
-- Unknown slash command → pass-through as plain text (no error).
-- Known slash command with bad args → system message describing usage.
+- Bare `/` in non-DM channel without `@<slug>` or `@all` → 400 with a user-facing message; client surfaces inline.
+- Admin endpoint bad args → 400 with a specific error (e.g., `invalid response_mode: foo`).
 - `message_store` context fetch fails → enqueue with `context: []`, log WARNING.
 - Rate cap hit → silent drop; trace records a suppressed-due-to-rate-cap event for the agent.
 - Bridge returns NO_RESPONSE when `force_respond=true` (agent violating contract) → log WARNING, treat as empty reply but still POST a visible placeholder `"(no reply)"`; don't re-dispatch.
