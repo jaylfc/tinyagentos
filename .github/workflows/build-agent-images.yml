@@ -150,8 +150,15 @@ jobs:
           echo "ts=$(date -u +%Y%m%dT%H%M%S)" >> "$GITHUB_OUTPUT"
           echo "sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
+      # Images are published to the separate jaylfc/tinyagentos-images repo so
+      # the main tinyagentos Releases page stays reserved for user-facing taOS
+      # releases. Consumers (taOS deployer) point at the images repo directly.
+      # Requires an IMAGES_RELEASE_TOKEN secret (fine-grained PAT with
+      # Contents: write on jaylfc/tinyagentos-images).
       - uses: softprops/action-gh-release@v2
         with:
+          repository: jaylfc/tinyagentos-images
+          token: ${{ secrets.IMAGES_RELEASE_TOKEN }}
           tag_name: rolling-images
           name: "taOS openclaw base image (${{ steps.id.outputs.ts }} - ${{ steps.id.outputs.sha }})"
           body: |
@@ -164,9 +171,9 @@ jobs:
             - `taos-openclaw-base-linux-arm64.tar.gz`
             - `taos-openclaw-base-linux-x64.tar.gz`
 
-            Commit: ${{ github.sha }}
+            Source commit: ${{ github.sha }}
           files: |
             taos-openclaw-base-linux-arm64.tar.gz
             taos-openclaw-base-linux-x64.tar.gz
-          make_latest: false
+          make_latest: true
           prerelease: false
