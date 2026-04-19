@@ -9,7 +9,6 @@ from pathlib import Path
 from fastapi import APIRouter, File, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 
-from tinyagentos.chat.slash_commands import dispatch as slash_dispatch, parse_slash
 from tinyagentos.chat.reactions import maybe_trigger_semantic
 
 router = APIRouter()
@@ -185,33 +184,6 @@ async def post_message(request: Request):
     hub = request.app.state.chat_hub
 
     channel_id = body["channel_id"]
-    content = body.get("content") or ""
-    cmd, args = parse_slash(content)
-    if cmd is not None:
-        result = await slash_dispatch(
-            cmd, args or "", channel_id,
-            body.get("author_id", "user"),
-            body.get("author_type", "user"),
-            request.app.state,
-        )
-        sys_msg = await msg_store.send_message(
-            channel_id=channel_id,
-            author_id="system",
-            author_type="system",
-            content=result.system_text,
-            content_type="text",
-            state="complete",
-            metadata=None,
-        )
-        await ch_store.update_last_message_at(channel_id)
-        await hub.broadcast(
-            channel_id,
-            {"type": "message", "seq": hub.next_seq(), **sys_msg},
-        )
-        return JSONResponse(
-            {"ok": True, "handled": "slash", "system_message": sys_msg},
-            status_code=200,
-        )
 
     message = await msg_store.send_message(
         channel_id=channel_id,
