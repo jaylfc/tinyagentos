@@ -9,14 +9,20 @@ async def test_regenerate_triggered_for_thumbs_down_on_agent_reply():
     bridge = MagicMock()
     bridge.enqueue_user_message = AsyncMock()
     msg_store = MagicMock()
+    msg_store.get_message = AsyncMock(return_value={
+        "id": "user-msg-1", "channel_id": "c1", "content": "what's 2+2?",
+    })
     msg_store.get_messages = AsyncMock(return_value=[
-        {"author_id": "user", "author_type": "user", "content": "what is 2+2?"},
+        {"author_id": "user", "author_type": "user", "content": "what's 2+2?"},
         {"author_id": "tom", "author_type": "agent", "content": "bad answer"},
     ])
     state = MagicMock(bridge_sessions=bridge, chat_messages=msg_store)
     state.wants_reply = WantsReplyRegistry()
-    message = {"id": "m1", "channel_id": "c1", "author_id": "tom",
-               "author_type": "agent", "content": "bad answer"}
+    message = {
+        "id": "m1", "channel_id": "c1", "author_id": "tom",
+        "author_type": "agent", "content": "bad answer",
+        "metadata": {"trace_id": "user-msg-1"},
+    }
     channel = {"id": "c1", "members": ["user", "tom"], "type": "dm",
                "settings": {}}
     await maybe_trigger_semantic(
@@ -28,6 +34,8 @@ async def test_regenerate_triggered_for_thumbs_down_on_agent_reply():
     assert call.args[0] == "tom"
     assert call.args[1]["force_respond"] is True
     assert call.args[1].get("regenerate") is True
+    assert call.args[1]["text"] == "what's 2+2?"
+    assert call.args[1]["trace_id"] == "user-msg-1"
     assert len(call.args[1]["context"]) > 0
 
 

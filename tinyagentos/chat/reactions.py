@@ -37,8 +37,23 @@ async def maybe_trigger_semantic(
         bridge = getattr(state, "bridge_sessions", None)
         if bridge is None:
             return
-        context = []
+
+        # Regenerate = ask the agent to answer the ORIGINAL user message again.
+        # The trace_id on an agent reply points at the user message that triggered it.
         msg_store = getattr(state, "chat_messages", None)
+        original_text = ""
+        original_id = message.get("id")
+        trace_id = (message.get("metadata") or {}).get("trace_id") or message.get("id")
+        if msg_store is not None and trace_id:
+            try:
+                original = await msg_store.get_message(trace_id)
+                if original:
+                    original_text = original.get("content") or ""
+                    original_id = original.get("id") or original_id
+            except Exception:
+                original_text = ""
+
+        context = []
         if msg_store is not None:
             try:
                 from tinyagentos.chat.context_window import build_context_window
@@ -46,14 +61,15 @@ async def maybe_trigger_semantic(
                 context = build_context_window(recent, limit=20, max_tokens=4000)
             except Exception:
                 context = []
+
         await bridge.enqueue_user_message(
             message["author_id"],
             {
-                "id": message.get("id"),
-                "trace_id": message.get("id"),
+                "id": original_id,
+                "trace_id": trace_id,
                 "channel_id": message.get("channel_id"),
                 "from": reactor_id,
-                "text": message.get("content", ""),
+                "text": original_text,
                 "hops_since_user": 0,
                 "force_respond": True,
                 "regenerate": True,

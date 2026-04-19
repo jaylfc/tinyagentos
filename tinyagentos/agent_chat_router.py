@@ -81,13 +81,29 @@ class AgentChatRouter:
         if not recipients:
             return
 
-        current_hops = (message.get("metadata") or {}).get("hops_since_user", 0)
+        try:
+            current_hops = int((message.get("metadata") or {}).get("hops_since_user", 0) or 0)
+        except (TypeError, ValueError):
+            current_hops = 0
         next_hops = current_hops + 1
         max_hops = int(settings.get("max_hops", 3))
 
         config = self._state.config
         bridge = getattr(self._state, "bridge_sessions", None)
         policy = getattr(self._state, "group_policy", None)
+
+        # Build the context window once per routed message, not per recipient.
+        context = []
+        if hasattr(self._state, "chat_messages"):
+            try:
+                from tinyagentos.chat.context_window import build_context_window
+                recent = await self._state.chat_messages.get_messages(
+                    channel_id=channel["id"], limit=30,
+                )
+                context = build_context_window(recent, limit=20, max_tokens=4000)
+            except Exception:
+                logger.warning("context fetch failed for channel %s", channel.get("id"), exc_info=True)
+                context = []
 
         for agent_name in recipients:
             forced = force_by_slug.get(agent_name, False)
@@ -111,18 +127,6 @@ class AgentChatRouter:
                     "[router] bridge registry not configured on this host.",
                 )
                 continue
-
-            context = []
-            if hasattr(self._state, "chat_messages"):
-                try:
-                    from tinyagentos.chat.context_window import build_context_window
-                    recent = await self._state.chat_messages.get_messages(
-                        channel_id=channel["id"], limit=30,
-                    )
-                    context = build_context_window(recent, limit=20, max_tokens=4000)
-                except Exception:
-                    logger.warning("context fetch failed for channel %s", channel.get("id"), exc_info=True)
-                    context = []
 
             await bridge.enqueue_user_message(
                 agent_name,
