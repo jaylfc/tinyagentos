@@ -121,6 +121,7 @@ class AgentChatRouter:
                     )
                     context = build_context_window(recent, limit=20, max_tokens=4000)
                 except Exception:
+                    logger.warning("context fetch failed for channel %s", channel.get("id"), exc_info=True)
                     context = []
 
             await bridge.enqueue_user_message(
