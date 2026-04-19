@@ -1,57 +1,87 @@
 #!/bin/bash
 # Install Hermes inside an LXC agent container + the taOS-Hermes bridge.
-# Hermes manages its own systemd service when invoked with --run-as-user
-# (required inside LXC), so we don't write our own unit for it.
+# Hermes runs in foreground via `gateway run` so systemd manages it.
+# api_key lives in /root/.hermes/config.yaml — Hermes' credential pool reads
+# from there for `provider: custom` (env var alone is not sufficient).
 set -euo pipefail
+
 log() { echo "[$(date -u +%H:%M:%S)] hermes-install: $*"; }
+
 AGENT_NAME="${TAOS_AGENT_NAME:?TAOS_AGENT_NAME required}"
 LLM_KEY="${LITELLM_API_KEY:?LITELLM_API_KEY required}"
 BRIDGE_URL="${TAOS_BRIDGE_URL:?TAOS_BRIDGE_URL required}"
 LOCAL_TOKEN="${TAOS_LOCAL_TOKEN:?TAOS_LOCAL_TOKEN required}"
 MODEL="${TAOS_MODEL:-kilo-auto/free}"
-log "installing uv"
+
+log "installing uv (idempotent)"
 if ! command -v uv >/dev/null 2>&1 && [ ! -x /root/.local/bin/uv ]; then
     curl -LsSf https://astral.sh/uv/install.sh | sh
 fi
 export PATH="/root/.local/bin:$PATH"
 echo 'export PATH="/root/.local/bin:$PATH"' >> /root/.bashrc
+
 if [ ! -d /root/.hermes/hermes-agent ]; then
     log "running Hermes installer (--skip-setup)"
     curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash -s -- --skip-setup
 fi
+
 HERMES_BIN=""
-for c in /root/.local/bin/hermes /root/.hermes/hermes-agent/.venv/bin/hermes; do
-    [ -x "$c" ] && HERMES_BIN="$c" && break
+for c in /root/.local/bin/hermes /root/.hermes/hermes-agent/.venv/bin/hermes /root/.hermes/hermes-agent/venv/bin/hermes; do
+    [ -L "$c" -o -x "$c" ] && HERMES_BIN="$c" && break
 done
 [ -z "$HERMES_BIN" ] && HERMES_BIN=$(command -v hermes || true)
 [ -z "$HERMES_BIN" ] && { log "ERROR: hermes binary not found"; exit 2; }
 log "hermes at $HERMES_BIN"
-log "writing Hermes config"
+
+log "writing /root/.hermes/.env (gateway env vars)"
 mkdir -p /root/.hermes /root/.hermes/gateway
-cat > /root/.hermes/cli-config.yaml <<EOF
-model:
-  default: "$MODEL"
-  provider: custom
-  base_url: http://127.0.0.1:4000/v1
-EOF
-cat > /root/.hermes/.env <<EOF
+cat > /root/.hermes/.env <<ENVEOF
 OPENAI_API_KEY=$LLM_KEY
 OPENAI_BASE_URL=http://127.0.0.1:4000/v1
 HERMES_INFERENCE_PROVIDER=custom
 HERMES_DEFAULT_MODEL=$MODEL
-EOF
+API_SERVER_ENABLED=true
+API_SERVER_HOST=127.0.0.1
+API_SERVER_PORT=8642
+ENVEOF
 chmod 600 /root/.hermes/.env
-cat > /root/.hermes/gateway/config.yaml <<EOF
-platforms:
-  api_server:
-    enabled: true
-    host: 127.0.0.1
-    port: 8642
-EOF
-log "starting Hermes gateway (Hermes installs its own systemd unit)"
-"$HERMES_BIN" gateway start --run-as-user root 2>&1 | tail -10 || log "WARN: hermes gateway start exited non-zero"
-log "pip install httpx for taOS bridge"
-pip3 install --break-system-packages --quiet httpx 2>&1 | tail -3 || true
+
+log "patching /root/.hermes/config.yaml model.{provider,base_url,api_key}"
+pip3 install --break-system-packages --quiet pyyaml httpx 2>&1 | tail -3 || true
+python3 - <<PYEOF
+import yaml, os
+p = "/root/.hermes/config.yaml"
+data = yaml.safe_load(open(p).read()) if os.path.exists(p) else {}
+m = data.setdefault("model", {})
+m["default"] = "$MODEL"
+m["provider"] = "custom"
+m["base_url"] = "http://127.0.0.1:4000/v1"
+m["api_key"] = "$LLM_KEY"
+with open(p, "w") as f: yaml.safe_dump(data, f, default_flow_style=False)
+print("model patched OK")
+PYEOF
+
+log "creating systemd unit for Hermes gateway (foreground / run mode)"
+cat > /etc/systemd/system/hermes-gateway.service <<UNIT
+[Unit]
+Description=Hermes Agent Gateway (foreground / run mode)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root
+EnvironmentFile=/root/.hermes/.env
+Environment=PATH=/root/.local/bin:/usr/bin:/bin
+ExecStart=$HERMES_BIN gateway run
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:/var/log/hermes-gateway.log
+StandardError=append:/var/log/hermes-gateway.log
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
 log "writing taOS-Hermes bridge"
 mkdir -p /opt/taos
 cat > /opt/taos/taos-hermes-bridge.py <<'BRIDGE_EOF'
@@ -218,10 +248,12 @@ if __name__ == "__main__":
     asyncio.run(main())
 BRIDGE_EOF
 chmod +x /opt/taos/taos-hermes-bridge.py
-cat > /etc/systemd/system/taos-hermes-bridge.service <<EOF
+
+cat > /etc/systemd/system/taos-hermes-bridge.service <<UNIT
 [Unit]
-Description=taOS-Hermes bridge
-After=network.target
+Description=taOS-Hermes bridge (SSE → Hermes /v1/chat/completions)
+After=hermes-gateway.service network.target
+Wants=hermes-gateway.service
 [Service]
 Type=simple
 Environment=TAOS_BRIDGE_URL=$BRIDGE_URL
@@ -237,20 +269,22 @@ StandardOutput=append:/var/log/taos-hermes-bridge.log
 StandardError=append:/var/log/taos-hermes-bridge.log
 [Install]
 WantedBy=multi-user.target
-EOF
+UNIT
+
 systemctl daemon-reload
+systemctl enable hermes-gateway.service
+systemctl start hermes-gateway.service
+
 log "waiting for Hermes :8642 (up to 90s)"
-HERMES_READY=0
 for i in $(seq 1 30); do
     sleep 3
     if curl -fsS http://127.0.0.1:8642/health > /dev/null 2>&1; then
-        log "Hermes api_server ready (after $((i*3))s)"
-        HERMES_READY=1; break
+        log "Hermes api_server ready"
+        break
     fi
 done
+
 systemctl enable --now taos-hermes-bridge.service
 mkdir -p /opt/taos
 echo "hermes-0.1" > /opt/taos/framework.version
-[ "$HERMES_READY" -eq 0 ] && log "WARN: Hermes :8642 not up in 90s; bridge will retry"
 log "done"
-

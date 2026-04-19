@@ -9,7 +9,7 @@ pip3 install --break-system-packages --quiet openai-agents httpx 2>&1 | tail -3
 mkdir -p /opt/taos
 cat > /opt/taos/taos-openai-agents-sdk-bridge.py <<'BRIDGE_EOF'
 #!/usr/bin/env python3
-"""taOS-openai-agents-sdk bridge."""
+"""taOS-openai-agents-sdk bridge with explicit OpenAI client (LiteLLM)."""
 from __future__ import annotations
 import asyncio, json, logging, os, signal
 from concurrent.futures import ThreadPoolExecutor
@@ -22,17 +22,23 @@ _pool=ThreadPoolExecutor(max_workers=2); _agent=None
 def _build():
     global _agent
     if _agent: return _agent
-    from agents import Agent
-    _agent = Agent(name=AGENT_NAME, instructions=f"You are {AGENT_NAME}, an OpenAI Agents SDK powered agent.", model=MODEL)
+    from openai import AsyncOpenAI
+    from agents import Agent, OpenAIChatCompletionsModel, set_tracing_disabled
+    set_tracing_disabled(True)
+    client = AsyncOpenAI(base_url=os.environ["OPENAI_BASE_URL"], api_key=os.environ["OPENAI_API_KEY"])
+    _agent = Agent(name=AGENT_NAME,
+                    instructions=f"You are {AGENT_NAME}, an OpenAI Agents SDK powered agent.",
+                    model=OpenAIChatCompletionsModel(model=MODEL, openai_client=client))
     return _agent
-def _run(text: str) -> str:
+def _run(text):
     try:
         from agents import Runner
-        a = _build()
-        r = Runner.run_sync(a, text)
+        a = _build(); r = Runner.run_sync(a, text)
         return str(r.final_output)
     except Exception as e: return f"[openai-agents error: {e}]"
-async def fetch_boot(c): r=await c.get(f"{BRIDGE_URL}/api/openclaw/bootstrap?agent={AGENT_NAME}", headers={"Authorization":f"Bearer {LOCAL_TOKEN}"}, timeout=30); r.raise_for_status(); return r.json()
+async def fetch_boot(c):
+    r=await c.get(f"{BRIDGE_URL}/api/openclaw/bootstrap?agent={AGENT_NAME}", headers={"Authorization":f"Bearer {LOCAL_TOKEN}"}, timeout=30)
+    r.raise_for_status(); return r.json()
 async def post_reply(c,u,t,mid,tid,txt):
     try: await c.post(u, json={"kind":"final","id":mid,"trace_id":tid,"content":txt}, headers={"Authorization":f"Bearer {t}"}, timeout=30)
     except Exception as e: log.warning("reply: %s", e)
