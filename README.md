@@ -30,6 +30,12 @@ A full web desktop environment with 34 bundled apps, 87 catalog apps, 43 MCP plu
 
 <p align="center"><sub>Same platform, same session — desktop, tablet, and phone.</sub></p>
 
+<p align="center">
+  <img src="docs/images/agents-working.png" alt="Six agents on different frameworks chatting in a shared taOS channel" width="100%">
+</p>
+
+<p align="center"><sub>Six agents on six different frameworks (OpenClaw, Hermes, SmolAgents, Langroid, PocketFlow, OpenAI Agents SDK) talking in a single shared channel.</sub></p>
+
 ---
 
 ## Quick Start
