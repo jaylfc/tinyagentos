@@ -46,40 +46,54 @@ class AgentChatRouter:
         if message.get("content_type") == "system":
             return
 
-        author = message.get("author_id")
-        members = list(channel.get("members") or [])
         settings = channel.get("settings") or {}
-        muted = set(settings.get("muted") or [])
 
-        channel_type = channel.get("type")
-        effective_mode = "lively" if channel_type == "dm" else settings.get("response_mode", "quiet")
-
-        mentions = parse_mentions(message.get("content") or "", members)
-
-        candidates = [m for m in members if m and m != author and m != "user" and m not in muted]
-        if not candidates:
-            return
-
-        force_by_slug: dict[str, bool] = {}
-        if mentions.all:
-            for m in candidates:
-                force_by_slug[m] = True
-            recipients = list(candidates)
-        elif mentions.explicit:
-            recipients = [m for m in candidates if m in mentions.explicit]
-            for m in recipients:
-                force_by_slug[m] = True
-        elif channel_type == "dm":
-            recipients = list(candidates)
-            for m in recipients:
-                force_by_slug[m] = True
-        elif effective_mode == "quiet":
-            recipients = []
+        thread_id = message.get("thread_id")
+        if thread_id:
+            from tinyagentos.chat.threads import resolve_thread_recipients
+            recipients, force_by_slug = await resolve_thread_recipients(
+                message, channel, self._state.chat_messages,
+            )
+            if not recipients:
+                return
+            # Thread policy key scopes hops/cooldown/rate-cap per thread.
+            policy_key = f"{channel['id']}:thread:{thread_id}"
         else:
-            recipients = list(candidates)
+            author = message.get("author_id")
+            members = list(channel.get("members") or [])
+            muted = set(settings.get("muted") or [])
 
-        if not recipients:
-            return
+            channel_type = channel.get("type")
+            effective_mode = "lively" if channel_type == "dm" else settings.get("response_mode", "quiet")
+
+            mentions = parse_mentions(message.get("content") or "", members)
+
+            candidates = [m for m in members if m and m != author and m != "user" and m not in muted]
+            if not candidates:
+                return
+
+            force_by_slug: dict[str, bool] = {}
+            if mentions.all:
+                for m in candidates:
+                    force_by_slug[m] = True
+                recipients = list(candidates)
+            elif mentions.explicit:
+                recipients = [m for m in candidates if m in mentions.explicit]
+                for m in recipients:
+                    force_by_slug[m] = True
+            elif channel_type == "dm":
+                recipients = list(candidates)
+                for m in recipients:
+                    force_by_slug[m] = True
+            elif effective_mode == "quiet":
+                recipients = []
+            else:
+                recipients = list(candidates)
+
+            if not recipients:
+                return
+
+            policy_key = channel["id"]
 
         try:
             current_hops = int((message.get("metadata") or {}).get("hops_since_user", 0) or 0)
@@ -97,9 +111,18 @@ class AgentChatRouter:
         if hasattr(self._state, "chat_messages"):
             try:
                 from tinyagentos.chat.context_window import build_context_window
-                recent = await self._state.chat_messages.get_messages(
-                    channel_id=channel["id"], limit=30,
-                )
+                if thread_id:
+                    recent = await self._state.chat_messages.get_thread_messages(
+                        channel_id=channel["id"], parent_id=thread_id, limit=30,
+                    )
+                    # Prepend the parent as the root turn.
+                    parent = await self._state.chat_messages.get_message(thread_id)
+                    if parent:
+                        recent = [parent] + list(recent)
+                else:
+                    recent = await self._state.chat_messages.get_messages(
+                        channel_id=channel["id"], limit=30,
+                    )
                 context = build_context_window(recent, limit=20, max_tokens=4000)
             except Exception:
                 logger.warning("context fetch failed for channel %s", channel.get("id"), exc_info=True)
@@ -110,7 +133,7 @@ class AgentChatRouter:
             if not forced:
                 if next_hops > max_hops:
                     continue
-                if policy is not None and not policy.try_acquire(channel["id"], agent_name, settings):
+                if policy is not None and not policy.try_acquire(policy_key, agent_name, settings):
                     continue
             agent = find_agent(config, agent_name)
             if agent is None:
@@ -140,10 +163,11 @@ class AgentChatRouter:
                     "hops_since_user": next_hops,
                     "force_respond": forced,
                     "context": context,
+                    "thread_id": thread_id,
                 },
             )
             if forced and policy is not None:
-                policy.record_send(channel["id"], agent_name)
+                policy.record_send(policy_key, agent_name)
 
     async def _post_system_reply(
         self, agent_name: str, channel_id: str, content: str,

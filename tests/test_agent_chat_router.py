@@ -331,3 +331,61 @@ async def test_dm_always_forces_respond():
     await router._route(msg, ch)
     assert len(bridge.calls) == 1
     assert bridge.calls[0][1]["force_respond"] is True
+
+
+@pytest.mark.asyncio
+async def test_router_uses_thread_resolver_when_thread_id_present():
+    """A message with thread_id set goes through threads.resolve_thread_recipients,
+    skipping the channel fanout path."""
+    bridge = _FakeBridge()
+    state = _state_for({"name": "tom", "status": "running"}, bridge=bridge)
+    state.config.agents = [
+        {"name": "tom", "status": "running"},
+        {"name": "don", "status": "running"},
+    ]
+    from tinyagentos.chat.group_policy import GroupPolicy
+    state.group_policy = GroupPolicy()
+    # chat_messages needs get_message + get_thread_messages for the resolver
+    state.chat_messages.get_message = AsyncMock(return_value={
+        "id": "p1", "author_id": "tom", "author_type": "agent",
+    })
+    state.chat_messages.get_thread_messages = AsyncMock(return_value=[])
+    router = AgentChatRouter(state)
+    message = {
+        "id": "m1", "author_id": "user", "author_type": "user",
+        "content": "thoughts?", "thread_id": "p1",
+        "metadata": {"hops_since_user": 0},
+    }
+    await router._route(message, _channel(["user", "tom", "don"], "quiet"))
+    slugs = sorted(c[0] for c in bridge.calls)
+    # tom is the parent author → recipient; don is not mentioned + not prior replier → skipped.
+    assert slugs == ["tom"]
+
+
+@pytest.mark.asyncio
+async def test_router_thread_policy_key_is_scoped():
+    """Policy key used in thread routing should be channel_id:thread:<id>,
+    so a thread doesn't consume the channel's rate cap or block unrelated
+    channel messages."""
+    bridge = _FakeBridge()
+    state = _state_for({"name": "tom", "status": "running"}, bridge=bridge)
+    state.config.agents = [{"name": "tom", "status": "running"}]
+    from tinyagentos.chat.group_policy import GroupPolicy
+    state.group_policy = GroupPolicy()
+    state.chat_messages.get_message = AsyncMock(return_value={
+        "id": "p1", "author_id": "tom", "author_type": "agent",
+    })
+    state.chat_messages.get_thread_messages = AsyncMock(return_value=[])
+    router = AgentChatRouter(state)
+    # Route a thread message.
+    msg = {"id": "m1", "author_id": "user", "author_type": "user",
+           "content": "go", "thread_id": "p1",
+           "metadata": {"hops_since_user": 0}}
+    await router._route(msg, _channel(["user", "tom"], "quiet"))
+    # The policy should have recorded a send keyed "c1:thread:p1" — check by trying to
+    # route a channel-scope message next; it should NOT be rate-limited by the thread send.
+    msg2 = {"id": "m2", "author_id": "user", "author_type": "user",
+            "content": "channel msg", "metadata": {"hops_since_user": 0}}
+    await router._route(msg2, _channel(["user", "tom"], "lively"))
+    # Expect 2 bridge calls total (one per message), since policy keys are independent.
+    assert len(bridge.calls) == 2
