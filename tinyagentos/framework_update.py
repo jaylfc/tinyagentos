@@ -40,3 +40,78 @@ async def _wait_for_bootstrap_ping(
             return True
         await asyncio.sleep(0.5)
     return False
+
+
+def _iso_utc_compact() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
+
+
+async def _read_installed_tag(container: str) -> str:
+    rc, out = await exec_in_container(
+        container, ["cat", "/opt/taos/framework.version"], timeout=10,
+    )
+    return out.strip() if rc == 0 else ""
+
+
+async def _mark_failed(agent: dict, reason: str, *, save_config, snapshot: str | None = None) -> None:
+    agent["framework_update_status"] = "failed"
+    agent["framework_update_started_at"] = None
+    agent["framework_update_last_error"] = reason[:500]
+    if snapshot is not None:
+        agent["framework_last_snapshot"] = snapshot
+    await save_config()
+
+
+async def start_update(agent: dict, manifest: dict, latest: dict, *, save_config) -> None:
+    """Full update cycle for one agent. Exceptions inside are caught and
+    turned into a 'failed' state — never re-raised (caller is fire-and-forget)."""
+    try:
+        started_at = int(time.time())
+        agent["framework_update_status"] = "updating"
+        agent["framework_update_started_at"] = started_at
+        agent["framework_update_last_error"] = None
+        await save_config()
+
+        container = f"taos-agent-{agent['name']}"
+        snap = f"{SNAPSHOT_PREFIX}{latest['tag']}-{_iso_utc_compact()}"
+        try:
+            await snapshot_create(container, snap)
+            agent["framework_last_snapshot"] = snap
+            await save_config()
+            await _prune_old_snapshots(container, keep=3)
+        except Exception as e:
+            return await _mark_failed(agent, f"snapshot failed: {e}", save_config=save_config)
+
+        try:
+            rc, stderr = await exec_in_container(container, [
+                manifest["install_script"], manifest["id"],
+                latest["tag"], latest["asset_url"],
+            ], timeout=UPDATE_DEADLINE_SECONDS)
+        except asyncio.TimeoutError:
+            return await _mark_failed(agent, "install script timed out",
+                                       save_config=save_config, snapshot=snap)
+
+        if rc != 0:
+            return await _mark_failed(agent, f"install script rc={rc}: {stderr[:400]}",
+                                       save_config=save_config, snapshot=snap)
+
+        if not await _wait_for_bootstrap_ping(agent, started_at=started_at):
+            return await _mark_failed(agent, "bridge did not reconnect within 120s",
+                                       save_config=save_config, snapshot=snap)
+
+        installed_tag = await _read_installed_tag(container)
+        if installed_tag != latest["tag"]:
+            return await _mark_failed(
+                agent,
+                f"version mismatch: installed={installed_tag!r} expected={latest['tag']!r}",
+                save_config=save_config, snapshot=snap,
+            )
+
+        agent["framework_version_tag"] = installed_tag
+        agent["framework_version_sha"] = latest["sha"]
+        agent["framework_update_status"] = "idle"
+        agent["framework_update_started_at"] = None
+        await save_config()
+    except Exception as e:
+        logger.exception("unexpected error in start_update for %s", agent.get("name"))
+        await _mark_failed(agent, f"unexpected: {e}", save_config=save_config)
