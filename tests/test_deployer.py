@@ -30,6 +30,7 @@ class TestDeployAgent:
 
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
              patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec), \
+             patch("tinyagentos.deployer.push_file", new_callable=AsyncMock, return_value=(0, "")), \
              patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
             mock_create.return_value = {"success": True, "name": "taos-agent-test"}
 
@@ -57,6 +58,7 @@ class TestDeployAgent:
 
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
              patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec), \
+             patch("tinyagentos.deployer.push_file", new_callable=AsyncMock, return_value=(0, "")), \
              patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
             mock_create.return_value = {"success": True, "name": "taos-agent-test"}
             result = await deploy_agent(req)
@@ -80,6 +82,7 @@ class TestDeployAgent:
 
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
              patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec), \
+             patch("tinyagentos.deployer.push_file", new_callable=AsyncMock, return_value=(0, "")), \
              patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
             mock_create.return_value = {"success": True, "name": "taos-agent-test"}
             await deploy_agent(req)
@@ -102,6 +105,7 @@ class TestDeployAgent:
 
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
              patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec), \
+             patch("tinyagentos.deployer.push_file", new_callable=AsyncMock, return_value=(0, "")), \
              patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
             mock_create.return_value = {"success": True, "name": "taos-agent-test"}
             await deploy_agent(req)
@@ -119,6 +123,7 @@ class TestDeployAgent:
 
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
              patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec), \
+             patch("tinyagentos.deployer.push_file", new_callable=AsyncMock, return_value=(0, "")), \
              patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
             mock_create.return_value = {"success": True, "name": "taos-agent-test"}
             await deploy_agent(req)
@@ -136,6 +141,7 @@ class TestDeployAgent:
 
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
              patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec), \
+             patch("tinyagentos.deployer.push_file", new_callable=AsyncMock, return_value=(0, "")), \
              patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
             mock_create.return_value = {"success": True, "name": "taos-agent-test"}
             await deploy_agent(req)
@@ -173,6 +179,7 @@ class TestDeployAgent:
 
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
              patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.push_file", new_callable=AsyncMock, return_value=(0, "")), \
              patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
             mock_create.return_value = {"success": True, "name": "taos-agent-proxy-test"}
 
@@ -215,6 +222,7 @@ class TestDeployAgent:
 
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
              patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.push_file", new_callable=AsyncMock, return_value=(0, "")), \
              patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
             mock_create.return_value = {"success": True, "name": "taos-agent-routing-only"}
             result = await deploy_agent(req)
@@ -255,6 +263,7 @@ class TestDeployAgent:
 
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
              patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.push_file", new_callable=AsyncMock, return_value=(0, "")), \
              patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
             mock_create.return_value = {"success": True, "name": "taos-agent-scoped"}
             result = await deploy_agent(req)
@@ -289,6 +298,7 @@ class TestDeployAgent:
 
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
              patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.push_file", new_callable=AsyncMock, return_value=(0, "")), \
              patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
             mock_create.return_value = {"success": True, "name": "taos-agent-db-broken"}
             result = await deploy_agent(req)
@@ -311,6 +321,7 @@ class TestDeployAgent:
 
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
              patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.push_file", new_callable=AsyncMock, return_value=(0, "")), \
              patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
             mock_create.return_value = {"success": True, "name": "taos-agent-no-proxy"}
 
@@ -331,6 +342,7 @@ class TestDeployAgent:
 
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
              patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.push_file", new_callable=AsyncMock, return_value=(0, "")), \
              patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
             mock_create.return_value = {"success": True, "name": "taos-agent-with-model"}
             result = await deploy_agent(req)
@@ -352,6 +364,7 @@ class TestDeployAgent:
 
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
              patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.push_file", new_callable=AsyncMock, return_value=(0, "")), \
              patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
             mock_create.return_value = {"success": True, "name": "taos-agent-deps"}
             await deploy_agent(req)
@@ -407,6 +420,7 @@ class TestDeployAgent:
 
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
              patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.push_file", new_callable=AsyncMock, return_value=(0, "")), \
              patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
             mock_create.return_value = {"success": True, "name": "taos-agent-pip-install"}
             result = await deploy_agent(req)
@@ -462,6 +476,7 @@ class TestDeployAgent:
 
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
              patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.push_file", new_callable=AsyncMock, return_value=(0, "")), \
              patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
             mock_create.return_value = {"success": True, "name": "taos-agent-homer"}
             result = await deploy_agent(req)
@@ -508,6 +523,7 @@ class TestDeployAgent:
 
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
              patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.push_file", new_callable=AsyncMock, return_value=(0, "")), \
              patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock) as mock_proxy:
             mock_create.return_value = {"success": True, "name": "taos-agent-proxied"}
             mock_proxy.return_value = {"success": True, "output": ""}
@@ -533,6 +549,7 @@ class TestDeployAgent:
 
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
              patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.push_file", new_callable=AsyncMock, return_value=(0, "")), \
              patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock) as mock_proxy, \
              patch("tinyagentos.deployer.destroy_container", new_callable=AsyncMock) as mock_destroy:
             mock_create.return_value = {"success": True, "name": "taos-agent-noproxy"}
@@ -598,6 +615,7 @@ class TestDeployAgent:
 
         with patch("tinyagentos.deployer.create_container", new_callable=AsyncMock) as mock_create, \
              patch("tinyagentos.deployer.exec_in_container", side_effect=mock_exec_fn), \
+             patch("tinyagentos.deployer.push_file", new_callable=AsyncMock, return_value=(0, "")), \
              patch("tinyagentos.deployer.add_proxy_device", new_callable=AsyncMock, return_value={"success": True, "output": ""}):
             mock_create.return_value = {"success": True, "name": "taos-agent-bridge-test"}
             await deploy_agent(req)
