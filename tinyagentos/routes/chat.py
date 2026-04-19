@@ -184,6 +184,25 @@ async def post_message(request: Request):
     hub = request.app.state.chat_hub
 
     channel_id = body["channel_id"]
+    content = body.get("content") or ""
+
+    # Guardrail: in a non-DM channel, a / message must address at least one
+    # agent explicitly (@<slug> or @all). Otherwise a framework slash command
+    # would broadcast to every agent in the channel, producing N different
+    # /help outputs and (in some frameworks) triggering destructive side effects
+    # like /clear on unaddressed agents.
+    stripped = content.lstrip()
+    if stripped.startswith("/"):
+        channel = await ch_store.get_channel(channel_id)
+        if channel and channel.get("type") != "dm":
+            from tinyagentos.chat.mentions import parse_mentions
+            members = list(channel.get("members") or [])
+            mentions = parse_mentions(content, members)
+            if not mentions.explicit and not mentions.all:
+                return JSONResponse(
+                    {"error": "slash commands in group channels must address an agent: use @<agent> /<cmd> or @all /<cmd>"},
+                    status_code=400,
+                )
 
     message = await msg_store.send_message(
         channel_id=channel_id,
