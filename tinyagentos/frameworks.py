@@ -50,8 +50,8 @@ FRAMEWORKS: dict[str, dict] = {
     "hermes": {
         "id": "hermes",
         "name": "Hermes",
-        "description": "Hermes OpenAI-compatible API bridge — bridge wiring not yet complete",
-        "verification_status": "alpha",
+        "description": "Hermes Agent Gateway (NousResearch) — taOS bridge to api_server on :8642",
+        "verification_status": "beta",
     },
     "agent_zero": {
         "id": "agent_zero",
