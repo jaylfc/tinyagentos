@@ -10,6 +10,7 @@ from fastapi import APIRouter, File, Request, UploadFile, WebSocket, WebSocketDi
 from fastapi.responses import FileResponse, JSONResponse
 
 from tinyagentos.chat.slash_commands import dispatch as slash_dispatch, parse_slash
+from tinyagentos.chat.reactions import maybe_trigger_semantic
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -458,6 +459,59 @@ async def mark_read(request: Request, channel_id: str):
     ch_store = request.app.state.chat_channels
     await ch_store.update_read_position("user", channel_id, body.get("message_id", ""))
     return {"status": "marked"}
+
+
+# ── Reactions ────────────────────────────────────────────────────────────────
+
+@router.post("/api/chat/messages/{message_id}/reactions")
+async def add_reaction(message_id: str, body: dict, request: Request):
+    emoji = body.get("emoji")
+    author_id = body.get("author_id")
+    author_type = body.get("author_type", "user")
+    if not emoji or not author_id:
+        return JSONResponse({"error": "emoji and author_id required"}, status_code=400)
+    state = request.app.state
+    msg = await state.chat_messages.get_message(message_id)
+    if msg is None:
+        return JSONResponse({"error": "message not found"}, status_code=404)
+    await state.chat_messages.add_reaction(message_id, emoji, author_id)
+    channel = await state.chat_channels.get_channel(msg["channel_id"])
+    await state.chat_hub.broadcast(msg["channel_id"], {
+        "type": "reaction_added",
+        "message_id": message_id,
+        "emoji": emoji,
+        "author_id": author_id,
+    })
+    if channel is not None:
+        await maybe_trigger_semantic(
+            emoji=emoji, message=msg,
+            reactor_id=author_id, reactor_type=author_type,
+            channel=channel, state=state,
+        )
+    return JSONResponse({"ok": True}, status_code=200)
+
+
+@router.delete("/api/chat/messages/{message_id}/reactions/{emoji}")
+async def remove_reaction(message_id: str, emoji: str, author_id: str, request: Request):
+    state = request.app.state
+    await state.chat_messages.remove_reaction(message_id, emoji, author_id)
+    msg = await state.chat_messages.get_message(message_id)
+    if msg:
+        await state.chat_hub.broadcast(msg["channel_id"], {
+            "type": "reaction_removed",
+            "message_id": message_id,
+            "emoji": emoji,
+            "author_id": author_id,
+        })
+    return JSONResponse({"ok": True}, status_code=200)
+
+
+@router.get("/api/chat/channels/{channel_id}/wants_reply")
+async def list_wants_reply(channel_id: str, request: Request):
+    reg = getattr(request.app.state, "wants_reply", None)
+    if reg is None:
+        return JSONResponse({"slugs": []})
+    return JSONResponse({"slugs": reg.list(channel_id)})
 
 
 # ── Canvas ───────────────────────────────────────────────────────────────────
