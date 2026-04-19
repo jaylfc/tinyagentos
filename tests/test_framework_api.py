@@ -39,3 +39,50 @@ async def test_get_framework_no_latest_when_source_missing(client, app):
     r = await client.get("/api/agents/bob-fw/framework")
     assert r.json()["latest"] is None
     assert r.json()["update_available"] is False
+
+
+@pytest.mark.asyncio
+async def test_post_update_kicks_off_task(client, app, monkeypatch):
+    app.state.config.agents.append({
+        "name": "atlas-post", "framework": "openclaw",
+        "framework_update_status": "idle",
+    })
+    app.state.latest_framework_versions = {
+        "openclaw": {"tag": "T2", "sha": "b2b2b2b", "asset_url": "u"},
+    }
+    kicked = {}
+    async def fake(agent, manifest, latest, *, save_config):
+        kicked["ok"] = True
+    monkeypatch.setattr("tinyagentos.framework_update.start_update", fake)
+    r = await client.post("/api/agents/atlas-post/framework/update", json={})
+    assert r.status_code == 202
+    import asyncio
+    await asyncio.sleep(0.05)
+    assert kicked.get("ok") is True
+
+
+@pytest.mark.asyncio
+async def test_post_update_409_when_already_updating(client, app):
+    app.state.config.agents.append({
+        "name": "atlas-busy", "framework": "openclaw",
+        "framework_update_status": "updating",
+    })
+    app.state.latest_framework_versions = {
+        "openclaw": {"tag": "T", "sha": "s", "asset_url": "u"},
+    }
+    r = await client.post("/api/agents/atlas-busy/framework/update", json={})
+    assert r.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_post_update_400_unknown_target(client, app):
+    app.state.config.agents.append({
+        "name": "atlas-bad-target", "framework": "openclaw",
+        "framework_update_status": "idle",
+    })
+    app.state.latest_framework_versions = {
+        "openclaw": {"tag": "T2", "sha": "s", "asset_url": "u"},
+    }
+    r = await client.post("/api/agents/atlas-bad-target/framework/update",
+                           json={"target_version": "NONE"})
+    assert r.status_code == 400
