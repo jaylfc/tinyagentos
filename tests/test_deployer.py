@@ -383,7 +383,11 @@ class TestDeployAgent:
             cmd_str = " ".join(cmd)
             if "hostname -I" in cmd_str:
                 return (0, "10.0.0.10")
-            if "pip3 install nonexistent-pkg" in cmd_str:
+            # Match the pip path (with --break-system-packages flag) and the
+            # script install path so the rollback fires regardless of which
+            # branch the deployer takes for this framework slug.
+            if ("pip3 install" in cmd_str and "nonexistent-pkg" in cmd_str) or \
+                    cmd_str.startswith("bash /tmp/install_"):
                 return (1, "ERROR: No matching distribution found")
             return (0, "ok")
 
@@ -400,14 +404,16 @@ class TestDeployAgent:
 
     @pytest.mark.asyncio
     async def test_manifest_pip_install(self, tmp_path):
+        # Use a framework slug that has no in-repo install_<name>.sh so the
+        # deployer exercises the manifest pip path (not the script-first path).
         mock_manifest = MagicMock()
-        mock_manifest.install = {"method": "pip", "package": "smolagents"}
+        mock_manifest.install = {"method": "pip", "package": "crewai"}
         mock_manifest.manifest_dir = tmp_path
         mock_registry = MagicMock()
         mock_registry.get.return_value = mock_manifest
 
         req = _req(
-            name="pip-install", framework="smolagents", data_dir=tmp_path,
+            name="pip-install", framework="crewai", data_dir=tmp_path,
             extra_config={"registry": mock_registry},
         )
 
@@ -425,8 +431,8 @@ class TestDeployAgent:
             mock_create.return_value = {"success": True, "name": "taos-agent-pip-install"}
             result = await deploy_agent(req)
             assert result["success"] is True
-            assert any("pip3 install smolagents" in c for c in recorded)
-            mock_registry.get.assert_called_once_with("smolagents")
+            assert any("pip3 install" in c and "crewai" in c for c in recorded)
+            mock_registry.get.assert_called_once_with("crewai")
 
     @pytest.mark.asyncio
     async def test_manifest_script_install(self, tmp_path):
