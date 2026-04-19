@@ -231,6 +231,20 @@ class ChatMessageStore(BaseStore):
         )
         await self._db.commit()
 
+    async def get_thread_messages(
+        self, channel_id: str, parent_id: str, limit: int = 20,
+    ) -> list[dict]:
+        """Return messages in a thread (not the parent), oldest first."""
+        async with self._db.execute(
+            "SELECT * FROM chat_messages "
+            "WHERE channel_id = ? AND thread_id = ? "
+            "ORDER BY created_at ASC LIMIT ?",
+            (channel_id, parent_id, limit),
+        ) as cursor:
+            rows = await cursor.fetchall()
+            description = cursor.description
+        return [_parse(row, description) for row in rows]
+
     async def get_all_messages_for_channel(self, channel_id: str) -> list[dict]:
         """Return every message in a channel ordered by created_at ASC.
 

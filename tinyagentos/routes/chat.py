@@ -399,6 +399,15 @@ async def get_channel_messages(
     return {"messages": messages}
 
 
+@router.get("/api/chat/channels/{channel_id}/threads/{parent_id}/messages")
+async def get_thread_messages_endpoint(
+    channel_id: str, parent_id: str, request: Request, limit: int = 20,
+):
+    store = request.app.state.chat_messages
+    msgs = await store.get_thread_messages(channel_id, parent_id, limit=min(limit, 100))
+    return JSONResponse({"messages": msgs})
+
+
 @router.delete("/api/chat/channels/{channel_id}/members/{member_id}")
 async def remove_channel_member(request: Request, channel_id: str, member_id: str):
     ch_store = request.app.state.chat_channels
