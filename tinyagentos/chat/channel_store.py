@@ -51,6 +51,14 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 CREATE INDEX IF NOT EXISTS idx_chat_messages_channel ON chat_messages(channel_id, created_at);
 """
 
+PHASE1_DEFAULT_SETTINGS = {
+    "response_mode": "quiet",
+    "max_hops": 3,
+    "cooldown_seconds": 5,
+    "rate_cap_per_minute": 20,
+    "muted": [],
+}
+
 _CHANNEL_JSON_FIELDS = ("members", "settings")
 
 
@@ -60,6 +68,10 @@ def _parse_channel(row: tuple, description) -> dict:
     for field in _CHANNEL_JSON_FIELDS:
         if field in ch and ch[field] is not None:
             ch[field] = json.loads(ch[field])
+    settings = ch.get("settings") or {}
+    for key, default in PHASE1_DEFAULT_SETTINGS.items():
+        settings.setdefault(key, default if not isinstance(default, list) else list(default))
+    ch["settings"] = settings
     return ch
 
 
@@ -177,6 +189,37 @@ class ChatChannelStore(BaseStore):
             (json.dumps(current), channel_id),
         )
         await self._db.commit()
+
+    async def set_response_mode(self, channel_id: str, mode: str) -> None:
+        if mode not in ("quiet", "lively"):
+            raise ValueError(f"invalid response_mode: {mode}")
+        await self.set_settings(channel_id, {"response_mode": mode})
+
+    async def set_max_hops(self, channel_id: str, hops: int) -> None:
+        if not 1 <= hops <= 10:
+            raise ValueError("max_hops must be 1..10")
+        await self.set_settings(channel_id, {"max_hops": hops})
+
+    async def set_cooldown_seconds(self, channel_id: str, seconds: int) -> None:
+        if not 0 <= seconds <= 60:
+            raise ValueError("cooldown_seconds must be 0..60")
+        await self.set_settings(channel_id, {"cooldown_seconds": seconds})
+
+    async def mute_agent(self, channel_id: str, slug: str) -> None:
+        ch = await self.get_channel(channel_id)
+        if ch is None:
+            return
+        muted = set(ch["settings"].get("muted") or [])
+        muted.add(slug)
+        await self.set_settings(channel_id, {"muted": sorted(muted)})
+
+    async def unmute_agent(self, channel_id: str, slug: str) -> None:
+        ch = await self.get_channel(channel_id)
+        if ch is None:
+            return
+        muted = set(ch["settings"].get("muted") or [])
+        muted.discard(slug)
+        await self.set_settings(channel_id, {"muted": sorted(muted)})
 
     async def delete_channel(self, channel_id: str) -> bool:
         cursor = await self._db.execute(
