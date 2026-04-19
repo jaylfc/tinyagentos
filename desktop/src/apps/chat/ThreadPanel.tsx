@@ -28,7 +28,7 @@ export function ThreadPanel({
   useEffect(() => {
     let alive = true;
     fetch(`/api/chat/messages/${parentId}`)
-      .then((r) => r.json())
+      .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (alive) setParent(d); });
     return () => { alive = false; };
   }, [parentId]);
