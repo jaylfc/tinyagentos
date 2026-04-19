@@ -1,7 +1,121 @@
 import pytest
 import yaml
 from httpx import AsyncClient, ASGITransport
+from unittest.mock import AsyncMock, MagicMock
 from tinyagentos.chat.message_store import ChatMessageStore
+from tinyagentos.chat.threads import resolve_thread_recipients
+
+
+def _ch(members, muted=None):
+    return {
+        "id": "c1", "type": "group", "members": members,
+        "settings": {"muted": muted or []},
+    }
+
+
+@pytest.mark.asyncio
+async def test_narrow_scope_parent_author_and_mentions():
+    """parent=tom (agent), mentions @linus: recipients = {tom, linus}."""
+    cm = MagicMock()
+    cm.get_message = AsyncMock(return_value={
+        "id": "p1", "author_id": "tom", "author_type": "agent",
+    })
+    cm.get_thread_messages = AsyncMock(return_value=[])
+    msg = {
+        "author_id": "user", "author_type": "user",
+        "content": "@linus thoughts?", "thread_id": "p1",
+    }
+    recipients, forced = await resolve_thread_recipients(
+        msg, _ch(["user", "tom", "don", "linus"]), cm,
+    )
+    assert sorted(recipients) == ["linus", "tom"]
+    assert forced["linus"] is True
+    # tom (parent author) is a recipient but not force_respond unless mentioned
+    assert forced.get("tom") is not True
+
+
+@pytest.mark.asyncio
+async def test_narrow_scope_prior_repliers():
+    """Thread already has don as a replier → don is a recipient even if not mentioned."""
+    cm = MagicMock()
+    cm.get_message = AsyncMock(return_value={
+        "id": "p1", "author_id": "user", "author_type": "user",
+    })
+    cm.get_thread_messages = AsyncMock(return_value=[
+        {"author_id": "don", "author_type": "agent"},
+    ])
+    msg = {"author_id": "user", "author_type": "user",
+           "content": "more thoughts?", "thread_id": "p1"}
+    recipients, forced = await resolve_thread_recipients(
+        msg, _ch(["user", "tom", "don"]), cm,
+    )
+    assert "don" in recipients
+
+
+@pytest.mark.asyncio
+async def test_at_all_escalates_to_all_channel_agents():
+    cm = MagicMock()
+    cm.get_message = AsyncMock(return_value={
+        "id": "p1", "author_id": "user", "author_type": "user",
+    })
+    cm.get_thread_messages = AsyncMock(return_value=[])
+    msg = {"author_id": "user", "author_type": "user",
+           "content": "@all weigh in", "thread_id": "p1"}
+    recipients, forced = await resolve_thread_recipients(
+        msg, _ch(["user", "tom", "don", "linus"]), cm,
+    )
+    assert sorted(recipients) == ["don", "linus", "tom"]
+    assert all(forced[s] is True for s in recipients)
+
+
+@pytest.mark.asyncio
+async def test_muted_agent_excluded_from_thread():
+    cm = MagicMock()
+    cm.get_message = AsyncMock(return_value={
+        "id": "p1", "author_id": "tom", "author_type": "agent",
+    })
+    cm.get_thread_messages = AsyncMock(return_value=[])
+    msg = {"author_id": "user", "author_type": "user",
+           "content": "hi", "thread_id": "p1"}
+    recipients, _ = await resolve_thread_recipients(
+        msg, _ch(["user", "tom", "don"], muted=["tom"]), cm,
+    )
+    assert "tom" not in recipients
+
+
+@pytest.mark.asyncio
+async def test_author_never_recipient():
+    """Agent tom replies in a thread → tom is not re-notified."""
+    cm = MagicMock()
+    cm.get_message = AsyncMock(return_value={
+        "id": "p1", "author_id": "user", "author_type": "user",
+    })
+    cm.get_thread_messages = AsyncMock(return_value=[
+        {"author_id": "tom", "author_type": "agent"},
+    ])
+    msg = {"author_id": "tom", "author_type": "agent",
+           "content": "follow-up", "thread_id": "p1"}
+    recipients, _ = await resolve_thread_recipients(
+        msg, _ch(["user", "tom", "don"]), cm,
+    )
+    assert "tom" not in recipients
+
+
+@pytest.mark.asyncio
+async def test_user_parent_author_not_recipient():
+    """Parent authored by user → parent-author rule adds nobody (user is not an agent)."""
+    cm = MagicMock()
+    cm.get_message = AsyncMock(return_value={
+        "id": "p1", "author_id": "user", "author_type": "user",
+    })
+    cm.get_thread_messages = AsyncMock(return_value=[])
+    msg = {"author_id": "user", "author_type": "user",
+           "content": "kickoff", "thread_id": "p1"}
+    recipients, _ = await resolve_thread_recipients(
+        msg, _ch(["user", "tom", "don"]), cm,
+    )
+    # No agent has opted in yet, no mentions → empty recipients
+    assert recipients == []
 
 
 @pytest.mark.asyncio
