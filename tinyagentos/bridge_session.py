@@ -240,6 +240,18 @@ class BridgeSessionRegistry:
         msg_id = body.get("id") or _new_id()
         content = body.get("content") or ""
 
+        # Forks (e.g. openclaw) that don't thread channel_id through the reply
+        # payload still send trace_id == originating message id, so we can
+        # look up the original message and route the reply back to its source
+        # channel rather than collapsing every reply into the agent's DM.
+        if not body.get("channel_id") and trace_id and self._chat_messages:
+            try:
+                orig = await self._chat_messages.get_message(trace_id)
+            except Exception:
+                orig = None
+            if orig and orig.get("channel_id"):
+                body["channel_id"] = orig["channel_id"]
+
         async with self._lock:
             session = self._get_or_create(slug)
 
