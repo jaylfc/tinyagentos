@@ -373,6 +373,8 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.group_policy = GroupPolicy()
         from tinyagentos.chat.reactions import WantsReplyRegistry
         app.state.wants_reply = WantsReplyRegistry()
+        from tinyagentos.chat.typing_registry import TypingRegistry
+        app.state.typing = TypingRegistry()
         from tinyagentos.agent_chat_router import AgentChatRouter
         app.state.agent_chat_router = AgentChatRouter(app.state)
         app.state.canvas_store = canvas_store
@@ -670,6 +672,8 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     app.state.chat_hub = chat_hub
     from tinyagentos.chat.reactions import WantsReplyRegistry as _WantsReplyRegistry
     app.state.wants_reply = _WantsReplyRegistry()
+    from tinyagentos.chat.typing_registry import TypingRegistry as _TypingRegistry
+    app.state.typing = _TypingRegistry()
     app.state.canvas_store = canvas_store
     app.state.desktop_settings = desktop_settings
     app.state.user_memory = user_memory

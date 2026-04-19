@@ -161,6 +161,20 @@ def _suppress(reply, force):
     return None if stripped == "no_response" else reply
 
 
+async def _thinking(c: httpx.AsyncClient, ch_id, state: str) -> None:
+    if not ch_id:
+        return
+    try:
+        await c.post(
+            f"{BRIDGE_URL}/api/chat/channels/{ch_id}/thinking",
+            json={"slug": AGENT_NAME, "state": state},
+            headers={"Authorization": f"Bearer {LOCAL_TOKEN}"},
+            timeout=5,
+        )
+    except Exception:
+        pass  # best-effort; never block a reply on an indicator
+
+
 async def call_hermes(client: httpx.AsyncClient, messages: list) -> str:
     """Call Hermes' OpenAI-compatible /v1/chat/completions and return the
     assistant's reply text. Errors return a short error string so the
@@ -204,6 +218,7 @@ async def handle_user_message(client: httpx.AsyncClient, evt: dict, channel: dic
     text = evt.get("text", "")
     force = bool(evt.get("force_respond"))
     ctx = _render_context(evt.get("context") or [])
+    cid = evt.get("channel_id")
     log.info("user_message id=%s text=%r force=%s", msg_id, text[:80], force)
     system = _SYSTEM_PROMPT + ("\n\nYou were directly addressed. Reply naturally; do not output NO_RESPONSE."
         if force else
@@ -212,13 +227,17 @@ async def handle_user_message(client: httpx.AsyncClient, evt: dict, channel: dic
     if ctx:
         messages.append({"role": "user", "content": f"Recent conversation:\n{ctx}"})
     messages.append({"role": "user", "content": text})
-    reply = await call_hermes(client, messages)
+    await _thinking(client, cid, "start")
+    try:
+        reply = await call_hermes(client, messages)
+    finally:
+        await _thinking(client, cid, "end")
     final = _suppress(reply, force)
     if final is None:
         log.info("suppressed NO_RESPONSE for id=%s", msg_id)
         return
     await post_reply(client, channel["reply_url"], channel["auth_bearer"],
-                     msg_id, trace_id, final, evt.get("channel_id"))
+                     msg_id, trace_id, final, cid)
 
 
 async def sse_loop(client: httpx.AsyncClient, channel: dict, stop: asyncio.Event) -> None:

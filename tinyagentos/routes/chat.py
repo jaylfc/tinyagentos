@@ -573,6 +573,69 @@ async def list_wants_reply(channel_id: str, request: Request):
     return JSONResponse({"slugs": reg.list(channel_id)})
 
 
+# ── Typing / thinking indicators ─────────────────────────────────────────────
+
+@router.post("/api/chat/channels/{channel_id}/typing")
+async def post_typing(channel_id: str, body: dict, request: Request):
+    """Mark a human user as typing in the channel. Ephemeral; TTL 3s."""
+    author_id = (body or {}).get("author_id")
+    if not author_id:
+        return JSONResponse({"error": "author_id required"}, status_code=400)
+    reg = getattr(request.app.state, "typing", None)
+    hub = getattr(request.app.state, "chat_hub", None)
+    if reg is None:
+        return JSONResponse({"error": "typing registry not configured"}, status_code=503)
+    reg.mark(channel_id, author_id, "human")
+    if hub is not None:
+        await hub.broadcast(channel_id, {
+            "type": "typing",
+            "kind": "human",
+            "slug": author_id,
+        })
+    return JSONResponse({"ok": True}, status_code=200)
+
+
+@router.post("/api/chat/channels/{channel_id}/thinking")
+async def post_thinking(channel_id: str, body: dict, request: Request):
+    """Bridge-side heartbeat: state=start marks the agent as thinking,
+    state=end clears. Authenticated with the local bearer token."""
+    auth = getattr(request.app.state, "auth", None)
+    bearer = request.headers.get("authorization", "")
+    if not bearer.lower().startswith("bearer "):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    if auth is None or not auth.validate_local_token(bearer[7:].strip()):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+    slug = (body or {}).get("slug")
+    state = (body or {}).get("state")
+    if not slug or state not in ("start", "end"):
+        return JSONResponse({"error": "slug and state in {start,end} required"}, status_code=400)
+    reg = getattr(request.app.state, "typing", None)
+    hub = getattr(request.app.state, "chat_hub", None)
+    if reg is None:
+        return JSONResponse({"error": "typing registry not configured"}, status_code=503)
+    if state == "start":
+        reg.mark(channel_id, slug, "agent")
+    else:
+        reg.clear(channel_id, slug)
+    if hub is not None:
+        await hub.broadcast(channel_id, {
+            "type": "thinking",
+            "slug": slug,
+            "state": state,
+        })
+    return JSONResponse({"ok": True}, status_code=200)
+
+
+@router.get("/api/chat/channels/{channel_id}/typing")
+async def get_typing(channel_id: str, request: Request):
+    """Return current typing+thinking state for a channel."""
+    reg = getattr(request.app.state, "typing", None)
+    if reg is None:
+        return JSONResponse({"human": [], "agent": []})
+    return JSONResponse(reg.list(channel_id))
+
+
 # ── Canvas ───────────────────────────────────────────────────────────────────
 
 @router.post("/api/canvas/generate")

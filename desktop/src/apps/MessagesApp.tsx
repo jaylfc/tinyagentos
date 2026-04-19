@@ -31,6 +31,11 @@ import {
 import { MobileSplitView } from "@/components/mobile/MobileSplitView";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import { resolveAgentEmoji } from "@/lib/agent-emoji";
+import { ChannelSettingsPanel } from "./chat/ChannelSettingsPanel";
+import { AgentContextMenu } from "./chat/AgentContextMenu";
+import { SlashMenu, type SlashCommandsBySlug } from "./chat/SlashMenu";
+import { TypingFooter } from "./chat/TypingFooter";
+import { useTypingEmitter } from "@/lib/use-typing-emitter";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -53,6 +58,7 @@ interface Channel {
   name: string;
   type: "dm" | "topic" | "group";
   description?: string;
+  topic?: string;
   members?: string[];
   created_at?: string;
   last_message_at?: string;
@@ -62,6 +68,7 @@ interface Channel {
     archived_at?: string;
     archived_agent_id?: string;
     archived_agent_slug?: string;
+    muted?: string[];
   };
 }
 
@@ -70,6 +77,8 @@ interface LiveAgent {
   display_name?: string;
   emoji?: string;
   framework?: string;
+  model?: string;
+  status?: string;
 }
 
 interface ArchivedAgentEntry {
@@ -181,7 +190,6 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
   const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [unread, setUnread] = useState<Record<string, number>>({});
-  const [typingUsers, setTypingUsers] = useState<{ user: string; type: string }[]>([]);
   const [input, setInput] = useState("");
   const [wsStatus, setWsStatus] = useState<WsStatus>("disconnected");
   const [showCreate, setShowCreate] = useState(false);
@@ -189,6 +197,15 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
   const [viewingCanvas, setViewingCanvas] = useState<{ url: string; title?: string } | null>(null);
   const [newChannel, setNewChannel] = useState({ name: "", type: "topic" as "topic" | "group", description: "" });
   const [prefillBanner, setPrefillBanner] = useState<{ promptName: string; agentName?: string } | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ slug: string; x: number; y: number } | null>(null);
+  const [agentInfoPopover, setAgentInfoPopover] = useState<
+    { slug: string; framework: string; model: string; status: string; x: number; y: number } | null
+  >(null);
+  const [slashCommands, setSlashCommands] = useState<SlashCommandsBySlug>({});
+  const [typingHumans, setTypingHumans] = useState<string[]>([]);
+  const [typingAgents, setTypingAgents] = useState<string[]>([]);
+  const [sendError, setSendError] = useState<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -302,6 +319,21 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
+        // Phase-2a: typing/thinking events for TypingFooter
+        if (data.type === "typing" && data.kind === "human") {
+          setTypingHumans((prev) => prev.includes(data.slug) ? prev : [...prev, data.slug]);
+          setTimeout(() => setTypingHumans((prev) => prev.filter((s) => s !== data.slug)), 3500);
+          return;
+        }
+        if (data.type === "thinking") {
+          if (data.state === "start") {
+            setTypingAgents((prev) => prev.includes(data.slug) ? prev : [...prev, data.slug]);
+          } else {
+            setTypingAgents((prev) => prev.filter((s) => s !== data.slug));
+          }
+          return;
+        }
+
         switch (data.type) {
           case "message":
             setMessages((prev) => {
@@ -333,17 +365,12 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
             break;
 
           case "typing":
-            // Only show typing indicator for agents, not for human users
-            // (showing a user their own "is typing" label is wrong UX)
+            // Legacy WS typing (agent only) — route into typingAgents for TypingFooter
+            // (human typing is handled by the phase-2a branch above)
             if ((data.user_type ?? "user") !== "agent") break;
-            setTypingUsers((prev) => {
-              const exists = prev.some((t) => t.user === data.user_id);
-              if (exists) return prev;
-              return [...prev, { user: data.user_id, type: "agent" }];
-            });
-            // expire after 5s
+            setTypingAgents((prev) => prev.includes(data.user_id) ? prev : [...prev, data.user_id]);
             setTimeout(() => {
-              setTypingUsers((prev) => prev.filter((t) => t.user !== data.user_id));
+              setTypingAgents((prev) => prev.filter((s) => s !== data.user_id));
             }, 5000);
             break;
 
@@ -469,8 +496,19 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
     }
     fetchMessages(selectedChannel);
     markRead(selectedChannel);
-    setTypingUsers([]);
+    setTypingHumans([]);
+    setTypingAgents([]);
   }, [selectedChannel, fetchMessages, markRead]);
+
+  /* ---- fetch slash commands on channel switch ---- */
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/frameworks/slash-commands")
+      .then((r) => r.json())
+      .then((d) => { if (alive) setSlashCommands(d || {}); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [selectedChannel]);
 
   /* ---- auto-scroll ---- */
   useEffect(() => {
@@ -486,10 +524,33 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
     autoScrollRef.current = atBottom;
   };
 
+  /* ---- typing emitter + slash menu derived state ---- */
+  const emitTyping = useTypingEmitter(selectedChannel, "user");
+  const showSlash = input.startsWith("/");
+  const slashQuery = showSlash ? input.slice(1).split(/\s/, 1)[0] || "" : "";
+
   /* ---- send message ---- */
-  const sendMessage = () => {
+  const sendMessage = async () => {
     const text = input.trim();
     if (!text || !selectedChannel || !wsRef.current || wsRef.current.readyState !== 1) return;
+    // If slash input, validate via REST before sending over WS
+    if (text.startsWith("/")) {
+      try {
+        const r = await fetch("/api/chat/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ channel_id: selectedChannel, content: text }),
+        });
+        if (r.status === 400) {
+          const body = await r.json().catch(() => ({}));
+          setSendError((body as { error?: string }).error || "couldn't send message");
+          return;
+        }
+      } catch {
+        /* network error — fall through to WS send */
+      }
+    }
+    setSendError(null);
     wsRef.current.send(JSON.stringify({ type: "message", channel_id: selectedChannel, content: text }));
     setInput("");
     autoScrollRef.current = true;
@@ -512,6 +573,8 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
     }
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     typingTimerRef.current = setTimeout(() => { lastTypingSentRef.current = 0; }, 4000);
+    // emit via hook for phase-2a backend
+    emitTyping();
   };
 
   /* ---- key handler ---- */
@@ -931,7 +994,16 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
               );
             })()}
             <div className="min-w-0 flex-1">
-              <div className="text-sm font-medium truncate">{currentChannel?.name ?? "Unknown"}</div>
+              <div className="text-sm font-medium truncate flex items-center gap-1">
+                {currentChannel?.name ?? "Unknown"}
+                {currentChannel && currentChannel.type !== "dm" && (
+                  <button
+                    aria-label="Channel settings"
+                    onClick={() => setShowSettings(true)}
+                    className="ml-1 opacity-60 hover:opacity-100"
+                  >ⓘ</button>
+                )}
+              </div>
               {currentChannel?.description && (
                 <div className="text-[11px] text-white/35 truncate">{currentChannel.description}</div>
               )}
@@ -979,7 +1051,14 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
                   } ${showAuthor ? "mt-3" : ""}`}
                 >
                   {showAuthor && (
-                    <div className="flex items-center gap-2 mb-0.5">
+                    <div
+                      className="flex items-center gap-2 mb-0.5"
+                      onContextMenu={(e) => {
+                        if (msg.author_type !== "agent") return;
+                        e.preventDefault();
+                        setContextMenu({ slug: msg.author_id, x: e.clientX, y: e.clientY });
+                      }}
+                    >
                       {isAgent && !isDeadAgent && (() => {
                         const agent = liveAgents.find((a) => a.name === msg.author_id);
                         if (!agent) return null;
@@ -1103,17 +1182,8 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
             <div ref={messagesEndRef} />
           </div>
 
-          {/* typing indicator */}
-          {typingUsers.length > 0 && (
-            <div className="px-4 py-1 text-[11px] text-white/30 flex items-center gap-1.5">
-              <span className="inline-flex gap-0.5">
-                <span className="w-1 h-1 bg-white/30 rounded-full animate-bounce [animation-delay:0ms]" />
-                <span className="w-1 h-1 bg-white/30 rounded-full animate-bounce [animation-delay:150ms]" />
-                <span className="w-1 h-1 bg-white/30 rounded-full animate-bounce [animation-delay:300ms]" />
-              </span>
-              {typingUsers.map((t) => t.user).join(", ")} {typingUsers.length === 1 ? "is" : "are"} typing...
-            </div>
-          )}
+          {/* typing footer */}
+          <TypingFooter humans={typingHumans} agents={typingAgents} selfId="user" />
 
           {/* archived banner */}
           {isCurrentArchived && (
@@ -1147,39 +1217,59 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
             </div>
           )}
 
+          {/* send error */}
+          {sendError && (
+            <div role="alert" className="text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded px-3 py-1 mx-4">
+              {sendError}
+            </div>
+          )}
+
           {/* input area */}
           <div className="px-4 py-3 border-t border-white/[0.06] shrink-0">
-            <div className={`flex items-end gap-2 rounded-xl border px-2 py-1.5 ${isCurrentArchived ? "bg-white/[0.02] border-white/[0.04] opacity-50" : "bg-white/[0.06] border-white/[0.08]"}`}>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleFileUpload}
-                className="h-8 w-8 shrink-0 mb-0.5"
-                aria-label="Upload file"
-                disabled={isCurrentArchived}
-              >
-                <Paperclip size={16} />
-              </Button>
-              <Textarea
-                ref={inputRef}
-                value={input}
-                onChange={(e) => !isCurrentArchived && handleInputChange(e.target.value)}
-                onKeyDown={(e) => !isCurrentArchived && handleKeyDown(e)}
-                placeholder={isCurrentArchived ? "This chat is archived" : `Message #${currentChannel?.name ?? ""}...`}
-                rows={1}
-                disabled={isCurrentArchived}
-                className="flex-1 bg-transparent border-0 px-1 py-1.5 min-h-0 text-[13px] focus-visible:ring-0 focus-visible:border-0 max-h-[120px] disabled:cursor-not-allowed"
-                aria-label="Message input"
-              />
-              <Button
-                size="icon"
-                onClick={sendMessage}
-                disabled={!input.trim() || isCurrentArchived}
-                className="h-8 w-8 shrink-0 mb-0.5"
-                aria-label="Send message"
-              >
-                <Send size={15} />
-              </Button>
+            <div className="relative">
+              {showSlash && (
+                <SlashMenu
+                  commands={slashCommands}
+                  queryAfterSlash={slashQuery}
+                  members={currentChannel?.members || []}
+                  onPick={(slug, cmd) => {
+                    setInput(`@${slug} /${cmd} `);
+                  }}
+                  onClose={() => { /* leave input as-is; user can Esc or delete */ }}
+                />
+              )}
+              <div className={`flex items-end gap-2 rounded-xl border px-2 py-1.5 ${isCurrentArchived ? "bg-white/[0.02] border-white/[0.04] opacity-50" : "bg-white/[0.06] border-white/[0.08]"}`}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleFileUpload}
+                  className="h-8 w-8 shrink-0 mb-0.5"
+                  aria-label="Upload file"
+                  disabled={isCurrentArchived}
+                >
+                  <Paperclip size={16} />
+                </Button>
+                <Textarea
+                  ref={inputRef}
+                  value={input}
+                  onChange={(e) => !isCurrentArchived && handleInputChange(e.target.value)}
+                  onKeyDown={(e) => !isCurrentArchived && handleKeyDown(e)}
+                  placeholder={isCurrentArchived ? "This chat is archived" : `Message #${currentChannel?.name ?? ""}...`}
+                  rows={1}
+                  disabled={isCurrentArchived}
+                  className="flex-1 bg-transparent border-0 px-1 py-1.5 min-h-0 text-[13px] focus-visible:ring-0 focus-visible:border-0 max-h-[120px] disabled:cursor-not-allowed"
+                  aria-label="Message input"
+                />
+                <Button
+                  size="icon"
+                  onClick={sendMessage}
+                  disabled={!input.trim() || isCurrentArchived}
+                  className="h-8 w-8 shrink-0 mb-0.5"
+                  aria-label="Send message"
+                >
+                  <Send size={15} />
+                </Button>
+              </div>
             </div>
           </div>
         </>
@@ -1251,6 +1341,97 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
           detail={messageAreaUI}
         />
       </div>
+
+      {/* ---- Channel Settings Panel ---- */}
+      {showSettings && currentChannel && (
+        <ChannelSettingsPanel
+          channel={{
+            id: currentChannel.id,
+            name: currentChannel.name,
+            type: currentChannel.type,
+            topic: currentChannel.topic ?? "",
+            members: currentChannel.members ?? [],
+            settings: currentChannel.settings ?? {},
+          }}
+          knownAgents={liveAgents.map((a) => ({ name: a.name }))}
+          onClose={() => setShowSettings(false)}
+          onChanged={() => { void fetchChannels(); }}
+        />
+      )}
+
+      {/* ---- Agent Context Menu ---- */}
+      {contextMenu && (
+        <AgentContextMenu
+          slug={contextMenu.slug}
+          channelId={selectedChannel ?? undefined}
+          channelType={currentChannel?.type}
+          isMuted={currentChannel?.settings?.muted?.includes(contextMenu.slug) ?? false}
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+          onDm={async (slug) => {
+            const existing = channels.find((ch) =>
+              ch.type === "dm"
+              && (ch.members || []).length === 2
+              && (ch.members || []).includes("user")
+              && (ch.members || []).includes(slug)
+            );
+            if (existing) {
+              setSelectedChannel(existing.id);
+            } else {
+              const r = await fetch("/api/chat/channels", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  name: slug, type: "dm",
+                  members: ["user", slug],
+                  description: "", topic: "",
+                }),
+              });
+              if (r.ok) {
+                const created = await r.json();
+                await fetchChannels();
+                setSelectedChannel(created.id);
+              }
+            }
+            setContextMenu(null);
+          }}
+          onViewInfo={(slug) => {
+            const agent = liveAgents.find((a) => a.name === slug);
+            if (agent) {
+              setAgentInfoPopover({
+                slug,
+                framework: agent.framework || "unknown",
+                model: agent.model || "unknown",
+                status: agent.status || "unknown",
+                x: contextMenu.x,
+                y: contextMenu.y,
+              });
+            }
+            setContextMenu(null);
+          }}
+          onJumpToSettings={(slug) => {
+            window.dispatchEvent(new CustomEvent("taos:open-agent", { detail: { slug } }));
+            setContextMenu(null);
+          }}
+        />
+      )}
+
+      {/* ---- Agent Info Popover ---- */}
+      {agentInfoPopover && (
+        <div
+          role="dialog"
+          aria-label={`Agent info for @${agentInfoPopover.slug}`}
+          className="fixed z-50 bg-shell-surface border border-white/10 rounded-lg shadow-xl p-3 text-xs min-w-[200px]"
+          style={{ top: agentInfoPopover.y, left: agentInfoPopover.x }}
+          onMouseLeave={() => setAgentInfoPopover(null)}
+        >
+          <div className="font-semibold text-sm mb-1">@{agentInfoPopover.slug}</div>
+          <div className="opacity-70">Framework: {agentInfoPopover.framework}</div>
+          <div className="opacity-70">Model: {agentInfoPopover.model}</div>
+          <div className="opacity-70">Status: {agentInfoPopover.status}</div>
+        </div>
+      )}
 
       {/* ---- Canvas Viewer ---- */}
       {viewingCanvas && (
