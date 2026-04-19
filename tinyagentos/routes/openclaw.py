@@ -21,9 +21,12 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+
+from tinyagentos.config import save_config_locked
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -95,6 +98,9 @@ async def bootstrap(request: Request, agent: str | None = None):
             },
             status_code=409,
         )
+
+    agent_dict["bootstrap_last_seen_at"] = int(time.time())
+    await save_config_locked(config, config.config_path)
 
     session_id = agent_dict.get("session_id") or agent
 

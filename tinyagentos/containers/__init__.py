@@ -303,31 +303,35 @@ async def snapshot_restore(name: str, snapshot_name: str) -> dict:
     return {"success": code == 0, "output": output}
 
 
-async def snapshot_list(name: str) -> dict:
-    """List snapshot names for a container.
-
-    LXC: parses ``incus info <name>`` for the Snapshots section.
-    Docker: lists ``docker images`` filtered to the ``taos/`` namespace.
-
-    Returns ``{"success": bool, "snapshots": list[str], "output": str}``.
-    """
-    code, output = await _run(["incus", "info", name])
-    if code != 0:
-        return {"success": False, "snapshots": [], "output": output}
-    snapshots: list[str] = []
-    in_section = False
-    for line in output.splitlines():
-        stripped = line.strip()
-        if stripped.lower().startswith("snapshots:"):
-            in_section = True
+async def snapshot_list(name: str, *, prefix: str | None = None) -> list[dict]:
+    """Return snapshots for the container, newest first. Optionally filter
+    by name prefix. Each dict has 'name' and 'created_at'."""
+    rc, out = await _run(
+        ["incus", "snapshot", "list", name, "--format", "csv"], timeout=30,
+    )
+    if rc != 0:
+        return []
+    snaps: list[dict] = []
+    for line in out.strip().splitlines():
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) < 2 or not parts[0]:
             continue
-        if in_section:
-            if line and not line[0].isspace():
-                break
-            if stripped and not stripped.startswith("-"):
-                snap_name = stripped.split()[0]
-                snapshots.append(snap_name)
-    return {"success": True, "snapshots": snapshots, "output": output}
+        if prefix and not parts[0].startswith(prefix):
+            continue
+        snaps.append({"name": parts[0], "created_at": parts[1]})
+    return snaps
+
+
+async def snapshot_delete(name: str, snapshot_name: str) -> None:
+    """Delete one snapshot. Best-effort — errors are logged, not raised."""
+    rc, out = await _run(
+        ["incus", "snapshot", "delete", name, snapshot_name], timeout=60,
+    )
+    if rc != 0:
+        logger.warning(
+            "snapshot_delete failed for %s/%s: %s",
+            name, snapshot_name, out[:200],
+        )
 
 
 async def set_env(name: str, key: str, value: str) -> dict:
@@ -373,5 +377,6 @@ __all__ = [
     "snapshot_create",
     "snapshot_restore",
     "snapshot_list",
+    "snapshot_delete",
     "set_env",
 ]

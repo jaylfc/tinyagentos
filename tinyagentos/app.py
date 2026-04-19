@@ -89,6 +89,7 @@ from tinyagentos.knowledge_ingest import IngestPipeline
 from tinyagentos.knowledge_categories import CategoryEngine
 from tinyagentos.knowledge_monitor import MonitorService
 from tinyagentos.mcp import MCPServerStore, MCPSupervisor
+from tinyagentos.frameworks import FRAMEWORKS, FrameworkManifestError, validate_framework_manifest
 
 PROJECT_DIR = Path(__file__).parent.parent
 
@@ -126,6 +127,16 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
             # Persist newly registered backends to config.yaml synchronously
             # (lifespan hasn't started yet so we use the sync save).
             save_config(config, config.config_path)
+
+    for fw_id, entry in FRAMEWORKS.items():
+        try:
+            validate_framework_manifest(
+                fw_id, entry,
+                require_update_fields=bool(entry.get("release_source")),
+            )
+        except FrameworkManifestError:
+            logger.exception("framework manifest validation failed")
+            # Do NOT raise — legacy manifests can still run agents; only update paths are disabled.
 
     catalog_dir = catalog_dir or PROJECT_DIR / "app-catalog"
     hardware_path = data_dir / "hardware.json"
@@ -281,6 +292,27 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
                 await save_config_locked(config, config.config_path)
         except Exception:
             logger.exception("persona_v2 startup migration failed")
+        # Probe installed framework versions on startup so the UI can show
+        # whether each agent is up-to-date before any manual check is triggered.
+        try:
+            from tinyagentos.framework_update import _read_installed_tag
+            for agent_dict in config.agents:
+                if agent_dict.get("framework_version_tag") is not None:
+                    continue  # already probed
+                fw_id = agent_dict.get("framework")
+                manifest = FRAMEWORKS.get(fw_id, {})
+                if not manifest.get("service_name"):
+                    continue
+                container = f"taos-agent-{agent_dict['name']}"
+                try:
+                    tag = await _read_installed_tag(container)
+                    if tag:
+                        agent_dict["framework_version_tag"] = tag
+                except Exception:
+                    logger.warning("framework probe failed for %s", agent_dict.get("name"))
+            await save_config_locked(config, config.config_path)
+        except Exception:
+            logger.exception("framework version probe failed")
         # Per-agent state lives on the host and is mounted into containers.
         # See docs/design/framework-agnostic-runtime.md.
         app.state.agent_workspaces_dir = data_dir / "agent-workspaces"
@@ -633,6 +665,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     app.state.mcp_store = mcp_store
     app.state.mcp_supervisor = MCPSupervisor(mcp_store, catalog=registry, notif_store=notif_store, secrets_store=secrets_store)
     app.state.orchestrator = RestartOrchestrator(app.state)
+    app.state.latest_framework_versions = {}
+    import platform as _platform
+    app.state.host_arch = _platform.machine()
 
     from tinyagentos.trace_store import TraceStoreRegistry as _TraceStoreRegistry
     app.state.trace_registry = _TraceStoreRegistry(data_dir)
@@ -856,6 +891,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     from tinyagentos.routes import admin_prompts as admin_prompts_routes
     app.include_router(admin_prompts_routes.router)
+
+    from tinyagentos.routes import framework as framework_routes
+    app.include_router(framework_routes.router)
 
     # Lobby demo (internal only — not included in public builds)
     try:

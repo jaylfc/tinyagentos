@@ -240,6 +240,18 @@ class BridgeSessionRegistry:
         msg_id = body.get("id") or _new_id()
         content = body.get("content") or ""
 
+        # Forks (e.g. openclaw) that don't thread channel_id through the reply
+        # payload still send trace_id == originating message id, so we can
+        # look up the original message and route the reply back to its source
+        # channel rather than collapsing every reply into the agent's DM.
+        if not body.get("channel_id") and trace_id and self._chat_messages:
+            try:
+                orig = await self._chat_messages.get_message(trace_id)
+            except Exception:
+                orig = None
+            if orig and orig.get("channel_id"):
+                body["channel_id"] = orig["channel_id"]
+
         async with self._lock:
             session = self._get_or_create(slug)
 
@@ -248,7 +260,7 @@ class BridgeSessionRegistry:
             # Ensure a streaming placeholder chat message exists.
             pending_msg_id = session._pending_msg_ids.get(trace_id)
             if pending_msg_id is None and self._chat_messages and self._chat_channels:
-                channel_id = await self._resolve_channel(slug)
+                channel_id = body.get("channel_id") or await self._resolve_channel(slug)
                 if channel_id:
                     new_msg = await self._chat_messages.send_message(
                         channel_id=channel_id,
@@ -270,7 +282,7 @@ class BridgeSessionRegistry:
                     pending_msg_id = new_msg["id"]
             # Broadcast delta.
             if pending_msg_id and self._chat_hub:
-                channel_id = await self._resolve_channel(slug)
+                channel_id = body.get("channel_id") or await self._resolve_channel(slug)
                 if channel_id:
                     await self._chat_hub.broadcast(channel_id, {
                         "type": "message_delta",
@@ -284,7 +296,7 @@ class BridgeSessionRegistry:
             accumulated = session.flush_delta(trace_id)
             final_content = content or accumulated
             pending_msg_id = session.pop_pending_msg(trace_id)
-            channel_id = await self._resolve_channel(slug)
+            channel_id = body.get("channel_id") or await self._resolve_channel(slug)
 
             # Write trace event.
             if self._trace_registry:
@@ -334,7 +346,7 @@ class BridgeSessionRegistry:
                         })
 
         elif kind == "tool_call":
-            channel_id = await self._resolve_channel(slug)
+            channel_id = body.get("channel_id") or await self._resolve_channel(slug)
             tool_name = body.get("tool") or ""
             if self._trace_registry:
                 store = await self._trace_registry.get(slug)
@@ -364,7 +376,7 @@ class BridgeSessionRegistry:
                     logger.exception("archive dual-write failed (tool_call)")
 
         elif kind == "tool_result":
-            channel_id = await self._resolve_channel(slug)
+            channel_id = body.get("channel_id") or await self._resolve_channel(slug)
             tool_name = body.get("tool") or ""
             if self._trace_registry:
                 store = await self._trace_registry.get(slug)
@@ -396,7 +408,7 @@ class BridgeSessionRegistry:
 
         elif kind == "error":
             error_text = body.get("error") or ""
-            channel_id = await self._resolve_channel(slug)
+            channel_id = body.get("channel_id") or await self._resolve_channel(slug)
             if self._trace_registry:
                 store = await self._trace_registry.get(slug)
                 await store.record(
@@ -431,7 +443,7 @@ class BridgeSessionRegistry:
                     })
 
         elif kind == "reasoning":
-            channel_id = await self._resolve_channel(slug)
+            channel_id = body.get("channel_id") or await self._resolve_channel(slug)
             if self._trace_registry:
                 store = await self._trace_registry.get(slug)
                 await store.record(

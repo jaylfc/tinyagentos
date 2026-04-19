@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Bot, Plus, Trash2, ScrollText, Play, Server, X, ChevronRight, ChevronLeft, Check, Wrench, MessageSquare, PauseCircle, RotateCcw, Archive, HardDrive } from "lucide-react";
+import { Bot, Box, Plus, Trash2, ScrollText, Play, Server, X, ChevronRight, ChevronLeft, Check, Wrench, MessageSquare, PauseCircle, RotateCcw, Archive, HardDrive } from "lucide-react";
+import { fetchLatestFrameworks, LatestVersion } from "@/lib/framework-api";
 import { AgentSkillsPanel } from "./AgentSkillsPanel";
 import { AgentMessagesPanel } from "./AgentMessagesPanel";
 import { PersonaTab } from "@/components/agent-settings/PersonaTab";
 import { MemoryTab } from "@/components/agent-settings/MemoryTab";
+import { FrameworkTab } from "@/components/agent-settings/FrameworkTab";
 import {
   fetchClusterWorkers,
   workersToAggregated,
@@ -53,6 +55,7 @@ interface Agent {
   agent_md?: string;
   source_persona_id?: string | null;
   migrated_to_v2_personas?: boolean;
+  framework_version_sha?: string | null;
 }
 
 interface DiskState {
@@ -115,6 +118,7 @@ const STATUS_STYLES: Record<string, string> = {
 function AgentRow({
   agent,
   diskState,
+  latestByFramework,
   onViewLogs,
   onViewSkills,
   onViewMessages,
@@ -123,6 +127,7 @@ function AgentRow({
 }: {
   agent: Agent;
   diskState?: DiskState | null;
+  latestByFramework: Record<string, LatestVersion>;
   onViewLogs: (name: string) => void;
   onViewSkills: (name: string) => void;
   onViewMessages: (name: string) => void;
@@ -130,6 +135,11 @@ function AgentRow({
   onResume: (name: string) => void;
 }) {
   const emoji = resolveAgentEmoji(agent.emoji, agent.framework);
+  const latestForAgent = agent.framework ? latestByFramework[agent.framework] : undefined;
+  const updateAvailable =
+    agent.framework_version_sha &&
+    latestForAgent &&
+    latestForAgent.sha !== agent.framework_version_sha;
   return (
     <Card className="flex items-center gap-4 px-4 py-3 hover:bg-shell-surface/50 transition-colors">
       <div className="flex items-center gap-2.5 flex-1 min-w-0">
@@ -145,6 +155,13 @@ function AgentRow({
           {emoji}
         </span>
         <span className="font-medium text-sm truncate">{agent.display_name || agent.name}</span>
+        {updateAvailable && (
+          <span
+            aria-label="framework update available"
+            title="framework update available"
+            className="inline-block w-2 h-2 bg-yellow-400 rounded-full ml-1 shrink-0"
+          />
+        )}
         {agent.paused && (
           <span
             className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/20 text-amber-400 border border-amber-500/20"
@@ -248,7 +265,7 @@ function AgentRow({
 /*  AgentDetailPanel (Logs + Skills tabs)                              */
 /* ------------------------------------------------------------------ */
 
-type DetailTab = "logs" | "persona" | "memory" | "skills" | "messages";
+type DetailTab = "logs" | "persona" | "memory" | "framework" | "skills" | "messages";
 
 function AgentDetailPanel({
   agent,
@@ -346,6 +363,10 @@ function AgentDetailPanel({
               <Archive size={13} className="mr-1.5" />
               Memory
             </TabsTrigger>
+            <TabsTrigger value="framework">
+              <Box size={13} className="mr-1.5" />
+              Framework
+            </TabsTrigger>
             <TabsTrigger value="skills">
               <Wrench size={13} className="mr-1.5" />
               Skills
@@ -380,6 +401,9 @@ function AgentDetailPanel({
         </TabsContent>
         <TabsContent value="memory" className="h-full mt-0">
           <MemoryTab agent={agent} onUpdated={onAgentUpdated} />
+        </TabsContent>
+        <TabsContent value="framework" className="h-full mt-0">
+          <FrameworkTab agent={agent} onUpdated={onAgentUpdated} />
         </TabsContent>
         <TabsContent value="skills" className="h-full mt-0">
           <AgentSkillsPanel
@@ -1529,6 +1553,7 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
   const [detail, setDetail] = useState<{ name: string; tab: DetailTab } | null>(null);
   const [diskStates, setDiskStates] = useState<Record<string, DiskState>>({});
   const [quotaErrors, setQuotaErrors] = useState<Record<string, string>>({});
+  const [latestByFramework, setLatestByFramework] = useState<Record<string, LatestVersion>>({});
 
   const fetchAgents = useCallback(async () => {
     try {
@@ -1554,6 +1579,7 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
                 kv_cache_quant_k: a.kv_cache_quant_k ? String(a.kv_cache_quant_k) : (a.kv_cache_quant ? String(a.kv_cache_quant) : "fp16"),
                 kv_cache_quant_v: a.kv_cache_quant_v ? String(a.kv_cache_quant_v) : (a.kv_cache_quant ? String(a.kv_cache_quant) : "fp16"),
                 kv_cache_quant_boundary_layers: typeof a.kv_cache_quant_boundary_layers === "number" ? a.kv_cache_quant_boundary_layers : 0,
+                framework_version_sha: a.framework_version_sha != null ? String(a.framework_version_sha) : null,
               }))
             );
             setLoading(false);
@@ -1628,6 +1654,10 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
     window.addEventListener("taos:agent-resumed", handler);
     return () => window.removeEventListener("taos:agent-resumed", handler);
   }, [fetchAgents]);
+
+  useEffect(() => {
+    fetchLatestFrameworks().then(setLatestByFramework).catch(() => {});
+  }, []);
 
   async function handleResume(name: string) {
     try {
@@ -1881,6 +1911,7 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
                   key={agent.name}
                   agent={agent}
                   diskState={diskStates[agent.name] ?? null}
+                  latestByFramework={latestByFramework}
                   onViewLogs={(name) => setDetail({ name, tab: "logs" })}
                   onViewSkills={(name) => setDetail({ name, tab: "skills" })}
                   onViewMessages={(name) => setDetail({ name, tab: "messages" })}

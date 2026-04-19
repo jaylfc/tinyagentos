@@ -20,8 +20,11 @@ import logging
 import os
 import platform
 import tempfile
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+_FRAMEWORK_UPDATE_SCRIPT_SRC = Path(__file__).parent / "scripts" / "taos-framework-update.sh"
 
 # Tag + asset naming must match the workflow at
 # .github/workflows/build-agent-images.yml. Both must move together.
@@ -78,6 +81,61 @@ async def is_image_present(alias: str = BASE_IMAGE_ALIAS) -> bool:
             return True
     return False
 
+
+
+async def _bake_scripts_into_image(alias: str) -> None:
+    """Launch a temporary container from *alias*, inject taos-framework-update,
+    publish the result back over the same alias, then delete the temp container.
+
+    Non-fatal — any failure is logged and the image is left as-is so deploys
+    still work; agents will just be missing the helper until the next
+    successful bake (or the next image import cycle).
+    """
+    from tinyagentos.containers import exec_in_container, push_file
+
+    tmp_name = f"taos-bake-{alias}-tmp"
+    script_dest = "/usr/local/bin/taos-framework-update"
+
+    async def _incus(*args: str, timeout: int = 60) -> tuple[int, str]:
+        proc = await asyncio.create_subprocess_exec(
+            "incus", *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        return proc.returncode, (stdout or b"").decode()
+
+    try:
+        # Launch a temporary container from the just-imported image
+        code, out = await _incus("launch", alias, tmp_name, timeout=120)
+        if code != 0:
+            logger.warning("agent_image: bake launch failed for %s: %s", alias, out[:300])
+            return
+        # Give the container a moment to reach running state
+        await asyncio.sleep(2)
+        # Push the update script into the image
+        await push_file(tmp_name, str(_FRAMEWORK_UPDATE_SCRIPT_SRC), script_dest)
+        await exec_in_container(tmp_name, ["chmod", "+x", script_dest])
+        # Stop the container, then publish it back over the same alias
+        code, out = await _incus("stop", tmp_name, "--force", timeout=60)
+        if code != 0:
+            logger.warning("agent_image: bake stop failed for %s: %s", tmp_name, out[:200])
+            return
+        # Delete the old image, then publish the modified container as the alias
+        await _incus("image", "delete", alias, timeout=30)
+        code, out = await _incus("publish", tmp_name, "--alias", alias, timeout=120)
+        if code != 0:
+            logger.warning("agent_image: bake publish failed for %s: %s", alias, out[:300])
+            return
+        logger.info("agent_image: taos-framework-update baked into %s", alias)
+    except Exception as exc:
+        logger.warning("agent_image: bake scripts failed for %s: %s", alias, exc)
+    finally:
+        # Always clean up the temp container regardless of outcome
+        try:
+            await _incus("delete", tmp_name, "--force", timeout=30)
+        except Exception:
+            pass
 
 async def ensure_image_present(
     alias: str = BASE_IMAGE_ALIAS,
@@ -143,6 +201,7 @@ async def ensure_image_present(
             )
             return False
         logger.info("agent_image: %s imported OK", alias)
+        await _bake_scripts_into_image(alias)
         return True
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning("agent_image: import failed for %s: %s", alias, exc)

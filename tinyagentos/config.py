@@ -193,6 +193,13 @@ def normalize_agent(agent: dict) -> dict:
     agent.setdefault("source_persona_id", None)
     # False for pre-existing rows; new deploys flip to True explicitly.
     agent.setdefault("migrated_to_v2_personas", False)
+    agent.setdefault("framework_version_tag", None)
+    agent.setdefault("framework_version_sha", None)
+    agent.setdefault("framework_update_status", "idle")
+    agent.setdefault("framework_update_started_at", None)
+    agent.setdefault("framework_update_last_error", None)
+    agent.setdefault("framework_last_snapshot", None)
+    agent.setdefault("bootstrap_last_seen_at", None)
     return agent
 
 def save_config(config: AppConfig, path: Path) -> None:
