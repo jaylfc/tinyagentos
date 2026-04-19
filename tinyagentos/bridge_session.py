@@ -74,6 +74,8 @@ class _AgentSession:
         self._delta_buffers: dict[str, io.StringIO] = {}
         # Maps trace_id -> pending chat message id (created as 'streaming').
         self._pending_msg_ids: dict[str, str] = {}
+        # Maps trace_id -> hops_since_user from the triggering user_message event.
+        self.pending_hops: dict[str, int] = {}
 
     def accumulate_delta(self, trace_id: str, content: str) -> None:
         if trace_id not in self._delta_buffers:
@@ -120,6 +122,7 @@ class BridgeSessionRegistry:
         self._archive = archive
         self._sessions: dict[str, _AgentSession] = {}
         self._lock = asyncio.Lock()
+        self._router = None
 
     def _get_or_create(self, slug: str) -> _AgentSession:
         if slug not in self._sessions:
@@ -141,6 +144,9 @@ class BridgeSessionRegistry:
             return
         async with self._lock:
             session = self._get_or_create(slug)
+        trace_id = msg.get("trace_id") or msg.get("id")
+        if trace_id is not None:
+            session.pending_hops[trace_id] = int(msg.get("hops_since_user") or 0)
         await session.queue.put({
             "event": "user_message",
             "data": msg,
@@ -262,13 +268,14 @@ class BridgeSessionRegistry:
             if pending_msg_id is None and self._chat_messages and self._chat_channels:
                 channel_id = body.get("channel_id") or await self._resolve_channel(slug)
                 if channel_id:
+                    _delta_hops = session.pending_hops.get(trace_id, 0)
                     new_msg = await self._chat_messages.send_message(
                         channel_id=channel_id,
                         author_id=slug,
                         author_type="agent",
                         content="",
                         state="streaming",
-                        metadata={"trace_id": trace_id, "openclaw_msg_id": msg_id},
+                        metadata={"trace_id": trace_id, "openclaw_msg_id": msg_id, "hops_since_user": _delta_hops},
                     )
                     session.set_pending_msg(trace_id, new_msg["id"])
                     if self._chat_channels:
@@ -308,11 +315,13 @@ class BridgeSessionRegistry:
                     payload={"content": final_content},
                 )
 
+            persisted = None
             if channel_id:
                 if pending_msg_id and self._chat_messages:
                     # Edit the streaming placeholder to final content.
                     await self._chat_messages.edit_message(pending_msg_id, final_content)
                     await self._chat_messages.update_state(pending_msg_id, "complete")
+                    session.pending_hops.pop(trace_id, None)
                     if self._chat_hub:
                         await self._chat_hub.broadcast(channel_id, {
                             "type": "message_edit",
@@ -329,13 +338,15 @@ class BridgeSessionRegistry:
                         })
                 elif self._chat_messages and self._chat_channels:
                     # No streaming placeholder — create the message directly.
+                    _final_hops = session.pending_hops.get(trace_id, 0)
+                    session.pending_hops.pop(trace_id, None)
                     new_msg = await self._chat_messages.send_message(
                         channel_id=channel_id,
                         author_id=slug,
                         author_type="agent",
                         content=final_content,
                         state="complete",
-                        metadata={"trace_id": trace_id, "openclaw_msg_id": msg_id},
+                        metadata={"trace_id": trace_id, "openclaw_msg_id": msg_id, "hops_since_user": _final_hops},
                     )
                     await self._chat_channels.update_last_message_at(channel_id)
                     if self._chat_hub:
@@ -344,6 +355,17 @@ class BridgeSessionRegistry:
                             "seq": self._chat_hub.next_seq(),
                             **new_msg,
                         })
+                    persisted = new_msg
+
+            # Re-dispatch so other agents in the channel see this reply.
+            router = self._router
+            if router is not None and persisted is not None:
+                try:
+                    channel = await self._chat_channels.get_channel(persisted["channel_id"])
+                    if channel is not None:
+                        router.dispatch(persisted, channel)
+                except Exception:
+                    logger.warning("re-dispatch on agent reply failed", exc_info=True)
 
         elif kind == "tool_call":
             channel_id = body.get("channel_id") or await self._resolve_channel(slug)

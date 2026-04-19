@@ -468,6 +468,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
             chat_hub=chat_hub,
             archive=getattr(app.state, "archive", None),
         )
+        app.state.bridge_sessions._router = app.state.agent_chat_router
 
         # After the first probe, mark auto-managed backends that are not
         # currently reachable as "stopped" so the scheduler knows to start
