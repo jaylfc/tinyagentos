@@ -16,6 +16,8 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+import tinyagentos.github_releases as github_releases
+
 logger = logging.getLogger(__name__)
 
 # How often to check for updates (seconds). One hour by default.
@@ -32,6 +34,21 @@ DEFAULT_PREFS = {
     "last_notified_commit": None,
     "last_reminder_at": None,
 }
+
+
+async def poll_frameworks(manifests, *, http_client, arch, cache):
+    """Refresh the latest-release cache for every framework that declares
+    a release_source. Transient errors preserve the last-good cache entry.
+    """
+    for fw_id, manifest in manifests.items():
+        if not manifest.get("release_source"):
+            continue
+        try:
+            cache[fw_id] = await github_releases.fetch_latest_release(manifest, http_client, arch=arch)
+        except Exception:
+            logger.warning(
+                "poll_frameworks: refresh for %s failed; keeping last good", fw_id
+            )
 
 
 async def _run(args: list[str], cwd: Path) -> tuple[int, str]:
@@ -127,6 +144,22 @@ class AutoUpdateService:
                     # Remember so we don't re-notify next hour.
                     prefs["last_notified_commit"] = new_commit
                     await self._save_prefs(prefs)
+
+        # Poll latest framework release metadata for frameworks that publish
+        # GitHub releases. Guarded with getattr so it's a no-op before Task 8.1
+        # initialises these state attributes.
+        from tinyagentos.frameworks import FRAMEWORKS
+        _app = self._app_state
+        _http = getattr(_app, "http_client", None)
+        _arch = getattr(_app, "host_arch", None)
+        _fw_cache = getattr(_app, "latest_framework_versions", None)
+        if _http is not None and _arch is not None and _fw_cache is not None:
+            await poll_frameworks(
+                FRAMEWORKS,
+                http_client=_http,
+                arch=_arch,
+                cache=_fw_cache,
+            )
 
         # If a restart is pending and auto_restart is off, re-emit the
         # reminder at most once every 6 hours.
