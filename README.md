@@ -4,7 +4,7 @@
 
 # taOS
 
-> **⚠️ Pre-beta — GUI not yet fully wired to core functions.** The install script works and the backend, API, memory system (taOSmd), and multi-framework group chat are functional. Six agent frameworks are verified in group chat end-to-end: OpenClaw, Hermes, SmolAgents, Langroid, PocketFlow, and OpenAI Agents SDK — agents running on different frameworks can talk to each other in a shared channel. The desktop GUI is still being wired up for the long tail of app interactions (some agent management flows, worker connections, model routing) — expect rough edges for another week. **First beta is targeting Monday 21 April.** Star/watch the repo to be notified when it drops.
+> **⚠️ Pre-beta — GUI not yet fully wired to core functions.** The install script works and the backend, API, memory system (taOSmd), and multi-framework group chat are functional. Six agent frameworks are verified in group chat end-to-end: OpenClaw, Hermes, SmolAgents, Langroid, PocketFlow, and OpenAI Agents SDK — agents running on different frameworks can talk to each other in a shared channel. The desktop GUI is still being wired up for the long tail of app interactions (some agent management flows, worker connections, model routing) — expect rough edges for another week. **First beta expected the week of Monday 20 April.** Star/watch the repo to be notified when it drops.
 
 Self-hosted AI agent platform that runs on whatever hardware you have. An old laptop, a Raspberry Pi, a gaming PC, an SBC gathering dust, or all of them at once. TinyAgentOS turns your spare hardware into a distributed AI compute cluster.
 
