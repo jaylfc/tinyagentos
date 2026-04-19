@@ -292,27 +292,37 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
                 await save_config_locked(config, config.config_path)
         except Exception:
             logger.exception("persona_v2 startup migration failed")
-        # Probe installed framework versions on startup so the UI can show
-        # whether each agent is up-to-date before any manual check is triggered.
-        try:
-            from tinyagentos.framework_update import _read_installed_tag
-            for agent_dict in config.agents:
-                if agent_dict.get("framework_version_tag") is not None:
-                    continue  # already probed
-                fw_id = agent_dict.get("framework")
-                manifest = FRAMEWORKS.get(fw_id, {})
-                if not manifest.get("service_name"):
-                    continue
-                container = f"taos-agent-{agent_dict['name']}"
-                try:
-                    tag = await _read_installed_tag(container)
-                    if tag:
-                        agent_dict["framework_version_tag"] = tag
-                except Exception:
-                    logger.warning("framework probe failed for %s", agent_dict.get("name"))
-            await save_config_locked(config, config.config_path)
-        except Exception:
-            logger.exception("framework version probe failed")
+        # Probe installed framework versions in the BACKGROUND so the UI can
+        # show whether each agent is up-to-date before any manual check is
+        # triggered. Each probe does an `incus exec` into the agent container,
+        # which is 1-3s cold; serialising 6+ of them blocks uvicorn from
+        # accepting requests for 10-20s after a restart. The Update modal
+        # polls /api/settings/update-status and feels "hung" that whole time.
+        # Backgrounding this makes the restart feel instant; tags populate
+        # a few seconds later and the Framework tab re-probes on open anyway.
+        async def _probe_framework_versions() -> None:
+            try:
+                from tinyagentos.framework_update import _read_installed_tag
+                for agent_dict in config.agents:
+                    if agent_dict.get("framework_version_tag") is not None:
+                        continue
+                    fw_id = agent_dict.get("framework")
+                    manifest = FRAMEWORKS.get(fw_id, {})
+                    if not manifest.get("service_name"):
+                        continue
+                    container = f"taos-agent-{agent_dict['name']}"
+                    try:
+                        tag = await _read_installed_tag(container)
+                        if tag:
+                            agent_dict["framework_version_tag"] = tag
+                    except Exception:
+                        logger.warning("framework probe failed for %s", agent_dict.get("name"))
+                if config.config_path:
+                    await save_config_locked(config, config.config_path)
+            except Exception:
+                logger.exception("framework version probe failed")
+
+        asyncio.create_task(_probe_framework_versions())
         # Per-agent state lives on the host and is mounted into containers.
         # See docs/design/framework-agnostic-runtime.md.
         app.state.agent_workspaces_dir = data_dir / "agent-workspaces"
