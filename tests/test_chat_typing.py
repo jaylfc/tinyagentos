@@ -67,3 +67,116 @@ def test_mark_refreshes_ttl(monkeypatch):
     r.mark("c1", "jay", "human")  # refresh
     t[0] = 1004.0
     assert r.list("c1")["human"] == ["jay"]  # still alive (refreshed at 1002)
+
+
+# ── HTTP endpoint tests ────────────────────────────────────────────────────────
+
+import pytest
+import yaml
+from httpx import AsyncClient, ASGITransport
+from tinyagentos.app import create_app
+
+
+def _make_app(tmp_path):
+    cfg = {
+        "server": {"host": "0.0.0.0", "port": 6969},
+        "backends": [],
+        "qmd": {"url": "http://localhost:7832"},
+        "agents": [{"name": "tom", "host": "localhost", "color": "#fff"}],
+        "metrics": {"poll_interval": 30, "retention_days": 30},
+    }
+    (tmp_path / "config.yaml").write_text(yaml.dump(cfg))
+    (tmp_path / ".setup_complete").touch()
+    return create_app(data_dir=tmp_path)
+
+
+async def _setup_client(tmp_path):
+    app = _make_app(tmp_path)
+    await app.state.chat_channels.init()
+    await app.state.chat_messages.init()
+    token = app.state.auth.get_local_token()
+    client = AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    return app, client, token
+
+
+@pytest.mark.asyncio
+async def test_post_typing_marks_registry(tmp_path):
+    app, client, _token = await _setup_client(tmp_path)
+    async with client:
+        store = app.state.chat_channels
+        ch = await store.create_channel(
+            name="g", type="group", description="", topic="",
+            members=["user", "tom"], settings={}, created_by="user",
+        )
+        ch_id = ch["id"] if isinstance(ch, dict) else ch
+
+        r = await client.post(
+            f"/api/chat/channels/{ch_id}/typing",
+            json={"author_id": "user"},
+        )
+        assert r.status_code == 200
+        listing = app.state.typing.list(ch_id)
+        assert "user" in listing["human"]
+
+
+@pytest.mark.asyncio
+async def test_post_thinking_start_marks_registry(tmp_path):
+    app, client, token = await _setup_client(tmp_path)
+    async with client:
+        store = app.state.chat_channels
+        ch = await store.create_channel(
+            name="g", type="group", description="", topic="",
+            members=["user", "tom"], settings={}, created_by="user",
+        )
+        ch_id = ch["id"] if isinstance(ch, dict) else ch
+
+        r = await client.post(
+            f"/api/chat/channels/{ch_id}/thinking",
+            json={"slug": "tom", "state": "start"},
+        )
+        assert r.status_code == 200
+        listing = app.state.typing.list(ch_id)
+        assert "tom" in listing["agent"]
+
+        # end clears
+        r = await client.post(
+            f"/api/chat/channels/{ch_id}/thinking",
+            json={"slug": "tom", "state": "end"},
+        )
+        assert r.status_code == 200
+        listing = app.state.typing.list(ch_id)
+        assert "tom" not in listing["agent"]
+
+
+@pytest.mark.asyncio
+async def test_post_thinking_requires_bearer(tmp_path):
+    app = _make_app(tmp_path)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post(
+            "/api/chat/channels/x/thinking",
+            json={"slug": "tom", "state": "start"},
+        )
+        assert r.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_get_typing_returns_current_state(tmp_path):
+    app, client, _token = await _setup_client(tmp_path)
+    async with client:
+        store = app.state.chat_channels
+        ch = await store.create_channel(
+            name="g", type="group", description="", topic="",
+            members=["user", "tom", "don"], settings={}, created_by="user",
+        )
+        ch_id = ch["id"] if isinstance(ch, dict) else ch
+        app.state.typing.mark(ch_id, "user", "human")
+        app.state.typing.mark(ch_id, "tom", "agent")
+
+        r = await client.get(f"/api/chat/channels/{ch_id}/typing")
+        assert r.status_code == 200
+        body = r.json()
+        assert body == {"human": ["user"], "agent": ["tom"]}
