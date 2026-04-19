@@ -39,7 +39,7 @@ def _run(text):
 async def fetch_boot(c):
     r=await c.get(f"{BRIDGE_URL}/api/openclaw/bootstrap?agent={AGENT_NAME}", headers={"Authorization":f"Bearer {LOCAL_TOKEN}"}, timeout=30)
     r.raise_for_status(); return r.json()
-async def post_reply(c,u,t,mid,tid,txt):
+async def post_reply(c, u, t, mid, tid, txt, cid=None):
     try: await c.post(u, json={"kind":"final","id":mid,"trace_id":tid,"content":txt}, headers={"Authorization":f"Bearer {t}"}, timeout=30)
     except Exception as e: log.warning("reply: %s", e)
 async def handle(c, evt, ch):

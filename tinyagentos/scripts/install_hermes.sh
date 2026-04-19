@@ -155,8 +155,9 @@ async def call_hermes(client: httpx.AsyncClient, text: str) -> str:
 
 
 async def post_reply(client: httpx.AsyncClient, reply_url: str, token: str,
-                     msg_id: str, trace_id: str, content: str) -> None:
+                     msg_id: str, trace_id: str, content: str, cid=None) -> None:
     body = {"kind": "final", "id": msg_id, "trace_id": trace_id, "content": content}
+    if cid: body["channel_id"] = cid
     try:
         resp = await client.post(reply_url, json=body,
                                   headers={"Content-Type": "application/json",
@@ -175,7 +176,7 @@ async def handle_user_message(client: httpx.AsyncClient, evt: dict, channel: dic
     log.info("user_message id=%s text=%r", msg_id, text[:80])
     reply = await call_hermes(client, text)
     await post_reply(client, channel["reply_url"], channel["auth_bearer"],
-                     msg_id, trace_id, reply)
+                     msg_id, trace_id, reply, evt.get("channel_id"))
 
 
 async def sse_loop(client: httpx.AsyncClient, channel: dict, stop: asyncio.Event) -> None:
