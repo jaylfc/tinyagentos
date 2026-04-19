@@ -48,15 +48,18 @@ chmod 600 /root/.hermes/.env
 
 log "patching /root/.hermes/config.yaml model.{provider,base_url,api_key}"
 pip3 install --break-system-packages --quiet pyyaml httpx 2>&1 | tail -3 || true
-python3 - <<PYEOF
+# Read MODEL/LLM_KEY via os.environ so any shell-special characters in the
+# values can't break the python literal or be interpreted as code. The
+# unquoted heredoc would otherwise interpolate them as bash strings first.
+TAOS_MODEL_ENV="$MODEL" TAOS_LLM_KEY_ENV="$LLM_KEY" python3 - <<'PYEOF'
 import yaml, os
 p = "/root/.hermes/config.yaml"
 data = yaml.safe_load(open(p).read()) if os.path.exists(p) else {}
 m = data.setdefault("model", {})
-m["default"] = "$MODEL"
+m["default"] = os.environ["TAOS_MODEL_ENV"]
 m["provider"] = "custom"
 m["base_url"] = "http://127.0.0.1:4000/v1"
-m["api_key"] = "$LLM_KEY"
+m["api_key"] = os.environ["TAOS_LLM_KEY_ENV"]
 with open(p, "w") as f: yaml.safe_dump(data, f, default_flow_style=False)
 print("model patched OK")
 PYEOF
