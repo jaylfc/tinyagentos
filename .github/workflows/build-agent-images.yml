@@ -169,4 +169,4 @@ jobs:
             taos-openclaw-base-linux-arm64.tar.gz
             taos-openclaw-base-linux-x64.tar.gz
           make_latest: false
-          prerelease: false
+          prerelease: true
