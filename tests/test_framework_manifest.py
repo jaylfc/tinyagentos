@@ -1,0 +1,28 @@
+import pytest
+from tinyagentos.frameworks import FRAMEWORKS, validate_framework_manifest, FrameworkManifestError
+
+def test_openclaw_has_update_metadata():
+    fw = FRAMEWORKS["openclaw"]
+    assert fw["release_source"] == "github:jaylfc/openclaw"
+    assert "{arch}" in fw["release_asset_pattern"]
+    assert fw["install_script"] == "/usr/local/bin/taos-framework-update"
+    assert fw["service_name"] == "openclaw"
+
+def test_validate_rejects_missing_update_fields():
+    with pytest.raises(FrameworkManifestError):
+        validate_framework_manifest("x", {"id": "x", "name": "X"}, require_update_fields=True)
+
+def test_validate_passes_with_all_fields():
+    good = {"id": "x", "name": "X", "release_source": "github:a/b",
+            "release_asset_pattern": "b-{arch}.tgz",
+            "install_script": "/usr/local/bin/taos-framework-update",
+            "service_name": "x"}
+    validate_framework_manifest("x", good, require_update_fields=True)
+
+def test_validate_allows_missing_update_fields_when_flag_false():
+    validate_framework_manifest("x", {"id": "x", "name": "X"}, require_update_fields=False)
+
+def test_all_frameworks_with_release_source_pass_validation():
+    for fw_id, entry in FRAMEWORKS.items():
+        if entry.get("release_source"):
+            validate_framework_manifest(fw_id, entry, require_update_fields=True)
