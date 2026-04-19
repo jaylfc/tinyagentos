@@ -101,3 +101,23 @@ async def get_latest(request: Request, refresh: bool = False):
             cache=state.latest_framework_versions,
         )
     return state.latest_framework_versions
+
+
+@router.get("/api/frameworks/slash-commands")
+async def slash_commands_manifest(request: Request):
+    """Return {slug: [{name, description}, ...]} for every agent in
+    app.state.config.agents. Unknown framework or missing slash_commands
+    field → empty list. Client (SlashMenu) reads this once per channel
+    open and caches for 5 minutes.
+    """
+    config = getattr(request.app.state, "config", None)
+    agents = getattr(config, "agents", []) if config else []
+    out: dict[str, list[dict]] = {}
+    for a in agents:
+        slug = a.get("name")
+        if not slug:
+            continue
+        fw = FRAMEWORKS.get(a.get("framework") or "", {})
+        cmds = fw.get("slash_commands") or []
+        out[slug] = [{"name": c["name"], "description": c.get("description", "")} for c in cmds]
+    return JSONResponse(out)
