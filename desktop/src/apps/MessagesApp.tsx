@@ -58,6 +58,7 @@ interface Channel {
   name: string;
   type: "dm" | "topic" | "group";
   description?: string;
+  topic?: string;
   members?: string[];
   created_at?: string;
   last_message_at?: string;
@@ -76,6 +77,8 @@ interface LiveAgent {
   display_name?: string;
   emoji?: string;
   framework?: string;
+  model?: string;
+  status?: string;
 }
 
 interface ArchivedAgentEntry {
@@ -1346,7 +1349,7 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
             id: currentChannel.id,
             name: currentChannel.name,
             type: currentChannel.type,
-            topic: "",
+            topic: currentChannel.topic ?? "",
             members: currentChannel.members ?? [],
             settings: currentChannel.settings ?? {},
           }}
@@ -1398,9 +1401,9 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
             if (agent) {
               setAgentInfoPopover({
                 slug,
-                framework: (agent as unknown as { framework?: string }).framework || "unknown",
-                model: (agent as unknown as { model?: string }).model || "unknown",
-                status: (agent as unknown as { status?: string }).status || "unknown",
+                framework: agent.framework || "unknown",
+                model: agent.model || "unknown",
+                status: agent.status || "unknown",
                 x: contextMenu.x,
                 y: contextMenu.y,
               });
