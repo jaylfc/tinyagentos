@@ -9,6 +9,8 @@ from pathlib import Path
 from fastapi import APIRouter, File, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 
+from tinyagentos.chat.slash_commands import dispatch as slash_dispatch, parse_slash
+
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
@@ -181,11 +183,40 @@ async def post_message(request: Request):
     ch_store = request.app.state.chat_channels
     hub = request.app.state.chat_hub
 
+    channel_id = body["channel_id"]
+    content = body.get("content") or ""
+    cmd, args = parse_slash(content)
+    if cmd is not None:
+        result = await slash_dispatch(
+            cmd, args or "", channel_id,
+            body.get("author_id", "user"),
+            body.get("author_type", "user"),
+            request.app.state,
+        )
+        sys_msg = await msg_store.send_message(
+            channel_id=channel_id,
+            author_id="system",
+            author_type="system",
+            content=result.system_text,
+            content_type="text",
+            state="complete",
+            metadata=None,
+        )
+        await ch_store.update_last_message_at(channel_id)
+        await hub.broadcast(
+            channel_id,
+            {"type": "message", "seq": hub.next_seq(), **sys_msg},
+        )
+        return JSONResponse(
+            {"ok": True, "handled": "slash", "system_message": sys_msg},
+            status_code=200,
+        )
+
     message = await msg_store.send_message(
-        channel_id=body["channel_id"],
+        channel_id=channel_id,
         author_id=body["author_id"],
         author_type=body.get("author_type", "agent"),
-        content=body.get("content", ""),
+        content=content,
         content_type=body.get("content_type", "text"),
         thread_id=body.get("thread_id"),
         embeds=body.get("embeds"),
@@ -195,8 +226,8 @@ async def post_message(request: Request):
         metadata=body.get("metadata"),
         state=body.get("state", "complete"),
     )
-    await ch_store.update_last_message_at(body["channel_id"])
-    await hub.broadcast(body["channel_id"], {"type": "message", "seq": hub.next_seq(), **message})
+    await ch_store.update_last_message_at(channel_id)
+    await hub.broadcast(channel_id, {"type": "message", "seq": hub.next_seq(), **message})
 
     # Capture user messages into user memory (skip agent messages)
     if body.get("author_type", "agent") == "user":
@@ -204,11 +235,11 @@ async def post_message(request: Request):
         if user_memory:
             asyncio.create_task(_capture_user_memory(
                 user_memory,
-                content=body.get("content", ""),
-                title=f"Message in {body['channel_id']}",
+                content=content,
+                title=f"Message in {channel_id}",
                 collection="conversations",
                 metadata={
-                    "channel_id": body["channel_id"],
+                    "channel_id": channel_id,
                     "message_id": message.get("id"),
                     "timestamp": message.get("created_at"),
                 },
@@ -222,21 +253,21 @@ async def post_message(request: Request):
             await archive.record(
                 "conversation",
                 {
-                    "content": body.get("content", ""),
-                    "channel_id": body["channel_id"],
+                    "content": content,
+                    "channel_id": channel_id,
                     "message_id": message.get("id"),
                     "author_id": body["author_id"],
                     "author_type": body.get("author_type", "agent"),
                 },
                 agent_name=body["author_id"] if body.get("author_type") == "agent" else None,
-                summary=body.get("content", "")[:100],
+                summary=content[:100],
             )
         except Exception:
             pass  # Never block chat for archive failures
 
     router_svc = getattr(request.app.state, "agent_chat_router", None)
     if router_svc is not None:
-        channel = await ch_store.get_channel(body["channel_id"])
+        channel = await ch_store.get_channel(channel_id)
         if channel is not None:
             router_svc.dispatch(message, channel)
 
