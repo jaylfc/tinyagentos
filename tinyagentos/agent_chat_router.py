@@ -8,23 +8,28 @@ logger = logging.getLogger(__name__)
 
 
 class AgentChatRouter:
-    """Bridges user-authored chat messages into per-agent SSE queues via
-    BridgeSessionRegistry. The openclaw fork patch subscribes to each agent's
-    queue at container startup; replies flow back through
-    POST /api/openclaw/sessions/{slug}/reply (routes/openclaw.py)."""
+    """Bridges chat messages into per-agent SSE queues via BridgeSessionRegistry.
+
+    Routing rules (per message):
+    - DM channels always route to all non-author members with force_respond=True.
+    - Group channels in 'quiet' mode only route to explicitly mentioned agents.
+    - Group channels in 'lively' mode fan out to all non-muted members.
+    - @mention always sets force_respond=True and bypasses hop cap / cooldown.
+    - Hop cap (max_hops) stops agent-authored chains unless overridden by mention.
+    - Muted agents are always skipped (even with mention).
+    """
 
     def __init__(self, app_state: Any):
         self._state = app_state
 
     async def close(self) -> None:
-        # Registry lifecycle belongs to app.state; nothing to tear down here.
         return
 
     def dispatch(self, message: dict, channel: dict) -> None:
-        """Fire-and-forget entry point. Callers invoke this right after a
-        message has been persisted and broadcast; we run the routing in a
-        background task so the caller's latency is unchanged."""
-        if message.get("author_type") != "user":
+        """Fire-and-forget entry point. Runs routing in a background task."""
+        if message.get("content_type") == "system":
+            return
+        if message.get("state") == "streaming":
             return
         asyncio.create_task(self._route(message, channel))
 
@@ -36,24 +41,68 @@ class AgentChatRouter:
 
     async def _route_inner(self, message: dict, channel: dict) -> None:
         from tinyagentos.agent_db import find_agent
+        from tinyagentos.chat.mentions import parse_mentions
 
-        members = list(channel.get("members") or [])
-        agent_members = [m for m in members if m and m != "user"]
-        if not agent_members:
+        if message.get("content_type") == "system":
             return
+
+        author = message.get("author_id")
+        members = list(channel.get("members") or [])
+        settings = channel.get("settings") or {}
+        muted = set(settings.get("muted") or [])
+
+        channel_type = channel.get("type")
+        effective_mode = "lively" if channel_type == "dm" else settings.get("response_mode", "quiet")
+
+        mentions = parse_mentions(message.get("content") or "", members)
+
+        candidates = [m for m in members if m and m != author and m != "user" and m not in muted]
+        if not candidates:
+            return
+
+        force_by_slug: dict[str, bool] = {}
+        if mentions.all:
+            for m in candidates:
+                force_by_slug[m] = True
+            recipients = list(candidates)
+        elif mentions.explicit:
+            recipients = [m for m in candidates if m in mentions.explicit]
+            for m in recipients:
+                force_by_slug[m] = True
+        elif channel_type == "dm":
+            recipients = list(candidates)
+            for m in recipients:
+                force_by_slug[m] = True
+        elif effective_mode == "quiet":
+            recipients = []
+        else:
+            recipients = list(candidates)
+
+        if not recipients:
+            return
+
+        current_hops = (message.get("metadata") or {}).get("hops_since_user", 0)
+        next_hops = current_hops + 1
+        max_hops = int(settings.get("max_hops", 3))
 
         config = self._state.config
         bridge = getattr(self._state, "bridge_sessions", None)
+        policy = getattr(self._state, "group_policy", None)
 
-        for agent_name in agent_members:
+        for agent_name in recipients:
+            forced = force_by_slug.get(agent_name, False)
+            if not forced:
+                if next_hops > max_hops:
+                    continue
+                if policy is not None and not policy.may_send(channel["id"], agent_name, settings):
+                    continue
             agent = find_agent(config, agent_name)
             if agent is None:
                 continue
-            status = agent.get("status", "")
-            if status != "running":
+            if agent.get("status") != "running":
                 await self._post_system_reply(
                     agent_name, channel["id"],
-                    f"[router] agent '{agent_name}' is not running (status={status or 'unknown'}).",
+                    f"[router] agent '{agent_name}' is not running (status={agent.get('status') or 'unknown'}).",
                 )
                 continue
             if bridge is None:
@@ -63,23 +112,33 @@ class AgentChatRouter:
                 )
                 continue
 
-            # The openclaw bridge patch is subscribed to this agent's SSE event
-            # stream. Enqueue the user message; the bridge picks it up and runs
-            # it through openclaw's session pipeline. Replies flow back via
-            # POST /api/openclaw/sessions/{agent}/reply (handled in
-            # routes/openclaw.py), which writes traces and broadcasts to the
-            # chat hub -- no polling, no HTTP callback from this path.
+            context = []
+            if hasattr(self._state, "chat_messages"):
+                try:
+                    from tinyagentos.chat.context_window import build_context_window
+                    recent = await self._state.chat_messages.get_messages(
+                        channel_id=channel["id"], limit=30,
+                    )
+                    context = build_context_window(recent, limit=20, max_tokens=4000)
+                except Exception:
+                    context = []
+
             await bridge.enqueue_user_message(
                 agent_name,
                 {
                     "id": message.get("id"),
-                    "trace_id": message.get("id"),  # MVP: message id IS the trace id
+                    "trace_id": message.get("id"),
                     "channel_id": message.get("channel_id"),
                     "from": message.get("author_id", "user"),
                     "text": message.get("content", ""),
                     "created_at": message.get("created_at"),
+                    "hops_since_user": next_hops,
+                    "force_respond": forced,
+                    "context": context,
                 },
             )
+            if policy is not None:
+                policy.record_send(channel["id"], agent_name)
 
     async def _post_system_reply(
         self, agent_name: str, channel_id: str, content: str,
