@@ -20,8 +20,8 @@ FRAMEWORKS: dict[str, dict] = {
     "smolagents": {
         "id": "smolagents",
         "name": "SmolAgents",
-        "description": "Lightweight code-first agent framework by Hugging Face",
-        "verification_status": "alpha",
+        "description": "Lightweight code-first agent framework by Hugging Face — taOS SSE bridge verified in group chat",
+        "verification_status": "beta",
     },
     "generic": {
         "id": "generic",
@@ -32,20 +32,20 @@ FRAMEWORKS: dict[str, dict] = {
     "pocketflow": {
         "id": "pocketflow",
         "name": "PocketFlow",
-        "description": "Graph-based flow execution with OpenAI-compatible backend",
-        "verification_status": "alpha",
+        "description": "Graph-based flow execution with OpenAI-compatible backend — taOS SSE bridge verified in group chat",
+        "verification_status": "beta",
     },
     "langroid": {
         "id": "langroid",
         "name": "Langroid",
-        "description": "Task-based multi-agent framework using Langroid ChatAgent",
-        "verification_status": "alpha",
+        "description": "Task-based multi-agent framework using Langroid ChatAgent — taOS SSE bridge verified in group chat",
+        "verification_status": "beta",
     },
     "openai-agents-sdk": {
         "id": "openai-agents-sdk",
         "name": "OpenAI Agents SDK",
-        "description": "OpenAI Agents SDK with Runner.run_sync",
-        "verification_status": "alpha",
+        "description": "OpenAI Agents SDK with OpenAIChatCompletionsModel — taOS SSE bridge verified in group chat",
+        "verification_status": "beta",
     },
     "hermes": {
         "id": "hermes",

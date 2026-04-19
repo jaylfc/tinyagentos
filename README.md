@@ -4,7 +4,7 @@
 
 # taOS
 
-> **⚠️ Pre-beta — GUI not yet wired to core functions.** The install script works and the backend, API, and memory system (taOSmd) are all functional. The desktop GUI is still being connected to the core system — agent management, worker connections, model routing and most app interactions will not work yet. Right now it's pretty, but useless. Pretty useless. Give it a week. **First beta is targeting Monday 21 April.** Star/watch the repo to be notified when it drops.
+> **⚠️ Pre-beta — GUI not yet fully wired to core functions.** The install script works and the backend, API, memory system (taOSmd), and multi-framework group chat are functional. Six agent frameworks are verified in group chat end-to-end: OpenClaw, Hermes, SmolAgents, Langroid, PocketFlow, and OpenAI Agents SDK — agents running on different frameworks can talk to each other in a shared channel. The desktop GUI is still being wired up for the long tail of app interactions (some agent management flows, worker connections, model routing) — expect rough edges for another week. **First beta is targeting Monday 21 April.** Star/watch the repo to be notified when it drops.
 
 Self-hosted AI agent platform that runs on whatever hardware you have. An old laptop, a Raspberry Pi, a gaming PC, an SBC gathering dust, or all of them at once. TinyAgentOS turns your spare hardware into a distributed AI compute cluster.
 
@@ -550,7 +550,7 @@ uv run exo
 
 **Cluster-wide scheduler aggregation (deferred to v2).** The cluster scheduler currently routes tasks based on individual worker heartbeats. Aggregating the full cluster view for capacity planning, bin-packing, and priority preemption across all workers is a v2 milestone. The spec is at `docs/design/resource-scheduler.md`.
 
-**OpenClaw → Hermes round-trip not yet wired.** The TAOS Framework Integration Bridge, the mechanism for routing an OpenClaw agent through Hermes and back, is designed but not implemented. See the architecture section below.
+**Multi-framework group chat ships via a shared SSE bridge (6 frameworks verified).** OpenClaw, Hermes, SmolAgents, Langroid, PocketFlow, and OpenAI Agents SDK all route chat through the same `/api/openclaw/sessions/{slug}/events` + `/reply` endpoints. Each non-openclaw framework ships a ~100-line Python bridge (see `tinyagentos/scripts/install_<framework>.sh`) that subscribes to the taOS event stream, runs each user message through the framework's native client, and posts replies back. The separate TAOS Framework Integration Bridge spec (OpenClaw → Hermes proxying, sessionKey routing, round-trip reply shaping) is still unimplemented — that's a deeper integration for cases where one agent wants to delegate a sub-task to another framework's runtime inline.
 
 ## Design Docs
 
