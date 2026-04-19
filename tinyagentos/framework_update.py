@@ -24,3 +24,19 @@ async def _prune_old_snapshots(container: str, *, keep: int) -> None:
     snaps = await snapshot_list(container, prefix=SNAPSHOT_PREFIX)
     for extra in snaps[keep:]:
         await snapshot_delete(container, extra["name"])
+
+
+async def _wait_for_bootstrap_ping(
+    agent: dict, *, started_at: int, deadline_seconds: int = UPDATE_DEADLINE_SECONDS,
+) -> bool:
+    """Poll `agent['bootstrap_last_seen_at']` every 500 ms. Returns True the
+    first time it exceeds `started_at` (meaning the bridge has called
+    `/api/openclaw/bootstrap` since the update started). False on deadline.
+    """
+    deadline = time.time() + deadline_seconds
+    while time.time() < deadline:
+        last = agent.get("bootstrap_last_seen_at") or 0
+        if last > started_at:
+            return True
+        await asyncio.sleep(0.5)
+    return False

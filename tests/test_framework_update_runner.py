@@ -1,3 +1,4 @@
+import asyncio
 import pytest
 import time
 from unittest.mock import AsyncMock, patch
@@ -28,3 +29,38 @@ async def test_prune_noop_when_under_limit():
                new=AsyncMock()) as d:
         await _prune_old_snapshots("taos-agent-atlas", keep=3)
     d.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_wait_for_ping_returns_true_when_arrives_before_deadline():
+    from tinyagentos.framework_update import _wait_for_bootstrap_ping
+    agent = {"bootstrap_last_seen_at": None}
+    started_at = int(time.time())
+    async def ping():
+        await asyncio.sleep(0.1)
+        agent["bootstrap_last_seen_at"] = int(time.time()) + 1
+    asyncio.create_task(ping())
+    ok = await _wait_for_bootstrap_ping(agent, started_at=started_at, deadline_seconds=2)
+    assert ok is True
+
+
+@pytest.mark.asyncio
+async def test_wait_for_ping_returns_false_on_timeout():
+    from tinyagentos.framework_update import _wait_for_bootstrap_ping
+    ok = await _wait_for_bootstrap_ping(
+        {"bootstrap_last_seen_at": None},
+        started_at=int(time.time()),
+        deadline_seconds=1,
+    )
+    assert ok is False
+
+
+@pytest.mark.asyncio
+async def test_wait_ignores_stale_pings():
+    from tinyagentos.framework_update import _wait_for_bootstrap_ping
+    started_at = int(time.time())
+    ok = await _wait_for_bootstrap_ping(
+        {"bootstrap_last_seen_at": started_at - 5},
+        started_at=started_at, deadline_seconds=1,
+    )
+    assert ok is False
