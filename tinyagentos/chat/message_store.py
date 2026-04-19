@@ -61,6 +61,8 @@ def _parse(row: tuple, description) -> dict:
     for field in _JSON_FIELDS:
         if field in msg and msg[field] is not None:
             msg[field] = json.loads(msg[field])
+    if msg.get("metadata") is None:
+        msg["metadata"] = {}
     return msg
 
 
