@@ -210,3 +210,27 @@ async def test_get_thread_messages_endpoint(tmp_path):
         body = r.json()
         assert len(body["messages"]) == 1
         assert body["messages"][0]["content"] == "reply"
+
+
+@pytest.mark.asyncio
+async def test_get_message_by_id_endpoint(tmp_path):
+    app, client = await _authed_thread_client(tmp_path)
+    async with client:
+        ch_r = await client.post(
+            "/api/chat/channels",
+            json={"name": "g", "type": "group", "description": "", "topic": "",
+                  "members": ["user", "tom"], "created_by": "user"},
+        )
+        ch_id = ch_r.json()["id"]
+        m_r = await client.post(
+            "/api/chat/messages",
+            json={"channel_id": ch_id, "author_id": "user", "author_type": "user",
+                  "content": "hello", "content_type": "text"},
+        )
+        msg_id = m_r.json()["id"]
+        got = await client.get(f"/api/chat/messages/{msg_id}")
+        assert got.status_code == 200, got.json()
+        assert got.json()["content"] == "hello"
+        # 404 on unknown
+        bad = await client.get("/api/chat/messages/nonexistent-id")
+        assert bad.status_code == 404

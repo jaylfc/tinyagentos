@@ -422,6 +422,15 @@ async def get_channel_messages(
     return {"messages": messages}
 
 
+@router.get("/api/chat/messages/{message_id}")
+async def get_message_by_id(message_id: str, request: Request):
+    store = request.app.state.chat_messages
+    msg = await store.get_message(message_id)
+    if msg is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return JSONResponse(msg)
+
+
 @router.get("/api/chat/channels/{channel_id}/threads/{parent_id}/messages")
 async def get_thread_messages_endpoint(
     channel_id: str, parent_id: str, request: Request, limit: int = 20,
