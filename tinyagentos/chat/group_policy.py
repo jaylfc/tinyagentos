@@ -40,3 +40,14 @@ class GroupPolicy:
         self._last_send_at[(channel_id, agent)] = now
         window = self._recent_sends.setdefault(channel_id, deque(maxlen=256))
         window.append(now)
+
+    def try_acquire(self, channel_id: str, agent: str, settings: dict) -> bool:
+        """Atomically: check if sending is allowed and, if so, record it.
+        Returns True iff the send is permitted; in that case the send has
+        already been recorded. No await between check and record means
+        concurrent asyncio callers cannot both pass when only one should.
+        """
+        if not self.may_send(channel_id, agent, settings):
+            return False
+        self.record_send(channel_id, agent)
+        return True

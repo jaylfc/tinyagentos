@@ -59,3 +59,10 @@ def test_rate_cap_window_slides(monkeypatch):
         t[0] += 0.1
     t[0] += 61.0
     assert p.may_send("ch1", "agent_new", SETTINGS) is True
+
+
+def test_try_acquire_is_atomic():
+    p = GroupPolicy()
+    s = {"cooldown_seconds": 5, "rate_cap_per_minute": 20}
+    assert p.try_acquire("c1", "tom", s) is True
+    assert p.try_acquire("c1", "tom", s) is False  # cooldown blocks second try

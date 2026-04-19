@@ -6,8 +6,14 @@ from tinyagentos.chat.reactions import maybe_trigger_semantic, WantsReplyRegistr
 
 @pytest.mark.asyncio
 async def test_regenerate_triggered_for_thumbs_down_on_agent_reply():
-    bridge = MagicMock(); bridge.enqueue_user_message = AsyncMock()
-    state = MagicMock(bridge_sessions=bridge)
+    bridge = MagicMock()
+    bridge.enqueue_user_message = AsyncMock()
+    msg_store = MagicMock()
+    msg_store.get_messages = AsyncMock(return_value=[
+        {"author_id": "user", "author_type": "user", "content": "what is 2+2?"},
+        {"author_id": "tom", "author_type": "agent", "content": "bad answer"},
+    ])
+    state = MagicMock(bridge_sessions=bridge, chat_messages=msg_store)
     state.wants_reply = WantsReplyRegistry()
     message = {"id": "m1", "channel_id": "c1", "author_id": "tom",
                "author_type": "agent", "content": "bad answer"}
@@ -22,6 +28,7 @@ async def test_regenerate_triggered_for_thumbs_down_on_agent_reply():
     assert call.args[0] == "tom"
     assert call.args[1]["force_respond"] is True
     assert call.args[1].get("regenerate") is True
+    assert len(call.args[1]["context"]) > 0
 
 
 @pytest.mark.asyncio

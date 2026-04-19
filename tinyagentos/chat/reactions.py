@@ -37,6 +37,15 @@ async def maybe_trigger_semantic(
         bridge = getattr(state, "bridge_sessions", None)
         if bridge is None:
             return
+        context = []
+        msg_store = getattr(state, "chat_messages", None)
+        if msg_store is not None:
+            try:
+                from tinyagentos.chat.context_window import build_context_window
+                recent = await msg_store.get_messages(channel_id=message.get("channel_id"), limit=30)
+                context = build_context_window(recent, limit=20, max_tokens=4000)
+            except Exception:
+                context = []
         await bridge.enqueue_user_message(
             message["author_id"],
             {
@@ -48,7 +57,7 @@ async def maybe_trigger_semantic(
                 "hops_since_user": 0,
                 "force_respond": True,
                 "regenerate": True,
-                "context": [],
+                "context": context,
             },
         )
         return

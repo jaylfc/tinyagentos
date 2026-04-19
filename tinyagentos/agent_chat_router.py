@@ -94,7 +94,7 @@ class AgentChatRouter:
             if not forced:
                 if next_hops > max_hops:
                     continue
-                if policy is not None and not policy.may_send(channel["id"], agent_name, settings):
+                if policy is not None and not policy.try_acquire(channel["id"], agent_name, settings):
                     continue
             agent = find_agent(config, agent_name)
             if agent is None:
@@ -138,7 +138,7 @@ class AgentChatRouter:
                     "context": context,
                 },
             )
-            if policy is not None:
+            if forced and policy is not None:
                 policy.record_send(channel["id"], agent_name)
 
     async def _post_system_reply(

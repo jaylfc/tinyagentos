@@ -22,15 +22,11 @@ pytestmark = [
 async def test_agents_reference_each_other_in_lively_roundtable():
     headers = {"Authorization": f"Bearer {PI_TOKEN}"}
     async with httpx.AsyncClient(base_url=PI_URL, headers=headers, timeout=60) as c:
-        # Force channel into lively mode
-        r = await c.post("/api/chat/messages", json={
-            "channel_id": CHANNEL_ID, "author_id": "user",
-            "author_type": "user", "content": "/lively",
-            "content_type": "text",
-        })
+        # Force channel into lively mode via the admin endpoint
+        r = await c.patch(f"/api/chat/channels/{CHANNEL_ID}", json={"response_mode": "lively"})
         assert r.status_code < 300
 
-        # Post a question likely to elicit multiple agents
+        # Post the addressed prompt. We'll use its id as the trace_id to filter replies.
         r = await c.post("/api/chat/messages", json={
             "channel_id": CHANNEL_ID, "author_id": "user",
             "author_type": "user",
@@ -38,19 +34,22 @@ async def test_agents_reference_each_other_in_lively_roundtable():
             "content_type": "text",
         })
         assert r.status_code < 300
+        sent_id = r.json().get("id")
+        assert sent_id, "server did not return message id"
 
-        # Poll for ≥3 agent replies referencing at least one other agent name
         import asyncio
         for _ in range(40):
-            r = await c.get(f"/api/chat/channels/{CHANNEL_ID}/messages?limit=20")
+            r = await c.get(f"/api/chat/channels/{CHANNEL_ID}/messages?limit=50")
             msgs = r.json().get("messages", [])
-            agent_msgs = [m for m in msgs if m.get("author_type") == "agent"]
-            names = {m["author_id"] for m in agent_msgs}
+            mine = [m for m in msgs
+                    if m.get("author_type") == "agent"
+                    and (m.get("metadata") or {}).get("trace_id") == sent_id]
+            names = {m["author_id"] for m in mine}
             cross_refs = sum(
-                1 for m in agent_msgs
+                1 for m in mine
                 if any(other in (m.get("content") or "") for other in names if other != m["author_id"])
             )
-            if len(agent_msgs) >= 3 and cross_refs >= 1:
+            if len(mine) >= 3 and cross_refs >= 1:
                 return
             await asyncio.sleep(3)
         pytest.fail("No agents referenced each other after 2 minutes")
