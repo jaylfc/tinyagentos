@@ -30,7 +30,7 @@ _FRAMEWORK_UPDATE_SCRIPT_SRC = Path(__file__).parent / "scripts" / "taos-framewo
 # .github/workflows/build-agent-images.yml. Both must move together.
 BASE_IMAGE_ALIAS = "taos-openclaw-base"
 RELEASE_BASE_URL = (
-    "https://github.com/jaylfc/tinyagentos/releases/download/rolling-images"
+    "https://github.com/jaylfc/tinyagentos-images/releases/download/rolling-images"
 )
 
 
