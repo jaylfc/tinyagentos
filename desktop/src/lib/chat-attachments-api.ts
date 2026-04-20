@@ -19,7 +19,15 @@ export async function uploadDiskFile(file: File, channelId?: string): Promise<At
   if (channelId) form.append("channel_id", channelId);
   const r = await fetch("/api/chat/upload", { method: "POST", body: form });
   await _ensureOk(r);
-  return r.json();
+  // Backend returns {id, filename, content_type, size, url} — normalize to AttachmentRecord.
+  const body = await r.json();
+  return {
+    filename: body.filename,
+    mime_type: body.mime_type || body.content_type || "application/octet-stream",
+    size: body.size,
+    url: body.url,
+    source: "disk",
+  };
 }
 
 export async function attachmentFromPath(body: {

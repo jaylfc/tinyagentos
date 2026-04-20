@@ -43,6 +43,17 @@ import { AttachmentGallery } from "./chat/AttachmentGallery";
 import { uploadDiskFile, attachmentFromPath, type AttachmentRecord } from "@/lib/chat-attachments-api";
 import { useThreadPanel } from "@/lib/use-thread-panel";
 import { openFilePicker } from "@/shell/file-picker-api";
+import { MessageOverflowMenu } from "./chat/MessageOverflowMenu";
+import { MessageEditor } from "./chat/MessageEditor";
+import { MessageTombstone } from "./chat/MessageTombstone";
+import { PinBadge } from "./chat/PinBadge";
+import { PinnedMessagesPopover, type PinnedMessage } from "./chat/PinnedMessagesPopover";
+import { PinRequestAffordance } from "./chat/PinRequestAffordance";
+import {
+  pinMessage, unpinMessage, listPins,
+  editMessage as apiEditMessage, deleteMessage as apiDeleteMessage,
+  markUnread as apiMarkUnread,
+} from "@/lib/chat-messages-api";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -136,12 +147,14 @@ interface Message {
     canvas_id?: string;
     canvas_url?: string;
     canvas_title?: string;
+    pin_requested?: boolean;
     [key: string]: unknown;
   };
   state?: "pending" | "streaming" | "complete" | "error";
   created_at: string;
   reactions?: Record<string, string[]>;
   edited_at?: string;
+  deleted_at?: number | null;
   attachments?: AttachmentRecord[];
   reply_count?: number;
   last_reply_at?: number | null;
@@ -218,6 +231,11 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
   const [sendError, setSendError] = useState<string | null>(null);
   const [hoveredMessageId, setHoveredMessageId] = useState<string | null>(null);
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
+  const [overflowMenu, setOverflowMenu] = useState<{ messageId: string; x: number; y: number } | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [pinnedPopoverOpen, setPinnedPopoverOpen] = useState(false);
+  const [pinnedMessages, setPinnedMessages] = useState<PinnedMessage[]>([]);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const { openThread, openThreadFor, closeThread } = useThreadPanel();
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -406,7 +424,14 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
             break;
 
           case "message_delete":
-            setMessages((prev) => prev.filter((m) => m.id !== data.message_id));
+            // Soft delete — keep the row so the UI can render the tombstone.
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === data.message_id
+                  ? { ...m, deleted_at: data.deleted_at ?? Date.now() / 1000 }
+                  : m,
+              ),
+            );
             break;
         }
       } catch {
@@ -443,6 +468,14 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
       }
     };
   }, [fetchChannels, fetchArchivedChannels, fetchAgentLists, connectWs]);
+
+  /* ---- fetch current user ---- */
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => r.ok ? r.json() : null)
+      .then((u) => { if (u?.id) setCurrentUserId(u.id); })
+      .catch(() => {});
+  }, []);
 
   /* ---- cross-app open-messages event ---- */
   useEffect(() => {
@@ -513,6 +546,32 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
     setTypingAgents([]);
   }, [selectedChannel, fetchMessages, markRead]);
 
+  /* ---- deep-link scroll on ?msg=<id> — latch so it fires once per URL ---- */
+  const deepLinkSeenRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!selectedChannel || messages.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const msgId = params.get("msg");
+    if (!msgId) return;
+    const key = `${selectedChannel}:${msgId}`;
+    if (deepLinkSeenRef.current === key) return;
+    const el = document.querySelector(`[data-message-id="${msgId}"]`) as HTMLElement | null;
+    if (el) {
+      deepLinkSeenRef.current = key;
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("data-highlight");
+      setTimeout(() => el.classList.remove("data-highlight"), 2000);
+    }
+  }, [selectedChannel, messages.length]);
+
+  /* ---- fetch pins when channel changes ---- */
+  useEffect(() => {
+    if (!selectedChannel) { setPinnedMessages([]); return; }
+    listPins(selectedChannel)
+      .then((pins) => setPinnedMessages(pins as PinnedMessage[]))
+      .catch(() => setPinnedMessages([]));
+  }, [selectedChannel]);
+
   /* ---- fetch slash commands on channel switch ---- */
   useEffect(() => {
     let alive = true;
@@ -556,7 +615,7 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
   const sendMessage = async () => {
     const text = input.trim();
     if (!text && pendingAttachments.length === 0) return;
-    if (!selectedChannel || !wsRef.current || wsRef.current.readyState !== 1) return;
+    if (!selectedChannel) return;
 
     // Block send while uploads are in-flight
     if (pendingAttachments.some((a) => a.uploading)) {
@@ -630,7 +689,31 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
       }
     }
     setSendError(null);
-    wsRef.current.send(JSON.stringify({ type: "message", channel_id: selectedChannel, content: text }));
+    // WS fallback for plain text messages. If WS is down, POST to /api/chat/messages
+    // so the send still lands.
+    if (wsRef.current && wsRef.current.readyState === 1) {
+      wsRef.current.send(JSON.stringify({ type: "message", channel_id: selectedChannel, content: text }));
+    } else {
+      try {
+        const r = await fetch("/api/chat/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            channel_id: selectedChannel,
+            author_id: "user", author_type: "user",
+            content: text, content_type: "text",
+          }),
+        });
+        if (!r.ok) {
+          const body = await r.json().catch(() => ({}));
+          setSendError((body as { error?: string }).error || "couldn't send message");
+          return;
+        }
+      } catch (e) {
+        setSendError((e as Error).message || "send failed");
+        return;
+      }
+    }
     setInput("");
     autoScrollRef.current = true;
     if (inputRef.current) inputRef.current.style.height = "auto";
@@ -772,6 +855,77 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
       window.alert(`Network error: ${String(e)}`);
     }
   }, [selectedChannel, fetchArchivedChannels]);
+
+  /* ---- overflow menu handlers ---- */
+  const handleEdit = (msgId: string) => {
+    setEditingMessageId(msgId);
+    setOverflowMenu(null);
+  };
+
+  const handleSaveEdit = async (msgId: string, content: string) => {
+    try {
+      await apiEditMessage(msgId, content);
+      setEditingMessageId(null);
+    } catch (e) {
+      setSendError((e as Error).message);
+    }
+  };
+
+  const handleDelete = async (msgId: string) => {
+    setOverflowMenu(null);
+    if (!window.confirm("Delete this message?")) return;
+    try {
+      await apiDeleteMessage(msgId);
+    } catch (e) {
+      setSendError((e as Error).message);
+    }
+  };
+
+  const handleCopyLink = async (msgId: string) => {
+    setOverflowMenu(null);
+    if (!selectedChannel) return;
+    const url = `${window.location.origin}/chat/${selectedChannel}?msg=${msgId}`;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch { /* ignore */ }
+  };
+
+  const handlePin = async (msg: Message) => {
+    setOverflowMenu(null);
+    const isPinned = pinnedMessages.some((p) => p.id === msg.id);
+    try {
+      if (isPinned) await unpinMessage(msg.id);
+      else await pinMessage(msg.id);
+      if (selectedChannel) {
+        const pins = await listPins(selectedChannel);
+        setPinnedMessages(pins as PinnedMessage[]);
+      }
+    } catch (e) {
+      setSendError((e as Error).message);
+    }
+  };
+
+  const handleMarkUnread = async (msgId: string) => {
+    setOverflowMenu(null);
+    if (!selectedChannel) return;
+    try {
+      await apiMarkUnread(selectedChannel, msgId);
+    } catch (e) {
+      setSendError((e as Error).message);
+    }
+  };
+
+  const handlePinRequest = async (msgId: string) => {
+    try {
+      await pinMessage(msgId);
+      if (selectedChannel) {
+        const pins = await listPins(selectedChannel);
+        setPinnedMessages(pins as PinnedMessage[]);
+      }
+    } catch (e) {
+      setSendError((e as Error).message);
+    }
+  };
 
   /* ---- group channels by type ---- */
   const grouped = {
@@ -1096,6 +1250,27 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
                   rel="noreferrer"
                   className="ml-1 opacity-60 hover:opacity-100 text-[12px]"
                 >?</a>
+                <div className="relative">
+                  <PinBadge
+                    count={pinnedMessages.length}
+                    onClick={() => setPinnedPopoverOpen((open) => !open)}
+                  />
+                  {pinnedPopoverOpen && (
+                    <PinnedMessagesPopover
+                      pins={pinnedMessages}
+                      onJumpTo={(id) => {
+                        setPinnedPopoverOpen(false);
+                        const el = document.querySelector(`[data-message-id="${id}"]`) as HTMLElement | null;
+                        if (el) {
+                          el.scrollIntoView({ behavior: "smooth", block: "center" });
+                          el.classList.add("data-highlight");
+                          setTimeout(() => el.classList.remove("data-highlight"), 2000);
+                        }
+                      }}
+                      onClose={() => setPinnedPopoverOpen(false)}
+                    />
+                  )}
+                </div>
               </div>
               {currentChannel?.description && (
                 <div className="text-[11px] text-white/35 truncate">{currentChannel.description}</div>
@@ -1150,6 +1325,7 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
               return (
                 <div
                   key={msg.id}
+                  data-message-id={msg.id}
                   className={`group relative px-3 py-1 rounded-md transition-colors hover:bg-white/[0.03] ${
                     isAgent && !isDeadAgent ? "bg-blue-500/[0.04]" : ""
                   } ${showAuthor ? "mt-3" : ""}`}
@@ -1205,22 +1381,38 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
                       {msg.edited_at && <span className="text-[10px] text-white/20">(edited)</span>}
                     </div>
                   )}
-                  <div className={`text-[13px] leading-relaxed whitespace-pre-wrap break-words ${isDeadAgent ? "text-white/45" : "text-white/80"}`}>
-                    {renderContent(msg.content)}
-                    {msg.state === "pending" && (
-                      <span className="ml-1 text-white/30">...</span>
-                    )}
-                    {msg.state === "streaming" && (
-                      <span className="ml-1 inline-flex gap-0.5">
-                        <span className="w-1 h-1 bg-blue-400 rounded-full animate-bounce [animation-delay:0ms]" />
-                        <span className="w-1 h-1 bg-blue-400 rounded-full animate-bounce [animation-delay:150ms]" />
-                        <span className="w-1 h-1 bg-blue-400 rounded-full animate-bounce [animation-delay:300ms]" />
-                      </span>
-                    )}
-                    {msg.state === "error" && (
-                      <span className="ml-1 text-red-400 text-[11px]">(error)</span>
-                    )}
-                  </div>
+                  {msg.deleted_at ? (
+                    <MessageTombstone />
+                  ) : editingMessageId === msg.id ? (
+                    <MessageEditor
+                      initial={msg.content}
+                      onSave={(content) => handleSaveEdit(msg.id, content)}
+                      onCancel={() => setEditingMessageId(null)}
+                    />
+                  ) : (
+                    <div className={`text-[13px] leading-relaxed whitespace-pre-wrap break-words ${isDeadAgent ? "text-white/45" : "text-white/80"}`}>
+                      {renderContent(msg.content)}
+                      {msg.state === "pending" && (
+                        <span className="ml-1 text-white/30">...</span>
+                      )}
+                      {msg.state === "streaming" && (
+                        <span className="ml-1 inline-flex gap-0.5">
+                          <span className="w-1 h-1 bg-blue-400 rounded-full animate-bounce [animation-delay:0ms]" />
+                          <span className="w-1 h-1 bg-blue-400 rounded-full animate-bounce [animation-delay:150ms]" />
+                          <span className="w-1 h-1 bg-blue-400 rounded-full animate-bounce [animation-delay:300ms]" />
+                        </span>
+                      )}
+                      {msg.state === "error" && (
+                        <span className="ml-1 text-red-400 text-[11px]">(error)</span>
+                      )}
+                    </div>
+                  )}
+                  {msg.metadata?.pin_requested && msg.author_type === "agent" && (
+                    <PinRequestAffordance
+                      authorId={msg.author_id}
+                      onApprove={() => handlePinRequest(msg.id)}
+                    />
+                  )}
 
                   {/* canvas attachment */}
                   {msg.content_type === "canvas" && (msg.metadata?.canvas_url || msg.metadata?.canvas_id) && (
@@ -1263,11 +1455,9 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
                       <MessageHoverActions
                         onReact={() => setShowEmoji(showEmoji === msg.id ? null : msg.id)}
                         onReplyInThread={() => handleOpenThreadFor(msg.channel_id ?? selectedChannel ?? "", msg.id)}
-                        onMore={(e) => {
+                        onOverflow={(e) => {
                           e.preventDefault();
-                          if (msg.author_type === "agent") {
-                            setContextMenu({ slug: msg.author_id, x: e.clientX, y: e.clientY });
-                          }
+                          setOverflowMenu({ messageId: msg.id, x: e.clientX, y: e.clientY });
                         }}
                       />
                     </div>
@@ -1483,6 +1673,30 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
         />
       </div>
 
+      {/* ---- Message Overflow Menu ---- */}
+      {overflowMenu && (() => {
+        const msg = messages.find((m) => m.id === overflowMenu.messageId);
+        if (!msg) return null;
+        return (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setOverflowMenu(null)} />
+            <div className="fixed z-50" style={{ top: overflowMenu.y, left: overflowMenu.x }}>
+              <MessageOverflowMenu
+                isOwn={msg.author_id === currentUserId}
+                isHuman={true} /* desktop UI viewer is always human */
+                isPinned={pinnedMessages.some((p) => p.id === msg.id)}
+                onEdit={() => handleEdit(msg.id)}
+                onDelete={() => handleDelete(msg.id)}
+                onCopyLink={() => handleCopyLink(msg.id)}
+                onPin={() => handlePin(msg)}
+                onMarkUnread={() => handleMarkUnread(msg.id)}
+                onClose={() => setOverflowMenu(null)}
+              />
+            </div>
+          </>
+        );
+      })()}
+
       {/* ---- Channel Settings Panel ---- */}
       {showSettings && currentChannel && (
         <ChannelSettingsPanel
@@ -1507,7 +1721,7 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
           parentId={openThread.parentId}
           onClose={closeThread}
           onSend={async (content, attachments) => {
-            await fetch("/api/chat/messages", {
+            const r = await fetch("/api/chat/messages", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -1520,6 +1734,10 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
                 attachments,
               }),
             });
+            if (!r.ok) {
+              const body = await r.json().catch(() => ({}));
+              throw new Error((body as { error?: string }).error || `HTTP ${r.status}`);
+            }
           }}
         />
       )}

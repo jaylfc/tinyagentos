@@ -53,19 +53,28 @@ export function FilePicker({
     setQueued((prev) => multi ? [...prev, ...selections] : selections);
   };
 
+  // VfsBrowser sends the full current selection on each toggle, so we
+  // replace — not append — the VFS-sourced subset of the queue. Disk
+  // items stay untouched because they come from a different source.
   const onWorkspacePick = (path: string | string[]) => {
     const paths = Array.isArray(path) ? path : [path];
     const selections: FileSelection[] = paths.map((p) => ({ source: "workspace", path: p }));
-    setQueued((prev) => multi ? [...prev, ...selections] : selections);
+    setQueued((prev) => {
+      if (!multi) return selections;
+      return [...prev.filter((s) => s.source !== "workspace"), ...selections];
+    });
   };
 
   const onAgentWorkspacePick = (path: string | string[]) => {
     if (!selectedAgent) return;
     const paths = Array.isArray(path) ? path : [path];
     const selections: FileSelection[] = paths.map((p) => ({
-      source: "agent-workspace", slug: selectedAgent, path: p,
+      source: "agent-workspace" as const, slug: selectedAgent, path: p,
     }));
-    setQueued((prev) => multi ? [...prev, ...selections] : selections);
+    setQueued((prev) => {
+      if (!multi) return selections;
+      return [...prev.filter((s) => s.source !== "agent-workspace"), ...selections];
+    });
   };
 
   const confirm = () => onPick(queued);

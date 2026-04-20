@@ -83,3 +83,11 @@ async def maybe_trigger_semantic(
         if reg is None:
             return
         reg.add(channel["id"], reactor_id)
+
+    if emoji == "📌" and reactor_type == "agent" and reactor_id == message.get("author_id"):
+        msg_store = getattr(state, "chat_messages", None)
+        if msg_store is None:
+            return
+        meta = dict(message.get("metadata") or {})
+        meta["pin_requested"] = True
+        await msg_store.set_metadata(message["id"], meta)

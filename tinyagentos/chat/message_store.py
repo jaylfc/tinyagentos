@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     reactions TEXT NOT NULL DEFAULT '{}',
     state TEXT NOT NULL DEFAULT 'complete',
     edited_at REAL,
+    deleted_at REAL,
     pinned INTEGER NOT NULL DEFAULT 0,
     ephemeral INTEGER NOT NULL DEFAULT 0,
     metadata TEXT NOT NULL DEFAULT '{}',
@@ -54,6 +55,8 @@ CREATE INDEX IF NOT EXISTS idx_chat_attachments_message ON chat_attachments(mess
 
 _JSON_FIELDS = ("content_blocks", "embeds", "components", "attachments", "reactions", "metadata")
 
+PIN_CAP_PER_CHANNEL = 50
+
 
 def _parse(row: tuple, description) -> dict:
     keys = [d[0] for d in description]
@@ -68,6 +71,15 @@ def _parse(row: tuple, description) -> dict:
 
 class ChatMessageStore(BaseStore):
     SCHEMA = MESSAGES_SCHEMA
+
+    async def init(self) -> None:
+        await super().init()
+        try:
+            await self._db.execute("ALTER TABLE chat_messages ADD COLUMN deleted_at REAL")
+            await self._db.commit()
+        except Exception:
+            # column already exists (SQLite raises on duplicate column name)
+            pass
 
     async def send_message(
         self,
@@ -152,12 +164,26 @@ class ChatMessageStore(BaseStore):
         )
         await self._db.commit()
 
-    async def delete_message(self, message_id: str) -> bool:
+    async def set_metadata(self, message_id: str, metadata: dict) -> None:
+        await self._db.execute(
+            "UPDATE chat_messages SET metadata = ? WHERE id = ?",
+            (json.dumps(metadata), message_id),
+        )
+        await self._db.commit()
+
+    async def soft_delete_message(self, message_id: str) -> bool:
+        """Mark message as soft-deleted; returns True if a row was updated."""
+        now = time.time()
         cursor = await self._db.execute(
-            "DELETE FROM chat_messages WHERE id = ?", (message_id,)
+            "UPDATE chat_messages SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL",
+            (now, message_id),
         )
         await self._db.commit()
         return cursor.rowcount > 0
+
+    async def delete_message(self, message_id: str) -> bool:
+        """Canonical delete = soft delete (Phase 2b-2a)."""
+        return await self.soft_delete_message(message_id)
 
     async def add_reaction(self, message_id: str, emoji: str, user_id: str) -> None:
         async with self._db.execute(
@@ -272,26 +298,62 @@ class ChatMessageStore(BaseStore):
         )
         await self._db.commit()
 
-    async def pin_message(self, channel_id: str, message_id: str, user_id: str) -> None:
+    async def pin_message(self, channel_id: str, message_id: str, pinned_by: str) -> None:
+        """Pin a message in a channel. Idempotent. Raises ValueError if pin cap
+        (50) would be exceeded by a new pin."""
+        # Check if already pinned (idempotent)
+        async with self._db.execute(
+            "SELECT 1 FROM chat_pins WHERE channel_id = ? AND message_id = ?",
+            (channel_id, message_id),
+        ) as cursor:
+            already = await cursor.fetchone()
+        if already:
+            return
+        # Check cap
+        async with self._db.execute(
+            "SELECT COUNT(*) FROM chat_pins WHERE channel_id = ?", (channel_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+        count = row[0] if row else 0
+        if count >= PIN_CAP_PER_CHANNEL:
+            raise ValueError(f"pin cap ({PIN_CAP_PER_CHANNEL}) reached")
         now = time.time()
         await self._db.execute(
-            "INSERT OR REPLACE INTO chat_pins (channel_id, message_id, pinned_by, pinned_at) VALUES (?, ?, ?, ?)",
-            (channel_id, message_id, user_id, now),
-        )
-        await self._db.execute(
-            "UPDATE chat_messages SET pinned = 1 WHERE id = ?", (message_id,)
+            "INSERT INTO chat_pins (channel_id, message_id, pinned_by, pinned_at) VALUES (?, ?, ?, ?)",
+            (channel_id, message_id, pinned_by, now),
         )
         await self._db.commit()
 
-    async def unpin_message(self, channel_id: str, message_id: str) -> None:
-        await self._db.execute(
+    async def unpin_message(self, channel_id: str, message_id: str) -> bool:
+        cursor = await self._db.execute(
             "DELETE FROM chat_pins WHERE channel_id = ? AND message_id = ?",
             (channel_id, message_id),
         )
-        await self._db.execute(
-            "UPDATE chat_messages SET pinned = 0 WHERE id = ?", (message_id,)
-        )
         await self._db.commit()
+        return cursor.rowcount > 0
+
+    async def is_pinned(self, message_id: str) -> bool:
+        async with self._db.execute(
+            "SELECT 1 FROM chat_pins WHERE message_id = ?", (message_id,)
+        ) as cursor:
+            return await cursor.fetchone() is not None
+
+    async def get_pins(self, channel_id: str) -> list[dict]:
+        """Return pinned messages in this channel, newest pin first, with
+        `pinned_by` and `pinned_at` fields merged into each message dict.
+        Excludes soft-deleted messages."""
+        async with self._db.execute(
+            """SELECT m.*, p.pinned_by, p.pinned_at
+               FROM chat_messages m
+               INNER JOIN chat_pins p
+                 ON p.message_id = m.id AND p.channel_id = m.channel_id
+               WHERE p.channel_id = ? AND m.deleted_at IS NULL
+               ORDER BY p.pinned_at DESC""",
+            (channel_id,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+            description = cursor.description
+        return [_parse(row, description) for row in rows]
 
     async def search(
         self,

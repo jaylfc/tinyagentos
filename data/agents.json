@@ -1,0 +1,654 @@
+{
+  "agents": [
+    {
+      "name": "atlas-persona",
+      "display_name": "atlas-persona",
+      "created_at": 1776542847,
+      "last_ingest_at": 0,
+      "total_chunks": 0,
+      "librarian": {
+        "enabled": true,
+        "model": null,
+        "tasks": {
+          "fact_extraction": true,
+          "preference_extraction": true,
+          "intake_classification": true,
+          "crystallise": true,
+          "reflect": true,
+          "catalog_enrichment": true,
+          "query_expansion": true,
+          "verification": true
+        },
+        "fanout": {
+          "default": "low",
+          "auto_scale": true
+        }
+      }
+    },
+    {
+      "name": "defaultagent",
+      "display_name": "defaultagent",
+      "created_at": 1776542847,
+      "last_ingest_at": 0,
+      "total_chunks": 0,
+      "librarian": {
+        "enabled": true,
+        "model": null,
+        "tasks": {
+          "fact_extraction": true,
+          "preference_extraction": true,
+          "intake_classification": true,
+          "crystallise": true,
+          "reflect": true,
+          "catalog_enrichment": true,
+          "query_expansion": true,
+          "verification": true
+        },
+        "fanout": {
+          "default": "low",
+          "auto_scale": true
+        }
+      }
+    },
+    {
+      "name": "customone",
+      "display_name": "customone",
+      "created_at": 1776542847,
+      "last_ingest_at": 0,
+      "total_chunks": 0,
+      "librarian": {
+        "enabled": true,
+        "model": null,
+        "tasks": {
+          "fact_extraction": true,
+          "preference_extraction": true,
+          "intake_classification": true,
+          "crystallise": true,
+          "reflect": true,
+          "catalog_enrichment": true,
+          "query_expansion": true,
+          "verification": true
+        },
+        "fanout": {
+          "default": "low",
+          "auto_scale": true
+        }
+      }
+    },
+    {
+      "name": "nosave",
+      "display_name": "nosave",
+      "created_at": 1776542847,
+      "last_ingest_at": 0,
+      "total_chunks": 0,
+      "librarian": {
+        "enabled": true,
+        "model": null,
+        "tasks": {
+          "fact_extraction": true,
+          "preference_extraction": true,
+          "intake_classification": true,
+          "crystallise": true,
+          "reflect": true,
+          "catalog_enrichment": true,
+          "query_expansion": true,
+          "verification": true
+        },
+        "fanout": {
+          "default": "low",
+          "auto_scale": true
+        }
+      }
+    },
+    {
+      "name": "atlas",
+      "display_name": "atlas",
+      "created_at": 1776542859,
+      "last_ingest_at": 0,
+      "total_chunks": 0,
+      "librarian": {
+        "enabled": true,
+        "model": null,
+        "tasks": {
+          "fact_extraction": true,
+          "preference_extraction": true,
+          "intake_classification": true,
+          "crystallise": true,
+          "reflect": true,
+          "catalog_enrichment": true,
+          "query_expansion": true,
+          "verification": true
+        },
+        "fanout": {
+          "default": "low",
+          "auto_scale": true
+        }
+      }
+    },
+    {
+      "name": "atlas2",
+      "display_name": "atlas2",
+      "created_at": 1776542860,
+      "last_ingest_at": 0,
+      "total_chunks": 0,
+      "librarian": {
+        "enabled": true,
+        "model": null,
+        "tasks": {
+          "fact_extraction": true,
+          "preference_extraction": true,
+          "intake_classification": true,
+          "crystallise": true,
+          "reflect": true,
+          "catalog_enrichment": true,
+          "query_expansion": true,
+          "verification": true
+        },
+        "fanout": {
+          "default": "low",
+          "auto_scale": true
+        }
+      }
+    },
+    {
+      "name": "atlas3",
+      "display_name": "atlas3",
+      "created_at": 1776542860,
+      "last_ingest_at": 0,
+      "total_chunks": 0,
+      "librarian": {
+        "enabled": true,
+        "model": null,
+        "tasks": {
+          "fact_extraction": true,
+          "preference_extraction": true,
+          "intake_classification": true,
+          "crystallise": true,
+          "reflect": true,
+          "catalog_enrichment": true,
+          "query_expansion": true,
+          "verification": true
+        },
+        "fanout": {
+          "default": "low",
+          "auto_scale": true
+        }
+      }
+    },
+    {
+      "name": "bg-test",
+      "display_name": "bg-test",
+      "created_at": 1776542893,
+      "last_ingest_at": 0,
+      "total_chunks": 0,
+      "librarian": {
+        "enabled": true,
+        "model": null,
+        "tasks": {
+          "fact_extraction": true,
+          "preference_extraction": true,
+          "intake_classification": true,
+          "crystallise": true,
+          "reflect": true,
+          "catalog_enrichment": true,
+          "query_expansion": true,
+          "verification": true
+        },
+        "fanout": {
+          "default": "low",
+          "auto_scale": true
+        }
+      }
+    },
+    {
+      "name": "status-test",
+      "display_name": "status-test",
+      "created_at": 1776542893,
+      "last_ingest_at": 0,
+      "total_chunks": 0,
+      "librarian": {
+        "enabled": true,
+        "model": null,
+        "tasks": {
+          "fact_extraction": true,
+          "preference_extraction": true,
+          "intake_classification": true,
+          "crystallise": true,
+          "reflect": true,
+          "catalog_enrichment": true,
+          "query_expansion": true,
+          "verification": true
+        },
+        "fanout": {
+          "default": "low",
+          "auto_scale": true
+        }
+      }
+    },
+    {
+      "name": "local-agent",
+      "display_name": "local-agent",
+      "created_at": 1776545704,
+      "last_ingest_at": 0,
+      "total_chunks": 0,
+      "librarian": {
+        "enabled": true,
+        "model": null,
+        "tasks": {
+          "fact_extraction": true,
+          "preference_extraction": true,
+          "intake_classification": true,
+          "crystallise": true,
+          "reflect": true,
+          "catalog_enrichment": true,
+          "query_expansion": true,
+          "verification": true
+        },
+        "fanout": {
+          "default": "low",
+          "auto_scale": true
+        }
+      }
+    },
+    {
+      "name": "cloud-agent",
+      "display_name": "cloud-agent",
+      "created_at": 1776545705,
+      "last_ingest_at": 0,
+      "total_chunks": 0,
+      "librarian": {
+        "enabled": true,
+        "model": null,
+        "tasks": {
+          "fact_extraction": true,
+          "preference_extraction": true,
+          "intake_classification": true,
+          "crystallise": true,
+          "reflect": true,
+          "catalog_enrichment": true,
+          "query_expansion": true,
+          "verification": true
+        },
+        "fanout": {
+          "default": "low",
+          "auto_scale": true
+        }
+      }
+    },
+    {
+      "name": "persistent",
+      "display_name": "persistent",
+      "created_at": 1776545707,
+      "last_ingest_at": 0,
+      "total_chunks": 0,
+      "librarian": {
+        "enabled": true,
+        "model": null,
+        "tasks": {
+          "fact_extraction": true,
+          "preference_extraction": true,
+          "intake_classification": true,
+          "crystallise": true,
+          "reflect": true,
+          "catalog_enrichment": true,
+          "query_expansion": true,
+          "verification": true
+        },
+        "fanout": {
+          "default": "low",
+          "auto_scale": true
+        }
+      }
+    },
+    {
+      "name": "emoji-agent",
+      "display_name": "emoji-agent",
+      "created_at": 1776545708,
+      "last_ingest_at": 0,
+      "total_chunks": 0,
+      "librarian": {
+        "enabled": true,
+        "model": null,
+        "tasks": {
+          "fact_extraction": true,
+          "preference_extraction": true,
+          "intake_classification": true,
+          "crystallise": true,
+          "reflect": true,
+          "catalog_enrichment": true,
+          "query_expansion": true,
+          "verification": true
+        },
+        "fanout": {
+          "default": "low",
+          "auto_scale": true
+        }
+      }
+    },
+    {
+      "name": "no-emoji-agent",
+      "display_name": "no-emoji-agent",
+      "created_at": 1776545708,
+      "last_ingest_at": 0,
+      "total_chunks": 0,
+      "librarian": {
+        "enabled": true,
+        "model": null,
+        "tasks": {
+          "fact_extraction": true,
+          "preference_extraction": true,
+          "intake_classification": true,
+          "crystallise": true,
+          "reflect": true,
+          "catalog_enrichment": true,
+          "query_expansion": true,
+          "verification": true
+        },
+        "fanout": {
+          "default": "low",
+          "auto_scale": true
+        }
+      }
+    },
+    {
+      "name": "chatter",
+      "display_name": "chatter",
+      "created_at": 1776545709,
+      "last_ingest_at": 0,
+      "total_chunks": 0,
+      "librarian": {
+        "enabled": true,
+        "model": null,
+        "tasks": {
+          "fact_extraction": true,
+          "preference_extraction": true,
+          "intake_classification": true,
+          "crystallise": true,
+          "reflect": true,
+          "catalog_enrichment": true,
+          "query_expansion": true,
+          "verification": true
+        },
+        "fanout": {
+          "default": "low",
+          "auto_scale": true
+        }
+      }
+    },
+    {
+      "name": "archiver",
+      "display_name": "archiver",
+      "created_at": 1776545709,
+      "last_ingest_at": 0,
+      "total_chunks": 0,
+      "librarian": {
+        "enabled": true,
+        "model": null,
+        "tasks": {
+          "fact_extraction": true,
+          "preference_extraction": true,
+          "intake_classification": true,
+          "crystallise": true,
+          "reflect": true,
+          "catalog_enrichment": true,
+          "query_expansion": true,
+          "verification": true
+        },
+        "fanout": {
+          "default": "low",
+          "auto_scale": true
+        }
+      }
+    },
+    {
+      "name": "archiver2",
+      "display_name": "archiver2",
+      "created_at": 1776545710,
+      "last_ingest_at": 0,
+      "total_chunks": 0,
+      "librarian": {
+        "enabled": true,
+        "model": null,
+        "tasks": {
+          "fact_extraction": true,
+          "preference_extraction": true,
+          "intake_classification": true,
+          "crystallise": true,
+          "reflect": true,
+          "catalog_enrichment": true,
+          "query_expansion": true,
+          "verification": true
+        },
+        "fanout": {
+          "default": "low",
+          "auto_scale": true
+        }
+      }
+    },
+    {
+      "name": "stuck",
+      "display_name": "stuck",
+      "created_at": 1776545710,
+      "last_ingest_at": 0,
+      "total_chunks": 0,
+      "librarian": {
+        "enabled": true,
+        "model": null,
+        "tasks": {
+          "fact_extraction": true,
+          "preference_extraction": true,
+          "intake_classification": true,
+          "crystallise": true,
+          "reflect": true,
+          "catalog_enrichment": true,
+          "query_expansion": true,
+          "verification": true
+        },
+        "fanout": {
+          "default": "low",
+          "auto_scale": true
+        }
+      }
+    },
+    {
+      "name": "snaprest",
+      "display_name": "snaprest",
+      "created_at": 1776545711,
+      "last_ingest_at": 0,
+      "total_chunks": 0,
+      "librarian": {
+        "enabled": true,
+        "model": null,
+        "tasks": {
+          "fact_extraction": true,
+          "preference_extraction": true,
+          "intake_classification": true,
+          "crystallise": true,
+          "reflect": true,
+          "catalog_enrichment": true,
+          "query_expansion": true,
+          "verification": true
+        },
+        "fanout": {
+          "default": "low",
+          "auto_scale": true
+        }
+      }
+    },
+    {
+      "name": "rest",
+      "display_name": "rest",
+      "created_at": 1776545711,
+      "last_ingest_at": 0,
+      "total_chunks": 0,
+      "librarian": {
+        "enabled": true,
+        "model": null,
+        "tasks": {
+          "fact_extraction": true,
+          "preference_extraction": true,
+          "intake_classification": true,
+          "crystallise": true,
+          "reflect": true,
+          "catalog_enrichment": true,
+          "query_expansion": true,
+          "verification": true
+        },
+        "fanout": {
+          "default": "low",
+          "auto_scale": true
+        }
+      }
+    },
+    {
+      "name": "envtest2",
+      "display_name": "envtest2",
+      "created_at": 1776545712,
+      "last_ingest_at": 0,
+      "total_chunks": 0,
+      "librarian": {
+        "enabled": true,
+        "model": null,
+        "tasks": {
+          "fact_extraction": true,
+          "preference_extraction": true,
+          "intake_classification": true,
+          "crystallise": true,
+          "reflect": true,
+          "catalog_enrichment": true,
+          "query_expansion": true,
+          "verification": true
+        },
+        "fanout": {
+          "default": "low",
+          "auto_scale": true
+        }
+      }
+    },
+    {
+      "name": "purgeable",
+      "display_name": "purgeable",
+      "created_at": 1776545712,
+      "last_ingest_at": 0,
+      "total_chunks": 0,
+      "librarian": {
+        "enabled": true,
+        "model": null,
+        "tasks": {
+          "fact_extraction": true,
+          "preference_extraction": true,
+          "intake_classification": true,
+          "crystallise": true,
+          "reflect": true,
+          "catalog_enrichment": true,
+          "query_expansion": true,
+          "verification": true
+        },
+        "fanout": {
+          "default": "low",
+          "auto_scale": true
+        }
+      }
+    },
+    {
+      "name": "chat-agent",
+      "display_name": "chat-agent",
+      "created_at": 1776545713,
+      "last_ingest_at": 0,
+      "total_chunks": 0,
+      "librarian": {
+        "enabled": true,
+        "model": null,
+        "tasks": {
+          "fact_extraction": true,
+          "preference_extraction": true,
+          "intake_classification": true,
+          "crystallise": true,
+          "reflect": true,
+          "catalog_enrichment": true,
+          "query_expansion": true,
+          "verification": true
+        },
+        "fanout": {
+          "default": "low",
+          "auto_scale": true
+        }
+      }
+    },
+    {
+      "name": "restore-agent",
+      "display_name": "restore-agent",
+      "created_at": 1776545714,
+      "last_ingest_at": 0,
+      "total_chunks": 0,
+      "librarian": {
+        "enabled": true,
+        "model": null,
+        "tasks": {
+          "fact_extraction": true,
+          "preference_extraction": true,
+          "intake_classification": true,
+          "crystallise": true,
+          "reflect": true,
+          "catalog_enrichment": true,
+          "query_expansion": true,
+          "verification": true
+        },
+        "fanout": {
+          "default": "low",
+          "auto_scale": true
+        }
+      }
+    },
+    {
+      "name": "idem-agent",
+      "display_name": "idem-agent",
+      "created_at": 1776545714,
+      "last_ingest_at": 0,
+      "total_chunks": 0,
+      "librarian": {
+        "enabled": true,
+        "model": null,
+        "tasks": {
+          "fact_extraction": true,
+          "preference_extraction": true,
+          "intake_classification": true,
+          "crystallise": true,
+          "reflect": true,
+          "catalog_enrichment": true,
+          "query_expansion": true,
+          "verification": true
+        },
+        "fanout": {
+          "default": "low",
+          "auto_scale": true
+        }
+      }
+    },
+    {
+      "name": "purge-agent",
+      "display_name": "purge-agent",
+      "created_at": 1776545715,
+      "last_ingest_at": 0,
+      "total_chunks": 0,
+      "librarian": {
+        "enabled": true,
+        "model": null,
+        "tasks": {
+          "fact_extraction": true,
+          "preference_extraction": true,
+          "intake_classification": true,
+          "crystallise": true,
+          "reflect": true,
+          "catalog_enrichment": true,
+          "query_expansion": true,
+          "verification": true
+        },
+        "fanout": {
+          "default": "low",
+          "auto_scale": true
+        }
+      }
+    }
+  ]
+}

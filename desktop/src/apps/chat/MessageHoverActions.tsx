@@ -1,11 +1,11 @@
 export function MessageHoverActions({
   onReact,
   onReplyInThread,
-  onMore,
+  onOverflow,
 }: {
   onReact: () => void;
   onReplyInThread: () => void;
-  onMore: (e: React.MouseEvent) => void;
+  onOverflow: (e: React.MouseEvent) => void;
 }) {
   return (
     <div
@@ -15,7 +15,7 @@ export function MessageHoverActions({
     >
       <button aria-label="Add reaction" onClick={onReact} className="p-1 hover:bg-white/5">😀</button>
       <button aria-label="Reply in thread" onClick={onReplyInThread} className="p-1 hover:bg-white/5">💬</button>
-      <button aria-label="More" onClick={onMore} className="p-1 hover:bg-white/5">⋯</button>
+      <button aria-label="More" onClick={onOverflow} className="p-1 hover:bg-white/5">⋯</button>
     </div>
   );
 }

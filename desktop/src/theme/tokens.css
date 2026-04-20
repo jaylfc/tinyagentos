@@ -85,3 +85,9 @@
   border-right-color: rgba(255, 255, 255, 0.4);
   border-bottom-color: rgba(255, 255, 255, 0.4);
 }
+
+.data-highlight {
+  outline: 2px solid rgb(250 204 21 / 0.8);
+  outline-offset: 2px;
+  transition: outline 0.2s ease-out;
+}

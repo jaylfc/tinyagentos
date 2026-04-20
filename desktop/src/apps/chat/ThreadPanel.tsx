@@ -23,29 +23,49 @@ export function ThreadPanel({
   const [parent, setParent] = useState<Msg | null>(null);
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    let alive = true;
-    fetch(`/api/chat/messages/${parentId}`)
+    const controller = new AbortController();
+    setLoadError(null);
+    fetch(`/api/chat/messages/${parentId}`, { signal: controller.signal })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (alive) setParent(d); });
-    return () => { alive = false; };
+      .then((d) => setParent(d))
+      .catch((e) => {
+        if ((e as Error).name !== "AbortError") setLoadError("couldn't load this thread");
+      });
+    return () => controller.abort();
   }, [parentId]);
 
   useEffect(() => {
-    let alive = true;
-    fetch(`/api/chat/channels/${channelId}/threads/${parentId}/messages`)
-      .then((r) => r.json())
-      .then((d) => { if (alive) setMsgs(d.messages || []); });
-    return () => { alive = false; };
+    const controller = new AbortController();
+    fetch(`/api/chat/channels/${channelId}/threads/${parentId}/messages`,
+      { signal: controller.signal })
+      .then((r) => (r.ok ? r.json() : { messages: [] }))
+      .then((d) => setMsgs(d.messages || []))
+      .catch((e) => {
+        if ((e as Error).name !== "AbortError") setLoadError("couldn't load this thread");
+      });
+    return () => controller.abort();
   }, [channelId, parentId]);
 
   async function submit() {
     const content = input.trim();
-    if (!content) return;
-    setInput("");
-    await onSend(content, []);
+    if (!content || sending) return;
+    setSending(true);
+    setSendError(null);
+    try {
+      await onSend(content, []);
+      // Only clear on success so users don't lose their draft on failure.
+      setInput("");
+    } catch (e) {
+      setSendError((e as Error).message || "couldn't send reply");
+    } finally {
+      setSending(false);
+    }
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -83,9 +103,15 @@ export function ThreadPanel({
             <div className="text-sm">{m.content}</div>
           </div>
         ))}
+        {loadError && (
+          <div role="alert" className="text-xs text-red-300">{loadError}</div>
+        )}
       </div>
 
       <div className="px-4 py-3 border-t border-white/10">
+        {sendError && (
+          <div role="alert" className="text-xs text-red-300 mb-2">{sendError}</div>
+        )}
         <textarea
           ref={inputRef}
           value={input}
@@ -94,7 +120,8 @@ export function ThreadPanel({
           placeholder="Reply in thread…"
           aria-label="Thread reply"
           rows={2}
-          className="w-full bg-white/5 rounded px-3 py-2 text-sm resize-none outline-none border border-white/10 focus:border-sky-400"
+          disabled={sending}
+          className="w-full bg-white/5 rounded px-3 py-2 text-sm resize-none outline-none border border-white/10 focus:border-sky-400 disabled:opacity-50"
         />
       </div>
     </div>
