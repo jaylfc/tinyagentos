@@ -83,3 +83,25 @@ async def maybe_trigger_semantic(
         if reg is None:
             return
         reg.add(channel["id"], reactor_id)
+
+    if emoji == "📌" and reactor_type == "agent" and reactor_id == message.get("author_id"):
+        msg_store = getattr(state, "chat_messages", None)
+        if msg_store is None:
+            return
+        meta = dict(message.get("metadata") or {})
+        meta["pin_requested"] = True
+        await msg_store.set_metadata(message["id"], meta)
+        # Broadcast so clients can render the PinRequestAffordance without a refresh.
+        hub = getattr(state, "chat_hub", None)
+        if hub is not None:
+            updated = await msg_store.get_message(message["id"])
+            if updated is not None:
+                await hub.broadcast(message.get("channel_id") or channel.get("id"), {
+                    "type": "message_edit",
+                    "seq": hub.next_seq(),
+                    "message_id": message["id"],
+                    "content": updated.get("content"),
+                    "edited_at": updated.get("edited_at"),
+                    "metadata": updated.get("metadata"),
+                })
+        return

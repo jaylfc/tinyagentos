@@ -925,8 +925,7 @@ class TestArchivedChatPersistence:
         archive_id = entry["id"]
 
         msg_store = app.state.chat_messages
-        for m in msgs:
-            await msg_store.delete_message(m["id"])
+        await msg_store.delete_channel_messages(ch["id"])
         remaining = await msg_store.get_messages(ch["id"], limit=100)
         assert len(remaining) == 0
 

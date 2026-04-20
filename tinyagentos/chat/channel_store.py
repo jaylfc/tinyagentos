@@ -271,6 +271,21 @@ class ChatChannelStore(BaseStore):
         )
         await self._db.commit()
 
+    async def rewind_read_cursor(self, user_id: str, channel_id: str, before_ts: float) -> None:
+        """Set last_read_at for this (user, channel) to before_ts.
+
+        Used for mark-unread: caller passes msg.created_at - epsilon so
+        everything from that message forward counts as unread.
+        Creates the row if it doesn't exist yet.
+        """
+        await self._db.execute(
+            """INSERT OR REPLACE INTO chat_read_positions
+               (user_id, channel_id, last_read_message_id, last_read_at)
+               VALUES (?, ?, '', ?)""",
+            (user_id, channel_id, before_ts),
+        )
+        await self._db.commit()
+
     async def get_unread_counts(self, user_id: str) -> dict[str, int]:
         # Get all channels where the user is a member
         pattern = f'%"{user_id}"%'

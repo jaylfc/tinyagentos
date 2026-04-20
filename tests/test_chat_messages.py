@@ -120,7 +120,9 @@ async def test_delete_message(store):
     msg = await _send(store)
     deleted = await store.delete_message(msg["id"])
     assert deleted is True
-    assert await store.get_message(msg["id"]) is None
+    got = await store.get_message(msg["id"])
+    assert got is not None
+    assert got["deleted_at"] is not None
 
 
 @pytest.mark.asyncio
@@ -162,18 +164,19 @@ async def test_update_state(store):
 @pytest.mark.asyncio
 async def test_pin_message(store):
     msg = await _send(store)
-    await store.pin_message("ch1", msg["id"], "admin")
-    updated = await store.get_message(msg["id"])
-    assert updated["pinned"] == 1
+    await store.pin_message("ch1", msg["id"], pinned_by="admin")
+    pins = await store.get_pins("ch1")
+    assert len(pins) == 1
+    assert pins[0]["id"] == msg["id"]
 
 
 @pytest.mark.asyncio
 async def test_unpin_message(store):
     msg = await _send(store)
-    await store.pin_message("ch1", msg["id"], "admin")
+    await store.pin_message("ch1", msg["id"], pinned_by="admin")
     await store.unpin_message("ch1", msg["id"])
-    updated = await store.get_message(msg["id"])
-    assert updated["pinned"] == 0
+    pins = await store.get_pins("ch1")
+    assert pins == []
 
 
 @pytest.mark.asyncio
@@ -238,3 +241,27 @@ async def test_send_message_defaults_hops_zero_when_absent(tmp_path):
         metadata=None,
     )
     assert msg["metadata"].get("hops_since_user", 0) == 0
+
+
+@pytest.mark.asyncio
+async def test_soft_delete_sets_deleted_at(tmp_path):
+    store = ChatMessageStore(tmp_path / "chat.db")
+    await store.init()
+    msg = await store.send_message(
+        channel_id="c1", author_id="tom", author_type="agent",
+        content="hello",
+    )
+    ok = await store.soft_delete_message(msg["id"])
+    assert ok is True
+    got = await store.get_message(msg["id"])
+    assert got is not None  # row preserved
+    assert got["deleted_at"] is not None
+    assert got["content"] == "hello"  # content preserved for admin recovery
+
+
+@pytest.mark.asyncio
+async def test_soft_delete_nonexistent_returns_false(tmp_path):
+    store = ChatMessageStore(tmp_path / "chat.db")
+    await store.init()
+    ok = await store.soft_delete_message("does-not-exist")
+    assert ok is False

@@ -11,7 +11,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, File, Request, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 
 from tinyagentos.chat.reactions import maybe_trigger_semantic
 
@@ -440,6 +440,120 @@ async def get_thread_messages_endpoint(
     return JSONResponse({"messages": msgs})
 
 
+@router.get("/api/chat/channels/{channel_id}/pins")
+async def get_channel_pins(channel_id: str, request: Request):
+    store = request.app.state.chat_messages
+    pins = await store.get_pins(channel_id)
+    return JSONResponse({"pins": pins})
+
+
+@router.post("/api/chat/messages/{message_id}/pin")
+async def pin_message_endpoint(message_id: str, request: Request):
+    msg_store = request.app.state.chat_messages
+    msg = await msg_store.get_message(message_id)
+    if msg is None or msg.get("deleted_at"):
+        return JSONResponse({"error": "message not found"}, status_code=404)
+    # Resolve caller id from session cookie
+    auth = getattr(request.app.state, "auth", None)
+    session_user = None
+    if auth is not None:
+        token = request.cookies.get("taos_session") or ""
+        if token:
+            session_user = auth.get_user(token=token)
+    pinned_by = f"user:{session_user['id']}" if session_user else "user:unknown"
+    try:
+        await msg_store.pin_message(msg["channel_id"], message_id, pinned_by=pinned_by)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=409)
+    # Clear pin_requested flag if it was set (agent had asked for a pin)
+    meta = msg.get("metadata") or {}
+    if meta.get("pin_requested"):
+        meta.pop("pin_requested", None)
+        await msg_store.set_metadata(message_id, meta)
+    hub = request.app.state.chat_hub
+    await hub.broadcast(msg["channel_id"], {
+        "type": "pin", "seq": hub.next_seq(),
+        "channel_id": msg["channel_id"], "message_id": message_id, "pinned_by": pinned_by,
+    })
+    return JSONResponse({"ok": True, "pinned_by": pinned_by})
+
+
+@router.delete("/api/chat/messages/{message_id}/pin")
+async def unpin_message_endpoint(message_id: str, request: Request):
+    msg_store = request.app.state.chat_messages
+    msg = await msg_store.get_message(message_id)
+    if msg is None:
+        return JSONResponse({"error": "message not found"}, status_code=404)
+    ok = await msg_store.unpin_message(msg["channel_id"], message_id)
+    if not ok:
+        return JSONResponse({"error": "message not pinned"}, status_code=404)
+    hub = request.app.state.chat_hub
+    await hub.broadcast(msg["channel_id"], {
+        "type": "unpin", "seq": hub.next_seq(),
+        "channel_id": msg["channel_id"], "message_id": message_id,
+    })
+    return Response(status_code=204)
+
+
+@router.patch("/api/chat/messages/{message_id}")
+async def edit_message_endpoint(message_id: str, request: Request):
+    body = await request.json()
+    allowed = {"content"}
+    if set(body.keys()) - allowed:
+        return JSONResponse(
+            {"error": "only 'content' may be edited"}, status_code=400,
+        )
+    if "content" not in body or not isinstance(body["content"], str):
+        return JSONResponse({"error": "content required"}, status_code=400)
+    msg_store = request.app.state.chat_messages
+    msg = await msg_store.get_message(message_id)
+    if msg is None or msg.get("deleted_at"):
+        return JSONResponse({"error": "message not found"}, status_code=404)
+    auth = getattr(request.app.state, "auth", None)
+    session_user = None
+    if auth is not None:
+        token = request.cookies.get("taos_session") or ""
+        session_user = auth.get_user(token=token)
+    caller_id = session_user["id"] if session_user else None
+    if msg["author_id"] != caller_id:
+        return JSONResponse({"error": "not the author"}, status_code=403)
+    await msg_store.edit_message(message_id, body["content"])
+    updated = await msg_store.get_message(message_id)
+    hub = request.app.state.chat_hub
+    await hub.broadcast(msg["channel_id"], {
+        "type": "message_edit", "seq": hub.next_seq(),
+        "message_id": message_id,
+        "content": updated["content"],
+        "edited_at": updated["edited_at"],
+    })
+    return JSONResponse(updated)
+
+
+@router.delete("/api/chat/messages/{message_id}")
+async def delete_message_endpoint(message_id: str, request: Request):
+    msg_store = request.app.state.chat_messages
+    msg = await msg_store.get_message(message_id)
+    if msg is None:
+        return JSONResponse({"error": "message not found"}, status_code=404)
+    auth = getattr(request.app.state, "auth", None)
+    session_user = None
+    if auth is not None:
+        token = request.cookies.get("taos_session") or ""
+        session_user = auth.get_user(token=token)
+    caller_id = session_user["id"] if session_user else None
+    if msg["author_id"] != caller_id:
+        return JSONResponse({"error": "not the author"}, status_code=403)
+    await msg_store.soft_delete_message(message_id)
+    hub = request.app.state.chat_hub
+    deleted = await msg_store.get_message(message_id)
+    await hub.broadcast(msg["channel_id"], {
+        "type": "message_delete", "seq": hub.next_seq(),
+        "channel_id": msg["channel_id"], "message_id": message_id,
+        "deleted_at": (deleted or {}).get("deleted_at"),
+    })
+    return Response(status_code=204)
+
+
 @router.delete("/api/chat/channels/{channel_id}/members/{member_id}")
 async def remove_channel_member(request: Request, channel_id: str, member_id: str):
     ch_store = request.app.state.chat_channels
@@ -644,6 +758,30 @@ async def get_unread(request: Request):
     ch_store = request.app.state.chat_channels
     counts = await ch_store.get_unread_counts("user")
     return {"unread": counts}
+
+
+@router.post("/api/chat/channels/{channel_id}/read-cursor/rewind")
+async def rewind_read_cursor_endpoint(channel_id: str, request: Request):
+    body = await request.json()
+    before_id = body.get("before_message_id")
+    if not before_id:
+        return JSONResponse({"error": "before_message_id required"}, status_code=400)
+    msg_store = request.app.state.chat_messages
+    ch_store = request.app.state.chat_channels
+    msg = await msg_store.get_message(before_id)
+    if msg is None or msg["channel_id"] != channel_id:
+        return JSONResponse({"error": "message not in channel"}, status_code=404)
+    auth = getattr(request.app.state, "auth", None)
+    session_user = None
+    if auth is not None:
+        token = request.cookies.get("taos_session") or ""
+        session_user = auth.get_user(token=token)
+    if session_user is None:
+        return JSONResponse({"error": "not authenticated"}, status_code=401)
+    await ch_store.rewind_read_cursor(
+        session_user["id"], channel_id, msg["created_at"] - 0.001,
+    )
+    return JSONResponse({"ok": True})
 
 
 @router.post("/api/chat/channels/{channel_id}/mark-read")
