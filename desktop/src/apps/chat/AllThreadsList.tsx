@@ -35,16 +35,24 @@ export function AllThreadsList({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const ac = new AbortController();
     setLoading(true);
     setError(null);
-    fetch(`/api/chat/channels/${channelId}/threads`)
+    fetch(`/api/chat/channels/${channelId}/threads`, { signal: ac.signal })
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
       })
       .then((data) => setThreads(data.threads ?? []))
-      .catch((e) => setError(e instanceof Error ? e.message : "failed"))
-      .finally(() => setLoading(false));
+      .catch((e) => {
+        if ((e as Error).name === "AbortError") return;
+        setError(e instanceof Error ? e.message : "failed");
+      })
+      .finally(() => {
+        // ac.signal.aborted is true when we've been superseded
+        if (!ac.signal.aborted) setLoading(false);
+      });
+    return () => ac.abort();
   }, [channelId]);
 
   return (

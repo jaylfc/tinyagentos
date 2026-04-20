@@ -205,6 +205,15 @@ class ChatChannelStore(BaseStore):
             raise ValueError("cooldown_seconds must be 0..60")
         await self.set_settings(channel_id, {"cooldown_seconds": seconds})
 
+    async def set_ephemeral_ttl(self, channel_id: str, seconds: int | None) -> None:
+        """Set or clear the channel's ephemeral TTL. None = disabled."""
+        if seconds is not None:
+            if not isinstance(seconds, (int, float)) or seconds < 0:
+                raise ValueError("ephemeral_ttl_seconds must be a non-negative number or null")
+            if seconds > 30 * 24 * 60 * 60:
+                raise ValueError("ephemeral_ttl_seconds must be <= 30 days")
+        await self.set_settings(channel_id, {"ephemeral_ttl_seconds": seconds})
+
     async def mute_agent(self, channel_id: str, slug: str) -> None:
         ch = await self.get_channel(channel_id)
         if ch is None:

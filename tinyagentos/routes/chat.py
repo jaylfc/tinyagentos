@@ -611,6 +611,10 @@ async def update_channel_settings(channel_id: str, body: dict, request: Request)
             await chs.set_max_hops(channel_id, int(body["max_hops"]))
         if "cooldown_seconds" in body:
             await chs.set_cooldown_seconds(channel_id, int(body["cooldown_seconds"]))
+        if "ephemeral_ttl_seconds" in body:
+            raw = body["ephemeral_ttl_seconds"]
+            ttl: int | None = None if raw is None else int(raw)
+            await chs.set_ephemeral_ttl(channel_id, ttl)
         if "topic" in body:
             topic = str(body["topic"])
             if len(topic) > 500:
