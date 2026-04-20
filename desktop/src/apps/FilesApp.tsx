@@ -28,6 +28,7 @@ import { Button, Card, Toolbar, ToolbarGroup, ToolbarSpacer } from "@/components
 import { MobileSplitView } from "@/components/mobile/MobileSplitView";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import { resolveAgentEmoji } from "@/lib/agent-emoji";
+import { useDragSource } from "@/shell/dnd/use-drag-source";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -225,6 +226,138 @@ async function apiFetch<T>(url: string, opts?: RequestInit): Promise<T> {
     throw new Error(body || `HTTP ${res.status}`);
   }
   return res.json();
+}
+
+/* ------------------------------------------------------------------ */
+/*  FileRow — list-view row with drag source                          */
+/* ------------------------------------------------------------------ */
+
+interface FileRowProps {
+  f: FileEntry;
+  location: "workspace" | string;
+  currentPath: string;
+  navigateTo: (path: string) => void;
+  isWritable: boolean;
+  deleteConfirm: string | null;
+  handleDelete: (path: string) => void;
+  setDeleteConfirm: (path: string | null) => void;
+}
+
+function FileRow({
+  f,
+  location,
+  currentPath,
+  navigateTo,
+  isWritable,
+  deleteConfirm,
+  handleDelete,
+  setDeleteConfirm,
+}: FileRowProps) {
+  const Icon = getFileIcon(f.name, f.is_dir);
+  const relPath = f.path || (currentPath ? `${currentPath}/${f.name}` : f.name);
+
+  let vfsPath: string | null = null;
+  if (location === "workspace") {
+    vfsPath = `/workspaces/user/${relPath}`;
+  } else if (isAgentLocation(location)) {
+    vfsPath = `/workspaces/agent/${agentSlug(location)}/${relPath}`;
+  }
+
+  const dragEnabled = !!vfsPath && !f.is_dir;
+  const { dragHandlers } = useDragSource({
+    // When dragEnabled is false, `disabled: true` short-circuits the payload
+    // before it ever lands on the bus — the empty-string placeholder below
+    // is never read.
+    payload: {
+      kind: "file",
+      path: vfsPath ?? "",
+      mime_type: "application/octet-stream",
+      size: f.size ?? 0,
+      name: f.name,
+    },
+    disabled: !dragEnabled,
+    htmlMirror: dragEnabled && vfsPath ? { "text/plain": vfsPath } : undefined,
+  });
+
+  return (
+    <tr
+      key={f.path || f.name}
+      data-file-row
+      className="border-b border-white/5 hover:bg-shell-surface/50 transition-colors group"
+      {...dragHandlers}
+    >
+      <td className="px-3 py-2">
+        <button
+          onClick={() => {
+            if (f.is_dir) {
+              navigateTo(f.path || (currentPath ? `${currentPath}/${f.name}` : f.name));
+            }
+          }}
+          className="flex items-center gap-2 min-w-0"
+          aria-label={f.is_dir ? `Open folder ${f.name}` : `File ${f.name}`}
+        >
+          {!f.is_dir && isImage(f.name) ? (
+            <img
+              src={fileUrl(location, f.path || f.name)}
+              alt=""
+              loading="lazy"
+              decoding="async"
+              className="w-6 h-6 rounded object-cover border border-white/[0.06] shrink-0"
+              onError={(e) => {
+                e.currentTarget.style.display = "none";
+              }}
+            />
+          ) : (
+            <Icon size={16} className={f.is_dir ? "text-accent shrink-0" : "text-shell-text-secondary shrink-0"} />
+          )}
+          <span className="truncate">{f.name}</span>
+        </button>
+      </td>
+      <td className="px-3 py-2 text-shell-text-tertiary">
+        {f.is_dir ? "—" : formatSize(f.size)}
+      </td>
+      <td className="px-3 py-2 text-shell-text-tertiary">
+        {formatDate(f.modified)}
+      </td>
+      <td className="px-3 py-2">
+        <div className="flex items-center gap-1">
+          {!f.is_dir && isWritable && (
+            <a
+              href={fileUrl(location, f.path || f.name)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-1 rounded-md opacity-0 group-hover:opacity-100 hover:bg-shell-surface transition-all text-shell-text-tertiary hover:text-shell-text"
+              aria-label={`Download ${f.name}`}
+            >
+              <Download size={13} />
+            </a>
+          )}
+          {isWritable && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                if (deleteConfirm === f.path) {
+                  handleDelete(f.path);
+                } else {
+                  setDeleteConfirm(f.path);
+                }
+              }}
+              className={`h-7 w-7 transition-all ${
+                deleteConfirm === f.path
+                  ? "bg-red-500/20 text-red-400 opacity-100 hover:bg-red-500/25 hover:text-red-400"
+                  : "opacity-0 group-hover:opacity-100 hover:bg-red-500/20 hover:text-red-400"
+              }`}
+              aria-label={deleteConfirm === f.path ? `Confirm delete ${f.name}` : `Delete ${f.name}`}
+              title={deleteConfirm === f.path ? "Click again to confirm" : "Delete"}
+            >
+              <Trash2 size={13} />
+            </Button>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -1226,86 +1359,19 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
               </tr>
             </thead>
             <tbody>
-              {sortedFiles.map((f) => {
-                const Icon = getFileIcon(f.name, f.is_dir);
-                return (
-                  <tr
-                    key={f.path || f.name}
-                    className="border-b border-white/5 hover:bg-shell-surface/50 transition-colors group"
-                  >
-                    <td className="px-3 py-2">
-                      <button
-                        onClick={() => {
-                          if (f.is_dir) {
-                            navigateTo(f.path || (currentPath ? `${currentPath}/${f.name}` : f.name));
-                          }
-                        }}
-                        className="flex items-center gap-2 min-w-0"
-                        aria-label={f.is_dir ? `Open folder ${f.name}` : `File ${f.name}`}
-                      >
-                        {!f.is_dir && isImage(f.name) ? (
-                          <img
-                            src={fileUrl(location, f.path || f.name)}
-                            alt=""
-                            loading="lazy"
-                            decoding="async"
-                            className="w-6 h-6 rounded object-cover border border-white/[0.06] shrink-0"
-                            onError={(e) => {
-                              e.currentTarget.style.display = "none";
-                            }}
-                          />
-                        ) : (
-                          <Icon size={16} className={f.is_dir ? "text-accent shrink-0" : "text-shell-text-secondary shrink-0"} />
-                        )}
-                        <span className="truncate">{f.name}</span>
-                      </button>
-                    </td>
-                    <td className="px-3 py-2 text-shell-text-tertiary">
-                      {f.is_dir ? "—" : formatSize(f.size)}
-                    </td>
-                    <td className="px-3 py-2 text-shell-text-tertiary">
-                      {formatDate(f.modified)}
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="flex items-center gap-1">
-                        {!f.is_dir && isWritable && (
-                          <a
-                            href={fileUrl(location, f.path || f.name)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="p-1 rounded-md opacity-0 group-hover:opacity-100 hover:bg-shell-surface transition-all text-shell-text-tertiary hover:text-shell-text"
-                            aria-label={`Download ${f.name}`}
-                          >
-                            <Download size={13} />
-                          </a>
-                        )}
-                        {isWritable && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => {
-                              if (deleteConfirm === f.path) {
-                                handleDelete(f.path);
-                              } else {
-                                setDeleteConfirm(f.path);
-                              }
-                            }}
-                            className={`h-7 w-7 transition-all ${
-                              deleteConfirm === f.path
-                                ? "bg-red-500/20 text-red-400 opacity-100 hover:bg-red-500/25 hover:text-red-400"
-                                : "opacity-0 group-hover:opacity-100 hover:bg-red-500/20 hover:text-red-400"
-                            }`}
-                            aria-label={deleteConfirm === f.path ? `Confirm delete ${f.name}` : `Delete ${f.name}`}
-                            title={deleteConfirm === f.path ? "Click again to confirm" : "Delete"}
-                          >
-                            <Trash2 size={13} />
-                          </Button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+              {sortedFiles.map((f) => (
+                <FileRow
+                  key={f.path || f.name}
+                  f={f}
+                  location={location}
+                  currentPath={currentPath}
+                  navigateTo={navigateTo}
+                  isWritable={isWritable}
+                  deleteConfirm={deleteConfirm}
+                  handleDelete={handleDelete}
+                  setDeleteConfirm={setDeleteConfirm}
+                />
+              ))}
             </tbody>
           </table>
           </div>
