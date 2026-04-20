@@ -52,13 +52,19 @@ def _suppress(reply, force):
     stripped = (reply or "").strip().lower().strip(".!,;:")
     return None if stripped == "no_response" else reply
 
-async def _thinking(c: httpx.AsyncClient, ch_id, state: str) -> None:
+async def _thinking(c: httpx.AsyncClient, ch_id, state: str, *,
+                   phase: str | None = None, detail: str | None = None) -> None:
     if not ch_id:
         return
+    body = {"slug": AGENT_NAME, "state": state}
+    if phase is not None:
+        body["phase"] = phase
+    if detail is not None:
+        body["detail"] = detail
     try:
         await c.post(
             f"{BRIDGE_URL}/api/chat/channels/{ch_id}/thinking",
-            json={"slug": AGENT_NAME, "state": state},
+            json=body,
             headers={"Authorization": f"Bearer {LOCAL_TOKEN}"},
             timeout=5,
         )
