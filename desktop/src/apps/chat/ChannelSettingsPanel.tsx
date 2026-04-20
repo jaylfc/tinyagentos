@@ -14,6 +14,7 @@ type Channel = {
     max_hops?: number;
     cooldown_seconds?: number;
     muted?: string[];
+    ephemeral_ttl_seconds?: number | null;
   };
 };
 
@@ -32,6 +33,7 @@ export function ChannelSettingsPanel({
   const [mode, setMode] = useState(channel.settings.response_mode ?? "quiet");
   const [hops, setHops] = useState(channel.settings.max_hops ?? 3);
   const [cooldown, setCooldown] = useState(channel.settings.cooldown_seconds ?? 5);
+  const [ephemeralTtl, setEphemeralTtl] = useState<number | null>(channel.settings.ephemeral_ttl_seconds ?? null);
   const [err, setErr] = useState<string | null>(null);
 
   // Keep local state in sync if the parent pushes an updated channel
@@ -41,6 +43,7 @@ export function ChannelSettingsPanel({
     setMode(channel.settings.response_mode ?? "quiet");
     setHops(channel.settings.max_hops ?? 3);
     setCooldown(channel.settings.cooldown_seconds ?? 5);
+    setEphemeralTtl(channel.settings.ephemeral_ttl_seconds ?? null);
   }, [channel]);
 
   const apply = async (patch: Parameters<typeof patchChannel>[1], rollback: () => void) => {
@@ -166,6 +169,29 @@ export function ChannelSettingsPanel({
               />
             )}
           </div>
+        </section>
+
+        <section aria-label="Disappearing messages" className="flex flex-col gap-3">
+          <h3 className="text-xs uppercase tracking-wider text-shell-text-tertiary">Disappearing messages</h3>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-shell-text-secondary">Auto-delete after</span>
+            <select
+              aria-label="Disappearing messages TTL"
+              value={ephemeralTtl ?? ""}
+              onChange={(e) => {
+                const val = e.target.value === "" ? null : Number(e.target.value);
+                setEphemeralTtl(val);
+                apply({ ephemeral_ttl_seconds: val }, () => setEphemeralTtl(ephemeralTtl));
+              }}
+              className="bg-white/5 border border-white/10 rounded px-2 py-1.5 text-sm"
+            >
+              <option value="">Off</option>
+              <option value={3600}>1 hour</option>
+              <option value={86400}>1 day</option>
+              <option value={604800}>1 week</option>
+              <option value={2592000}>30 days</option>
+            </select>
+          </label>
         </section>
 
         <section aria-label="Advanced" className="flex flex-col gap-3">

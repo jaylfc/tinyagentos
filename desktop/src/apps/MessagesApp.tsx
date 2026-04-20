@@ -33,6 +33,8 @@ import { useVisualViewport } from "@/hooks/use-visual-viewport";
 import { useDropTarget } from "@/shell/dnd/use-drop-target";
 import { resolveAgentEmoji } from "@/lib/agent-emoji";
 import { ChannelSettingsPanel } from "./chat/ChannelSettingsPanel";
+import { HelpPanel } from "./chat/HelpPanel";
+import { AllThreadsList } from "./chat/AllThreadsList";
 import { AgentContextMenu } from "./chat/AgentContextMenu";
 import { SlashMenu, type SlashCommandsBySlug } from "./chat/SlashMenu";
 import { TypingFooter, type AgentTyping } from "./chat/TypingFooter";
@@ -90,6 +92,7 @@ interface Channel {
     archived_agent_id?: string;
     archived_agent_slug?: string;
     muted?: string[];
+    ephemeral_ttl_seconds?: number | null;
   };
 }
 
@@ -168,6 +171,13 @@ type WsStatus = "connecting" | "connected" | "disconnected";
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
+
+function formatTTL(seconds: number): string {
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+  if (seconds < 86400) return `${Math.round(seconds / 3600)}h`;
+  if (seconds < 604800 * 4) return `${Math.round(seconds / 86400)}d`;
+  return `${Math.round(seconds / 604800)}w`;
+}
 
 function relativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -250,6 +260,8 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
   const [newChannel, setNewChannel] = useState({ name: "", type: "topic" as "topic" | "group", description: "" });
   const [prefillBanner, setPrefillBanner] = useState<{ promptName: string; agentName?: string } | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+  const [showAllThreads, setShowAllThreads] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ slug: string; x: number; y: number } | null>(null);
   const [agentInfoPopover, setAgentInfoPopover] = useState<
     { slug: string; framework: string; model: string; status: string; x: number; y: number } | null
@@ -643,14 +655,21 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
   const showSlash = input.startsWith("/");
   const slashQuery = showSlash ? input.slice(1).split(/\s/, 1)[0] || "" : "";
 
-  /* ---- mutex: settings vs thread panel ---- */
+  /* ---- mutex: settings vs thread panel vs all-threads ---- */
   const handleOpenSettings = () => {
     closeThread();
+    setShowAllThreads(false);
     setShowSettings(true);
   };
   const handleOpenThreadFor = (channelId: string, parentId: string) => {
     setShowSettings(false);
+    setShowAllThreads(false);
     openThreadFor(channelId, parentId);
+  };
+  const handleOpenAllThreads = () => {
+    setShowSettings(false);
+    closeThread();
+    setShowAllThreads(true);
   };
 
   /* ---- send message ---- */
@@ -1285,13 +1304,20 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
                     className="ml-1 opacity-60 hover:opacity-100"
                   >ⓘ</button>
                 )}
-                <a
+                {currentChannel?.settings?.ephemeral_ttl_seconds && (
+                  <span
+                    aria-label={`Disappearing messages: ${formatTTL(currentChannel.settings.ephemeral_ttl_seconds)}`}
+                    className="ml-1 text-[11px] text-amber-300/80 bg-amber-300/10 rounded px-1 py-0.5 leading-none"
+                    title="Disappearing messages enabled"
+                  >
+                    ⏳ {formatTTL(currentChannel.settings.ephemeral_ttl_seconds)}
+                  </span>
+                )}
+                <button
                   aria-label="Open chat guide"
-                  href="https://github.com/jaylfc/tinyagentos/blob/master/docs/chat-guide.md"
-                  target="_blank"
-                  rel="noreferrer"
+                  onClick={() => setShowHelp(true)}
                   className="ml-1 opacity-60 hover:opacity-100 text-[12px]"
-                >?</a>
+                >?</button>
                 <div className="relative">
                   <PinBadge
                     count={pinnedMessages.length}
@@ -1318,6 +1344,14 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
                 <div className="text-[11px] text-white/35 truncate">{currentChannel.description}</div>
               )}
             </div>
+            {currentChannel && currentChannel.type !== "dm" && (
+              <button
+                aria-label="All threads"
+                onClick={handleOpenAllThreads}
+                className="opacity-60 hover:opacity-100 text-[12px]"
+                title="All threads"
+              >💬</button>
+            )}
             {currentChannel?.members && (
               <div className="text-[11px] text-white/30 flex items-center gap-1">
                 <Users size={12} /> {currentChannel.members.length}
@@ -1772,6 +1806,21 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
           </>
         );
       })()}
+
+      {/* ---- Help Panel ---- */}
+      {showHelp && <HelpPanel onClose={() => setShowHelp(false)} />}
+
+      {/* ---- All Threads Panel ---- */}
+      {showAllThreads && currentChannel && (
+        <AllThreadsList
+          channelId={currentChannel.id}
+          onClose={() => setShowAllThreads(false)}
+          onJumpToThread={(parentId) => {
+            setShowAllThreads(false);
+            handleOpenThreadFor(currentChannel.id, parentId);
+          }}
+        />
+      )}
 
       {/* ---- Channel Settings Panel ---- */}
       {showSettings && currentChannel && (
