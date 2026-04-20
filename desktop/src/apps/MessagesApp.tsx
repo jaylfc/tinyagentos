@@ -1727,6 +1727,7 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
           channelId={openThread.channelId}
           parentId={openThread.parentId}
           onClose={closeThread}
+          isFullscreen={isMobile}
           onSend={async (content, attachments) => {
             const r = await fetch("/api/chat/messages", {
               method: "POST",
