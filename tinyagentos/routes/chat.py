@@ -3,6 +3,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import mimetypes
+import os
+import secrets
+import shutil
 import uuid
 from pathlib import Path
 
@@ -186,6 +190,29 @@ async def post_message(request: Request):
     channel_id = body["channel_id"]
     content = body.get("content") or ""
 
+    if content.startswith("/help"):
+        from tinyagentos.chat.help import handle_help
+        args = content[len("/help"):].lstrip()
+        system_text = handle_help(args)
+        sys_msg = await msg_store.send_message(
+            channel_id=channel_id,
+            author_id="system",
+            author_type="system",
+            content=system_text,
+            content_type="text",
+            state="complete",
+            metadata=None,
+        )
+        await ch_store.update_last_message_at(channel_id)
+        await hub.broadcast(
+            channel_id,
+            {"type": "message", "seq": hub.next_seq(), **sys_msg},
+        )
+        return JSONResponse(
+            {"ok": True, "handled": "help", "system_message": sys_msg},
+            status_code=200,
+        )
+
     # Guardrail: in a non-DM channel, a / message must address at least one
     # agent explicitly (@<slug> or @all). Otherwise a framework slash command
     # would broadcast to every agent in the channel, producing N different
@@ -204,6 +231,30 @@ async def post_message(request: Request):
                     status_code=400,
                 )
 
+    attachments = (body or {}).get("attachments") or []
+    if not isinstance(attachments, list):
+        return JSONResponse({"error": "attachments must be a list"}, status_code=400)
+    if len(attachments) > 10:
+        return JSONResponse({"error": "max 10 attachments per message"}, status_code=400)
+    data_dir = Path(getattr(request.app.state, "data_dir",
+                            Path(os.environ.get("TAOS_DATA_DIR", "./data"))))
+    chat_files = data_dir / "chat-files"
+    for att in attachments:
+        if not isinstance(att, dict):
+            return JSONResponse({"error": "each attachment must be a dict"}, status_code=400)
+        url = att.get("url", "")
+        if not url.startswith("/api/chat/files/"):
+            return JSONResponse(
+                {"error": "attachment url must be served from /api/chat/files/"},
+                status_code=400,
+            )
+        stored_name = url.rsplit("/", 1)[-1]
+        if not (chat_files / stored_name).exists():
+            return JSONResponse(
+                {"error": f"attachment file not found: {stored_name}"},
+                status_code=400,
+            )
+
     message = await msg_store.send_message(
         channel_id=channel_id,
         author_id=body["author_id"],
@@ -213,7 +264,7 @@ async def post_message(request: Request):
         thread_id=body.get("thread_id"),
         embeds=body.get("embeds"),
         components=body.get("components"),
-        attachments=body.get("attachments"),
+        attachments=attachments,
         content_blocks=body.get("content_blocks"),
         metadata=body.get("metadata"),
         state=body.get("state", "complete"),
@@ -371,6 +422,24 @@ async def get_channel_messages(
     return {"messages": messages}
 
 
+@router.get("/api/chat/messages/{message_id}")
+async def get_message_by_id(message_id: str, request: Request):
+    store = request.app.state.chat_messages
+    msg = await store.get_message(message_id)
+    if msg is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return JSONResponse(msg)
+
+
+@router.get("/api/chat/channels/{channel_id}/threads/{parent_id}/messages")
+async def get_thread_messages_endpoint(
+    channel_id: str, parent_id: str, request: Request, limit: int = 20,
+):
+    store = request.app.state.chat_messages
+    msgs = await store.get_thread_messages(channel_id, parent_id, limit=min(limit, 100))
+    return JSONResponse({"messages": msgs})
+
+
 @router.delete("/api/chat/channels/{channel_id}/members/{member_id}")
 async def remove_channel_member(request: Request, channel_id: str, member_id: str):
     ch_store = request.app.state.chat_channels
@@ -455,6 +524,71 @@ async def modify_channel_muted(channel_id: str, body: dict, request: Request):
 
 
 # ── File upload / serve ───────────────────────────────────────────────────────
+
+_MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024  # 100 MB
+
+
+def _resolve_workspace_path(data_dir: Path, source: str, slug: str | None, vfs_path: str) -> Path:
+    """Resolve a VFS path like '/workspaces/user/foo.md' to an on-disk
+    absolute path under data_dir/agent-workspaces/{slug-or-user}.
+    Raises ValueError on traversal or bad shape.
+    """
+    if not vfs_path.startswith("/workspaces/"):
+        raise ValueError("path must start with /workspaces/")
+    parts = vfs_path.split("/", 3)  # ['', 'workspaces', '<slug>', 'rest...']
+    if len(parts) < 3 or not parts[2]:
+        raise ValueError("path missing slug")
+    owner = parts[2]
+    if source == "agent-workspace":
+        if not slug or slug != owner:
+            raise ValueError("slug must match path owner for agent-workspace")
+    if source == "workspace":
+        if owner != "user":
+            raise ValueError("workspace source requires /workspaces/user/...")
+    rel = parts[3] if len(parts) > 3 else ""
+    root = (data_dir / "agent-workspaces" / owner).resolve()
+    target = (root / rel).resolve()
+    # Traversal check: target must be inside root.
+    if not str(target).startswith(str(root) + os.sep) and target != root:
+        raise ValueError("path traversal rejected")
+    if not target.exists() or target.is_dir():
+        raise ValueError("file not found")
+    return target
+
+
+@router.post("/api/chat/attachments/from-path")
+async def attachment_from_path(body: dict, request: Request):
+    """Server-side reference to a file in a workspace. Copies into
+    chat-files/ and returns the attachment record."""
+    vfs_path = (body or {}).get("path")
+    source = (body or {}).get("source")
+    slug = (body or {}).get("slug")
+    if not vfs_path or source not in ("workspace", "agent-workspace"):
+        return JSONResponse(
+            {"error": "path and source in {workspace,agent-workspace} required"},
+            status_code=400,
+        )
+    data_dir = request.app.state.config_path.parent
+    try:
+        src = _resolve_workspace_path(data_dir, source, slug, vfs_path)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    if src.stat().st_size > _MAX_ATTACHMENT_BYTES:
+        return JSONResponse({"error": "file too large (100 MB max)"}, status_code=413)
+    chat_files = data_dir / "chat-files"
+    chat_files.mkdir(parents=True, exist_ok=True)
+    stored_name = f"{secrets.token_hex(8)}-{src.name}"
+    dest = chat_files / stored_name
+    shutil.copy2(src, dest)
+    mime, _ = mimetypes.guess_type(src.name)
+    return JSONResponse({
+        "filename": src.name,
+        "mime_type": mime or "application/octet-stream",
+        "size": src.stat().st_size,
+        "url": f"/api/chat/files/{stored_name}",
+        "source": source,
+    }, status_code=200)
+
 
 @router.post("/api/chat/upload")
 async def upload_file(request: Request, file: UploadFile = File(...), channel_id: str = ""):

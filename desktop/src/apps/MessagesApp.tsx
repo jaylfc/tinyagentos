@@ -6,7 +6,6 @@ import {
   Plus,
   Send,
   Paperclip,
-  SmilePlus,
   Bot,
   X,
   AtSign,
@@ -36,6 +35,14 @@ import { AgentContextMenu } from "./chat/AgentContextMenu";
 import { SlashMenu, type SlashCommandsBySlug } from "./chat/SlashMenu";
 import { TypingFooter } from "./chat/TypingFooter";
 import { useTypingEmitter } from "@/lib/use-typing-emitter";
+import { MessageHoverActions } from "./chat/MessageHoverActions";
+import { ThreadIndicator } from "./chat/ThreadIndicator";
+import { ThreadPanel } from "./chat/ThreadPanel";
+import { AttachmentsBar, type PendingAttachment } from "./chat/AttachmentsBar";
+import { AttachmentGallery } from "./chat/AttachmentGallery";
+import { uploadDiskFile, attachmentFromPath, type AttachmentRecord } from "@/lib/chat-attachments-api";
+import { useThreadPanel } from "@/lib/use-thread-panel";
+import { openFilePicker } from "@/shell/file-picker-api";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -135,6 +142,9 @@ interface Message {
   created_at: string;
   reactions?: Record<string, string[]>;
   edited_at?: string;
+  attachments?: AttachmentRecord[];
+  reply_count?: number;
+  last_reply_at?: number | null;
 }
 
 type WsStatus = "connecting" | "connected" | "disconnected";
@@ -206,6 +216,9 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
   const [typingHumans, setTypingHumans] = useState<string[]>([]);
   const [typingAgents, setTypingAgents] = useState<string[]>([]);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [hoveredMessageId, setHoveredMessageId] = useState<string | null>(null);
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
+  const { openThread, openThreadFor, closeThread } = useThreadPanel();
 
   const wsRef = useRef<WebSocket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -529,11 +542,67 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
   const showSlash = input.startsWith("/");
   const slashQuery = showSlash ? input.slice(1).split(/\s/, 1)[0] || "" : "";
 
+  /* ---- mutex: settings vs thread panel ---- */
+  const handleOpenSettings = () => {
+    closeThread();
+    setShowSettings(true);
+  };
+  const handleOpenThreadFor = (channelId: string, parentId: string) => {
+    setShowSettings(false);
+    openThreadFor(channelId, parentId);
+  };
+
   /* ---- send message ---- */
   const sendMessage = async () => {
     const text = input.trim();
-    if (!text || !selectedChannel || !wsRef.current || wsRef.current.readyState !== 1) return;
-    // If slash input, validate via REST before sending over WS
+    if (!text && pendingAttachments.length === 0) return;
+    if (!selectedChannel || !wsRef.current || wsRef.current.readyState !== 1) return;
+
+    // Block send while uploads are in-flight
+    if (pendingAttachments.some((a) => a.uploading)) {
+      setSendError("waiting for uploads to finish…");
+      return;
+    }
+
+    const readyAttachments = pendingAttachments
+      .filter((a) => a.record && !a.error)
+      .map((a) => a.record!);
+
+    if (readyAttachments.length > 0) {
+      // HTTP POST for messages with attachments (WS schema doesn't carry them)
+      try {
+        const r = await fetch("/api/chat/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            channel_id: selectedChannel,
+            author_id: "user",
+            author_type: "user",
+            content: text,
+            content_type: "text",
+            attachments: readyAttachments,
+          }),
+        });
+        if (!r.ok) {
+          const body = await r.json().catch(() => ({}));
+          setSendError((body as { error?: string }).error || "couldn't send message");
+          return;
+        }
+        setInput("");
+        setPendingAttachments([]);
+        if (inputRef.current) inputRef.current.style.height = "auto";
+        autoScrollRef.current = true;
+        return;
+      } catch (e) {
+        setSendError((e as Error).message || "send failed");
+        return;
+      }
+    }
+
+    if (!text) return;
+    // If slash input, POST via REST. The server handles `/help` in-app and
+    // guards bare slash in non-DMs. A 200 with `handled` means the message
+    // was fully processed server-side — skip the WS send to avoid double-post.
     if (text.startsWith("/")) {
       try {
         const r = await fetch("/api/chat/messages", {
@@ -545,6 +614,16 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
           const body = await r.json().catch(() => ({}));
           setSendError((body as { error?: string }).error || "couldn't send message");
           return;
+        }
+        if (r.ok) {
+          const body = await r.json().catch(() => ({}));
+          if ((body as { handled?: string }).handled) {
+            setSendError(null);
+            setInput("");
+            autoScrollRef.current = true;
+            if (inputRef.current) inputRef.current.style.height = "auto";
+            return;
+          }
         }
       } catch {
         /* network error — fall through to WS send */
@@ -586,26 +665,33 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
   };
 
   /* ---- file upload ---- */
-  const handleFileUpload = () => {
-    const fileInput = document.createElement("input");
-    fileInput.type = "file";
-    fileInput.onchange = async () => {
-      const file = fileInput.files?.[0];
-      if (!file) return;
-      const form = new FormData();
-      form.append("file", file);
+  const handleFileUpload = async () => {
+    const selections = await openFilePicker({
+      sources: ["disk", "workspace", "agent-workspace"],
+      multi: true,
+    });
+    for (const sel of selections) {
+      const id = Math.random().toString(36).slice(2);
+      const filename = sel.source === "disk" ? sel.file.name : sel.path.split("/").pop() || "";
+      const size = sel.source === "disk" ? sel.file.size : 0;
+      setPendingAttachments((p) => [...p, { id, filename, size, uploading: true }]);
       try {
-        const res = await fetch("/api/chat/upload", { method: "POST", body: form });
-        if (res.ok) {
-          const data = await res.json();
-          setInput((prev) => prev + (prev ? "\n" : "") + `[${data.filename}](${data.url})`);
-          inputRef.current?.focus();
-        }
-      } catch {
-        /* ignore */
+        const rec = sel.source === "disk"
+          ? await uploadDiskFile(sel.file, selectedChannel ?? undefined)
+          : await attachmentFromPath({
+              path: sel.path,
+              source: sel.source,
+              slug: sel.source === "agent-workspace" ? sel.slug : undefined,
+            });
+        setPendingAttachments((p) =>
+          p.map((x) => (x.id === id ? { ...x, record: rec, uploading: false } : x))
+        );
+      } catch (e) {
+        setPendingAttachments((p) =>
+          p.map((x) => (x.id === id ? { ...x, uploading: false, error: (e as Error).message } : x))
+        );
       }
-    };
-    fileInput.click();
+    }
   };
 
   /* ---- reaction toggle ---- */
@@ -999,10 +1085,17 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
                 {currentChannel && currentChannel.type !== "dm" && (
                   <button
                     aria-label="Channel settings"
-                    onClick={() => setShowSettings(true)}
+                    onClick={handleOpenSettings}
                     className="ml-1 opacity-60 hover:opacity-100"
                   >ⓘ</button>
                 )}
+                <a
+                  aria-label="Open chat guide"
+                  href="https://github.com/jaylfc/tinyagentos/blob/master/docs/chat-guide.md"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="ml-1 opacity-60 hover:opacity-100 text-[12px]"
+                >?</a>
               </div>
               {currentChannel?.description && (
                 <div className="text-[11px] text-white/35 truncate">{currentChannel.description}</div>
@@ -1020,6 +1113,17 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
             ref={messageListRef}
             onScroll={handleScroll}
             className="flex-1 overflow-y-auto px-4 py-3 space-y-0.5"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              for (const f of Array.from(e.dataTransfer.files)) {
+                const id = Math.random().toString(36).slice(2);
+                setPendingAttachments((p) => [...p, { id, filename: f.name, size: f.size, uploading: true }]);
+                uploadDiskFile(f, selectedChannel ?? undefined)
+                  .then((rec) => setPendingAttachments((p) => p.map((x) => x.id === id ? { ...x, record: rec, uploading: false } : x)))
+                  .catch((err) => setPendingAttachments((p) => p.map((x) => x.id === id ? { ...x, uploading: false, error: (err as Error).message } : x)));
+              }
+            }}
           >
             {messages.length === 0 && (
               <div className="flex items-center justify-center h-full text-white/20 text-sm">
@@ -1049,6 +1153,8 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
                   className={`group relative px-3 py-1 rounded-md transition-colors hover:bg-white/[0.03] ${
                     isAgent && !isDeadAgent ? "bg-blue-500/[0.04]" : ""
                   } ${showAuthor ? "mt-3" : ""}`}
+                  onMouseEnter={() => setHoveredMessageId(msg.id)}
+                  onMouseLeave={() => setHoveredMessageId((id) => id === msg.id ? null : id)}
                 >
                   {showAuthor && (
                     <div
@@ -1152,15 +1258,28 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
                   )}
 
                   {/* hover actions */}
-                  <div className="absolute right-2 -top-3 hidden group-hover:flex bg-zinc-800 border border-white/10 rounded-md shadow-lg overflow-hidden">
-                    <button
-                      onClick={() => setShowEmoji(showEmoji === msg.id ? null : msg.id)}
-                      className="p-1.5 hover:bg-white/10 text-white/40 hover:text-white/70 transition-colors"
-                      aria-label="Add reaction"
-                    >
-                      <SmilePlus size={14} />
-                    </button>
-                  </div>
+                  {hoveredMessageId === msg.id && (
+                    <div className="absolute top-0 right-2 -translate-y-1/2 z-10">
+                      <MessageHoverActions
+                        onReact={() => setShowEmoji(showEmoji === msg.id ? null : msg.id)}
+                        onReplyInThread={() => handleOpenThreadFor(msg.channel_id ?? selectedChannel ?? "", msg.id)}
+                        onMore={(e) => {
+                          e.preventDefault();
+                          if (msg.author_type === "agent") {
+                            setContextMenu({ slug: msg.author_id, x: e.clientX, y: e.clientY });
+                          }
+                        }}
+                      />
+                    </div>
+                  )}
+                  <AttachmentGallery attachments={(msg.attachments as AttachmentRecord[] | undefined) || []} />
+                  {typeof msg.reply_count === "number" && msg.reply_count > 0 && (
+                    <ThreadIndicator
+                      replyCount={msg.reply_count}
+                      lastReplyAt={msg.last_reply_at ?? null}
+                      onOpen={() => handleOpenThreadFor(msg.channel_id ?? selectedChannel ?? "", msg.id)}
+                    />
+                  )}
 
                   {/* emoji picker */}
                   {showEmoji === msg.id && (
@@ -1224,6 +1343,15 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
             </div>
           )}
 
+          {/* pending attachments bar */}
+          <AttachmentsBar
+            items={pendingAttachments}
+            onRemove={(id) => setPendingAttachments((p) => p.filter((x) => x.id !== id))}
+            onRetry={(id) => {
+              setPendingAttachments((p) => p.map((x) => x.id === id ? { ...x, uploading: false, error: "retry not yet supported — remove and re-add" } : x));
+            }}
+          />
+
           {/* input area */}
           <div className="px-4 py-3 border-t border-white/[0.06] shrink-0">
             <div className="relative">
@@ -1254,6 +1382,19 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
                   value={input}
                   onChange={(e) => !isCurrentArchived && handleInputChange(e.target.value)}
                   onKeyDown={(e) => !isCurrentArchived && handleKeyDown(e)}
+                  onPaste={(e) => {
+                    if (!e.clipboardData) return;
+                    const files = Array.from(e.clipboardData.files).filter((f) => f.type.startsWith("image/"));
+                    if (files.length === 0) return;
+                    e.preventDefault();
+                    for (const f of files) {
+                      const id = Math.random().toString(36).slice(2);
+                      setPendingAttachments((p) => [...p, { id, filename: f.name || "pasted.png", size: f.size, uploading: true }]);
+                      uploadDiskFile(f, selectedChannel ?? undefined)
+                        .then((rec) => setPendingAttachments((p) => p.map((x) => x.id === id ? { ...x, record: rec, uploading: false } : x)))
+                        .catch((err) => setPendingAttachments((p) => p.map((x) => x.id === id ? { ...x, uploading: false, error: (err as Error).message } : x)));
+                    }
+                  }}
                   placeholder={isCurrentArchived ? "This chat is archived" : `Message #${currentChannel?.name ?? ""}...`}
                   rows={1}
                   disabled={isCurrentArchived}
@@ -1263,7 +1404,7 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
                 <Button
                   size="icon"
                   onClick={sendMessage}
-                  disabled={!input.trim() || isCurrentArchived}
+                  disabled={(!input.trim() && pendingAttachments.length === 0) || isCurrentArchived || pendingAttachments.some(a => a.uploading)}
                   className="h-8 w-8 shrink-0 mb-0.5"
                   aria-label="Send message"
                 >
@@ -1356,6 +1497,30 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
           knownAgents={liveAgents.map((a) => ({ name: a.name }))}
           onClose={() => setShowSettings(false)}
           onChanged={() => { void fetchChannels(); }}
+        />
+      )}
+
+      {/* ---- Thread Panel ---- */}
+      {openThread && (
+        <ThreadPanel
+          channelId={openThread.channelId}
+          parentId={openThread.parentId}
+          onClose={closeThread}
+          onSend={async (content, attachments) => {
+            await fetch("/api/chat/messages", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                channel_id: openThread.channelId,
+                author_id: "user",
+                author_type: "user",
+                content,
+                content_type: "text",
+                thread_id: openThread.parentId,
+                attachments,
+              }),
+            });
+          }}
         />
       )}
 

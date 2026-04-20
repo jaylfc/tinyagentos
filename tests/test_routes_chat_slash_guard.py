@@ -36,6 +36,8 @@ async def _setup_client(tmp_path):
 
 @pytest.mark.asyncio
 async def test_bare_slash_in_group_returns_400(tmp_path):
+    # `/help` is intercepted in-app (taOS control command) so use a generic
+    # slash command to exercise the guardrail path.
     app, client = await _setup_client(tmp_path)
     async with client:
         ch = await app.state.chat_channels.create_channel(
@@ -46,7 +48,7 @@ async def test_bare_slash_in_group_returns_400(tmp_path):
         r = await client.post(
             "/api/chat/messages",
             json={"channel_id": ch_id, "author_id": "user",
-                  "author_type": "user", "content": "/help",
+                  "author_type": "user", "content": "/clear",
                   "content_type": "text"},
         )
         assert r.status_code == 400
