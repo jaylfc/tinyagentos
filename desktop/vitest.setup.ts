@@ -1,1 +1,19 @@
 import "@testing-library/jest-dom";
+
+// Node.js 25+ ships a built-in localStorage stub that is broken when
+// --localstorage-file is not provided (all methods are undefined).
+// Polyfill it with an in-memory implementation so tests can call
+// localStorage.clear(), setItem(), getItem(), etc.
+if (typeof localStorage === "undefined" || typeof localStorage.clear !== "function") {
+  const store = new Map<string, string>();
+  const impl = {
+    get length() { return store.size; },
+    key(index: number) { return [...store.keys()][index] ?? null; },
+    getItem(key: string) { return store.has(key) ? store.get(key)! : null; },
+    setItem(key: string, value: string) { store.set(key, String(value)); },
+    removeItem(key: string) { store.delete(key); },
+    clear() { store.clear(); },
+  };
+  Object.defineProperty(globalThis, "localStorage", { value: impl, configurable: true, writable: true });
+  Object.defineProperty(globalThis, "sessionStorage", { value: { ...impl, clear() { store.clear(); } }, configurable: true, writable: true });
+}
