@@ -455,6 +455,13 @@ async def get_thread_messages_endpoint(
     return JSONResponse({"messages": msgs})
 
 
+@router.get("/api/chat/channels/{channel_id}/threads")
+async def get_channel_threads_endpoint(channel_id: str, request: Request):
+    store = request.app.state.chat_messages
+    threads = await store.get_channel_threads(channel_id)
+    return JSONResponse({"threads": threads})
+
+
 @router.get("/api/chat/channels/{channel_id}/pins")
 async def get_channel_pins(channel_id: str, request: Request):
     store = request.app.state.chat_messages
