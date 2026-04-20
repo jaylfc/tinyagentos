@@ -47,6 +47,15 @@ async def _capture_user_memory(
         logger.debug(f"user memory capture failed: {e}")
 
 
+@router.get("/api/docs/chat-guide")
+async def get_chat_guide():
+    from pathlib import Path as _Path
+    guide = _Path(__file__).resolve().parent.parent.parent / "docs" / "chat-guide.md"
+    if not guide.exists():
+        return JSONResponse({"error": "guide not found"}, status_code=404)
+    return JSONResponse({"markdown": guide.read_text(encoding="utf-8")})
+
+
 @router.websocket("/ws/chat")
 async def chat_ws(websocket: WebSocket):
     await websocket.accept()
@@ -67,6 +76,12 @@ async def chat_ws(websocket: WebSocket):
             elif msg_type == "message":
                 msg_store = websocket.app.state.chat_messages
                 ch_store = websocket.app.state.chat_channels
+                _ws_channel = await ch_store.get_channel(data["channel_id"])
+                _ws_ttl = None
+                if _ws_channel and _ws_channel.get("settings"):
+                    _ws_ttl = _ws_channel["settings"].get("ephemeral_ttl_seconds")
+                import time as _time
+                _ws_expires_at = (_time.time() + _ws_ttl) if isinstance(_ws_ttl, (int, float)) and _ws_ttl > 0 else None
                 message = await msg_store.send_message(
                     channel_id=data["channel_id"],
                     author_id=user_id,
@@ -79,6 +94,7 @@ async def chat_ws(websocket: WebSocket):
                     attachments=data.get("attachments"),
                     content_blocks=data.get("content_blocks"),
                     metadata=data.get("metadata"),
+                    expires_at=_ws_expires_at,
                 )
                 await ch_store.update_last_message_at(data["channel_id"])
                 await hub.broadcast(data["channel_id"], {"type": "message", "seq": hub.next_seq(), **message})
@@ -255,6 +271,13 @@ async def post_message(request: Request):
                 status_code=400,
             )
 
+    _http_channel = await ch_store.get_channel(channel_id)
+    _http_ttl = None
+    if _http_channel and _http_channel.get("settings"):
+        _http_ttl = _http_channel["settings"].get("ephemeral_ttl_seconds")
+    import time as _time
+    _http_expires_at = (_time.time() + _http_ttl) if isinstance(_http_ttl, (int, float)) and _http_ttl > 0 else None
+
     message = await msg_store.send_message(
         channel_id=channel_id,
         author_id=body["author_id"],
@@ -268,6 +291,7 @@ async def post_message(request: Request):
         content_blocks=body.get("content_blocks"),
         metadata=body.get("metadata"),
         state=body.get("state", "complete"),
+        expires_at=_http_expires_at,
     )
     await ch_store.update_last_message_at(channel_id)
     await hub.broadcast(channel_id, {"type": "message", "seq": hub.next_seq(), **message})
@@ -440,6 +464,13 @@ async def get_thread_messages_endpoint(
     return JSONResponse({"messages": msgs})
 
 
+@router.get("/api/chat/channels/{channel_id}/threads")
+async def get_channel_threads_endpoint(channel_id: str, request: Request):
+    store = request.app.state.chat_messages
+    threads = await store.get_channel_threads(channel_id)
+    return JSONResponse({"threads": threads})
+
+
 @router.get("/api/chat/channels/{channel_id}/pins")
 async def get_channel_pins(channel_id: str, request: Request):
     store = request.app.state.chat_messages
@@ -580,6 +611,10 @@ async def update_channel_settings(channel_id: str, body: dict, request: Request)
             await chs.set_max_hops(channel_id, int(body["max_hops"]))
         if "cooldown_seconds" in body:
             await chs.set_cooldown_seconds(channel_id, int(body["cooldown_seconds"]))
+        if "ephemeral_ttl_seconds" in body:
+            raw = body["ephemeral_ttl_seconds"]
+            ttl: int | None = None if raw is None else int(raw)
+            await chs.set_ephemeral_ttl(channel_id, ttl)
         if "topic" in body:
             topic = str(body["topic"])
             if len(topic) > 500:

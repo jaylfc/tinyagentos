@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     state TEXT NOT NULL DEFAULT 'complete',
     edited_at REAL,
     deleted_at REAL,
+    expires_at REAL,
     pinned INTEGER NOT NULL DEFAULT 0,
     ephemeral INTEGER NOT NULL DEFAULT 0,
     metadata TEXT NOT NULL DEFAULT '{}',
@@ -80,6 +81,11 @@ class ChatMessageStore(BaseStore):
         except Exception:
             # column already exists (SQLite raises on duplicate column name)
             pass
+        try:
+            await self._db.execute("ALTER TABLE chat_messages ADD COLUMN expires_at REAL")
+            await self._db.commit()
+        except Exception:
+            pass
 
     async def send_message(
         self,
@@ -95,6 +101,7 @@ class ChatMessageStore(BaseStore):
         content_blocks: list | None = None,
         metadata: dict | None = None,
         state: str = "complete",
+        expires_at: float | None = None,
     ) -> dict:
         msg_id = uuid.uuid4().hex[:12]
         now = time.time()
@@ -102,8 +109,8 @@ class ChatMessageStore(BaseStore):
             """INSERT INTO chat_messages
                (id, channel_id, thread_id, author_id, author_type, content,
                 content_type, content_blocks, embeds, components, attachments,
-                reactions, state, pinned, ephemeral, metadata, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)""",
+                reactions, state, pinned, ephemeral, metadata, created_at, expires_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?)""",
             (
                 msg_id, channel_id, thread_id, author_id, author_type, content,
                 content_type,
@@ -115,6 +122,7 @@ class ChatMessageStore(BaseStore):
                 state,
                 json.dumps(metadata or {}),
                 now,
+                expires_at,
             ),
         )
         await self._db.commit()
@@ -283,6 +291,44 @@ class ChatMessageStore(BaseStore):
             rows = await cursor.fetchall()
             desc = cursor.description
         return [_parse(r, desc) for r in rows]
+
+    async def sweep_expired(self) -> list[tuple[str, str]]:
+        """Soft-delete messages past their expires_at. Returns list of (message_id, channel_id)."""
+        import time as _time
+        now = _time.time()
+        async with self._db.execute(
+            "SELECT id, channel_id FROM chat_messages "
+            "WHERE expires_at IS NOT NULL AND expires_at < ? AND deleted_at IS NULL",
+            (now,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+        ids = []
+        for row in rows:
+            await self.soft_delete_message(row[0])
+            ids.append((row[0], row[1]))
+        return ids
+
+    async def get_channel_threads(self, channel_id: str) -> list[dict]:
+        """Return parents of all threads in a channel, with reply counts."""
+        async with self._db.execute(
+            """SELECT
+                 parent.*,
+                 COUNT(reply.id) AS reply_count,
+                 MAX(reply.created_at) AS last_reply_at
+               FROM chat_messages parent
+               INNER JOIN chat_messages reply
+                 ON reply.thread_id = parent.id
+                 AND reply.channel_id = parent.channel_id
+                 AND reply.deleted_at IS NULL
+               WHERE parent.channel_id = ?
+                 AND parent.deleted_at IS NULL
+               GROUP BY parent.id
+               ORDER BY last_reply_at DESC""",
+            (channel_id,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+            description = cursor.description
+        return [_parse(row, description) for row in rows]
 
     async def delete_channel_messages(self, channel_id: str) -> int:
         """Delete all messages for a channel. Returns the number of rows deleted."""

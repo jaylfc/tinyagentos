@@ -11,6 +11,7 @@ type ChannelPatch = Partial<{
   response_mode: "quiet" | "lively";
   max_hops: number;
   cooldown_seconds: number;
+  ephemeral_ttl_seconds: number | null;
   topic: string;
   name: string;
 }>;

@@ -323,6 +323,29 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
                 logger.exception("framework version probe failed")
 
         asyncio.create_task(_probe_framework_versions())
+
+        async def _ephemeral_sweep_loop(app: FastAPI) -> None:
+            import asyncio as _asyncio
+            _store = app.state.chat_messages
+            _hub = getattr(app.state, "chat_hub", None)
+            while True:
+                try:
+                    deleted = await _store.sweep_expired()
+                    if _hub is not None:
+                        for mid, cid in deleted:
+                            await _hub.broadcast(cid, {
+                                "type": "message_delete",
+                                "seq": _hub.next_seq(),
+                                "channel_id": cid,
+                                "message_id": mid,
+                                "deleted_at": __import__("time").time(),
+                            })
+                except Exception as _e:
+                    logger.warning("ephemeral sweep failed: %s", _e)
+                await _asyncio.sleep(300)
+
+        asyncio.create_task(_ephemeral_sweep_loop(app))
+
         # Per-agent state lives on the host and is mounted into containers.
         # See docs/design/framework-agnostic-runtime.md.
         app.state.agent_workspaces_dir = data_dir / "agent-workspaces"
