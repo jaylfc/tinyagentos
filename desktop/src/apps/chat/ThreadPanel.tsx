@@ -14,11 +14,13 @@ export function ThreadPanel({
   parentId,
   onClose,
   onSend,
+  isFullscreen = false,
 }: {
   channelId: string;
   parentId: string;
   onClose: () => void;
   onSend: (content: string, attachments: AttachmentRecord[]) => Promise<void>;
+  isFullscreen?: boolean;
 }) {
   const [parent, setParent] = useState<Msg | null>(null);
   const [msgs, setMsgs] = useState<Msg[]>([]);
@@ -80,17 +82,22 @@ export function ThreadPanel({
 
   return (
     <div
-      className="fixed top-0 right-0 h-full w-[360px] bg-shell-surface border-l border-white/10 flex flex-col z-40"
+      className={
+        isFullscreen
+          ? "fixed inset-0 z-50 bg-shell-surface flex flex-col"
+          : "fixed top-0 right-0 h-full w-[360px] bg-shell-surface border-l border-white/10 flex flex-col z-40"
+      }
       role="complementary"
       aria-label="Thread panel"
+      style={isFullscreen ? { paddingTop: "env(safe-area-inset-top, 0px)" } : undefined}
     >
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
         <span className="font-semibold text-sm">Thread</span>
         <button
-          aria-label="Close thread"
+          aria-label={isFullscreen ? "Back" : "Close thread"}
           onClick={onClose}
           className="p-1 hover:bg-white/5 rounded"
-        >✕</button>
+        >{isFullscreen ? "◀" : "✕"}</button>
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-3">
