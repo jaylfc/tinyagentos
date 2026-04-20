@@ -1,68 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
-
-function renderMarkdown(md: string): React.ReactNode {
-  const lines = md.split("\n");
-  const blocks: React.ReactNode[] = [];
-  let i = 0;
-  let ulItems: React.ReactNode[] = [];
-  const flushUl = () => {
-    if (ulItems.length > 0) {
-      blocks.push(
-        <ul key={`ul-${blocks.length}`} className="list-disc pl-5 my-2 space-y-1 text-sm text-shell-text-secondary">
-          {ulItems}
-        </ul>,
-      );
-      ulItems = [];
-    }
-  };
-  while (i < lines.length) {
-    const line = (lines[i] ?? "").trimEnd();
-    if (!line.trim()) { flushUl(); i++; continue; }
-    if (line.startsWith("### ")) { flushUl(); blocks.push(<h3 key={i} className="text-sm font-semibold text-white mt-4 mb-2">{inlineMd(line.slice(4))}</h3>); i++; continue; }
-    if (line.startsWith("## ")) { flushUl(); blocks.push(<h2 key={i} className="text-base font-semibold text-white mt-6 mb-2">{inlineMd(line.slice(3))}</h2>); i++; continue; }
-    if (line.startsWith("# ")) { flushUl(); blocks.push(<h1 key={i} className="text-lg font-bold text-white mt-4 mb-3">{inlineMd(line.slice(2))}</h1>); i++; continue; }
-    if (line.startsWith("- ") || line.startsWith("* ")) { ulItems.push(<li key={i}>{inlineMd(line.slice(2))}</li>); i++; continue; }
-    const paraLines: string[] = [line];
-    i++;
-    while (i < lines.length) {
-      const next = (lines[i] ?? "").trimEnd();
-      if (!next.trim()) break;
-      if (next.startsWith("#") || next.startsWith("- ") || next.startsWith("* ")) break;
-      paraLines.push(next);
-      i++;
-    }
-    flushUl();
-    blocks.push(
-      <p key={`p-${blocks.length}`} className="text-sm text-shell-text-secondary leading-relaxed my-2">
-        {inlineMd(paraLines.join(" "))}
-      </p>,
-    );
-  }
-  flushUl();
-  return <>{blocks}</>;
-}
-
-function inlineMd(s: string): React.ReactNode[] {
-  const parts: React.ReactNode[] = [];
-  const re = /(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\([^)]+\))/g;
-  let last = 0;
-  let idx = 0;
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(s)) !== null) {
-    if (match.index > last) parts.push(s.slice(last, match.index));
-    const tok = match[0];
-    if (tok.startsWith("`")) parts.push(<code key={idx++} className="bg-white/5 px-1 rounded text-xs">{tok.slice(1, -1)}</code>);
-    else if (tok.startsWith("**")) parts.push(<strong key={idx++}>{tok.slice(2, -2)}</strong>);
-    else {
-      const m = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(tok);
-      if (m) parts.push(<a key={idx++} href={m[2]} target="_blank" rel="noreferrer" className="text-sky-300 hover:text-sky-200 underline">{m[1]}</a>);
-      else parts.push(tok);
-    }
-    last = match.index + tok.length;
-  }
-  if (last < s.length) parts.push(s.slice(last));
-  return parts;
-}
+import { useEffect, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeHighlight from "rehype-highlight";
+import "highlight.js/styles/github-dark.css";
 
 export function HelpPanel({ onClose }: { onClose: () => void }) {
   const [markdown, setMarkdown] = useState<string | null>(null);
@@ -91,11 +31,6 @@ export function HelpPanel({ onClose }: { onClose: () => void }) {
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const rendered = useMemo(
-    () => (markdown === null ? null : renderMarkdown(markdown)),
-    [markdown],
-  );
-
   return (
     <div
       role="dialog"
@@ -113,7 +48,7 @@ export function HelpPanel({ onClose }: { onClose: () => void }) {
           <h2 className="text-sm font-semibold">Chat guide</h2>
           <button onClick={onClose} aria-label="Close" className="text-lg leading-none opacity-60 hover:opacity-100">×</button>
         </header>
-        <div className="flex-1 overflow-y-auto px-6 py-4">
+        <div className="flex-1 overflow-y-auto px-6 py-4 help-panel-content text-sm text-shell-text-secondary leading-relaxed">
           {error && (
             <div role="alert" className="text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded px-2 py-2">
               Failed to load guide: {error}
@@ -122,7 +57,42 @@ export function HelpPanel({ onClose }: { onClose: () => void }) {
           {!error && markdown === null && (
             <div className="text-xs text-shell-text-tertiary">Loading…</div>
           )}
-          {!error && rendered}
+          {!error && markdown !== null && (
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              rehypePlugins={[rehypeHighlight]}
+              components={{
+                h1: ({ node, ...props }) => <h1 className="text-lg font-bold text-white mt-4 mb-3" {...props} />,
+                h2: ({ node, ...props }) => <h2 className="text-base font-semibold text-white mt-6 mb-2" {...props} />,
+                h3: ({ node, ...props }) => <h3 className="text-sm font-semibold text-white mt-4 mb-2" {...props} />,
+                a: ({ node, ...props }) => <a className="text-sky-300 hover:text-sky-200 underline" target="_blank" rel="noreferrer" {...props} />,
+                code: ({ node, inline, className, children, ...props }: any) =>
+                  inline ? (
+                    <code className="bg-white/5 px-1 rounded text-xs" {...props}>{children}</code>
+                  ) : (
+                    <code className={className} {...props}>{children}</code>
+                  ),
+                pre: ({ node, ...props }) => (
+                  <pre className="bg-black/40 border border-white/10 rounded-md p-3 my-3 overflow-x-auto text-xs" {...props} />
+                ),
+                table: ({ node, ...props }) => (
+                  <div className="overflow-x-auto my-3">
+                    <table className="min-w-full border-collapse text-xs" {...props} />
+                  </div>
+                ),
+                thead: ({ node, ...props }) => <thead className="bg-white/5" {...props} />,
+                th: ({ node, ...props }) => <th className="border border-white/10 px-3 py-1 text-left font-semibold text-white" {...props} />,
+                td: ({ node, ...props }) => <td className="border border-white/10 px-3 py-1 align-top" {...props} />,
+                ul: ({ node, ...props }) => <ul className="list-disc pl-5 my-2 space-y-1" {...props} />,
+                ol: ({ node, ...props }) => <ol className="list-decimal pl-5 my-2 space-y-1" {...props} />,
+                blockquote: ({ node, ...props }) => <blockquote className="border-l-2 border-white/20 pl-3 my-2 text-shell-text-tertiary italic" {...props} />,
+                hr: () => <hr className="my-4 border-white/10" />,
+                p: ({ node, ...props }) => <p className="my-2" {...props} />,
+              }}
+            >
+              {markdown}
+            </ReactMarkdown>
+          )}
         </div>
       </div>
     </div>
