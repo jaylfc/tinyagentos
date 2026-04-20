@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
+import rehypeSlug from "rehype-slug";
 import "highlight.js/styles/github-dark.css";
 
 export function HelpPanel({ onClose }: { onClose: () => void }) {
@@ -60,18 +61,35 @@ export function HelpPanel({ onClose }: { onClose: () => void }) {
           {!error && markdown !== null && (
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
-              rehypePlugins={[rehypeHighlight]}
+              rehypePlugins={[rehypeSlug, rehypeHighlight]}
               components={{
                 h1: ({ node, ...props }) => <h1 className="text-lg font-bold text-white mt-4 mb-3" {...props} />,
                 h2: ({ node, ...props }) => <h2 className="text-base font-semibold text-white mt-6 mb-2" {...props} />,
                 h3: ({ node, ...props }) => <h3 className="text-sm font-semibold text-white mt-4 mb-2" {...props} />,
-                a: ({ node, ...props }) => <a className="text-sky-300 hover:text-sky-200 underline" target="_blank" rel="noreferrer" {...props} />,
-                code: ({ node, inline, className, children, ...props }: any) =>
-                  inline ? (
-                    <code className="bg-white/5 px-1 rounded text-xs" {...props}>{children}</code>
-                  ) : (
+                a: ({ node, href, ...props }) => {
+                  // Internal/fragment links open in-modal; external links open in a new tab.
+                  const external = typeof href === "string" && /^(https?:)?\/\//i.test(href);
+                  return (
+                    <a
+                      {...props}
+                      href={href}
+                      className="text-sky-300 hover:text-sky-200 underline"
+                      target={external ? "_blank" : undefined}
+                      rel={external ? "noopener noreferrer" : undefined}
+                    />
+                  );
+                },
+                code: ({ node, className, children, ...props }) => (
+                  // react-markdown v10 no longer passes an `inline` prop; distinguish
+                  // via the presence of a language-* class on block code (added by
+                  // rehype-highlight + the CodeMirror fenced fence), falling back to
+                  // inline styling when absent.
+                  className && /language-/.test(className) ? (
                     <code className={className} {...props}>{children}</code>
-                  ),
+                  ) : (
+                    <code className="bg-white/5 px-1 rounded text-xs" {...props}>{children}</code>
+                  )
+                ),
                 pre: ({ node, ...props }) => (
                   <pre className="bg-black/40 border border-white/10 rounded-md p-3 my-3 overflow-x-auto text-xs" {...props} />
                 ),
