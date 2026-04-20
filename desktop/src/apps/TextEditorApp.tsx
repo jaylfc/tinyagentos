@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { EditorState } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection } from "@codemirror/view";
 import { markdown } from "@codemirror/lang-markdown";
@@ -7,6 +7,7 @@ import { oneDark } from "@codemirror/theme-one-dark";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { syntaxHighlighting, defaultHighlightStyle } from "@codemirror/language";
 import { FilePlus, Trash2, ChevronLeft, Menu, FileText } from "lucide-react";
+import { useDropTarget } from "@/shell/dnd/use-drop-target";
 
 /* ── Note storage ────────────────────────────────────────── */
 
@@ -105,17 +106,28 @@ const obsidianTheme = EditorView.theme({
 
 /* ── CodeMirror Editor Component ─────────────────────────── */
 
-function MarkdownEditor({
-  content,
-  onChange,
-}: {
-  content: string;
-  onChange: (value: string) => void;
-}) {
+export interface MarkdownEditorHandle {
+  insertAtCursor: (text: string) => void;
+}
+
+const MarkdownEditor = React.forwardRef<
+  MarkdownEditorHandle,
+  { content: string; onChange: (value: string) => void }
+>(function MarkdownEditor({ content, onChange }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+
+  useImperativeHandle(ref, () => ({
+    insertAtCursor(text: string) {
+      const view = viewRef.current;
+      if (!view) return;
+      const from = view.state.selection.main.from;
+      view.dispatch({ changes: { from, insert: text }, selection: { anchor: from + text.length } });
+      view.focus();
+    },
+  }));
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -160,7 +172,7 @@ function MarkdownEditor({
   }, [content]); // re-create when content identity changes (note switch)
 
   return <div ref={containerRef} className="h-full w-full" />;
-}
+});
 
 /* ── Main App ────────────────────────────────────────────── */
 
@@ -213,6 +225,24 @@ export function TextEditorApp({ windowId: _windowId }: { windowId: string }) {
   );
 
   const sortedNotes = [...notes].sort((a, b) => b.updatedAt - a.updatedAt);
+
+  /* ── Drop target for message / knowledge payloads ────────── */
+  const editorRef = useRef<MarkdownEditorHandle>(null);
+
+  const { dropHandlers, isOver, isValidTarget } = useDropTarget({
+    accept: ["message", "knowledge"],
+    disabled: !activeNote,
+    onDrop(payload) {
+      let text = "";
+      if (payload.kind === "message") {
+        const deepLink = `${window.location.origin}/chat/${payload.channel_id}?msg=${payload.message_id}`;
+        text = `> **@${payload.author_id}**: ${payload.excerpt}\n>\n> [Open in chat](${deepLink})\n`;
+      } else if (payload.kind === "knowledge") {
+        text = payload.url ? `[${payload.title}](${payload.url})` : payload.title;
+      }
+      if (text) editorRef.current?.insertAtCursor(text);
+    },
+  });
 
   /* ── Sidebar ──────────────────────────────────────────── */
   const sidebar = (
@@ -300,9 +330,13 @@ export function TextEditorApp({ windowId: _windowId }: { windowId: string }) {
           >
             <ChevronLeft size={14} /> Notes
           </button>
-          <div className="flex-1 overflow-hidden">
+          <div
+            className={`flex-1 overflow-hidden transition-colors ${isOver && isValidTarget ? "ring-2 ring-inset ring-accent/50" : ""}`}
+            {...dropHandlers}
+          >
             <MarkdownEditor
               key={activeNote.id}
+              ref={editorRef}
               content={activeNote.content}
               onChange={handleChange}
             />
@@ -342,10 +376,15 @@ export function TextEditorApp({ windowId: _windowId }: { windowId: string }) {
         </div>
 
         {/* Editor */}
-        <div className="flex-1 overflow-hidden" style={{ backgroundColor: "#151625" }}>
+        <div
+          className={`flex-1 overflow-hidden transition-colors ${isOver && isValidTarget ? "ring-2 ring-inset ring-accent/50" : ""}`}
+          style={{ backgroundColor: "#151625" }}
+          {...dropHandlers}
+        >
           {activeNote ? (
             <MarkdownEditor
               key={activeNote.id}
+              ref={editorRef}
               content={activeNote.content}
               onChange={handleChange}
             />

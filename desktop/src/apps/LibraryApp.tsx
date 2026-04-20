@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   BookOpen,
   Search,
@@ -48,6 +48,7 @@ import type {
   ListItemsParams,
 } from "@/lib/knowledge";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
+import { useDragSource } from "@/shell/dnd/use-drag-source";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -114,6 +115,28 @@ const statusColor = (status: string): string => {
   if (status === "error") return "bg-red-500/15 text-red-400 border-red-500/30";
   return "bg-white/10 text-shell-text-tertiary border-white/10";
 };
+
+/* ------------------------------------------------------------------ */
+/*  KnowledgeItemDragWrapper                                           */
+/* ------------------------------------------------------------------ */
+
+function KnowledgeItemDragWrapper({
+  item,
+  children,
+}: {
+  item: KnowledgeItem;
+  children: React.ReactNode;
+}) {
+  const sourceUrl = item.source_url || undefined;
+  const { dragHandlers } = useDragSource({
+    payload: { kind: "knowledge", id: item.id, title: item.title, url: sourceUrl },
+    htmlMirror: {
+      "text/plain": item.title || item.id,
+      ...(sourceUrl ? { "text/uri-list": sourceUrl } : {}),
+    },
+  });
+  return <div {...dragHandlers}>{children}</div>;
+}
 
 /* ------------------------------------------------------------------ */
 /*  LibraryApp                                                         */
@@ -768,49 +791,50 @@ export function LibraryApp({ windowId: _windowId }: { windowId: string }) {
               {filteredItems.map((item, idx, arr) => {
                 const sharedWith = getItemSubscribedAgents(item);
                 return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => openDetail(item)}
-                    aria-label={`Open ${item.title}`}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10,
-                      width: "100%",
-                      padding: "14px 16px",
-                      background: "none",
-                      border: "none",
-                      borderBottom: idx === arr.length - 1 ? "none" : "1px solid rgba(255,255,255,0.06)",
-                      cursor: "pointer",
-                      color: "inherit",
-                      textAlign: "left",
-                    }}
-                  >
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 15, fontWeight: 600, color: "rgba(255,255,255,0.95)", marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {item.title || "Untitled"}
-                      </div>
-                      <div style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", marginBottom: sharedWith.length > 0 ? 4 : 0 }}>
-                        {[item.author, SOURCE_LABELS[item.source_type] ?? item.source_type, timeAgo(item.created_at)]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </div>
-                      {sharedWith.length > 0 && (
-                        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>
-                          Shared: {sharedWith.join(", ")}
-                        </div>
-                      )}
-                    </div>
-                    <span
-                      className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded border mr-2 ${statusColor(item.status)}`}
+                  <KnowledgeItemDragWrapper key={item.id} item={item}>
+                    <button
+                      type="button"
+                      onClick={() => openDetail(item)}
+                      aria-label={`Open ${item.title}`}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        width: "100%",
+                        padding: "14px 16px",
+                        background: "none",
+                        border: "none",
+                        borderBottom: idx === arr.length - 1 ? "none" : "1px solid rgba(255,255,255,0.06)",
+                        cursor: "pointer",
+                        color: "inherit",
+                        textAlign: "left",
+                      }}
                     >
-                      {item.status}
-                    </span>
-                    <svg width="8" height="14" viewBox="0 0 8 14" fill="none" style={{ color: "rgba(255,255,255,0.3)", flexShrink: 0 }}>
-                      <path d="M1 1L7 7L1 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  </button>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 15, fontWeight: 600, color: "rgba(255,255,255,0.95)", marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {item.title || "Untitled"}
+                        </div>
+                        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", marginBottom: sharedWith.length > 0 ? 4 : 0 }}>
+                          {[item.author, SOURCE_LABELS[item.source_type] ?? item.source_type, timeAgo(item.created_at)]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </div>
+                        {sharedWith.length > 0 && (
+                          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>
+                            Shared: {sharedWith.join(", ")}
+                          </div>
+                        )}
+                      </div>
+                      <span
+                        className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded border mr-2 ${statusColor(item.status)}`}
+                      >
+                        {item.status}
+                      </span>
+                      <svg width="8" height="14" viewBox="0 0 8 14" fill="none" style={{ color: "rgba(255,255,255,0.3)", flexShrink: 0 }}>
+                        <path d="M1 1L7 7L1 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </button>
+                  </KnowledgeItemDragWrapper>
                 );
               })}
             </div>
@@ -820,62 +844,63 @@ export function LibraryApp({ windowId: _windowId }: { windowId: string }) {
           filteredItems.map((item) => {
             const sharedWith = getItemSubscribedAgents(item);
             return (
-              <Card
-                key={item.id}
-                className="cursor-pointer hover:border-white/15 transition-colors"
-                onClick={() => openDetail(item)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    openDetail(item);
-                  }
-                }}
-                tabIndex={0}
-                role="button"
-                aria-label={`Open ${item.title}`}
-              >
-                <CardHeader className="pb-1 p-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <h3 className="text-sm font-medium leading-snug line-clamp-1">
-                      {item.title || "Untitled"}
-                    </h3>
-                    <span
-                      className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded border ${statusColor(item.status)}`}
-                    >
-                      {item.status}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-shell-text-tertiary">
-                    {[item.author, SOURCE_LABELS[item.source_type] ?? item.source_type, timeAgo(item.created_at)]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </p>
-                </CardHeader>
-                <CardContent className="pt-0 px-3 pb-3 space-y-2">
-                  {item.summary && (
-                    <p className="text-xs text-shell-text-secondary line-clamp-2 leading-relaxed">
-                      {item.summary}
-                    </p>
-                  )}
-                  {item.categories.length > 0 && (
-                    <div className="flex flex-wrap gap-1">
-                      {item.categories.map((cat) => (
-                        <span
-                          key={cat}
-                          className="px-1.5 py-0.5 rounded bg-accent/10 text-accent text-[10px] border border-accent/20"
-                        >
-                          {cat}
-                        </span>
-                      ))}
+              <KnowledgeItemDragWrapper key={item.id} item={item}>
+                <Card
+                  className="cursor-pointer hover:border-white/15 transition-colors"
+                  onClick={() => openDetail(item)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      openDetail(item);
+                    }
+                  }}
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`Open ${item.title}`}
+                >
+                  <CardHeader className="pb-1 p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="text-sm font-medium leading-snug line-clamp-1">
+                        {item.title || "Untitled"}
+                      </h3>
+                      <span
+                        className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded border ${statusColor(item.status)}`}
+                      >
+                        {item.status}
+                      </span>
                     </div>
-                  )}
-                  {sharedWith.length > 0 && (
-                    <p className="text-[10px] text-shell-text-tertiary">
-                      Shared with: {sharedWith.join(", ")}
+                    <p className="text-[11px] text-shell-text-tertiary">
+                      {[item.author, SOURCE_LABELS[item.source_type] ?? item.source_type, timeAgo(item.created_at)]
+                        .filter(Boolean)
+                        .join(" · ")}
                     </p>
-                  )}
-                </CardContent>
-              </Card>
+                  </CardHeader>
+                  <CardContent className="pt-0 px-3 pb-3 space-y-2">
+                    {item.summary && (
+                      <p className="text-xs text-shell-text-secondary line-clamp-2 leading-relaxed">
+                        {item.summary}
+                      </p>
+                    )}
+                    {item.categories.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {item.categories.map((cat) => (
+                          <span
+                            key={cat}
+                            className="px-1.5 py-0.5 rounded bg-accent/10 text-accent text-[10px] border border-accent/20"
+                          >
+                            {cat}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {sharedWith.length > 0 && (
+                      <p className="text-[10px] text-shell-text-tertiary">
+                        Shared with: {sharedWith.join(", ")}
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              </KnowledgeItemDragWrapper>
             );
           })
         )}

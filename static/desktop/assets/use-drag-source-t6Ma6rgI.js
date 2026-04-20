@@ -1,0 +1,1 @@
+import{e,s as d}from"./dnd-bus-CVZcw0P6.js";function l(o){const{payload:s,disabled:a=!1,htmlMirror:r}=o;return{dragHandlers:{draggable:!a,onDragStart:t=>{if(!a){e();try{if(t.dataTransfer.effectAllowed="copy",r)for(const[n,c]of Object.entries(r))try{t.dataTransfer.setData(n,c)}catch{}}catch{}d(s)}},onDragEnd:()=>{e()}}}}export{l as u};
