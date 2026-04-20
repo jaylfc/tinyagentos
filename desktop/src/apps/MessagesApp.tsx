@@ -1460,8 +1460,8 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
                     </div>
                   )}
 
-                  {/* hover actions */}
-                  {hoveredMessageId === msg.id && (
+                  {/* hover actions — always visible on mobile (no hover available), hover-gated on desktop */}
+                  {(isMobile || hoveredMessageId === msg.id) && (
                     <div className="absolute top-0 right-2 -translate-y-1/2 z-10">
                       <MessageHoverActions
                         onReact={() => setShowEmoji(showEmoji === msg.id ? null : msg.id)}
