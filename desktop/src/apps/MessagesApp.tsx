@@ -29,6 +29,7 @@ import {
 } from "@/components/ui";
 import { MobileSplitView } from "@/components/mobile/MobileSplitView";
 import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useVisualViewport } from "@/hooks/use-visual-viewport";
 import { resolveAgentEmoji } from "@/lib/agent-emoji";
 import { ChannelSettingsPanel } from "./chat/ChannelSettingsPanel";
 import { AgentContextMenu } from "./chat/AgentContextMenu";
@@ -44,6 +45,7 @@ import { uploadDiskFile, attachmentFromPath, type AttachmentRecord } from "@/lib
 import { useThreadPanel } from "@/lib/use-thread-panel";
 import { openFilePicker } from "@/shell/file-picker-api";
 import { MessageOverflowMenu } from "./chat/MessageOverflowMenu";
+import { BottomSheet } from "@/shell/BottomSheet";
 import { MessageEditor } from "./chat/MessageEditor";
 import { MessageTombstone } from "./chat/MessageTombstone";
 import { PinBadge } from "./chat/PinBadge";
@@ -204,6 +206,7 @@ const EMOJI_PICKER = ["👍", "❤️", "😂", "🎉", "🤔", "👀", "🚀", 
 
 export function MessagesApp({ windowId: _windowId, title }: { windowId: string; title?: string }) {
   const isMobile = useIsMobile();
+  const { keyboardInset } = useVisualViewport();
 
   const [channels, setChannels] = useState<Channel[]>([]);
   const [archivedChannels, setArchivedChannels] = useState<Channel[]>([]);
@@ -1295,6 +1298,7 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
             ref={messageListRef}
             onScroll={handleScroll}
             className="flex-1 overflow-y-auto px-4 py-3 space-y-0.5"
+            style={isMobile && keyboardInset > 0 ? { paddingBottom: `${keyboardInset + 60}px` } : undefined}
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
               e.preventDefault();
@@ -1456,8 +1460,8 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
                     </div>
                   )}
 
-                  {/* hover actions */}
-                  {hoveredMessageId === msg.id && (
+                  {/* hover actions — always visible on mobile (no hover available), hover-gated on desktop */}
+                  {(isMobile || hoveredMessageId === msg.id) && (
                     <div className="absolute top-0 right-2 -translate-y-1/2 z-10">
                       <MessageHoverActions
                         onReact={() => setShowEmoji(showEmoji === msg.id ? null : msg.id)}
@@ -1550,7 +1554,14 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
           />
 
           {/* input area */}
-          <div className="px-4 py-3 border-t border-white/[0.06] shrink-0">
+          <div
+            className="px-4 py-3 border-t border-white/[0.06] shrink-0"
+            style={
+              isMobile
+                ? { paddingBottom: `max(env(safe-area-inset-bottom), ${keyboardInset}px)` }
+                : undefined
+            }
+          >
             <div className="relative">
               {showSlash && (
                 <SlashMenu
@@ -1684,21 +1695,31 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
       {overflowMenu && (() => {
         const msg = messages.find((m) => m.id === overflowMenu.messageId);
         if (!msg) return null;
+        const menu = (
+          <MessageOverflowMenu
+            isOwn={msg.author_id === currentUserId}
+            isHuman={true} /* desktop UI viewer is always human */
+            isPinned={pinnedMessages.some((p) => p.id === msg.id)}
+            onEdit={() => handleEdit(msg.id)}
+            onDelete={() => handleDelete(msg.id)}
+            onCopyLink={() => handleCopyLink(msg.id)}
+            onPin={() => handlePin(msg)}
+            onMarkUnread={() => handleMarkUnread(msg.id)}
+            onClose={() => setOverflowMenu(null)}
+          />
+        );
+        if (isMobile) {
+          return (
+            <BottomSheet open={true} onClose={() => setOverflowMenu(null)}>
+              {menu}
+            </BottomSheet>
+          );
+        }
         return (
           <>
             <div className="fixed inset-0 z-40" onClick={() => setOverflowMenu(null)} />
             <div className="fixed z-50" style={{ top: overflowMenu.y, left: overflowMenu.x }}>
-              <MessageOverflowMenu
-                isOwn={msg.author_id === currentUserId}
-                isHuman={true} /* desktop UI viewer is always human */
-                isPinned={pinnedMessages.some((p) => p.id === msg.id)}
-                onEdit={() => handleEdit(msg.id)}
-                onDelete={() => handleDelete(msg.id)}
-                onCopyLink={() => handleCopyLink(msg.id)}
-                onPin={() => handlePin(msg)}
-                onMarkUnread={() => handleMarkUnread(msg.id)}
-                onClose={() => setOverflowMenu(null)}
-              />
+              {menu}
             </div>
           </>
         );
@@ -1727,6 +1748,7 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
           channelId={openThread.channelId}
           parentId={openThread.parentId}
           onClose={closeThread}
+          isFullscreen={isMobile}
           onSend={async (content, attachments) => {
             const r = await fetch("/api/chat/messages", {
               method: "POST",
