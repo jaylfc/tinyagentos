@@ -600,7 +600,9 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
     }
 
     if (!text) return;
-    // If slash input, validate via REST before sending over WS
+    // If slash input, POST via REST. The server handles `/help` in-app and
+    // guards bare slash in non-DMs. A 200 with `handled` means the message
+    // was fully processed server-side — skip the WS send to avoid double-post.
     if (text.startsWith("/")) {
       try {
         const r = await fetch("/api/chat/messages", {
@@ -612,6 +614,16 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
           const body = await r.json().catch(() => ({}));
           setSendError((body as { error?: string }).error || "couldn't send message");
           return;
+        }
+        if (r.ok) {
+          const body = await r.json().catch(() => ({}));
+          if ((body as { handled?: string }).handled) {
+            setSendError(null);
+            setInput("");
+            autoScrollRef.current = true;
+            if (inputRef.current) inputRef.current.style.height = "auto";
+            return;
+          }
         }
       } catch {
         /* network error — fall through to WS send */
