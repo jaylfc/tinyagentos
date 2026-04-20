@@ -29,6 +29,7 @@ import {
 } from "@/components/ui";
 import { MobileSplitView } from "@/components/mobile/MobileSplitView";
 import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useVisualViewport } from "@/hooks/use-visual-viewport";
 import { resolveAgentEmoji } from "@/lib/agent-emoji";
 import { ChannelSettingsPanel } from "./chat/ChannelSettingsPanel";
 import { AgentContextMenu } from "./chat/AgentContextMenu";
@@ -205,6 +206,7 @@ const EMOJI_PICKER = ["👍", "❤️", "😂", "🎉", "🤔", "👀", "🚀", 
 
 export function MessagesApp({ windowId: _windowId, title }: { windowId: string; title?: string }) {
   const isMobile = useIsMobile();
+  const { keyboardInset } = useVisualViewport();
 
   const [channels, setChannels] = useState<Channel[]>([]);
   const [archivedChannels, setArchivedChannels] = useState<Channel[]>([]);
@@ -1296,6 +1298,7 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
             ref={messageListRef}
             onScroll={handleScroll}
             className="flex-1 overflow-y-auto px-4 py-3 space-y-0.5"
+            style={isMobile && keyboardInset > 0 ? { paddingBottom: `${keyboardInset + 60}px` } : undefined}
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
               e.preventDefault();
@@ -1551,7 +1554,14 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
           />
 
           {/* input area */}
-          <div className="px-4 py-3 border-t border-white/[0.06] shrink-0">
+          <div
+            className="px-4 py-3 border-t border-white/[0.06] shrink-0"
+            style={
+              isMobile
+                ? { paddingBottom: `max(env(safe-area-inset-bottom), ${keyboardInset}px)` }
+                : undefined
+            }
+          >
             <div className="relative">
               {showSlash && (
                 <SlashMenu
