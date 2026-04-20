@@ -30,6 +30,7 @@ import {
 import { MobileSplitView } from "@/components/mobile/MobileSplitView";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import { useVisualViewport } from "@/hooks/use-visual-viewport";
+import { useDropTarget } from "@/shell/dnd/use-drop-target";
 import { resolveAgentEmoji } from "@/lib/agent-emoji";
 import { ChannelSettingsPanel } from "./chat/ChannelSettingsPanel";
 import { AgentContextMenu } from "./chat/AgentContextMenu";
@@ -209,6 +210,31 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
   const { keyboardInset } = useVisualViewport();
 
   const [channels, setChannels] = useState<Channel[]>([]);
+  const shellFileDropTarget = useDropTarget({
+    accept: ["file"],
+    onDrop: async (payload) => {
+      if (payload.kind !== "file" || !selectedChannel) return;
+      const ch = allChannels.find((c) => c.id === selectedChannel);
+      if (ch?.settings?.archived) return;
+      const id = Math.random().toString(36).slice(2);
+      setPendingAttachments((p) => [...p, {
+        id, filename: payload.name, size: payload.size, uploading: true,
+      }]);
+      try {
+        const isAgentWs = payload.path.startsWith("/workspaces/agent/");
+        const source: "workspace" | "agent-workspace" = isAgentWs ? "agent-workspace" : "workspace";
+        const slug = isAgentWs ? payload.path.split("/")[3] : undefined;
+        const rec = await attachmentFromPath({ path: payload.path, source, slug });
+        setPendingAttachments((p) =>
+          p.map((x) => x.id === id ? { ...x, record: rec, uploading: false } : x)
+        );
+      } catch (e) {
+        setPendingAttachments((p) =>
+          p.map((x) => x.id === id ? { ...x, uploading: false, error: (e as Error).message } : x)
+        );
+      }
+    },
+  });
   const [archivedChannels, setArchivedChannels] = useState<Channel[]>([]);
   const [archivedExpanded, setArchivedExpanded] = useState(false);
   const [liveAgents, setLiveAgents] = useState<LiveAgent[]>([]);
@@ -1297,18 +1323,34 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
           <div
             ref={messageListRef}
             onScroll={handleScroll}
-            className="flex-1 overflow-y-auto px-4 py-3 space-y-0.5"
+            className={`flex-1 overflow-y-auto px-4 py-3 space-y-0.5 message-list-drop-target ${
+              shellFileDropTarget.isOver
+                ? "ring-2 ring-sky-400/60 ring-inset bg-sky-500/5"
+                : shellFileDropTarget.isValidTarget
+                ? "ring-2 ring-sky-400/30 ring-inset"
+                : ""
+            }`}
             style={isMobile && keyboardInset > 0 ? { paddingBottom: `${keyboardInset + 60}px` } : undefined}
-            onDragOver={(e) => e.preventDefault()}
+            onDragEnter={shellFileDropTarget.dropHandlers.onDragEnter}
+            onDragOver={(e) => {
+              shellFileDropTarget.dropHandlers.onDragOver(e);
+              if (!e.defaultPrevented) e.preventDefault();
+            }}
+            onDragLeave={shellFileDropTarget.dropHandlers.onDragLeave}
             onDrop={(e) => {
-              e.preventDefault();
-              for (const f of Array.from(e.dataTransfer.files)) {
-                const id = Math.random().toString(36).slice(2);
-                setPendingAttachments((p) => [...p, { id, filename: f.name, size: f.size, uploading: true }]);
-                uploadDiskFile(f, selectedChannel ?? undefined)
-                  .then((rec) => setPendingAttachments((p) => p.map((x) => x.id === id ? { ...x, record: rec, uploading: false } : x)))
-                  .catch((err) => setPendingAttachments((p) => p.map((x) => x.id === id ? { ...x, uploading: false, error: (err as Error).message } : x)));
+              // OS-level file drops (finder/explorer) take precedence.
+              if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                e.preventDefault();
+                for (const f of Array.from(e.dataTransfer.files)) {
+                  const id = Math.random().toString(36).slice(2);
+                  setPendingAttachments((p) => [...p, { id, filename: f.name, size: f.size, uploading: true }]);
+                  uploadDiskFile(f, selectedChannel ?? undefined)
+                    .then((rec) => setPendingAttachments((p) => p.map((x) => x.id === id ? { ...x, record: rec, uploading: false } : x)))
+                    .catch((err) => setPendingAttachments((p) => p.map((x) => x.id === id ? { ...x, uploading: false, error: (err as Error).message } : x)));
+                }
+                return;
               }
+              shellFileDropTarget.dropHandlers.onDrop(e);
             }}
           >
             {messages.length === 0 && (
