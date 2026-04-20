@@ -44,6 +44,7 @@ import { uploadDiskFile, attachmentFromPath, type AttachmentRecord } from "@/lib
 import { useThreadPanel } from "@/lib/use-thread-panel";
 import { openFilePicker } from "@/shell/file-picker-api";
 import { MessageOverflowMenu } from "./chat/MessageOverflowMenu";
+import { BottomSheet } from "@/shell/BottomSheet";
 import { MessageEditor } from "./chat/MessageEditor";
 import { MessageTombstone } from "./chat/MessageTombstone";
 import { PinBadge } from "./chat/PinBadge";
@@ -1684,21 +1685,31 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
       {overflowMenu && (() => {
         const msg = messages.find((m) => m.id === overflowMenu.messageId);
         if (!msg) return null;
+        const menu = (
+          <MessageOverflowMenu
+            isOwn={msg.author_id === currentUserId}
+            isHuman={true} /* desktop UI viewer is always human */
+            isPinned={pinnedMessages.some((p) => p.id === msg.id)}
+            onEdit={() => handleEdit(msg.id)}
+            onDelete={() => handleDelete(msg.id)}
+            onCopyLink={() => handleCopyLink(msg.id)}
+            onPin={() => handlePin(msg)}
+            onMarkUnread={() => handleMarkUnread(msg.id)}
+            onClose={() => setOverflowMenu(null)}
+          />
+        );
+        if (isMobile) {
+          return (
+            <BottomSheet open={true} onClose={() => setOverflowMenu(null)}>
+              {menu}
+            </BottomSheet>
+          );
+        }
         return (
           <>
             <div className="fixed inset-0 z-40" onClick={() => setOverflowMenu(null)} />
             <div className="fixed z-50" style={{ top: overflowMenu.y, left: overflowMenu.x }}>
-              <MessageOverflowMenu
-                isOwn={msg.author_id === currentUserId}
-                isHuman={true} /* desktop UI viewer is always human */
-                isPinned={pinnedMessages.some((p) => p.id === msg.id)}
-                onEdit={() => handleEdit(msg.id)}
-                onDelete={() => handleDelete(msg.id)}
-                onCopyLink={() => handleCopyLink(msg.id)}
-                onPin={() => handlePin(msg)}
-                onMarkUnread={() => handleMarkUnread(msg.id)}
-                onClose={() => setOverflowMenu(null)}
-              />
+              {menu}
             </div>
           </>
         );
