@@ -69,6 +69,50 @@ def test_mark_refreshes_ttl(monkeypatch):
     assert [e["slug"] for e in r.list("c1")["human"]] == ["jay"]  # still alive (refreshed at 1002)
 
 
+# ── New phase/detail tests ─────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_mark_with_phase_and_detail():
+    reg = TypingRegistry()
+    reg.mark("c1", "tom", "agent", phase="tool", detail="web_search")
+    result = reg.list("c1")
+    agents = result["agent"]
+    assert len(agents) == 1
+    entry = agents[0]
+    assert entry["slug"] == "tom"
+    assert entry["phase"] == "tool"
+    assert entry["detail"] == "web_search"
+
+
+@pytest.mark.asyncio
+async def test_mark_without_phase_defaults_to_thinking():
+    reg = TypingRegistry()
+    reg.mark("c1", "tom", "agent")
+    result = reg.list("c1")
+    entry = result["agent"][0]
+    assert entry["phase"] == "thinking"
+    assert entry["detail"] is None
+
+
+@pytest.mark.asyncio
+async def test_mark_overwrites_phase_last_writer_wins():
+    reg = TypingRegistry()
+    reg.mark("c1", "tom", "agent", phase="thinking")
+    reg.mark("c1", "tom", "agent", phase="tool", detail="search")
+    entry = reg.list("c1")["agent"][0]
+    assert entry["phase"] == "tool"
+    assert entry["detail"] == "search"
+
+
+@pytest.mark.asyncio
+async def test_human_entry_shape_matches_agent():
+    reg = TypingRegistry()
+    reg.mark("c1", "jay", "human")
+    entry = reg.list("c1")["human"][0]
+    assert entry["slug"] == "jay"
+    assert entry.get("phase") is None
+
+
 # ── HTTP endpoint tests ────────────────────────────────────────────────────────
 
 import pytest

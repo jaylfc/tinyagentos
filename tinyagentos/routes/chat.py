@@ -845,6 +845,8 @@ async def list_wants_reply(channel_id: str, request: Request):
     return JSONResponse({"slugs": reg.list(channel_id)})
 
 
+VALID_PHASES = {"thinking", "tool", "reading", "writing", "searching", "planning"}
+
 # ── Typing / thinking indicators ─────────────────────────────────────────────
 
 @router.post("/api/chat/channels/{channel_id}/typing")
@@ -882,12 +884,24 @@ async def post_thinking(channel_id: str, body: dict, request: Request):
     state = (body or {}).get("state")
     if not slug or state not in ("start", "end"):
         return JSONResponse({"error": "slug and state in {start,end} required"}, status_code=400)
+
+    phase = (body or {}).get("phase")
+    if phase is not None:
+        if not isinstance(phase, str) or phase not in VALID_PHASES:
+            return JSONResponse(
+                {"error": f"invalid phase; must be one of {sorted(VALID_PHASES)}"},
+                status_code=400,
+            )
+    detail = (body or {}).get("detail")
+    if detail is not None and not isinstance(detail, str):
+        return JSONResponse({"error": "detail must be a string"}, status_code=400)
+
     reg = getattr(request.app.state, "typing", None)
     hub = getattr(request.app.state, "chat_hub", None)
     if reg is None:
         return JSONResponse({"error": "typing registry not configured"}, status_code=503)
     if state == "start":
-        reg.mark(channel_id, slug, "agent")
+        reg.mark(channel_id, slug, "agent", phase=phase, detail=detail)
     else:
         reg.clear(channel_id, slug)
     if hub is not None:
@@ -895,6 +909,8 @@ async def post_thinking(channel_id: str, body: dict, request: Request):
             "type": "thinking",
             "slug": slug,
             "state": state,
+            "phase": phase if state == "start" else None,
+            "detail": detail if state == "start" else None,
         })
     return JSONResponse({"ok": True}, status_code=200)
 
