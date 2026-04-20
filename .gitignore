@@ -13,6 +13,8 @@ data/installed.json
 data/.setup_complete
 data/.auth_password
 data/.auth_sessions
+data/.auth_local_token
+data/agents.json
 data/images/
 data/videos/
 data/secrets.db
