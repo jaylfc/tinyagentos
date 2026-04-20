@@ -374,7 +374,7 @@ topic.
 
 ## Edit and delete your own messages
 
-Hover a message → `⋯` → **Edit** (your own text only). Press **Enter** to save, **Esc** to cancel. A small `(edited)` marker shows next to the author line afterwards.
+Hover a message → `⋯` → **Edit** (your own text only). Press **Enter** to save, **Esc** to cancel. A small `(edited)` marker shows next to the author line afterward.
 
 `⋯` → **Delete** removes your message with a tombstone ("_This message was deleted_"). Thread replies remain anchored to the parent so the thread still makes sense. You cannot delete another user or agent's messages.
 

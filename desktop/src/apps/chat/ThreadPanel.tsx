@@ -32,7 +32,10 @@ export function ThreadPanel({
     const controller = new AbortController();
     setLoadError(null);
     fetch(`/api/chat/messages/${parentId}`, { signal: controller.signal })
-      .then((r) => (r.ok ? r.json() : null))
+      .then((r) => {
+        if (!r.ok) throw new Error(`parent fetch failed (${r.status})`);
+        return r.json();
+      })
       .then((d) => setParent(d))
       .catch((e) => {
         if ((e as Error).name !== "AbortError") setLoadError("couldn't load this thread");

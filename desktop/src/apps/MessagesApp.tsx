@@ -417,7 +417,12 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === data.message_id
-                  ? { ...m, content: data.content, edited_at: data.edited_at }
+                  ? {
+                      ...m,
+                      ...(data.content !== undefined && { content: data.content }),
+                      ...(data.edited_at !== undefined && { edited_at: data.edited_at }),
+                      ...(data.metadata !== undefined && { metadata: data.metadata }),
+                    }
                   : m,
               ),
             );
@@ -552,7 +557,9 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
     if (!selectedChannel || messages.length === 0) return;
     const params = new URLSearchParams(window.location.search);
     const msgId = params.get("msg");
-    if (!msgId) return;
+    // Validate format: message ids are uuid4().hex[:12] — lowercase hex only.
+    // Guards against selector-injection via a crafted URL.
+    if (!msgId || !/^[a-zA-Z0-9_-]{1,64}$/.test(msgId)) return;
     const key = `${selectedChannel}:${msgId}`;
     if (deepLinkSeenRef.current === key) return;
     const el = document.querySelector(`[data-message-id="${msgId}"]`) as HTMLElement | null;
