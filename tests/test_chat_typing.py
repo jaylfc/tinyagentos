@@ -10,14 +10,14 @@ def test_empty_registry_returns_empty_lists():
 def test_mark_human_appears_in_list():
     r = TypingRegistry()
     r.mark("c1", "jay", "human")
-    assert r.list("c1")["human"] == ["jay"]
+    assert [e["slug"] for e in r.list("c1")["human"]] == ["jay"]
     assert r.list("c1")["agent"] == []
 
 
 def test_mark_agent_appears_in_list():
     r = TypingRegistry()
     r.mark("c1", "tom", "agent")
-    assert r.list("c1")["agent"] == ["tom"]
+    assert [e["slug"] for e in r.list("c1")["agent"]] == ["tom"]
 
 
 def test_clear_removes_entry():
@@ -43,7 +43,7 @@ def test_human_ttl_expires(monkeypatch):
     t = [1000.0]
     monkeypatch.setattr("tinyagentos.chat.typing_registry._now", lambda: t[0])
     r.mark("c1", "jay", "human")
-    assert r.list("c1")["human"] == ["jay"]
+    assert [e["slug"] for e in r.list("c1")["human"]] == ["jay"]
     t[0] = 1003.1
     assert r.list("c1")["human"] == []
 
@@ -53,7 +53,7 @@ def test_agent_ttl_expires(monkeypatch):
     t = [1000.0]
     monkeypatch.setattr("tinyagentos.chat.typing_registry._now", lambda: t[0])
     r.mark("c1", "tom", "agent")
-    assert r.list("c1")["agent"] == ["tom"]
+    assert [e["slug"] for e in r.list("c1")["agent"]] == ["tom"]
     t[0] = 1045.1
     assert r.list("c1")["agent"] == []
 
@@ -66,7 +66,7 @@ def test_mark_refreshes_ttl(monkeypatch):
     t[0] = 1002.0
     r.mark("c1", "jay", "human")  # refresh
     t[0] = 1004.0
-    assert r.list("c1")["human"] == ["jay"]  # still alive (refreshed at 1002)
+    assert [e["slug"] for e in r.list("c1")["human"]] == ["jay"]  # still alive (refreshed at 1002)
 
 
 # ── HTTP endpoint tests ────────────────────────────────────────────────────────
@@ -120,7 +120,7 @@ async def test_post_typing_marks_registry(tmp_path):
         )
         assert r.status_code == 200
         listing = app.state.typing.list(ch_id)
-        assert "user" in listing["human"]
+        assert "user" in [e["slug"] for e in listing["human"]]
 
 
 @pytest.mark.asyncio
@@ -140,7 +140,7 @@ async def test_post_thinking_start_marks_registry(tmp_path):
         )
         assert r.status_code == 200
         listing = app.state.typing.list(ch_id)
-        assert "tom" in listing["agent"]
+        assert "tom" in [e["slug"] for e in listing["agent"]]
 
         # end clears
         r = await client.post(
@@ -149,7 +149,7 @@ async def test_post_thinking_start_marks_registry(tmp_path):
         )
         assert r.status_code == 200
         listing = app.state.typing.list(ch_id)
-        assert "tom" not in listing["agent"]
+        assert "tom" not in [e["slug"] for e in listing["agent"]]
 
 
 @pytest.mark.asyncio
@@ -179,4 +179,5 @@ async def test_get_typing_returns_current_state(tmp_path):
         r = await client.get(f"/api/chat/channels/{ch_id}/typing")
         assert r.status_code == 200
         body = r.json()
-        assert body == {"human": ["user"], "agent": ["tom"]}
+        assert [e["slug"] for e in body["human"]] == ["user"]
+        assert [e["slug"] for e in body["agent"]] == ["tom"]
