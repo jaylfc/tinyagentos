@@ -886,9 +886,15 @@ async def post_thinking(channel_id: str, body: dict, request: Request):
         return JSONResponse({"error": "slug and state in {start,end} required"}, status_code=400)
 
     phase = (body or {}).get("phase")
-    if phase is not None and phase not in VALID_PHASES:
-        return JSONResponse({"error": f"invalid phase; must be one of {sorted(VALID_PHASES)}"}, status_code=400)
+    if phase is not None:
+        if not isinstance(phase, str) or phase not in VALID_PHASES:
+            return JSONResponse(
+                {"error": f"invalid phase; must be one of {sorted(VALID_PHASES)}"},
+                status_code=400,
+            )
     detail = (body or {}).get("detail")
+    if detail is not None and not isinstance(detail, str):
+        return JSONResponse({"error": "detail must be a string"}, status_code=400)
 
     reg = getattr(request.app.state, "typing", None)
     hub = getattr(request.app.state, "chat_hub", None)
