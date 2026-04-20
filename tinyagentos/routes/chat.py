@@ -47,6 +47,15 @@ async def _capture_user_memory(
         logger.debug(f"user memory capture failed: {e}")
 
 
+@router.get("/api/docs/chat-guide")
+async def get_chat_guide():
+    from pathlib import Path as _Path
+    guide = _Path(__file__).resolve().parent.parent.parent / "docs" / "chat-guide.md"
+    if not guide.exists():
+        return JSONResponse({"error": "guide not found"}, status_code=404)
+    return JSONResponse({"markdown": guide.read_text(encoding="utf-8")})
+
+
 @router.websocket("/ws/chat")
 async def chat_ws(websocket: WebSocket):
     await websocket.accept()
