@@ -4,13 +4,22 @@
  * Caller feeds in live arrays — they're empty when nothing is active
  * and the component renders nothing.
  */
+
+type TypingPhase = "thinking" | "tool" | "reading" | "writing" | "searching" | "planning";
+
+export interface AgentTyping {
+  slug: string;
+  phase?: TypingPhase | null;
+  detail?: string | null;
+}
+
 export function TypingFooter({
   humans,
   agents,
   selfId = "user",
 }: {
   humans: string[];
-  agents: string[];
+  agents: AgentTyping[];
   selfId?: string;
 }) {
   const others = humans.filter((h) => h !== selfId);
@@ -19,7 +28,6 @@ export function TypingFooter({
   if (!hasHumans && !hasAgents) return null;
 
   const humanLine = formatHumansTyping(others);
-  const agentLine = formatAgentsThinking(agents);
 
   return (
     <div
@@ -27,7 +35,14 @@ export function TypingFooter({
       className="px-4 pt-1 text-xs text-shell-text-tertiary flex flex-col gap-0.5"
     >
       {humanLine && <span>{humanLine}</span>}
-      {agentLine && <span className="italic">{agentLine}</span>}
+      {agents.map((a) => {
+        const { icon, text } = phaseLabel(a.phase, a.detail);
+        return (
+          <span key={a.slug} className="italic">
+            {icon} @{a.slug} is {text}…
+          </span>
+        );
+      })}
     </div>
   );
 }
@@ -39,7 +54,28 @@ function formatHumansTyping(names: string[]): string | null {
   return `${names[0]} and ${names.length - 1} others are typing…`;
 }
 
-function formatAgentsThinking(slugs: string[]): string | null {
-  if (slugs.length === 0) return null;
-  return slugs.map((s) => `${s} is thinking…`).join(" · ");
+function phaseLabel(
+  phase?: TypingPhase | null,
+  detail?: string | null,
+): { icon: string; text: string } {
+  const d = detail
+    ? detail.length > 40
+      ? detail.slice(0, 39) + "…"
+      : detail
+    : null;
+  switch (phase) {
+    case "tool":
+      return { icon: "🔧", text: d ? `using ${d}` : "using a tool" };
+    case "reading":
+      return { icon: "📖", text: d ? `reading ${d}` : "reading" };
+    case "writing":
+      return { icon: "✏️", text: d ? `writing ${d}` : "writing" };
+    case "searching":
+      return { icon: "🔍", text: d ? `searching ${d}` : "searching" };
+    case "planning":
+      return { icon: "📋", text: "planning" };
+    case "thinking":
+    default:
+      return { icon: "💭", text: "thinking" };
+  }
 }

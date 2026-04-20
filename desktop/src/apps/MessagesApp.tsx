@@ -35,7 +35,7 @@ import { resolveAgentEmoji } from "@/lib/agent-emoji";
 import { ChannelSettingsPanel } from "./chat/ChannelSettingsPanel";
 import { AgentContextMenu } from "./chat/AgentContextMenu";
 import { SlashMenu, type SlashCommandsBySlug } from "./chat/SlashMenu";
-import { TypingFooter } from "./chat/TypingFooter";
+import { TypingFooter, type AgentTyping } from "./chat/TypingFooter";
 import { useTypingEmitter } from "@/lib/use-typing-emitter";
 import { MessageHoverActions } from "./chat/MessageHoverActions";
 import { ThreadIndicator } from "./chat/ThreadIndicator";
@@ -256,7 +256,7 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
   >(null);
   const [slashCommands, setSlashCommands] = useState<SlashCommandsBySlug>({});
   const [typingHumans, setTypingHumans] = useState<string[]>([]);
-  const [typingAgents, setTypingAgents] = useState<string[]>([]);
+  const [typingAgents, setTypingAgents] = useState<AgentTyping[]>([]);
   const [sendError, setSendError] = useState<string | null>(null);
   const [hoveredMessageId, setHoveredMessageId] = useState<string | null>(null);
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
@@ -387,9 +387,12 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
         }
         if (data.type === "thinking") {
           if (data.state === "start") {
-            setTypingAgents((prev) => prev.includes(data.slug) ? prev : [...prev, data.slug]);
+            setTypingAgents((prev) => {
+              const without = prev.filter((a) => a.slug !== data.slug);
+              return [...without, { slug: data.slug, phase: data.phase ?? null, detail: data.detail ?? null }];
+            });
           } else {
-            setTypingAgents((prev) => prev.filter((s) => s !== data.slug));
+            setTypingAgents((prev) => prev.filter((a) => a.slug !== data.slug));
           }
           return;
         }
@@ -428,9 +431,12 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
             // Legacy WS typing (agent only) — route into typingAgents for TypingFooter
             // (human typing is handled by the phase-2a branch above)
             if ((data.user_type ?? "user") !== "agent") break;
-            setTypingAgents((prev) => prev.includes(data.user_id) ? prev : [...prev, data.user_id]);
+            setTypingAgents((prev) => {
+              const without = prev.filter((a) => a.slug !== data.user_id);
+              return [...without, { slug: data.user_id, phase: null, detail: null }];
+            });
             setTimeout(() => {
-              setTypingAgents((prev) => prev.filter((s) => s !== data.user_id));
+              setTypingAgents((prev) => prev.filter((a) => a.slug !== data.user_id));
             }, 5000);
             break;
 
