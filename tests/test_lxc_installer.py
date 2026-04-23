@@ -354,3 +354,38 @@ class TestInstallRouteBackendSelection:
         # Must not 400 with password error — docker path is unaffected.
         assert resp.status_code != 400 or "admin_password" not in resp.json().get("error", "")
         MockLXC.assert_not_called()
+
+    async def test_lxc_uninstall_destroys_container(self, lxc_client):
+        """Uninstalling an LXC app must call LXCInstaller.uninstall before store uninstall."""
+        with patch(
+            "tinyagentos.routes.store_install.LXCInstaller",
+        ) as MockInstaller:
+            instance = MockInstaller.return_value
+            instance.uninstall = AsyncMock(return_value={"success": True})
+
+            resp = await lxc_client.post(
+                "/api/store/uninstall-v2",
+                json={"app_id": "gitea-lxc", "metadata": {"method": "lxc"}},
+            )
+
+        assert resp.status_code == 200
+        instance.uninstall.assert_awaited_once_with("gitea-lxc")
+
+    async def test_lxc_uninstall_container_error_still_unregisters(self, lxc_client):
+        """If container destroy fails, store uninstall still proceeds and error is surfaced."""
+        # First register the app so store.uninstall returns True.
+        with patch(
+            "tinyagentos.routes.store_install.LXCInstaller",
+        ) as MockInstaller:
+            instance = MockInstaller.return_value
+            instance.uninstall = AsyncMock(side_effect=RuntimeError("container gone"))
+
+            resp = await lxc_client.post(
+                "/api/store/uninstall-v2",
+                json={"app_id": "gitea-lxc", "metadata": {"method": "lxc"}},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "container_error" in data
+        assert "container gone" in data["container_error"]

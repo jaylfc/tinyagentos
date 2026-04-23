@@ -102,9 +102,37 @@ async def uninstall_app(request: Request):
     app_id = body.get("app_id", "")
     if not app_id:
         return JSONResponse({"error": "app_id required"}, status_code=400)
+
+    # Determine backend from manifest or body metadata.
+    registry = getattr(request.app.state, "registry", None)
+    backend = "docker"
+    if registry is not None:
+        manifest = registry.get(app_id)
+        if manifest is not None:
+            install_block = getattr(manifest, "install", None) or {}
+            if isinstance(install_block, dict):
+                backend = install_block.get("backend", install_block.get("method", "docker"))
+    meta = body.get("metadata") or {}
+    if isinstance(meta, dict) and meta.get("backend"):
+        backend = meta["backend"]
+    if isinstance(meta, dict) and meta.get("method"):
+        backend = meta["method"]
+
+    container_error: str | None = None
+    if backend == "lxc":
+        try:
+            installer = LXCInstaller()
+            await installer.uninstall(app_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("LXC container destroy failed for %s: %s", app_id, exc)
+            container_error = str(exc)
+
     store = request.app.state.installed_apps
     removed = await store.uninstall(app_id)
-    return JSONResponse({"ok": removed, "app_id": app_id, "status": "uninstalled" if removed else "not_installed"})
+    resp: dict = {"ok": removed, "app_id": app_id, "status": "uninstalled" if removed else "not_installed"}
+    if container_error is not None:
+        resp["container_error"] = container_error
+    return JSONResponse(resp)
 
 
 @router.get("/api/store/installed-v2")
