@@ -87,6 +87,8 @@ class LXCInstaller(AppInstaller):
         admin_password: str,
         taos_username: str = "admin",
         taos_email: str = "",
+        restore_tarball: str | None = None,
+        target_remote: str | None = None,
         **kwargs,
     ) -> dict:
         """Install app_id into a new LXC container.
@@ -98,19 +100,37 @@ class LXCInstaller(AppInstaller):
         install_config:
             ``install`` block from the manifest YAML.
         admin_password:
-            Password for the initial service admin account. Required.
+            Password for the initial service admin account. Required unless
+            ``restore_tarball`` is set (state is restored from the tarball).
         taos_username:
             taOS username — becomes the Gitea admin username.
         taos_email:
             taOS user email — becomes the Gitea admin email.
+        restore_tarball:
+            Path on the HOST filesystem to a tar archive containing service
+            state (e.g. /etc/gitea/, /home/git/). When set, DB migration and
+            admin-user creation are skipped and app.ini is restored from the
+            tarball instead of being freshly generated.
+        target_remote:
+            incus remote name. When set, all container operations target
+            ``<target_remote>:<container_name>`` instead of the local daemon.
         """
-        if not admin_password:
+        if not restore_tarball and not admin_password:
             raise ValueError("admin_password is required for LXC installs")
 
         container_name = self._container_name(app_id)
+        # Qualify container name with remote when targeting a remote host.
+        incus_name = f"{target_remote}:{container_name}" if target_remote else container_name
 
         # Fail cleanly if container already exists.
-        if await containers.container_exists(container_name):
+        # For remote targets, container_exists uses `incus list` which doesn't
+        # accept remote:name — fall back to `incus info` which does.
+        if target_remote:
+            _info_code, _ = await containers._run(["incus", "info", incus_name])
+            _exists = _info_code == 0
+        else:
+            _exists = await containers.container_exists(incus_name)
+        if _exists:
             raise RuntimeError(
                 f"Container '{container_name}' already exists. "
                 "Uninstall first or choose a different app_id."
@@ -122,9 +142,9 @@ class LXCInstaller(AppInstaller):
         gitea_version = install_config.get("gitea_version", _DEFAULT_GITEA_VERSION)
 
         # Step 1: Create container.
-        logger.info("LXCInstaller: creating container %s from %s", container_name, image)
+        logger.info("LXCInstaller: creating container %s from %s", incus_name, image)
         result = await containers.create_container(
-            container_name,
+            incus_name,
             image=image,
             memory_limit=memory_limit,
             cpu_limit=cpu_limit,
@@ -137,7 +157,7 @@ class LXCInstaller(AppInstaller):
             import asyncio
             for _ in range(15):
                 code, output = await containers.exec_in_container(
-                    container_name, ["hostname", "-I"], timeout=10
+                    incus_name, ["hostname", "-I"], timeout=10
                 )
                 if code == 0 and output.strip():
                     break
@@ -146,9 +166,9 @@ class LXCInstaller(AppInstaller):
                 raise RuntimeError("Container did not get a network address in time")
 
             # Step 3: Install base packages and create git system user.
-            logger.info("LXCInstaller: installing packages in %s", container_name)
+            logger.info("LXCInstaller: installing packages in %s", incus_name)
             code, output = await containers.exec_in_container(
-                container_name,
+                incus_name,
                 [
                     "bash", "-c",
                     "apt-get update -qq && "
@@ -164,7 +184,7 @@ class LXCInstaller(AppInstaller):
             # Step 4: Download Gitea binary (auto-detect arch).
             logger.info("LXCInstaller: downloading Gitea %s", gitea_version)
             code, output = await containers.exec_in_container(
-                container_name,
+                incus_name,
                 [
                     "bash", "-c",
                     f"ARCH=$(dpkg --print-architecture) && "
@@ -177,71 +197,92 @@ class LXCInstaller(AppInstaller):
             if code != 0:
                 raise RuntimeError(f"Gitea download failed: {output}")
 
-            # Step 5: Write config and systemd unit.
-            # /etc/gitea must be root:git 770 and app.ini root:git 660 so the
-            # unprivileged git user can read the config at migrate time.
-            logger.info("LXCInstaller: writing config and systemd unit")
+            # Step 5: Write systemd unit.
+            logger.info("LXCInstaller: writing systemd unit")
             code, output = await containers.exec_in_container(
-                container_name,
-                ["bash", "-c", "mkdir -p /etc/gitea && chown root:git /etc/gitea && chmod 770 /etc/gitea"],
-            )
-            if code != 0:
-                raise RuntimeError(f"Failed to create /etc/gitea: {output}")
-
-            # Write app.ini (generate fresh secrets per install)
-            app_ini = _render_app_ini()
-            code, output = await containers.exec_in_container(
-                container_name,
-                ["bash", "-c",
-                 f"cat > /etc/gitea/app.ini << 'TAOS_EOF'\n{app_ini}\nTAOS_EOF\n"
-                 "chown root:git /etc/gitea/app.ini && chmod 660 /etc/gitea/app.ini"],
-            )
-            if code != 0:
-                raise RuntimeError(f"Failed to write app.ini: {output}")
-
-            # Write systemd unit
-            code, output = await containers.exec_in_container(
-                container_name,
+                incus_name,
                 ["bash", "-c", f"cat > /etc/systemd/system/gitea.service << 'TAOS_EOF'\n{_SYSTEMD_UNIT}\nTAOS_EOF"],
             )
             if code != 0:
                 raise RuntimeError(f"Failed to write systemd unit: {output}")
 
-            # Step 6: First-boot DB migration + admin user creation.
-            logger.info("LXCInstaller: running Gitea DB migration")
-            code, output = await containers.exec_in_container(
-                container_name,
-                ["su", "-", "git", "-c", "GITEA_WORK_DIR=/home/git gitea migrate -c /etc/gitea/app.ini"],
-                timeout=120,
-            )
-            if code != 0:
-                raise RuntimeError(f"Gitea migrate failed: {output}")
+            if restore_tarball:
+                # Restore mode: push the tarball and extract over state paths.
+                # app.ini, DB, and repos come from the tarball — skip writing app.ini
+                # and skip DB migration + admin user creation.
+                logger.info("LXCInstaller: restore mode — pushing tarball %s", restore_tarball)
+                push_code, push_out = await containers.push_file(
+                    incus_name, restore_tarball, "/tmp/restore.tar"
+                )
+                if push_code != 0:
+                    raise RuntimeError(f"Failed to push restore tarball: {push_out}")
 
-            logger.info("LXCInstaller: creating Gitea admin user '%s'", taos_username)
-            safe_username = shlex.quote(taos_username)
-            safe_email = shlex.quote(taos_email or taos_username + "@localhost")
-            safe_password = shlex.quote(admin_password)
-            code, output = await containers.exec_in_container(
-                container_name,
-                [
-                    "su", "-", "git", "-c",
-                    f"GITEA_WORK_DIR=/home/git gitea admin user create "
-                    f"--admin "
-                    f"--username {safe_username} "
-                    f"--email {safe_email} "
-                    f"--password {safe_password} "
-                    f"--must-change-password=false "
-                    f"-c /etc/gitea/app.ini",
-                ],
-                timeout=60,
-            )
-            if code != 0:
-                raise RuntimeError(f"Gitea admin user creation failed: {output}")
+                logger.info("LXCInstaller: extracting tarball in container")
+                code, output = await containers.exec_in_container(
+                    incus_name,
+                    ["tar", "--numeric-owner", "-xpf", "/tmp/restore.tar", "-C", "/"],
+                    timeout=300,
+                )
+                if code != 0:
+                    raise RuntimeError(f"Failed to extract restore tarball: {output}")
+
+                # Clean up tarball inside container.
+                await containers.exec_in_container(incus_name, ["rm", "-f", "/tmp/restore.tar"])
+            else:
+                # Fresh install: create /etc/gitea, write app.ini with new secrets.
+                logger.info("LXCInstaller: writing config")
+                code, output = await containers.exec_in_container(
+                    incus_name,
+                    ["bash", "-c", "mkdir -p /etc/gitea && chown root:git /etc/gitea && chmod 770 /etc/gitea"],
+                )
+                if code != 0:
+                    raise RuntimeError(f"Failed to create /etc/gitea: {output}")
+
+                app_ini = _render_app_ini()
+                code, output = await containers.exec_in_container(
+                    incus_name,
+                    ["bash", "-c",
+                     f"cat > /etc/gitea/app.ini << 'TAOS_EOF'\n{app_ini}\nTAOS_EOF\n"
+                     "chown root:git /etc/gitea/app.ini && chmod 660 /etc/gitea/app.ini"],
+                )
+                if code != 0:
+                    raise RuntimeError(f"Failed to write app.ini: {output}")
+
+                # Step 6: First-boot DB migration + admin user creation.
+                logger.info("LXCInstaller: running Gitea DB migration")
+                code, output = await containers.exec_in_container(
+                    incus_name,
+                    ["su", "-", "git", "-c", "GITEA_WORK_DIR=/home/git gitea migrate -c /etc/gitea/app.ini"],
+                    timeout=120,
+                )
+                if code != 0:
+                    raise RuntimeError(f"Gitea migrate failed: {output}")
+
+                logger.info("LXCInstaller: creating Gitea admin user '%s'", taos_username)
+                safe_username = shlex.quote(taos_username)
+                safe_email = shlex.quote(taos_email or taos_username + "@localhost")
+                safe_password = shlex.quote(admin_password)
+                code, output = await containers.exec_in_container(
+                    incus_name,
+                    [
+                        "su", "-", "git", "-c",
+                        f"GITEA_WORK_DIR=/home/git gitea admin user create "
+                        f"--admin "
+                        f"--username {safe_username} "
+                        f"--email {safe_email} "
+                        f"--password {safe_password} "
+                        f"--must-change-password=false "
+                        f"-c /etc/gitea/app.ini",
+                    ],
+                    timeout=60,
+                )
+                if code != 0:
+                    raise RuntimeError(f"Gitea admin user creation failed: {output}")
 
             # Step 7: Enable and start service.
             logger.info("LXCInstaller: enabling and starting gitea.service")
             code, output = await containers.exec_in_container(
-                container_name,
+                incus_name,
                 ["bash", "-c", "systemctl daemon-reload && systemctl enable gitea && systemctl start gitea"],
                 timeout=60,
             )
@@ -254,7 +295,7 @@ class LXCInstaller(AppInstaller):
                 "LXCInstaller: adding proxy device host:%d -> container:3000", host_port
             )
             res = await containers.add_proxy_device(
-                container_name,
+                incus_name,
                 device_name="gitea-http",
                 listen=f"tcp:0.0.0.0:{host_port}",
                 connect="tcp:127.0.0.1:3000",
@@ -278,9 +319,9 @@ class LXCInstaller(AppInstaller):
 
         except Exception:
             logger.exception(
-                "LXCInstaller: rolling back — destroying container %s", container_name
+                "LXCInstaller: rolling back — destroying container %s", incus_name
             )
-            await containers.destroy_container(container_name)
+            await containers.destroy_container(incus_name)
             raise
 
     async def uninstall(self, app_id: str) -> dict:
