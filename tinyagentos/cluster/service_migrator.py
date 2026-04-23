@@ -77,12 +77,23 @@ async def migrate_service(
     """
     t0 = time.monotonic()
 
-    # Reject same-remote migration.
-    if source_remote is not None and source_remote == target_remote:
+    # Normalise "local" / "" / None to None — incus treats the local daemon
+    # as an implicit remote, not a registered one.
+    def _normalise(r: str | None) -> str | None:
+        if r is None or r == "" or r == "local":
+            return None
+        return r
+
+    source_remote = _normalise(source_remote)
+    target_remote_norm = _normalise(target_remote)
+
+    # Reject same-remote migration (including local→local).
+    if source_remote == target_remote_norm:
+        label = source_remote or "local"
         return {
             "success": False,
             "error": (
-                f"source_remote and target_remote are both '{source_remote}'. "
+                f"source_remote and target_remote both resolve to '{label}'. "
                 "Migration between the same host is a no-op."
             ),
         }
@@ -95,17 +106,18 @@ async def migrate_service(
         f"{source_remote}:{container_name}" if source_remote else container_name
     )
 
-    # 1. Verify target_remote is registered.
-    remotes = await containers.remote_list()
-    registered = {r["name"] for r in remotes}
-    if target_remote not in registered:
-        return {
-            "success": False,
-            "error": (
-                f"Remote '{target_remote}' is not registered. "
-                f"Register it first with: incus remote add {target_remote} <url> --accept-certificate"
-            ),
-        }
+    # 1. Verify target_remote is registered (skip for local target).
+    if target_remote_norm is not None:
+        remotes = await containers.remote_list()
+        registered = {r["name"] for r in remotes}
+        if target_remote_norm not in registered:
+            return {
+                "success": False,
+                "error": (
+                    f"Remote '{target_remote_norm}' is not registered. "
+                    f"Register it first with: incus remote add {target_remote_norm} <url> --accept-certificate"
+                ),
+            }
 
     # 2. Verify source container exists.
     info_code, _ = await containers._run(["incus", "info", source_incus_name])
@@ -168,7 +180,7 @@ async def migrate_service(
             install_config,
             admin_password="",  # ignored in restore mode
             restore_tarball=tarball_path,
-            target_remote=target_remote,
+            target_remote=target_remote_norm,
         )
         if not install_result.get("success"):
             raise RuntimeError(
@@ -182,10 +194,11 @@ async def migrate_service(
 
         duration = round(time.monotonic() - t0, 1)
         source_label = source_remote or "local"
+        target_label = target_remote_norm or "local"
         return {
             "success": True,
             "source": f"{source_label}:{container_name}",
-            "target": f"{target_remote}:{container_name}",
+            "target": f"{target_label}:{container_name}",
             "duration_s": duration,
             "tarball_size_bytes": tarball_size,
         }
