@@ -1,148 +1,174 @@
 # LXC Migration — Gitea Pi ⇆ Fedora Worker
 
-**Goal:** install Gitea as an LXC service on the Orange Pi, move its container
-to the Fedora worker, verify it still serves, then move it back.
+**Goal:** install Gitea as an LXC service on the Orange Pi, move it to the
+Fedora worker, verify it still serves, then move it back. The round-trip
+works across architectures (aarch64 ↔ x86_64) because the migration is
+**state-path based** — only `/etc/gitea/` and `/home/git/` travel; the
+Gitea binary is reinstalled fresh on the target host with the correct
+architecture.
 
-This is the end-to-end validation for the store's LXC install path and the
-incus cross-host migration feature.
+This is the end-to-end validation for the store's LXC install path and
+`migrate_service()`.
 
-## Pre-flight (one-time)
+## Pre-flight (one-time per host pair)
 
-Both hosts need incus installed and reachable on the LAN, plus TLS trust
-between them.
+Both hosts need incus installed. The target host also needs incus listening
+on the LAN so the controller can reach it.
 
-On **both** hosts:
-
-```bash
-incus --version   # must be present; any recent release is fine
-```
-
-On the **target** host (Fedora worker), configure incus to listen on the LAN
-and set a trust password:
+On the **target** host (worker), enable the incus HTTPS listener:
 
 ```bash
 incus config set core.https_address :8443
-incus config set core.trust_password '<temporary-trust-password>'
+# Confirm
+ss -ltn | grep 8443
 ```
 
-The trust password is consumed once per remote registration and cleared
-after, so a short-lived value is fine.
-
-## Procedure
-
-### 1. Register the Fedora worker as an incus remote on the Pi
+Then generate an enrollment token for the controller (run on the worker):
 
 ```bash
-# on the Pi (jay@orangepi5-plus)
+incus config trust add <controller-hostname>
+# Prints a one-time base64 token. Copy it.
+```
+
+Register the worker as an incus remote on the **controller**:
+
+```bash
 curl -X POST http://localhost:6969/api/cluster/remotes \
+  -H "Authorization: Bearer $(cat data/.auth_local_token)" \
   -H 'Content-Type: application/json' \
   -d '{
     "name": "fedora-worker",
-    "url": "https://<fedora-worker-host>:8443",
-    "trust_password": "<temporary-trust-password>"
+    "url": "https://<worker-host>:8443",
+    "token": "<token-from-above>"
   }'
 
-# verify
-curl http://localhost:6969/api/cluster/remotes
+curl http://localhost:6969/api/cluster/remotes \
+  -H "Authorization: Bearer $(cat data/.auth_local_token)"
 ```
 
-### 2. Install Gitea via the LXC path
+For round-trip you also need the controller registered as an incus remote
+on the worker — same flow in reverse.
 
-Use the store UI or POST directly:
+## Procedure
+
+### 1. Install Gitea on the controller
 
 ```bash
 curl -X POST http://localhost:6969/api/store/install-v2 \
+  -H "Authorization: Bearer $(cat data/.auth_local_token)" \
   -H 'Content-Type: application/json' \
-  -b 'taos_session=<your-session-cookie>' \
   -d '{
     "app_id": "gitea-lxc",
-    "admin_password": "<pick-a-strong-password>"
+    "admin_password": "<pick-a-strong-password>",
+    "taos_username": "jay",
+    "taos_email": "jaylfc25@gmail.com",
+    "metadata": {"backend": "lxc"}
   }'
 ```
 
-Wait for the response — install takes 2-3 minutes (incus launch + apt
-install + Gitea download). Response includes `host_port` used for the
-proxy device.
-
-Verify Gitea responds:
+Install takes 2-3 minutes (incus launch + apt install + Gitea binary
+download). Response includes `host_port`. Verify:
 
 ```bash
 curl -I http://localhost:<host_port>/
 # expect: HTTP/1.1 200 OK
 ```
 
-Log in via the browser at `http://<pi-host>:<host_port>/` using your taOS
-username and the admin password from step 2.
-
-### 3. Migrate container to the Fedora worker
+### 2. Migrate controller → worker (e.g. Pi → Fedora)
 
 ```bash
-curl -X POST http://localhost:6969/api/cluster/migrate \
+curl -X POST http://localhost:6969/api/cluster/migrate-service \
+  -H "Authorization: Bearer $(cat data/.auth_local_token)" \
   -H 'Content-Type: application/json' \
   -d '{
-    "container": "taos-svc-gitea-lxc",
+    "app_id": "gitea-lxc",
     "target_remote": "fedora-worker",
-    "keep_source": false,
-    "stateless": true
+    "keep_source": false
   }'
 ```
 
-This stops the container on the Pi, copies it across the LAN, and starts it
-on the Fedora worker. Expect a few minutes for the copy.
+This does not copy the container image. It:
 
-Verify it's running on the target:
+1. Stops Gitea on the source.
+2. `tar`s `/etc/gitea/` + `/home/git/` inside the source container,
+   streams the tarball to the controller host.
+3. Launches a **fresh** container on the target from
+   `images:debian/bookworm` (correct arch for the target host).
+4. Installs the Gitea binary matching the target architecture.
+5. Pushes the tarball into the target container, extracts over the state
+   paths.
+6. Starts the Gitea service.
+7. Destroys the source container (unless `keep_source: true`).
+
+Typical timing for Gitea: ~30s, ~2 MB state.
+
+Verify on the worker:
 
 ```bash
-# on the Fedora worker
-incus list taos-svc-gitea-lxc
+incus list fedora-worker:taos-svc-gitea-lxc
 # Status: RUNNING
+incus config device show fedora-worker:taos-svc-gitea-lxc | grep listen
+# find the host port, then
+curl -I http://<worker-host>:<host_port>/
 ```
 
-And that Gitea still serves. The proxy device follows the container, so the
-same port works on the new host:
+Data check — all accounts + repos came across:
 
 ```bash
-curl -I http://<fedora-worker-host>:<host_port>/
-# expect: HTTP/1.1 200 OK
+curl -u "<user>:<admin_password>" \
+  http://<worker-host>:<host_port>/api/v1/user/repos
 ```
 
-Log in and spot-check that your user account and any repos are intact —
-state lives in the container's `/home/git/` and moved with it.
-
-### 4. Migrate back to the Pi
-
-Before moving back, add the Pi as a remote on the Fedora worker (mirror of
-step 1 but in reverse). Then from the Fedora worker:
+### 3. Migrate worker → controller (reverse)
 
 ```bash
-curl -X POST http://<fedora-worker-host>:6969/api/cluster/migrate \
+curl -X POST http://localhost:6969/api/cluster/migrate-service \
+  -H "Authorization: Bearer $(cat data/.auth_local_token)" \
   -H 'Content-Type: application/json' \
   -d '{
-    "container": "taos-svc-gitea-lxc",
-    "target_remote": "orangepi",
-    "keep_source": false,
-    "stateless": true
+    "app_id": "gitea-lxc",
+    "source_remote": "fedora-worker",
+    "target_remote": "local",
+    "keep_source": false
   }'
 ```
 
-Verify Gitea responds on the Pi again, and the admin user still works.
+Same flow, opposite direction. `target_remote: "local"` means the
+controller host. Verify Gitea serves on the controller again and any repos
+created while on the worker are still present.
+
+## Why not `incus copy` / `incus move`?
+
+`incus move` copies the entire rootfs across hosts. It works only for
+**same-architecture** moves — a container built from an aarch64 base image
+cannot boot on an x86_64 host (incus rejects with `Requested architecture
+isn't supported by this host`).
+
+`migrate_service` sidesteps that by transferring only the state (SQLite
+DBs, on-disk repos, config). The service binary is installed fresh from
+the correct-arch release on the target, so a mixed-arch cluster
+(Pi + desktop + laptop) migrates cleanly.
+
+For same-arch migrations, `POST /api/cluster/migrate` still exists and
+uses `incus move` for speed — useful for homogeneous clusters where
+rootfs-level moves avoid the reinstall cost.
 
 ## Recovery
 
 If a migration fails mid-way:
 
-- The `migrate_container` helper restarts the source container automatically
-  if the copy/move step failed after the stop.
-- If the target has a half-copied container, `incus delete <remote>:<name>
-  --force` cleans it up.
-- A pre-stop snapshot is created best-effort on the source; `incus snapshot
-  restore <name> pre-migrate-<ts>` rolls it back if needed.
+- The source service is restarted automatically so the user doesn't lose
+  access.
+- A half-created target container is destroyed on failure (rolled back by
+  the installer's existing rollback path).
+- The state tarball on the controller host is always cleaned up, success
+  or failure.
 
 ## What this proves
 
-- The LXC install path works end-to-end (container creation → Gitea install →
-  admin seeding → proxy device → real HTTP traffic).
-- `incus copy`/`incus move` across trusted remotes preserves all container
-  state (rootfs, config, installed packages, SQLite DB).
-- Proxy devices survive the move, so the same user-facing URL stays valid
-  after a host change.
+- The LXC install path works end-to-end (container creation → Gitea
+  install → admin seeding → proxy device → real HTTP traffic).
+- State-path migration preserves all user data across architectures:
+  accounts, repos, commits, Gitea config, server keys.
+- Round-trip migration (Pi → Fedora → Pi) leaves a service in the same
+  logical state it started in, with any new data added mid-trip intact.
