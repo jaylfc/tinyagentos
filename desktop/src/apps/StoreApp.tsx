@@ -459,7 +459,7 @@ function AppCard({ app, affected, onInstall, onUninstall }: { app: CatalogApp; a
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 overflow-hidden"
-              style={{ background: TYPE_ICON_GRADIENTS[app.type] ?? "rgba(255,255,255,0.06)" }}
+              style={{ background: TYPE_ICON_GRADIENTS[appGroup(app)] ?? TYPE_ICON_GRADIENTS[app.type] ?? "rgba(255,255,255,0.06)" }}
             >
               {iconUrl && !iconFailed ? (
                 <img
