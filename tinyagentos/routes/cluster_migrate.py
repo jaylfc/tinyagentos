@@ -1,12 +1,17 @@
 """HTTP routes for incus cross-host container migration and remote management."""
 from __future__ import annotations
 
+import logging
+from urllib.parse import urlparse
+
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from tinyagentos.containers import migrate_container, remote_add, remote_generate_token, remote_list, remote_remove
 from tinyagentos.cluster.service_migrator import migrate_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -159,4 +164,46 @@ async def migrate_service_route(request: Request, body: MigrateServiceBody):
 
     if not result["success"]:
         return JSONResponse({"error": result["error"]}, status_code=500)
+
+    # Update the installed-apps registry with the new runtime location.
+    host_port = result.get("host_port")
+    target_remote_norm = result.get("target_remote")
+    if host_port:
+        installed_apps = getattr(request.app.state, "installed_apps", None)
+        if installed_apps is not None:
+            runtime_host = await _resolve_host(target_remote_norm)
+            ui_path = manifest.install.get("ui_path", "/") if isinstance(manifest.install, dict) else "/"
+            try:
+                await installed_apps.update_runtime_location(
+                    body.app_id,
+                    host=runtime_host,
+                    port=host_port,
+                    backend="lxc",
+                    ui_path=ui_path,
+                )
+            except Exception:
+                logger.warning(
+                    "migrate-service: failed to update runtime location for %s", body.app_id
+                )
+
     return result
+
+
+async def _resolve_host(target_remote: str | None) -> str:
+    """Parse the hostname from a registered incus remote's URL.
+
+    Falls back to '127.0.0.1' for local (no remote) targets.
+    """
+    if not target_remote:
+        return "127.0.0.1"
+    try:
+        remotes = await remote_list()
+        for r in remotes:
+            if r.get("name") == target_remote:
+                addr = r.get("addr", "")
+                parsed = urlparse(addr)
+                if parsed.hostname:
+                    return parsed.hostname
+    except Exception:
+        logger.warning("_resolve_host: failed to look up remote %r", target_remote)
+    return target_remote

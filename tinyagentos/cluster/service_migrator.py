@@ -201,6 +201,9 @@ async def migrate_service(
             "target": f"{target_label}:{container_name}",
             "duration_s": duration,
             "tarball_size_bytes": tarball_size,
+            # Expose install result fields so the caller can update the registry.
+            "host_port": install_result.get("host_port"),
+            "target_remote": target_remote_norm,
         }
 
     except Exception as exc:
