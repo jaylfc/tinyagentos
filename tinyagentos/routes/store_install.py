@@ -63,8 +63,11 @@ async def install_app(request: Request):
             )
 
         user = _get_current_user(request)
-        taos_username = (user or {}).get("username", "admin")
-        taos_email = (user or {}).get("email", "")
+        # Body overrides win so local-token / non-session callers can seed the
+        # admin user explicitly. Gitea rejects "admin" as a reserved name, so
+        # the fallback is "owner" when no session user is available.
+        taos_username = body.get("taos_username") or (user or {}).get("username") or "owner"
+        taos_email = body.get("taos_email") or (user or {}).get("email") or ""
 
         installer = LXCInstaller()
         try:
