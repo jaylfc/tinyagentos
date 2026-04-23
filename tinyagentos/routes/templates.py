@@ -47,8 +47,14 @@ async def api_list_templates(category: str | None = None, source: str | None = N
 
 @router.get("/api/templates/sources")
 async def list_template_sources():
-    """List available external template sources."""
-    return {"sources": EXTERNAL_SOURCES}
+    """List external sources, IDs normalised to UI aliases so responses can
+    be fed straight back into /api/personas/library?source=…"""
+    return {
+        "sources": [
+            {**s, "id": _DATA_SOURCE_TO_UI.get(s["id"], s["id"])}
+            for s in EXTERNAL_SOURCES
+        ]
+    }
 
 
 @router.get("/api/templates/external/{source_id}")

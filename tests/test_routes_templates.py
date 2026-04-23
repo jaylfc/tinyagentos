@@ -114,6 +114,10 @@ class TestExternalSources:
         data = resp.json()
         assert "sources" in data
         assert len(data["sources"]) == 2
+        # IDs must be the UI aliases so clients can round-trip into
+        # /api/personas/library?source=… without a 400.
+        ids = {s["id"] for s in data["sources"]}
+        assert ids == {"awesome-openclaw", "prompt-library"}
 
     @pytest.mark.asyncio
     async def test_external_index_unknown_source(self, client):
