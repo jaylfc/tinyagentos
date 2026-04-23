@@ -568,6 +568,12 @@ apps:
     version: 1.22.0
     name: Gitea
     description: "Self-hosted Git server with agent access"
+  - id: gitea-lxc
+    type: service
+    category: dev-tool
+    version: 1.22.0
+    name: Gitea (LXC)
+    description: "Self-hosted Git server in an isolated LXC container"
   - id: code-server
     type: dev-tool
     version: 4.96.0

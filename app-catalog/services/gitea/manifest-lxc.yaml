@@ -1,0 +1,40 @@
+id: gitea
+name: Gitea
+type: service
+category: dev-tool
+version: 1.22.0
+backend: lxc
+description: "Self-hosted Git server — auto-creates accounts for deployed agents"
+homepage: https://gitea.io
+license: MIT
+
+requires:
+  ram_mb: 512
+  disk_mb: 2000
+  ports: [3000, 2222]
+  inputs:
+    - name: admin_password
+      label: "Admin password"
+      type: password
+      required: true
+      description: "Password for the initial Gitea admin account"
+
+install:
+  method: lxc
+  image: images:debian/bookworm
+  gitea_version: "1.22.6"
+  memory_limit: "512MiB"
+  cpu_limit: 1
+  ports:
+    http: 3000
+    ssh: 2222
+
+lifecycle:
+  health_check: "curl -sf http://localhost:3000/api/healthz"
+
+hardware_tiers:
+  arm-npu-16gb: full
+  arm-npu-32gb: full
+  x86-cuda-12gb: full
+  x86-vulkan-8gb: full
+  cpu-only: full
