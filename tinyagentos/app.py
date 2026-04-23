@@ -825,6 +825,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     from tinyagentos.routes.cluster import router as cluster_router
     app.include_router(cluster_router)
 
+    from tinyagentos.routes.cluster_migrate import router as cluster_migrate_router
+    app.include_router(cluster_migrate_router)
+
     from tinyagentos.routes.training import router as training_router
     app.include_router(training_router)
 
