@@ -33,6 +33,7 @@ async def migrate_service(
     service_name: str = "gitea",
     keep_source: bool = False,
     restart_target: bool = True,
+    source_remote: str | None = None,
 ) -> dict:
     """Migrate an installed LXC service to another incus host.
 
@@ -66,6 +67,9 @@ async def migrate_service(
     restart_target:
         When True (default), enable and start the service on the target after
         restore. LXCInstaller already does this, so this flag is informational.
+    source_remote:
+        Registered incus remote name for the source host. None means local.
+        Cannot equal target_remote (no-op migration not allowed).
 
     Returns
     -------
@@ -73,8 +77,23 @@ async def migrate_service(
     """
     t0 = time.monotonic()
 
+    # Reject same-remote migration.
+    if source_remote is not None and source_remote == target_remote:
+        return {
+            "success": False,
+            "error": (
+                f"source_remote and target_remote are both '{source_remote}'. "
+                "Migration between the same host is a no-op."
+            ),
+        }
+
     container_name = f"{_INSTALLER_PREFIX}{app_id}"
     tarball_path = f"/tmp/taos-migrate-{uuid.uuid4().hex}.tar"
+
+    # Build the incus name used for all source-side operations.
+    source_incus_name = (
+        f"{source_remote}:{container_name}" if source_remote else container_name
+    )
 
     # 1. Verify target_remote is registered.
     remotes = await containers.remote_list()
@@ -89,17 +108,18 @@ async def migrate_service(
         }
 
     # 2. Verify source container exists.
-    info_code, _ = await containers._run(["incus", "info", container_name])
+    info_code, _ = await containers._run(["incus", "info", source_incus_name])
     if info_code != 0:
+        host_label = source_remote or "local"
         return {
             "success": False,
-            "error": f"Source container '{container_name}' not found on local host.",
+            "error": f"Source container '{container_name}' not found on {host_label} host.",
         }
 
     # 3. Stop source service gracefully.
-    logger.info("migrate_service: stopping %s in %s", service_name, container_name)
+    logger.info("migrate_service: stopping %s in %s", service_name, source_incus_name)
     stop_code, stop_out = await containers.exec_in_container(
-        container_name,
+        source_incus_name,
         ["systemctl", "stop", shlex.quote(service_name)],
         timeout=60,
     )
@@ -114,10 +134,10 @@ async def migrate_service(
         # 4. Create tar of state paths inside the container, then pull out to host.
         quoted_paths = " ".join(shlex.quote(p) for p in state_paths)
         logger.info(
-            "migrate_service: archiving state paths %s from %s", state_paths, container_name
+            "migrate_service: archiving state paths %s from %s", state_paths, source_incus_name
         )
         tar_code, tar_out = await containers.exec_in_container(
-            container_name,
+            source_incus_name,
             ["bash", "-c", f"tar -cpf /tmp/state.tar --numeric-owner {quoted_paths}"],
             timeout=300,
         )
@@ -126,14 +146,14 @@ async def migrate_service(
 
         # Pull the tarball from the container to the controller host.
         pull_code, pull_out = await containers._run(
-            ["incus", "file", "pull", f"{container_name}/tmp/state.tar", tarball_path],
+            ["incus", "file", "pull", f"{source_incus_name}/tmp/state.tar", tarball_path],
             timeout=300,
         )
         if pull_code != 0:
             raise RuntimeError(f"Failed to pull state tarball from container: {pull_out}")
 
         # Clean up tarball inside source container.
-        await containers.exec_in_container(container_name, ["rm", "-f", "/tmp/state.tar"])
+        await containers.exec_in_container(source_incus_name, ["rm", "-f", "/tmp/state.tar"])
 
         import os
         tarball_size = os.path.getsize(tarball_path)
@@ -157,13 +177,14 @@ async def migrate_service(
 
         # 6. Destroy source unless keep_source.
         if not keep_source:
-            logger.info("migrate_service: destroying source container %s", container_name)
-            await containers.destroy_container(container_name)
+            logger.info("migrate_service: destroying source container %s", source_incus_name)
+            await containers._run(["incus", "delete", source_incus_name, "--force"])
 
         duration = round(time.monotonic() - t0, 1)
+        source_label = source_remote or "local"
         return {
             "success": True,
-            "source": f"local:{container_name}",
+            "source": f"{source_label}:{container_name}",
             "target": f"{target_remote}:{container_name}",
             "duration_s": duration,
             "tarball_size_bytes": tarball_size,
@@ -173,7 +194,7 @@ async def migrate_service(
         # Rollback: restart source service so user doesn't lose access.
         logger.error("migrate_service: failed (%s) — restarting source service", exc)
         restart_code, restart_out = await containers.exec_in_container(
-            container_name,
+            source_incus_name,
             ["systemctl", "start", shlex.quote(service_name)],
             timeout=60,
         )

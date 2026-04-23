@@ -36,6 +36,7 @@ class MigrateServiceBody(BaseModel):
     app_id: str
     target_remote: str
     keep_source: bool = False
+    source_remote: str | None = None
 
 
 @router.post("/api/cluster/remotes")
@@ -151,6 +152,7 @@ async def migrate_service_route(request: Request, body: MigrateServiceBody):
             state_paths=state_paths,
             service_name=service_name,
             keep_source=body.keep_source,
+            source_remote=body.source_remote,
         )
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=500)
