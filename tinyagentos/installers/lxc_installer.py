@@ -178,10 +178,12 @@ class LXCInstaller(AppInstaller):
                 raise RuntimeError(f"Gitea download failed: {output}")
 
             # Step 5: Write config and systemd unit.
+            # /etc/gitea must be root:git 770 and app.ini root:git 660 so the
+            # unprivileged git user can read the config at migrate time.
             logger.info("LXCInstaller: writing config and systemd unit")
             code, output = await containers.exec_in_container(
                 container_name,
-                ["bash", "-c", "mkdir -p /etc/gitea && chmod 770 /etc/gitea"],
+                ["bash", "-c", "mkdir -p /etc/gitea && chown root:git /etc/gitea && chmod 770 /etc/gitea"],
             )
             if code != 0:
                 raise RuntimeError(f"Failed to create /etc/gitea: {output}")
@@ -190,7 +192,9 @@ class LXCInstaller(AppInstaller):
             app_ini = _render_app_ini()
             code, output = await containers.exec_in_container(
                 container_name,
-                ["bash", "-c", f"cat > /etc/gitea/app.ini << 'TAOS_EOF'\n{app_ini}\nTAOS_EOF"],
+                ["bash", "-c",
+                 f"cat > /etc/gitea/app.ini << 'TAOS_EOF'\n{app_ini}\nTAOS_EOF\n"
+                 "chown root:git /etc/gitea/app.ini && chmod 660 /etc/gitea/app.ini"],
             )
             if code != 0:
                 raise RuntimeError(f"Failed to write app.ini: {output}")
