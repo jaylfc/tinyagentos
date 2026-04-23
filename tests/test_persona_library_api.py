@@ -104,9 +104,11 @@ async def test_library_response_shape(client):
 
 
 @pytest.mark.asyncio
-async def test_library_external_sources_return_empty_not_error(client):
-    # External sources not wired — expect empty list, not 400/500
+async def test_library_external_sources_populated(client):
+    # Vendored persona files ship with the repo — both sources should surface items.
     for src in ("awesome-openclaw", "prompt-library"):
-        resp = await client.get(f"/api/personas/library?source={src}")
+        resp = await client.get(f"/api/personas/library?source={src}&limit=500")
         assert resp.status_code == 200
-        assert resp.json()["personas"] == []
+        personas = resp.json()["personas"]
+        assert len(personas) > 0, f"expected vendored personas for source={src}"
+        assert all(p["source"] == src for p in personas)

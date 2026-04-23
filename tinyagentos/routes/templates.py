@@ -6,12 +6,19 @@ from fastapi.responses import JSONResponse
 from tinyagentos.agent_templates import (
     list_templates, get_template, CATEGORIES, EXTERNAL_SOURCES,
     fetch_external_index, fetch_external_template, template_stats,
-    TEMPLATES,
+    TEMPLATES, vendored_templates,
 )
 
 router = APIRouter()
 
 _VALID_SOURCES = {"builtin", "awesome-openclaw", "prompt-library", "user"}
+
+# Vendored JSON tags items with the long upstream source IDs; the UI and
+# /api/personas/library expose shorter aliases.
+_DATA_SOURCE_TO_UI = {
+    "awesome-openclaw-agents": "awesome-openclaw",
+    "system-prompt-library": "prompt-library",
+}
 
 
 @router.get("/api/templates/stats")
@@ -72,10 +79,9 @@ async def api_personas_library(
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ):
-    """Aggregated persona library: builtin templates + user-authored personas.
+    """Aggregated persona library: builtin + vendored (awesome-openclaw,
+    prompt-library) + user-authored personas.
 
-    External sources (awesome-openclaw, prompt-library) are not yet wired —
-    they require network fetches and are tracked as a follow-up.
     source filter returns 400 for unrecognised values.
     """
     if source is not None and source not in _VALID_SOURCES:
@@ -88,19 +94,12 @@ async def api_personas_library(
 
     want_builtin = source in (None, "builtin")
     want_user = source in (None, "user")
-    # External sources not implemented — return empty for now.
+    want_openclaw = source in (None, "awesome-openclaw")
+    want_promptlib = source in (None, "prompt-library")
 
-    if want_builtin:
-        for tpl in TEMPLATES:
-            sp = tpl.get("system_prompt", "") or ""
-            personas.append({
-                "source": "builtin",
-                "id": tpl["id"],
-                "name": tpl["name"],
-                "description": tpl.get("description"),
-                "preview": sp[:120],
-            })
-
+    # Order: user → builtin → vendored. Keeps the user's own personas and the
+    # small curated builtin list on the first page when paginating the
+    # "All sources" view (vendored libraries are ~1.5k items).
     if want_user:
         user_persona_store = getattr(request.app.state, "user_personas", None)
         if user_persona_store is not None:
@@ -113,6 +112,35 @@ async def api_personas_library(
                     "description": row.get("description"),
                     "preview": soul[:120],
                 })
+
+    if want_builtin:
+        for tpl in TEMPLATES:
+            sp = tpl.get("system_prompt", "") or ""
+            personas.append({
+                "source": "builtin",
+                "id": tpl["id"],
+                "name": tpl["name"],
+                "description": tpl.get("description"),
+                "preview": sp[:120],
+            })
+
+    if want_openclaw or want_promptlib:
+        for tpl in vendored_templates():
+            ui_src = _DATA_SOURCE_TO_UI.get(tpl.get("source"))
+            if ui_src is None:
+                continue
+            if ui_src == "awesome-openclaw" and not want_openclaw:
+                continue
+            if ui_src == "prompt-library" and not want_promptlib:
+                continue
+            sp = tpl.get("system_prompt", "") or ""
+            personas.append({
+                "source": ui_src,
+                "id": tpl["id"],
+                "name": tpl["name"],
+                "description": tpl.get("description"),
+                "preview": sp[:120],
+            })
 
     if q:
         q_lower = q.lower()
