@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import secrets
+import shlex
 import socket
 from contextlib import closing
 
@@ -30,7 +32,7 @@ Environment=USER=git HOME=/home/git GITEA_WORK_DIR=/home/git
 WantedBy=multi-user.target
 """
 
-_APP_INI = """\
+_APP_INI_TEMPLATE = """\
 [server]
 HTTP_PORT = 3000
 ROOT_URL = http://localhost:3000/
@@ -42,12 +44,19 @@ PATH = /home/git/gitea.db
 
 [security]
 INSTALL_LOCK = true
-SECRET_KEY = changeme-replace-in-production
-INTERNAL_TOKEN = changeme-replace-in-production
+SECRET_KEY = {secret_key}
+INTERNAL_TOKEN = {internal_token}
 
 [service]
 DISABLE_REGISTRATION = true
 """
+
+
+def _render_app_ini() -> str:
+    return _APP_INI_TEMPLATE.format(
+        secret_key=secrets.token_hex(32),
+        internal_token=secrets.token_hex(32),
+    )
 
 
 def _find_free_port(start: int = 13000, end: int = 14000) -> int:
@@ -177,11 +186,11 @@ class LXCInstaller(AppInstaller):
             if code != 0:
                 raise RuntimeError(f"Failed to create /etc/gitea: {output}")
 
-            # Write app.ini
-            escaped = _APP_INI.replace("'", "'\\''")
+            # Write app.ini (generate fresh secrets per install)
+            app_ini = _render_app_ini()
             code, output = await containers.exec_in_container(
                 container_name,
-                ["bash", "-c", f"cat > /etc/gitea/app.ini << 'TAOS_EOF'\n{_APP_INI}\nTAOS_EOF"],
+                ["bash", "-c", f"cat > /etc/gitea/app.ini << 'TAOS_EOF'\n{app_ini}\nTAOS_EOF"],
             )
             if code != 0:
                 raise RuntimeError(f"Failed to write app.ini: {output}")
@@ -205,15 +214,18 @@ class LXCInstaller(AppInstaller):
                 raise RuntimeError(f"Gitea migrate failed: {output}")
 
             logger.info("LXCInstaller: creating Gitea admin user '%s'", taos_username)
+            safe_username = shlex.quote(taos_username)
+            safe_email = shlex.quote(taos_email or taos_username + "@localhost")
+            safe_password = shlex.quote(admin_password)
             code, output = await containers.exec_in_container(
                 container_name,
                 [
                     "su", "-", "git", "-c",
                     f"GITEA_WORK_DIR=/home/git gitea admin user create "
                     f"--admin "
-                    f"--username {taos_username} "
-                    f"--email {taos_email or taos_username + '@localhost'} "
-                    f"--password {admin_password} "
+                    f"--username {safe_username} "
+                    f"--email {safe_email} "
+                    f"--password {safe_password} "
                     f"--must-change-password=false "
                     f"-c /etc/gitea/app.ini",
                 ],
