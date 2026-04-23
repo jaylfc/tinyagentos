@@ -1,11 +1,12 @@
 """HTTP routes for incus cross-host container migration and remote management."""
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from tinyagentos.containers import migrate_container, remote_add, remote_generate_token, remote_list, remote_remove
+from tinyagentos.cluster.service_migrator import migrate_service
 
 router = APIRouter()
 
@@ -29,6 +30,12 @@ class MigrateBody(BaseModel):
     keep_source: bool = False
     stateless: bool = True
     timeout: int = 600
+
+
+class MigrateServiceBody(BaseModel):
+    app_id: str
+    target_remote: str
+    keep_source: bool = False
 
 
 @router.post("/api/cluster/remotes")
@@ -89,6 +96,65 @@ async def migrate(body: MigrateBody):
         stateless=body.stateless,
         timeout=body.timeout,
     )
+    if not result["success"]:
+        return JSONResponse({"error": result["error"]}, status_code=500)
+    return result
+
+
+@router.post("/api/cluster/migrate-service")
+async def migrate_service_route(request: Request, body: MigrateServiceBody):
+    """Arch-portable service migration: deploy fresh on target, restore state paths."""
+    if not body.app_id or not body.target_remote:
+        return JSONResponse(
+            {"error": "app_id and target_remote are required"}, status_code=400
+        )
+
+    registry = request.app.state.registry
+    manifest = registry.get(body.app_id)
+    if not manifest:
+        return JSONResponse(
+            {"error": f"App '{body.app_id}' not found in catalog"}, status_code=404
+        )
+
+    state_paths: list[str] = manifest.install.get("state_paths", [])
+    if not state_paths:
+        # Fall back to top-level manifest field for manifests that declare it there.
+        import yaml as _yaml
+        if manifest.manifest_dir is not None:
+            lxc_manifest_path = manifest.manifest_dir / "manifest-lxc.yaml"
+            if lxc_manifest_path.exists():
+                _data = _yaml.safe_load(lxc_manifest_path.read_text())
+                state_paths = _data.get("state_paths", [])
+
+    if not state_paths:
+        return JSONResponse(
+            {"error": f"App '{body.app_id}' has no state_paths defined in its manifest"},
+            status_code=400,
+        )
+
+    service_name: str = manifest.install.get("service_name", "")
+    if not service_name and manifest.manifest_dir is not None:
+        import yaml as _yaml
+        lxc_manifest_path = manifest.manifest_dir / "manifest-lxc.yaml"
+        if lxc_manifest_path.exists():
+            _data = _yaml.safe_load(lxc_manifest_path.read_text())
+            service_name = _data.get("service_name", body.app_id)
+
+    if not service_name:
+        service_name = body.app_id
+
+    try:
+        result = await migrate_service(
+            body.app_id,
+            body.target_remote,
+            install_config=manifest.install,
+            state_paths=state_paths,
+            service_name=service_name,
+            keep_source=body.keep_source,
+        )
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
     if not result["success"]:
         return JSONResponse({"error": result["error"]}, status_code=500)
     return result
