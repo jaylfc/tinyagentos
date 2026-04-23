@@ -193,6 +193,254 @@ class TestLXCInstallerHappyPath:
         assert result["host_port"] == 13500
 
 
+class TestLXCInstallerRestoreMode:
+    """Tests for install() with restore_tarball set."""
+
+    @pytest.mark.asyncio
+    async def test_restore_mode_skips_migrate_and_admin_create(self):
+        """With restore_tarball, DB migration and admin user create must not run."""
+        installer = LXCInstaller()
+        captured_cmds: list[list[str]] = []
+
+        async def fake_exec(container_name, cmd, timeout=300):
+            captured_cmds.append(cmd)
+            if "hostname" in cmd or "-I" in cmd:
+                return (0, "10.0.0.2")
+            return (0, "")
+
+        with (
+            patch(
+                "tinyagentos.installers.lxc_installer.containers._run",
+                new_callable=AsyncMock,
+                return_value=(1, "not found"),  # container_exists check for remote
+            ),
+            patch(
+                "tinyagentos.installers.lxc_installer.containers.container_exists",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
+            patch(
+                "tinyagentos.installers.lxc_installer.containers.create_container",
+                new_callable=AsyncMock,
+                return_value={"success": True},
+            ),
+            patch(
+                "tinyagentos.installers.lxc_installer.containers.exec_in_container",
+                side_effect=fake_exec,
+            ),
+            patch(
+                "tinyagentos.installers.lxc_installer.containers.push_file",
+                new_callable=AsyncMock,
+                return_value=(0, ""),
+            ),
+            patch(
+                "tinyagentos.installers.lxc_installer.containers.add_proxy_device",
+                new_callable=AsyncMock,
+                return_value={"success": True},
+            ),
+            patch(
+                "tinyagentos.installers.lxc_installer._find_free_port",
+                return_value=13002,
+            ),
+        ):
+            result = await installer.install(
+                "gitea",
+                INSTALL_CONFIG,
+                admin_password="",  # empty is allowed in restore mode
+                restore_tarball="/tmp/fake-state.tar",
+            )
+
+        assert result["success"] is True
+
+        full_cmds = [" ".join(c) for c in captured_cmds]
+        # DB migration and admin user create must NOT appear
+        assert not any("gitea migrate" in c for c in full_cmds), \
+            "gitea migrate should not run in restore mode"
+        assert not any("admin user create" in c for c in full_cmds), \
+            "admin user create should not run in restore mode"
+
+    @pytest.mark.asyncio
+    async def test_restore_mode_runs_tar_extract(self):
+        """With restore_tarball, the tar extract command must be executed."""
+        installer = LXCInstaller()
+        captured_cmds: list[list[str]] = []
+
+        async def fake_exec(container_name, cmd, timeout=300):
+            captured_cmds.append(cmd)
+            if "hostname" in cmd or "-I" in cmd:
+                return (0, "10.0.0.2")
+            return (0, "")
+
+        with (
+            patch(
+                "tinyagentos.installers.lxc_installer.containers._run",
+                new_callable=AsyncMock,
+                return_value=(1, "not found"),
+            ),
+            patch(
+                "tinyagentos.installers.lxc_installer.containers.container_exists",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
+            patch(
+                "tinyagentos.installers.lxc_installer.containers.create_container",
+                new_callable=AsyncMock,
+                return_value={"success": True},
+            ),
+            patch(
+                "tinyagentos.installers.lxc_installer.containers.exec_in_container",
+                side_effect=fake_exec,
+            ),
+            patch(
+                "tinyagentos.installers.lxc_installer.containers.push_file",
+                new_callable=AsyncMock,
+                return_value=(0, ""),
+            ) as mock_push,
+            patch(
+                "tinyagentos.installers.lxc_installer.containers.add_proxy_device",
+                new_callable=AsyncMock,
+                return_value={"success": True},
+            ),
+            patch(
+                "tinyagentos.installers.lxc_installer._find_free_port",
+                return_value=13003,
+            ),
+        ):
+            await installer.install(
+                "gitea",
+                INSTALL_CONFIG,
+                admin_password="",
+                restore_tarball="/tmp/state.tar",
+            )
+
+        # push_file must have been called with the tarball path
+        mock_push.assert_awaited_once()
+        push_args = mock_push.call_args[0]
+        assert push_args[1] == "/tmp/state.tar"
+        assert push_args[2] == "/tmp/restore.tar"
+
+        # tar extract must appear in exec_in_container calls
+        full_cmds = [" ".join(c) for c in captured_cmds]
+        assert any("tar" in c and "-xpf" in c for c in full_cmds), \
+            "tar extract should run in restore mode"
+
+    @pytest.mark.asyncio
+    async def test_restore_mode_does_not_write_app_ini(self):
+        """With restore_tarball, app.ini must not be written (restored from tarball)."""
+        installer = LXCInstaller()
+        captured_cmds: list[list[str]] = []
+
+        async def fake_exec(container_name, cmd, timeout=300):
+            captured_cmds.append(cmd)
+            if "hostname" in cmd or "-I" in cmd:
+                return (0, "10.0.0.2")
+            return (0, "")
+
+        with (
+            patch(
+                "tinyagentos.installers.lxc_installer.containers._run",
+                new_callable=AsyncMock,
+                return_value=(1, "not found"),
+            ),
+            patch(
+                "tinyagentos.installers.lxc_installer.containers.container_exists",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
+            patch(
+                "tinyagentos.installers.lxc_installer.containers.create_container",
+                new_callable=AsyncMock,
+                return_value={"success": True},
+            ),
+            patch(
+                "tinyagentos.installers.lxc_installer.containers.exec_in_container",
+                side_effect=fake_exec,
+            ),
+            patch(
+                "tinyagentos.installers.lxc_installer.containers.push_file",
+                new_callable=AsyncMock,
+                return_value=(0, ""),
+            ),
+            patch(
+                "tinyagentos.installers.lxc_installer.containers.add_proxy_device",
+                new_callable=AsyncMock,
+                return_value={"success": True},
+            ),
+            patch(
+                "tinyagentos.installers.lxc_installer._find_free_port",
+                return_value=13004,
+            ),
+        ):
+            await installer.install(
+                "gitea",
+                INSTALL_CONFIG,
+                admin_password="",
+                restore_tarball="/tmp/state.tar",
+            )
+
+        full_cmds = [" ".join(c) for c in captured_cmds]
+        # The app.ini write is a bash -c that writes to /etc/gitea/app.ini.
+        # The systemd unit also references /etc/gitea/app.ini in ExecStart, so
+        # check specifically for the write-to-file pattern, not just mention.
+        assert not any(
+            "cat > /etc/gitea/app.ini" in c for c in full_cmds
+        ), "app.ini should not be written in restore mode"
+
+    @pytest.mark.asyncio
+    async def test_restore_mode_empty_password_allowed(self):
+        """install() must not raise ValueError when restore_tarball is provided and password is empty."""
+        installer = LXCInstaller()
+
+        async def fake_exec(container_name, cmd, timeout=300):
+            if "hostname" in cmd or "-I" in cmd:
+                return (0, "10.0.0.2")
+            return (0, "")
+
+        with (
+            patch(
+                "tinyagentos.installers.lxc_installer.containers._run",
+                new_callable=AsyncMock,
+                return_value=(1, "not found"),
+            ),
+            patch(
+                "tinyagentos.installers.lxc_installer.containers.container_exists",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
+            patch(
+                "tinyagentos.installers.lxc_installer.containers.create_container",
+                new_callable=AsyncMock,
+                return_value={"success": True},
+            ),
+            patch(
+                "tinyagentos.installers.lxc_installer.containers.exec_in_container",
+                side_effect=fake_exec,
+            ),
+            patch(
+                "tinyagentos.installers.lxc_installer.containers.push_file",
+                new_callable=AsyncMock,
+                return_value=(0, ""),
+            ),
+            patch(
+                "tinyagentos.installers.lxc_installer.containers.add_proxy_device",
+                new_callable=AsyncMock,
+                return_value={"success": True},
+            ),
+            patch(
+                "tinyagentos.installers.lxc_installer._find_free_port",
+                return_value=13005,
+            ),
+        ):
+            # Must not raise
+            result = await installer.install(
+                "gitea",
+                INSTALL_CONFIG,
+                admin_password="",
+                restore_tarball="/tmp/state.tar",
+            )
+        assert result["success"] is True
+
+
 class TestLXCInstallerRollback:
     @pytest.mark.asyncio
     async def test_container_deleted_on_failure(self):
