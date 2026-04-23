@@ -29,6 +29,12 @@ install:
     http: 3000
     ssh: 2222
 
+service_name: gitea
+
+state_paths:
+  - /etc/gitea/
+  - /home/git/
+
 lifecycle:
   health_check: "curl -sf http://localhost:3000/api/healthz"
 
