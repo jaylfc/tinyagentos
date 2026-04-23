@@ -32,6 +32,14 @@ install:
   state_paths:
     - /etc/gitea/
     - /home/git/
+  # Proxy routing fields (read by the service-proxy layer):
+  #   ui_port  – container-internal port the UI listens on. The installer's
+  #               proxy device forwards host_port → 127.0.0.1:<ui_port>.
+  #   ui_path  – path prefix the app serves its UI at (default "/").
+  #   icon     – optional icon path or URL for desktop/P8 use.
+  #   display_name – optional override for the UI display name.
+  ui_port: 3000
+  ui_path: "/"
 
 lifecycle:
   health_check: "curl -sf http://localhost:3000/api/healthz"

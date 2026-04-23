@@ -11,6 +11,13 @@ class InstalledAppsStore(BaseStore):
         version TEXT DEFAULT '',
         metadata TEXT DEFAULT '{}'
     );
+    CREATE TABLE IF NOT EXISTS app_runtime (
+        app_id TEXT PRIMARY KEY,
+        runtime_host TEXT NOT NULL,
+        runtime_port INTEGER NOT NULL,
+        backend TEXT DEFAULT '',
+        ui_path TEXT DEFAULT '/'
+    );
     """
 
     async def install(self, app_id: str, version: str = "", metadata: dict | None = None) -> None:
@@ -21,6 +28,40 @@ class InstalledAppsStore(BaseStore):
             (app_id, time.time(), version, json.dumps(metadata or {})),
         )
         await self._db.commit()
+
+    async def update_runtime_location(
+        self,
+        app_id: str,
+        host: str,
+        port: int,
+        backend: str = "",
+        ui_path: str = "/",
+    ) -> None:
+        """Record (or update) the current host:port where app_id is reachable."""
+        assert self._db is not None
+        await self._db.execute(
+            "INSERT OR REPLACE INTO app_runtime (app_id, runtime_host, runtime_port, backend, ui_path) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (app_id, host, port, backend, ui_path),
+        )
+        await self._db.commit()
+
+    async def get_runtime_location(self, app_id: str) -> dict | None:
+        """Return the runtime location dict or None if not set."""
+        assert self._db is not None
+        cursor = await self._db.execute(
+            "SELECT runtime_host, runtime_port, backend, ui_path FROM app_runtime WHERE app_id = ?",
+            (app_id,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return {
+            "runtime_host": row[0],
+            "runtime_port": row[1],
+            "backend": row[2],
+            "ui_path": row[3],
+        }
 
     async def uninstall(self, app_id: str) -> bool:
         assert self._db is not None
@@ -50,3 +91,9 @@ class InstalledAppsStore(BaseStore):
             {"app_id": r[0], "installed_at": r[1], "version": r[2], "metadata": json.loads(r[3] or "{}")}
             for r in rows
         ]
+
+    async def remove_runtime_location(self, app_id: str) -> None:
+        """Remove the runtime location for app_id (called on uninstall)."""
+        assert self._db is not None
+        await self._db.execute("DELETE FROM app_runtime WHERE app_id = ?", (app_id,))
+        await self._db.commit()
