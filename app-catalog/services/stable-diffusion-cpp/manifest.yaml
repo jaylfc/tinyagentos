@@ -1,6 +1,7 @@
 id: stable-diffusion-cpp
 name: Stable Diffusion.cpp
 type: service
+category: image-gen
 version: 0.2.0
 description: "Pure C/C++ image generation — runs on CPU including ARM. Like llama.cpp but for images."
 homepage: https://github.com/leejet/stable-diffusion.cpp

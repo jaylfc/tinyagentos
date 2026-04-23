@@ -1,6 +1,7 @@
 id: filebrowser
 name: File Browser
 type: service
+category: productivity
 version: latest
 description: "Web file manager — browse and manage agent workspaces through a clean browser UI"
 homepage: https://filebrowser.org

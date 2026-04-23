@@ -1,6 +1,7 @@
 id: uptime-kuma
 name: Uptime Kuma
 type: service
+category: monitoring
 version: 1.0.0
 description: "Self-hosted uptime monitoring — track agent and service availability with alerts"
 homepage: https://github.com/louislam/uptime-kuma

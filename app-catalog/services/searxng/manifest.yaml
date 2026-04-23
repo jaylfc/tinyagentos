@@ -1,6 +1,7 @@
 id: searxng
 name: SearXNG
 type: service
+category: infrastructure
 version: 2024.12.0
 description: "Privacy-respecting metasearch engine — powers AI search tools like Perplexica"
 homepage: https://github.com/searxng/searxng

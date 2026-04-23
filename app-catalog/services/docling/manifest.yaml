@@ -1,6 +1,7 @@
 id: docling
 name: Docling
 type: service
+category: productivity
 version: 2.0.0
 description: "IBM's document conversion — PDF/DOCX/PPTX to clean Markdown or JSON with layout preservation"
 homepage: https://github.com/DS4SD/docling

@@ -1,6 +1,7 @@
 id: tailscale
 name: Tailscale
 type: service
+category: infrastructure
 version: 1.76.0
 description: "Zero-config VPN — secure remote access to your TinyAgentOS from anywhere"
 homepage: https://tailscale.com

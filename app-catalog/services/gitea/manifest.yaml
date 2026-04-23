@@ -1,6 +1,7 @@
 id: gitea
 name: Gitea
 type: service
+category: dev-tool
 version: 1.22.0
 description: "Self-hosted Git server — auto-creates accounts for deployed agents"
 homepage: https://gitea.io

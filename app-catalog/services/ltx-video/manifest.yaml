@@ -1,6 +1,7 @@
 id: ltx-video
 name: LTX Video
 type: service
+category: video-gen
 version: 0.9.0
 description: "Lightweight AI video generation by Lightricks — fastest open source video model, 6GB VRAM minimum"
 homepage: https://github.com/Lightricks/LTX-Video

@@ -1,6 +1,7 @@
 id: stirling-pdf
 name: Stirling PDF
 type: service
+category: productivity
 version: 0.36.0
 description: "Self-hosted PDF toolkit — merge, split, convert, OCR, compress. Agents can process documents."
 homepage: https://github.com/Stirling-Tools/Stirling-PDF

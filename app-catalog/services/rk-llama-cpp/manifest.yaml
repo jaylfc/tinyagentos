@@ -1,6 +1,7 @@
 id: rk-llama-cpp
 name: rk-llama.cpp
 type: service
+category: llm-runtime
 version: 0.1.0
 description: "llama.cpp with Rockchip NPU backend — run GGUF models directly on RK3588 NPU, no model conversion"
 homepage: https://github.com/invisiofficial/rk-llama.cpp

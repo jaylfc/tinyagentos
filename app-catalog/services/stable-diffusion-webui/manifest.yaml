@@ -1,6 +1,7 @@
 id: stable-diffusion-webui
 name: Stable Diffusion Web UI
 type: service
+category: image-gen
 version: 1.10.0
 description: "AUTOMATIC1111's web UI for Stable Diffusion — the most popular image generation interface"
 homepage: https://github.com/AUTOMATIC1111/stable-diffusion-webui

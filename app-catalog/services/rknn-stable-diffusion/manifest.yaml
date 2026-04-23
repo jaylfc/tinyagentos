@@ -1,6 +1,7 @@
 id: rknn-stable-diffusion
 name: RKNN Stable Diffusion
 type: service
+category: image-gen
 version: 0.1.0
 description: "Image generation on Rockchip NPU — LCM Dreamshaper V7, 512x512 in seconds on RK3588"
 homepage: https://github.com/airockchip/rknn_model_zoo

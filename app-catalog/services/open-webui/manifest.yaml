@@ -1,6 +1,7 @@
 id: open-webui
 name: Open WebUI
 type: service
+category: ai-app
 version: 0.5.0
 description: "Self-hosted ChatGPT-style interface — connects to Ollama, llama.cpp, any OpenAI-compatible API"
 homepage: https://github.com/open-webui/open-webui

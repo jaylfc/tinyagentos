@@ -1,6 +1,7 @@
 id: rkllama
 name: rkllama (RK3588 NPU LLM)
 type: service
+category: llm-runtime
 version: 0.1.0
 description: "Ollama-compatible LLM server on Rockchip NPU — run RKNN models natively on RK3588"
 homepage: https://github.com/NotByAI/rkllama

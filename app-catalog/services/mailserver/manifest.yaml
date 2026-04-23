@@ -1,6 +1,7 @@
 id: mailserver
 name: Docker Mailserver
 type: service
+category: infrastructure
 version: 14.0.0
 description: "Simple full-stack mail server — agents can send and receive email"
 homepage: https://github.com/docker-mailserver/docker-mailserver

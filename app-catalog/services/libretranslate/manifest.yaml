@@ -1,6 +1,7 @@
 id: libretranslate
 name: LibreTranslate
 type: service
+category: productivity
 version: 1.6.0
 description: "Self-hosted translation API — 30+ languages, no cloud, agents can translate content"
 homepage: https://github.com/LibreTranslate/LibreTranslate
