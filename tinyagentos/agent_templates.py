@@ -290,6 +290,11 @@ def _get_vendored() -> list[dict]:
     return _vendored_cache
 
 
+def vendored_templates() -> list[dict]:
+    """Public accessor for vendored templates loaded from data/templates/."""
+    return _get_vendored()
+
+
 def list_templates(category: str | None = None, source: str | None = None,
                    include_vendored: bool = True) -> list[dict]:
     """Return templates, optionally filtered by category and/or source.
