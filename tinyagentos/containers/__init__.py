@@ -339,23 +339,59 @@ async def remote_add(
     name: str,
     url: str,
     *,
-    tls_cert_fingerprint: str | None = None,
-    trust_password: str | None = None,
+    token: str,
+    accept_certificate: bool = True,
 ) -> dict:
-    """Register an incus remote host.
+    """Register an incus remote host using a one-time TLS token (incus 6.x).
 
-    Wraps ``incus remote add <name> <url> --accept-certificate [--password=<pw>]``.
-    The ``--accept-certificate`` flag is required for non-interactive use; the
-    caller is responsible for verifying the fingerprint out-of-band if security
-    matters (pass ``tls_cert_fingerprint`` to include it in any error messages).
+    Wraps ``incus remote add <name> <url> --token <token>``
+    (plus ``--accept-certificate`` when *accept_certificate* is True).
+
+    The token is generated on the target host via ``remote_generate_token``
+    and must be passed by the caller.  ``core.trust_password`` was removed
+    in incus 6.x; this is the replacement enrollment flow.
 
     Returns ``{"success": bool, "output": str}``.
     """
-    cmd = ["incus", "remote", "add", name, url, "--accept-certificate"]
-    if trust_password is not None:
-        cmd.append(f"--password={trust_password}")
+    cmd = ["incus", "remote", "add", name, url, "--token", token]
+    if accept_certificate:
+        cmd.append("--accept-certificate")
     code, output = await _run(cmd)
     return {"success": code == 0, "output": output}
+
+
+async def remote_generate_token(
+    client_name: str,
+    *,
+    projects: list[str] | None = None,
+    restricted: bool = False,
+) -> dict:
+    """Run ``incus config trust add`` on the LOCAL incus; return ``{"token": "..."}``.
+
+    This must be called on the **target host** (the one being enrolled INTO),
+    not on the source.  In cluster context, invoke this via the worker registry
+    to ask the target worker to generate a token for the source host.
+
+    The command output ends with a base64-encoded token on its own line.
+
+    Returns ``{"success": bool, "token": str, "output": str}``.
+    """
+    cmd = ["incus", "config", "trust", "add", client_name]
+    if restricted:
+        cmd.append("--restricted")
+    if projects:
+        cmd.extend(["--projects", ",".join(projects)])
+    code, output = await _run(cmd)
+    if code != 0:
+        return {"success": False, "token": "", "output": output}
+    # The token is the last non-empty line of the output.
+    token = ""
+    for line in reversed(output.strip().splitlines()):
+        line = line.strip()
+        if line:
+            token = line
+            break
+    return {"success": True, "token": token, "output": output}
 
 
 async def remote_list() -> list[dict]:
@@ -557,6 +593,7 @@ __all__ = [
     "snapshot_delete",
     "set_env",
     "remote_add",
+    "remote_generate_token",
     "remote_list",
     "remote_remove",
     "migrate_container",

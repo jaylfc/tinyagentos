@@ -7,7 +7,7 @@ from __future__ import annotations
 import pytest
 from unittest.mock import AsyncMock, call, patch
 
-from tinyagentos.containers import migrate_container, remote_add, remote_list, remote_remove
+from tinyagentos.containers import migrate_container, remote_add, remote_generate_token, remote_list, remote_remove
 
 
 # ---------------------------------------------------------------------------
@@ -16,30 +16,65 @@ from tinyagentos.containers import migrate_container, remote_add, remote_list, r
 
 class TestRemoteAdd:
     @pytest.mark.asyncio
-    async def test_calls_incus_remote_add(self):
+    async def test_calls_incus_remote_add_with_token(self):
         with patch("tinyagentos.containers._run", new_callable=AsyncMock) as mock_run:
             mock_run.return_value = (0, "")
-            result = await remote_add("fedora-worker", "https://192.168.1.50:8443")
+            result = await remote_add(
+                "fedora-worker", "https://192.168.1.50:8443", token="abc123token"
+            )
         mock_run.assert_called_once_with(
             ["incus", "remote", "add", "fedora-worker", "https://192.168.1.50:8443",
-             "--accept-certificate"]
+             "--token", "abc123token", "--accept-certificate"]
         )
         assert result["success"] is True
 
     @pytest.mark.asyncio
-    async def test_includes_password_when_given(self):
+    async def test_accept_certificate_omitted_when_false(self):
         with patch("tinyagentos.containers._run", new_callable=AsyncMock) as mock_run:
             mock_run.return_value = (0, "")
-            await remote_add("fw", "https://10.0.0.5:8443", trust_password="secret")
+            await remote_add("fw", "https://10.0.0.5:8443", token="tok", accept_certificate=False)
         cmd = mock_run.call_args[0][0]
-        assert "--password=secret" in cmd
+        assert "--accept-certificate" not in cmd
+        assert "--token" in cmd
 
     @pytest.mark.asyncio
     async def test_returns_failure_on_nonzero_exit(self):
         with patch("tinyagentos.containers._run", new_callable=AsyncMock) as mock_run:
             mock_run.return_value = (1, "connection refused")
-            result = await remote_add("bad", "https://10.0.0.99:8443")
+            result = await remote_add("bad", "https://10.0.0.99:8443", token="tok")
         assert result["success"] is False
+
+
+class TestRemoteGenerateToken:
+    @pytest.mark.asyncio
+    async def test_calls_incus_config_trust_add(self):
+        output = "To enroll use this token:\nabc123base64token=="
+        with patch("tinyagentos.containers._run", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = (0, output)
+            result = await remote_generate_token("my-client")
+        mock_run.assert_called_once_with(
+            ["incus", "config", "trust", "add", "my-client"]
+        )
+        assert result["success"] is True
+        assert result["token"] == "abc123base64token=="
+
+    @pytest.mark.asyncio
+    async def test_restricted_and_projects_flags(self):
+        with patch("tinyagentos.containers._run", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = (0, "token123")
+            await remote_generate_token("c", projects=["p1", "p2"], restricted=True)
+        cmd = mock_run.call_args[0][0]
+        assert "--restricted" in cmd
+        assert "--projects" in cmd
+        assert "p1,p2" in cmd
+
+    @pytest.mark.asyncio
+    async def test_returns_failure_on_nonzero_exit(self):
+        with patch("tinyagentos.containers._run", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = (1, "permission denied")
+            result = await remote_generate_token("c")
+        assert result["success"] is False
+        assert result["token"] == ""
 
 
 class TestRemoteList:
@@ -262,14 +297,30 @@ class TestMigrateRoutes:
             resp = await client.post("/api/cluster/remotes", json={
                 "name": "fedora-worker",
                 "url": "https://192.168.1.50:8443",
+                "token": "abc123token",
             })
         assert resp.status_code == 200
         assert resp.json()["status"] == "registered"
 
     @pytest.mark.asyncio
     async def test_post_remotes_missing_fields(self, client):
-        resp = await client.post("/api/cluster/remotes", json={"name": "", "url": ""})
+        resp = await client.post("/api/cluster/remotes", json={"name": "", "url": "", "token": "t"})
         assert resp.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_post_remotes_missing_token(self, client):
+        resp = await client.post("/api/cluster/remotes", json={
+            "name": "fw", "url": "https://10.0.0.5:8443", "token": "",
+        })
+        assert resp.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_post_remotes_token_generates_token(self, client):
+        with patch("tinyagentos.routes.cluster_migrate.remote_generate_token", new_callable=AsyncMock) as m:
+            m.return_value = {"success": True, "token": "xyz789==", "output": ""}
+            resp = await client.post("/api/cluster/remotes/token", json={"client_name": "pi-node"})
+        assert resp.status_code == 200
+        assert resp.json()["token"] == "xyz789=="
 
     @pytest.mark.asyncio
     async def test_get_remotes_lists(self, client):
