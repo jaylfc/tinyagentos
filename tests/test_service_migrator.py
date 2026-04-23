@@ -179,6 +179,12 @@ class TestMigrateServiceSuccess:
             exec_calls.append(list(cmd))
             return (0, "")
 
+        run_calls: list = []
+
+        async def fake_run(cmd, timeout=120):
+            run_calls.append(list(cmd))
+            return (0, "Name: taos-svc-gitea\nStatus: RUNNING\n" if "info" in cmd else "")
+
         with (
             patch(
                 "tinyagentos.cluster.service_migrator.containers.remote_list",
@@ -190,21 +196,12 @@ class TestMigrateServiceSuccess:
             ),
             patch(
                 "tinyagentos.cluster.service_migrator.containers._run",
-                new_callable=AsyncMock,
-                side_effect=[
-                    (0, "Name: taos-svc-gitea\nStatus: RUNNING\n"),
-                    (0, ""),
-                ],
+                side_effect=fake_run,
             ),
             patch(
                 "tinyagentos.cluster.service_migrator.containers.exec_in_container",
                 side_effect=fake_exec,
             ),
-            patch(
-                "tinyagentos.cluster.service_migrator.containers.destroy_container",
-                new_callable=AsyncMock,
-                return_value={"success": True},
-            ) as mock_destroy,
             patch(
                 "tinyagentos.cluster.service_migrator.LXCInstaller",
             ) as MockInstaller,
@@ -228,13 +225,21 @@ class TestMigrateServiceSuccess:
         assert result["source"] == "local:taos-svc-gitea"
         assert result["target"] == "fedora-worker:taos-svc-gitea"
         assert result["tarball_size_bytes"] == 2048
-        mock_destroy.assert_awaited_once_with("taos-svc-gitea")
+        delete_cmds = [c for c in run_calls if "delete" in c]
+        assert any("taos-svc-gitea" in c for c in delete_cmds), \
+            "source container delete not called after success"
 
     @pytest.mark.asyncio
     async def test_success_path_keeps_source_when_requested(self):
         """On success with keep_source=True, source container is NOT destroyed."""
         async def fake_exec(container_name, cmd, timeout=300):
             return (0, "")
+
+        run_calls: list = []
+
+        async def fake_run(cmd, timeout=120):
+            run_calls.append(list(cmd))
+            return (0, "Name: taos-svc-gitea\nStatus: RUNNING\n" if "info" in cmd else "")
 
         with (
             patch(
@@ -247,21 +252,12 @@ class TestMigrateServiceSuccess:
             ),
             patch(
                 "tinyagentos.cluster.service_migrator.containers._run",
-                new_callable=AsyncMock,
-                side_effect=[
-                    (0, "Name: taos-svc-gitea\nStatus: RUNNING\n"),
-                    (0, ""),
-                ],
+                side_effect=fake_run,
             ),
             patch(
                 "tinyagentos.cluster.service_migrator.containers.exec_in_container",
                 side_effect=fake_exec,
             ),
-            patch(
-                "tinyagentos.cluster.service_migrator.containers.destroy_container",
-                new_callable=AsyncMock,
-                return_value={"success": True},
-            ) as mock_destroy,
             patch(
                 "tinyagentos.cluster.service_migrator.LXCInstaller",
             ) as MockInstaller,
@@ -280,13 +276,17 @@ class TestMigrateServiceSuccess:
             )
 
         assert result["success"] is True
-        mock_destroy.assert_not_awaited()
+        delete_cmds = [c for c in run_calls if "delete" in c]
+        assert not delete_cmds, "source container should not be deleted when keep_source=True"
 
     @pytest.mark.asyncio
     async def test_installer_called_with_restore_tarball_and_target_remote(self):
         """LXCInstaller.install must be called with restore_tarball and target_remote."""
         async def fake_exec(container_name, cmd, timeout=300):
             return (0, "")
+
+        async def fake_run(cmd, timeout=120):
+            return (0, "Name: taos-svc-gitea\nStatus: RUNNING\n" if "info" in cmd else "")
 
         with (
             patch(
@@ -299,20 +299,11 @@ class TestMigrateServiceSuccess:
             ),
             patch(
                 "tinyagentos.cluster.service_migrator.containers._run",
-                new_callable=AsyncMock,
-                side_effect=[
-                    (0, "Name: taos-svc-gitea\nStatus: RUNNING\n"),
-                    (0, ""),
-                ],
+                side_effect=fake_run,
             ),
             patch(
                 "tinyagentos.cluster.service_migrator.containers.exec_in_container",
                 side_effect=fake_exec,
-            ),
-            patch(
-                "tinyagentos.cluster.service_migrator.containers.destroy_container",
-                new_callable=AsyncMock,
-                return_value={"success": True},
             ),
             patch(
                 "tinyagentos.cluster.service_migrator.LXCInstaller",
@@ -334,6 +325,109 @@ class TestMigrateServiceSuccess:
         assert install_kwargs.kwargs["target_remote"] == "fedora-worker"
         assert install_kwargs.kwargs["restore_tarball"] is not None
         assert install_kwargs.kwargs["admin_password"] == ""
+
+
+# ---------------------------------------------------------------------------
+# source_remote tests
+# ---------------------------------------------------------------------------
+
+class TestMigrateServiceSourceRemote:
+    @pytest.mark.asyncio
+    async def test_same_source_and_target_remote_returns_error(self):
+        """When source_remote == target_remote, returns error without any incus calls."""
+        with patch(
+            "tinyagentos.cluster.service_migrator.containers.remote_list",
+            new_callable=AsyncMock,
+            return_value=[
+                {"name": "fedora-worker", "addr": "https://x:8443", "protocol": "incus"},
+            ],
+        ):
+            result = await migrate_service(
+                "gitea", "fedora-worker",
+                install_config=_INSTALL_CONFIG,
+                state_paths=_STATE_PATHS,
+                service_name="gitea",
+                source_remote="fedora-worker",
+            )
+        assert result["success"] is False
+        assert "fedora-worker" in result["error"]
+        assert "no-op" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_source_remote_prefixes_all_source_ops_not_target(self):
+        """With source_remote set, all incus source ops use remote:name; target ops do not."""
+        exec_calls: list = []
+
+        async def fake_exec(container_name, cmd, timeout=300):
+            exec_calls.append((container_name, list(cmd)))
+            return (0, "")
+
+        run_calls: list = []
+
+        async def fake_run(cmd, timeout=120):
+            run_calls.append(list(cmd))
+            return (0, "Name: taos-svc-gitea\nStatus: RUNNING\n" if "info" in cmd else "")
+
+        with (
+            patch(
+                "tinyagentos.cluster.service_migrator.containers.remote_list",
+                new_callable=AsyncMock,
+                return_value=[
+                    {"name": "local", "addr": "unix://", "protocol": "incus"},
+                    {"name": "fedora-worker", "addr": "https://x:8443", "protocol": "incus"},
+                    {"name": "pi-worker", "addr": "https://y:8443", "protocol": "incus"},
+                ],
+            ),
+            patch(
+                "tinyagentos.cluster.service_migrator.containers._run",
+                side_effect=fake_run,
+            ),
+            patch(
+                "tinyagentos.cluster.service_migrator.containers.exec_in_container",
+                side_effect=fake_exec,
+            ),
+            patch(
+                "tinyagentos.cluster.service_migrator.LXCInstaller",
+            ) as MockInstaller,
+            patch("os.path.getsize", return_value=1024),
+            patch("os.unlink"),
+        ):
+            instance = MockInstaller.return_value
+            instance.install = AsyncMock(return_value={"success": True, "app_id": "gitea"})
+
+            result = await migrate_service(
+                "gitea", "pi-worker",
+                install_config=_INSTALL_CONFIG,
+                state_paths=_STATE_PATHS,
+                service_name="gitea",
+                source_remote="fedora-worker",
+                keep_source=False,
+            )
+
+        assert result["success"] is True
+        assert result["source"] == "fedora-worker:taos-svc-gitea"
+        assert result["target"] == "pi-worker:taos-svc-gitea"
+
+        # All exec_in_container calls must use the source remote prefix.
+        for container_arg, _ in exec_calls:
+            assert container_arg == "fedora-worker:taos-svc-gitea", (
+                f"exec_in_container called with unexpected name: {container_arg!r}"
+            )
+
+        # incus info and incus file pull must reference the source remote.
+        info_cmds = [c for c in run_calls if "info" in c]
+        assert all("fedora-worker:taos-svc-gitea" in c for c in info_cmds)
+
+        pull_cmds = [c for c in run_calls if "file" in c and "pull" in c]
+        assert all("fedora-worker:taos-svc-gitea" in " ".join(c) for c in pull_cmds)
+
+        # Delete must reference the source remote prefix.
+        delete_cmds = [c for c in run_calls if "delete" in c]
+        assert any("fedora-worker:taos-svc-gitea" in c for c in delete_cmds)
+
+        # LXCInstaller.install must target pi-worker (not fedora-worker).
+        install_kwargs = instance.install.call_args
+        assert install_kwargs.kwargs["target_remote"] == "pi-worker"
 
 
 # ---------------------------------------------------------------------------
