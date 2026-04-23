@@ -19,21 +19,22 @@ export async function fetchLibrary(opts: {
 /**
  * Fetch full persona detail. The unified `/api/personas/library/{source}/{id}` endpoint
  * does not exist, so we dispatch on source:
- *   - builtin → GET /api/templates/{id}  (returns { id, name, system_prompt, ... })
+ *   - builtin / awesome-openclaw / prompt-library → GET /api/templates/{id}
+ *     (server-side get_template searches builtin + vendored by id)
  *   - user    → GET /api/user-personas/{id} (returns { id, name, soul_md, agent_md, ... })
  */
 export async function fetchPersonaDetail(
   source: string,
   id: string,
 ): Promise<{ soul_md: string; agent_md?: string; name: string; source: string; id: string }> {
-  if (source === "builtin") {
+  if (source === "builtin" || source === "awesome-openclaw" || source === "prompt-library") {
     const res = await fetch(`/api/templates/${encodeURIComponent(id)}`);
     if (!res.ok) throw new Error(`Template not found: ${id}`);
     const j = await res.json();
     return {
       id: j.id,
       name: j.name,
-      source: "builtin",
+      source,
       soul_md: j.system_prompt ?? "",
       agent_md: undefined,
     };
