@@ -5,7 +5,7 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from tinyagentos.containers import migrate_container, remote_add, remote_list, remote_remove
+from tinyagentos.containers import migrate_container, remote_add, remote_generate_token, remote_list, remote_remove
 
 router = APIRouter()
 
@@ -13,8 +13,13 @@ router = APIRouter()
 class RemoteAddBody(BaseModel):
     name: str
     url: str
-    trust_password: str | None = None
-    tls_cert_fingerprint: str | None = None
+    token: str
+
+
+class GenerateTokenBody(BaseModel):
+    client_name: str
+    projects: list[str] | None = None
+    restricted: bool = False
 
 
 class MigrateBody(BaseModel):
@@ -28,18 +33,30 @@ class MigrateBody(BaseModel):
 
 @router.post("/api/cluster/remotes")
 async def add_remote(body: RemoteAddBody):
-    """Register an incus remote host."""
+    """Register an incus remote host using a one-time token."""
     if not body.name or not body.url:
         return JSONResponse({"error": "name and url are required"}, status_code=400)
-    result = await remote_add(
-        body.name,
-        body.url,
-        tls_cert_fingerprint=body.tls_cert_fingerprint,
-        trust_password=body.trust_password,
-    )
+    if not body.token:
+        return JSONResponse({"error": "token is required"}, status_code=400)
+    result = await remote_add(body.name, body.url, token=body.token)
     if not result["success"]:
         return JSONResponse({"error": result["output"]}, status_code=500)
     return {"status": "registered", "name": body.name}
+
+
+@router.post("/api/cluster/remotes/token")
+async def generate_token(body: GenerateTokenBody):
+    """Generate a one-time enrollment token on this host for a remote client."""
+    if not body.client_name:
+        return JSONResponse({"error": "client_name is required"}, status_code=400)
+    result = await remote_generate_token(
+        body.client_name,
+        projects=body.projects,
+        restricted=body.restricted,
+    )
+    if not result["success"]:
+        return JSONResponse({"error": result["output"]}, status_code=500)
+    return {"token": result["token"]}
 
 
 @router.get("/api/cluster/remotes")
