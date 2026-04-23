@@ -411,6 +411,10 @@ async def test_late_event_writes_late_jsonl_not_db(tmp_path):
         mock_time.time.return_value = old_ts
         await store.record("lifecycle", created_at=old_ts, payload={"event": "old"})
     await store.close()
+    # aiosqlite's worker thread on Python 3.10 can return from close() before
+    # the underlying SQLite connection FD is fully released; yield once to let
+    # the worker finish draining so our chmod below takes effect on every FD.
+    await asyncio.sleep(0.05)
 
     db_path = _bucket_db_path(tmp_path, "agent-seal-c", old_bucket)
     late_path = _bucket_late_jsonl_path(tmp_path, "agent-seal-c", old_bucket)
