@@ -19,6 +19,7 @@ _DATA_SOURCE_TO_UI = {
     "awesome-openclaw-agents": "awesome-openclaw",
     "system-prompt-library": "prompt-library",
 }
+_UI_TO_DATA_SOURCE = {v: k for k, v in _DATA_SOURCE_TO_UI.items()}
 
 
 @router.get("/api/templates/stats")
@@ -59,19 +60,23 @@ async def list_template_sources():
 
 @router.get("/api/templates/external/{source_id}")
 async def list_external_templates(request: Request, source_id: str):
-    """Fetch template index from an external source."""
+    """Fetch template index from an external source. Accepts UI aliases
+    (e.g. prompt-library) as advertised by /api/templates/sources."""
     http_client = request.app.state.http_client
-    templates = await fetch_external_index(source_id, http_client)
+    data_id = _UI_TO_DATA_SOURCE.get(source_id, source_id)
+    templates = await fetch_external_index(data_id, http_client)
     return {"source": source_id, "templates": templates, "count": len(templates)}
 
 
 @router.get("/api/templates/external/{source_id}/fetch")
 async def fetch_external(request: Request, source_id: str, path: str = ""):
-    """Fetch a single template's full content from an external source."""
+    """Fetch a single template's full content from an external source. Accepts
+    UI aliases (e.g. prompt-library) as advertised by /api/templates/sources."""
     if not path:
         return JSONResponse({"error": "path parameter required"}, status_code=400)
     http_client = request.app.state.http_client
-    template = await fetch_external_template(source_id, path, http_client)
+    data_id = _UI_TO_DATA_SOURCE.get(source_id, source_id)
+    template = await fetch_external_template(data_id, path, http_client)
     if not template:
         return JSONResponse({"error": "Template not found or source unavailable"}, status_code=404)
     return template
