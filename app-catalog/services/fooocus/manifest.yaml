@@ -1,6 +1,7 @@
 id: fooocus
 name: Fooocus
 type: service
+category: image-gen
 version: 2.5.0
 description: "Simple AI image generation — Midjourney-like UX, minimal setup, just works"
 homepage: https://github.com/lllyasviel/Fooocus

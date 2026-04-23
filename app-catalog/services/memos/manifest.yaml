@@ -1,6 +1,7 @@
 id: memos
 name: Memos
 type: service
+category: productivity
 version: stable
 description: "Lightweight note-taking and knowledge base — agents can store and retrieve notes"
 homepage: https://usememos.com

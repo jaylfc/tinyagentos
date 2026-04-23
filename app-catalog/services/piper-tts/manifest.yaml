@@ -1,6 +1,7 @@
 id: piper-tts
 name: Piper TTS
 type: service
+category: voice
 version: latest
 description: "Fast local text-to-speech via Wyoming Piper — agents can generate natural voice audio"
 homepage: https://github.com/rhasspy/piper

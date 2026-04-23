@@ -1,6 +1,7 @@
 id: dify
 name: Dify
 type: service
+category: ai-app
 version: 0.15.0
 description: "RAG + agent builder with visual workflow editor — self-hosted LLMOps platform"
 homepage: https://github.com/langgenius/dify

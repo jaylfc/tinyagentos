@@ -1,6 +1,7 @@
 id: ddns
 name: Dynamic DNS
 type: service
+category: infrastructure
 version: 1.0.0
 description: "Automatic DNS updates — access your TinyAgentOS from a custom domain even with a changing IP"
 homepage: https://github.com/qdm12/ddns-updater

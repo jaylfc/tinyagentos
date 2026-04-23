@@ -1,6 +1,7 @@
 id: rk3588-sd-gpu
 name: Stable Diffusion (Mali GPU)
 type: service
+category: image-gen
 version: 0.1.0
 description: "Stable Diffusion on RK3588 Mali-G610 GPU via MLC/TVM — alternative to NPU path"
 homepage: https://github.com/happyme531/RK3588-stable-diffusion-GPU

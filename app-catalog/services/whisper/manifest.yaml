@@ -1,6 +1,7 @@
 id: whisper
 name: Whisper ASR
 type: service
+category: voice
 version: latest
 description: "Speech-to-text via OpenAI Whisper — agents can transcribe audio files and streams"
 homepage: https://github.com/openai/whisper

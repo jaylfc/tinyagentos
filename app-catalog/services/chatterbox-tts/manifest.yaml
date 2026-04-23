@@ -1,6 +1,7 @@
 id: chatterbox-tts
 name: Chatterbox TTS
 type: service
+category: voice
 version: 0.1.0
 description: "Real-time speech generation — natural quality voice synthesis, lightweight inference"
 homepage: https://github.com/resemble-ai/chatterbox

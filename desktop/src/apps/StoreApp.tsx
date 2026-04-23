@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { ShoppingBag, Search, Download, Trash2, Check, Package, Loader2, Bot, Brain, Server, Plug, Wrench, Image, Music, Video, Globe, Home, Cpu } from "lucide-react";
+import { ShoppingBag, Search, Download, Trash2, Check, Package, Loader2, Bot, Brain, Plug, Wrench, Image, Music, Video, Globe, Home, Cpu, Sparkles, Workflow, ClipboardList, Server } from "lucide-react";
 import { Button, Card, CardContent, CardFooter, CardHeader, Input } from "@/components/ui";
 import { fetchLatestFrameworks, LatestVersion } from "@/lib/framework-api";
 
@@ -30,22 +30,32 @@ interface Category {
   description: string;
 }
 
+// Each category lists the identifiers (category OR type fallback) that land in it.
+// The Services category is intentionally absent — every service-typed app carries
+// an explicit `category:` that routes it to one of the categories below.
 const CATEGORIES: Category[] = [
   { id: "all", label: "All Apps", icon: <ShoppingBag size={16} />, types: [], description: "Browse everything" },
   { id: "frameworks", label: "Agent Frameworks", icon: <Bot size={16} />, types: ["agent-framework"], description: "Execution engines for your AI agents" },
   { id: "models", label: "Models", icon: <Brain size={16} />, types: ["model"], description: "Language models for inference" },
+  { id: "llm-runtime", label: "LLM Runtime", icon: <Cpu size={16} />, types: ["llm-runtime"], description: "LLM servers, gateways, and distributed inference" },
   { id: "memory", label: "Memory", icon: <Brain size={16} />, types: ["memory"], description: "Memory backends and knowledge stores for agents" },
   { id: "plugins", label: "Plugins", icon: <Plug size={16} />, types: ["plugin"], description: "Tools and capabilities for agents" },
   { id: "mcp-server", label: "MCP Servers", icon: <Cpu size={16} />, types: ["mcp"], description: "Model Context Protocol servers" },
-  { id: "services", label: "Services", icon: <Server size={16} />, types: ["service"], description: "Infrastructure and backends" },
+  { id: "ai-app", label: "AI Apps", icon: <Sparkles size={16} />, types: ["ai-app"], description: "Self-hosted AI frontends and builders" },
   { id: "streaming", label: "Streaming Apps", icon: <Globe size={16} />, types: ["streaming-app"], description: "Desktop apps streamed via KasmVNC" },
   { id: "image", label: "Image Generation", icon: <Image size={16} />, types: ["image-gen", "image-model"], description: "Stable Diffusion and image models" },
-  { id: "audio", label: "Audio & Voice", icon: <Music size={16} />, types: ["voice", "audio"], description: "TTS, STT, and music generation" },
+  { id: "audio", label: "Audio & Voice", icon: <Music size={16} />, types: ["voice", "audio"], description: "TTS and speech-to-text" },
+  { id: "music", label: "Music", icon: <Music size={16} />, types: ["music"], description: "Music and sound generation" },
   { id: "video", label: "Video", icon: <Video size={16} />, types: ["video-gen"], description: "Video generation tools" },
   { id: "devtools", label: "Dev Tools", icon: <Wrench size={16} />, types: ["dev-tool"], description: "Development and coding tools" },
+  { id: "automation", label: "Automation", icon: <Workflow size={16} />, types: ["automation"], description: "Workflow automation and integrations" },
+  { id: "productivity", label: "Productivity", icon: <ClipboardList size={16} />, types: ["productivity"], description: "Notes, files, documents, and collaboration" },
   { id: "home", label: "Home & Monitor", icon: <Home size={16} />, types: ["home", "monitoring"], description: "Home automation and monitoring" },
-  { id: "infra", label: "Infrastructure", icon: <Cpu size={16} />, types: ["infrastructure"], description: "System services and networking" },
+  { id: "infra", label: "Infrastructure", icon: <Server size={16} />, types: ["infrastructure"], description: "Networking, mail, and system services" },
 ];
+
+/** The identifier this app groups under — its explicit category, or its type as fallback. */
+const appGroup = (app: Pick<CatalogApp, "type" | "category">): string => app.category || app.type;
 
 /* ------------------------------------------------------------------ */
 /*  Mock data with proper categories                                   */
@@ -74,10 +84,10 @@ const MOCK_APPS: CatalogApp[] = [
   { id: "web-search", name: "Web Search", type: "plugin", version: "0.3.0", description: "Search the web via SearXNG or Perplexica", installed: false, compat: "green" },
   { id: "image-generation-tool", name: "Image Generation", type: "plugin", version: "0.1.0", description: "Generate images via Stable Diffusion", installed: false, compat: "green" },
 
-  // Services
-  { id: "searxng", name: "SearXNG", type: "service", version: "latest", description: "Privacy-respecting metasearch engine", installed: false, compat: "green" },
-  { id: "gitea", name: "Gitea", type: "service", version: "latest", description: "Lightweight self-hosted Git service", installed: false, compat: "green" },
-  { id: "n8n", name: "n8n", type: "service", version: "latest", description: "Workflow automation platform", installed: false, compat: "green" },
+  // Ex-services, now categorised
+  { id: "searxng", name: "SearXNG", type: "service", category: "infrastructure", version: "latest", description: "Privacy-respecting metasearch engine", installed: false, compat: "green" },
+  { id: "gitea", name: "Gitea", type: "service", category: "dev-tool", version: "latest", description: "Lightweight self-hosted Git service", installed: false, compat: "green" },
+  { id: "n8n", name: "n8n", type: "service", category: "automation", version: "latest", description: "Workflow automation platform", installed: false, compat: "green" },
 
   // Streaming Apps
   { id: "code-server-kasm", name: "Code Server (Streamed)", type: "streaming-app", version: "latest", description: "VS Code in the browser via KasmVNC", installed: false, compat: "green" },
@@ -129,6 +139,11 @@ const TYPE_COLORS: Record<string, string> = {
   home: "bg-green-500/20 text-green-400",
   monitoring: "bg-green-500/20 text-green-400",
   infrastructure: "bg-slate-500/20 text-slate-400",
+  "ai-app": "bg-fuchsia-500/20 text-fuchsia-400",
+  automation: "bg-lime-500/20 text-lime-400",
+  productivity: "bg-sky-500/20 text-sky-400",
+  "llm-runtime": "bg-purple-500/20 text-purple-400",
+  music: "bg-rose-500/20 text-rose-400",
 };
 
 const TYPE_LABELS: Record<string, string> = {
@@ -147,6 +162,11 @@ const TYPE_LABELS: Record<string, string> = {
   home: "Home",
   monitoring: "Monitor",
   infrastructure: "Infra",
+  "ai-app": "AI App",
+  automation: "Automation",
+  productivity: "Productivity",
+  "llm-runtime": "LLM Runtime",
+  music: "Music",
 };
 
 const COMPAT_COLORS: Record<string, string> = { green: "bg-emerald-400", yellow: "bg-amber-400", red: "bg-red-400" };
@@ -161,6 +181,11 @@ const TYPE_ICON_GRADIENTS: Record<string, string> = {
   "image-gen": "linear-gradient(135deg, rgba(236,72,153,0.3), rgba(236,72,153,0.1))",
   voice: "linear-gradient(135deg, rgba(249,115,22,0.3), rgba(249,115,22,0.1))",
   "dev-tool": "linear-gradient(135deg, rgba(6,182,212,0.3), rgba(6,182,212,0.1))",
+  "ai-app": "linear-gradient(135deg, rgba(217,70,239,0.3), rgba(217,70,239,0.1))",
+  automation: "linear-gradient(135deg, rgba(132,204,22,0.3), rgba(132,204,22,0.1))",
+  productivity: "linear-gradient(135deg, rgba(14,165,233,0.3), rgba(14,165,233,0.1))",
+  "llm-runtime": "linear-gradient(135deg, rgba(168,85,247,0.3), rgba(168,85,247,0.1))",
+  music: "linear-gradient(135deg, rgba(244,63,94,0.3), rgba(244,63,94,0.1))",
 };
 
 /* ------------------------------------------------------------------ */
@@ -468,8 +493,8 @@ function AppCard({ app, affected, onInstall, onUninstall }: { app: CatalogApp; a
       </CardHeader>
 
       <CardContent className="px-5 py-2 flex flex-col gap-3 flex-1">
-        <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full w-fit ${TYPE_COLORS[app.type] ?? "bg-white/10 text-white/50"}`}>
-          {TYPE_LABELS[app.type] ?? app.type}
+        <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full w-fit ${TYPE_COLORS[appGroup(app)] ?? TYPE_COLORS[app.type] ?? "bg-white/10 text-white/50"}`}>
+          {TYPE_LABELS[appGroup(app)] ?? TYPE_LABELS[app.type] ?? appGroup(app)}
         </span>
         <p className="text-xs text-white/45 leading-relaxed flex-1">{app.description}</p>
       </CardContent>
@@ -519,6 +544,7 @@ export function StoreApp({ windowId: _windowId }: { windowId: string }) {
             id: String(a.id),
             name: String(a.name ?? a.id),
             type: String(a.type ?? "plugin"),
+            category: a.category ? String(a.category) : undefined,
             version: String(a.version ?? ""),
             description: String(a.description ?? ""),
             installed: Boolean(a.installed),
@@ -560,7 +586,7 @@ export function StoreApp({ windowId: _windowId }: { windowId: string }) {
 
   const filtered = apps.filter((app) => {
     if (activeCategory !== "all" && activeCat) {
-      if (!activeCat.types.includes(app.type)) return false;
+      if (!activeCat.types.includes(appGroup(app))) return false;
     }
     if (search) {
       const q = search.toLowerCase();
@@ -581,7 +607,7 @@ export function StoreApp({ windowId: _windowId }: { windowId: string }) {
   const counts: Record<string, number> = {};
   for (const cat of CATEGORIES) {
     if (cat.id === "all") { counts[cat.id] = apps.length; continue; }
-    counts[cat.id] = apps.filter((a) => cat.types.includes(a.type)).length;
+    counts[cat.id] = apps.filter((a) => cat.types.includes(appGroup(a))).length;
   }
 
   const isMobile = typeof window !== "undefined" && window.innerWidth < 640;

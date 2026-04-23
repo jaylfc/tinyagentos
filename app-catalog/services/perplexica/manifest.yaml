@@ -1,6 +1,7 @@
 id: perplexica
 name: Perplexica
 type: service
+category: ai-app
 version: 1.9.0
 description: "Self-hosted AI search engine — open source Perplexity alternative with citations"
 homepage: https://github.com/ItzCrazyKns/Perplexica

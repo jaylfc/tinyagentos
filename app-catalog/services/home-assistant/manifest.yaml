@@ -1,6 +1,7 @@
 id: home-assistant
 name: Home Assistant
 type: service
+category: home
 version: stable
 description: "Home automation platform — agents can control smart home devices and automations"
 homepage: https://www.home-assistant.io

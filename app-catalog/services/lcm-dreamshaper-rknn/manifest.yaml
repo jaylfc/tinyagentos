@@ -1,6 +1,7 @@
 id: lcm-dreamshaper-rknn
 name: LCM Dreamshaper (RKNN Rust)
 type: service
+category: image-gen
 version: 0.1.0
 description: "Fast text-to-image on RK3588 NPU — Rust implementation, 512x512 in seconds, no GPU needed"
 homepage: https://github.com/darkautism/LCM-Dreamshaper-V7-rs

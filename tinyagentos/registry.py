@@ -21,9 +21,12 @@ class AppState(str, Enum):
 class AppManifest:
     id: str
     name: str
-    type: str                   # agent-framework | model | service | plugin
+    type: str                   # runtime classification: agent-framework | model | service | plugin
     version: str
     description: str = ""
+    # Optional Store UI grouping. Defaults to empty; frontend falls back to type.
+    # Lets services (type=service) surface under dev-tool, productivity, ai-app, etc.
+    category: str = ""
     icon: str = ""
     homepage: str = ""
     license: str = ""
@@ -45,6 +48,7 @@ class AppManifest:
             type=data["type"],
             version=data["version"],
             description=data.get("description", ""),
+            category=data.get("category", ""),
             icon=data.get("icon", ""),
             homepage=data.get("homepage", ""),
             license=data.get("license", ""),

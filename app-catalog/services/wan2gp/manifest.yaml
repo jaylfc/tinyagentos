@@ -1,6 +1,7 @@
 id: wan2gp
 name: WanGP Video Generator
 type: service
+category: video-gen
 version: 0.1.0
 description: "AI video generation — supports Wan 2.1/2.2, HunyuanVideo, LTX Video, Flux. As low as 6GB VRAM."
 homepage: https://github.com/deepbeepmeep/Wan2GP

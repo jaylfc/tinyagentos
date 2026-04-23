@@ -1,6 +1,7 @@
 id: linkwarden
 name: Linkwarden
 type: service
+category: productivity
 version: latest
 description: "Bookmark and link manager — agents save and organize research links with archiving"
 homepage: https://linkwarden.app

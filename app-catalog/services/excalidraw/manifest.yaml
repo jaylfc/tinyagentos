@@ -1,6 +1,7 @@
 id: excalidraw
 name: Excalidraw
 type: service
+category: productivity
 version: latest
 description: "Collaborative whiteboard — agents can generate and share diagrams and sketches"
 homepage: https://excalidraw.com

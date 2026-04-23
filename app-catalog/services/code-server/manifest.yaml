@@ -1,6 +1,7 @@
 id: code-server
 name: Code Server
 type: service
+category: dev-tool
 version: 4.96.0
 description: "VS Code in the browser — web IDE for development and agent code editing"
 homepage: https://github.com/coder/code-server

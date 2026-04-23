@@ -62,6 +62,9 @@ class TestStoreAPI:
         ids = {a["id"] for a in data}
         assert "smolagents" in ids
         assert "test-model" in ids
+        # Every row carries a category field (empty string when unset) so the
+        # frontend can group by category with a type fallback.
+        assert all("category" in a for a in data)
 
     async def test_filter_catalog_by_type(self, store_client):
         resp = await store_client.get("/api/store/catalog?type=model")
@@ -93,6 +96,51 @@ class TestStoreAPI:
         assert "profile_id" in data
         assert "ram_mb" in data
         assert data["ram_mb"] >= 0
+
+
+@pytest.mark.asyncio
+class TestCategoryPassthrough:
+    @pytest.fixture
+    def catalog_dir_with_categories(self, tmp_path):
+        # A service manifest that uses category: to route itself out of the
+        # Services bucket — matches the pattern shipped under app-catalog/services.
+        svc = tmp_path / "catalog" / "services" / "gitea"
+        svc.mkdir(parents=True)
+        (svc / "manifest.yaml").write_text(yaml.dump({
+            "id": "gitea", "name": "Gitea", "type": "service",
+            "category": "dev-tool",
+            "version": "1.22.0", "description": "Self-hosted Git server",
+            "install": {"method": "docker", "image": "gitea/gitea:1.22"},
+        }))
+        return tmp_path / "catalog"
+
+    @pytest_asyncio.fixture
+    async def category_client(self, tmp_data_dir, catalog_dir_with_categories):
+        app = create_app(data_dir=tmp_data_dir, catalog_dir=catalog_dir_with_categories)
+        store = app.state.metrics
+        if store._db is not None:
+            await store.close()
+        await store.init()
+        await app.state.qmd_client.init()
+        app.state.auth.setup_user("admin", "Test Admin", "", "testpass")
+        _rec = app.state.auth.find_user("admin")
+        _token = app.state.auth.create_session(user_id=_rec["id"] if _rec else "", long_lived=True)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test", cookies={"taos_session": _token}) as c:
+            yield c
+        await store.close()
+        await app.state.qmd_client.close()
+        await app.state.http_client.aclose()
+
+    async def test_category_surfaces_in_catalog_response(self, category_client):
+        resp = await category_client.get("/api/store/catalog")
+        assert resp.status_code == 200
+        rows = resp.json()
+        gitea = next(a for a in rows if a["id"] == "gitea")
+        # type stays "service" so lifecycle wiring (config.py, installation_state
+        # etc.) is unchanged; category surfaces for UI grouping.
+        assert gitea["type"] == "service"
+        assert gitea["category"] == "dev-tool"
 
 
 @pytest.mark.asyncio

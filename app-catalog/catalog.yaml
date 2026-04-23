@@ -564,6 +564,7 @@ apps:
   # Services
   - id: gitea
     type: service
+    category: dev-tool
     version: 1.22.0
     name: Gitea
     description: "Self-hosted Git server with agent access"
@@ -574,16 +575,19 @@ apps:
     description: "VS Code in the browser — web IDE"
   - id: open-webui
     type: service
+    category: ai-app
     version: 0.5.0
     name: Open WebUI
     description: "Self-hosted ChatGPT-style interface for any LLM"
   - id: n8n
     type: service
+    category: automation
     version: 1.80.0
     name: n8n
     description: "Workflow automation with 400+ integrations"
   - id: dify
     type: service
+    category: ai-app
     version: 0.15.0
     name: Dify
     description: "RAG + agent builder with visual workflow editor"
@@ -591,11 +595,13 @@ apps:
   # AI Search
   - id: perplexica
     type: service
+    category: ai-app
     version: 1.9.0
     name: Perplexica
     description: "Self-hosted AI search engine — open source Perplexity alternative"
   - id: searxng
     type: service
+    category: infrastructure
     version: 2024.12.0
     name: SearXNG
     description: "Privacy-respecting metasearch engine — powers AI search tools"
@@ -657,6 +663,7 @@ apps:
   # File Management
   - id: filebrowser
     type: service
+    category: productivity
     version: latest
     name: File Browser
     description: "Web file manager — browse and manage agent workspaces through a clean browser UI"
@@ -664,16 +671,19 @@ apps:
   # Collaboration & Notes
   - id: excalidraw
     type: service
+    category: productivity
     version: latest
     name: Excalidraw
     description: "Collaborative whiteboard — agents can generate and share diagrams and sketches"
   - id: memos
     type: service
+    category: productivity
     version: stable
     name: Memos
     description: "Lightweight note-taking and knowledge base — agents can store and retrieve notes"
   - id: linkwarden
     type: service
+    category: productivity
     version: latest
     name: Linkwarden
     description: "Bookmark and link manager — agents save and organize research links with archiving"

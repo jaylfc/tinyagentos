@@ -64,7 +64,8 @@ async def list_catalog(request: Request, type: str | None = None):
     apps = registry.list_available(type_filter=type)
     return [
         {
-            "id": a.id, "name": a.name, "type": a.type, "version": a.version,
+            "id": a.id, "name": a.name, "type": a.type, "category": a.category,
+            "version": a.version,
             "description": a.description, "icon": a.icon,
             "requires": a.requires, "hardware_tiers": a.hardware_tiers,
             "installed": (installation.is_installed(a.id) if installation else registry.is_installed(a.id)),
