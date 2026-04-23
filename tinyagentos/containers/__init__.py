@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 
 from .backend import ContainerInfo, _parse_memory, detect_runtime, get_backend, set_backend
 from .lxc import LXCBackend
@@ -334,6 +335,182 @@ async def snapshot_delete(name: str, snapshot_name: str) -> None:
         )
 
 
+async def remote_add(
+    name: str,
+    url: str,
+    *,
+    tls_cert_fingerprint: str | None = None,
+    trust_password: str | None = None,
+) -> dict:
+    """Register an incus remote host.
+
+    Wraps ``incus remote add <name> <url> --accept-certificate [--password=<pw>]``.
+    The ``--accept-certificate`` flag is required for non-interactive use; the
+    caller is responsible for verifying the fingerprint out-of-band if security
+    matters (pass ``tls_cert_fingerprint`` to include it in any error messages).
+
+    Returns ``{"success": bool, "output": str}``.
+    """
+    cmd = ["incus", "remote", "add", name, url, "--accept-certificate"]
+    if trust_password is not None:
+        cmd.append(f"--password={trust_password}")
+    code, output = await _run(cmd)
+    return {"success": code == 0, "output": output}
+
+
+async def remote_list() -> list[dict]:
+    """Return registered incus remotes as a list of dicts with name/addr/protocol.
+
+    Wraps ``incus remote list --format=csv``.  Returns an empty list on error.
+    """
+    code, output = await _run(["incus", "remote", "list", "--format=csv"])
+    if code != 0:
+        logger.error("incus remote list failed: %s", output)
+        return []
+    remotes: list[dict] = []
+    for line in output.strip().splitlines():
+        parts = [p.strip() for p in line.split(",")]
+        # CSV columns: NAME,URL,PROTOCOL,AUTH_TYPE,PUBLIC,STATIC,GLOBAL
+        if len(parts) < 3 or not parts[0]:
+            continue
+        remotes.append({"name": parts[0], "addr": parts[1], "protocol": parts[2]})
+    return remotes
+
+
+async def remote_remove(name: str) -> dict:
+    """Remove a registered incus remote.
+
+    Returns ``{"success": bool, "output": str}``.
+    """
+    code, output = await _run(["incus", "remote", "remove", name])
+    return {"success": code == 0, "output": output}
+
+
+async def migrate_container(
+    container_name: str,
+    target_remote: str,
+    *,
+    new_name: str | None = None,
+    stateless: bool = True,
+    keep_source: bool = False,
+    timeout: int = 600,
+) -> dict:
+    """Move or copy a container to a remote incus host.
+
+    Steps:
+    1. Verify source container exists; fail with clear error if not.
+    2. Verify target remote is registered; fail with clear error including the
+       ``incus remote add`` command the user needs to run if not.
+    3. If stateless=True and container is running: create a pre-stop snapshot,
+       stop the container, run move/copy, then start the copy on the target.
+    4. If stateless=False: pass ``--live`` to incus (requires CRIU on both hosts).
+    5. On failure after stop: restart the source container (rollback).
+
+    ``keep_source=True`` uses ``incus copy`` (both hosts keep the container);
+    ``keep_source=False`` uses ``incus move`` (source is destroyed on success).
+
+    Returns ``{"success": True, "source": "local:<name>", "target": "<remote>:<dest>",
+    "duration_s": N}`` on success.
+    """
+    dest_name = new_name or container_name
+    source_ref = f"local:{container_name}"
+    target_ref = f"{target_remote}:{dest_name}"
+
+    t0 = time.monotonic()
+
+    # 1. Verify source exists.
+    info_code, info_out = await _run(["incus", "info", container_name])
+    if info_code != 0:
+        return {
+            "success": False,
+            "error": f"Container '{container_name}' not found on local host: {info_out.strip()}",
+        }
+
+    # 2. Verify target remote is registered.
+    remotes = await remote_list()
+    remote_names = {r["name"] for r in remotes}
+    if target_remote not in remote_names:
+        return {
+            "success": False,
+            "error": (
+                f"Remote '{target_remote}' is not registered. "
+                f"Register it first with: incus remote add {target_remote} <url> --accept-certificate"
+            ),
+        }
+
+    # Determine if the container is currently running.
+    was_running = False
+    for line in info_out.splitlines():
+        if line.strip().lower().startswith("status:") and "running" in line.lower():
+            was_running = True
+            break
+
+    pre_stop_snapshot: str | None = None
+
+    if stateless and was_running:
+        # Take a pre-stop snapshot so we can recover if the move fails.
+        pre_stop_snapshot = f"taos-pre-migrate-{int(time.time())}"
+        snap_result = await snapshot_create(container_name, pre_stop_snapshot)
+        if not snap_result["success"]:
+            logger.warning(
+                "migrate_container: pre-stop snapshot failed for %s: %s",
+                container_name, snap_result.get("output", ""),
+            )
+            pre_stop_snapshot = None  # proceed without it
+
+        stop_result = await stop_container(container_name)
+        if not stop_result["success"]:
+            return {
+                "success": False,
+                "error": f"Failed to stop container '{container_name}': {stop_result['output']}",
+            }
+
+    # 3. Run move or copy.
+    incus_verb = "copy" if keep_source else "move"
+    cmd = ["incus", incus_verb, source_ref, target_ref, "--mode=push"]
+    if not stateless:
+        cmd.append("--live")
+
+    code, output = await _run(cmd, timeout=timeout)
+
+    if code != 0:
+        # Rollback: restart source if we stopped it.
+        if stateless and was_running and not keep_source:
+            restart_result = await start_container(container_name)
+            if not restart_result["success"]:
+                logger.error(
+                    "migrate_container: rollback start failed for %s: %s",
+                    container_name, restart_result.get("output", ""),
+                )
+        return {
+            "success": False,
+            "error": f"incus {incus_verb} failed: {output.strip()}",
+        }
+
+    # 4. Start on target if it was running and we did a stateless move.
+    if stateless and was_running:
+        start_code, start_out = await _run(
+            ["incus", "start", target_ref], timeout=120,
+        )
+        if start_code != 0:
+            logger.warning(
+                "migrate_container: container moved but failed to start on %s: %s",
+                target_ref, start_out,
+            )
+
+    # Clean up pre-stop snapshot on source (only relevant for copy, since move destroys source).
+    if keep_source and pre_stop_snapshot:
+        await snapshot_delete(container_name, pre_stop_snapshot)
+
+    duration = round(time.monotonic() - t0, 1)
+    return {
+        "success": True,
+        "source": source_ref,
+        "target": target_ref,
+        "duration_s": duration,
+    }
+
+
 async def set_env(name: str, key: str, value: str) -> dict:
     """Set an environment variable on a container via incus config set.
 
@@ -379,4 +556,8 @@ __all__ = [
     "snapshot_list",
     "snapshot_delete",
     "set_env",
+    "remote_add",
+    "remote_list",
+    "remote_remove",
+    "migrate_container",
 ]
