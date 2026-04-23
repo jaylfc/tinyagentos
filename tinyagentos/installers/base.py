@@ -37,6 +37,7 @@ def get_installer(method: str, **kwargs) -> AppInstaller:
     from tinyagentos.installers.pip_installer import PipInstaller
     from tinyagentos.installers.docker_installer import DockerInstaller
     from tinyagentos.installers.download_installer import DownloadInstaller
+    from tinyagentos.installers.lxc_installer import LXCInstaller
 
     if method == "pip":
         return PipInstaller(**kwargs)
@@ -44,5 +45,7 @@ def get_installer(method: str, **kwargs) -> AppInstaller:
         return DockerInstaller(**kwargs)
     elif method == "download":
         return DownloadInstaller(**kwargs)
+    elif method == "lxc":
+        return LXCInstaller(**kwargs)
     else:
         raise ValueError(f"Unknown install method: '{method}'")
