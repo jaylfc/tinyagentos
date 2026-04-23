@@ -123,8 +123,11 @@ _REMOTE_CSV = (
 # incus info output for a stopped container.
 _INFO_STOPPED = "Name: taos-svc-gitea\nStatus: Stopped\nType: container\n"
 
-# incus info output for a running container.
+# incus info output for a running container (mixed-case, as old incus versions emitted).
 _INFO_RUNNING = "Name: taos-svc-gitea\nStatus: Running\nType: container\n"
+
+# Real incus 6.x output uses upper-case STATUS values.
+_INFO_RUNNING_UPPER = "Name: taos-svc-gitea-lxc\nStatus: RUNNING\nType: container\n"
 
 
 def _make_run_mock(responses: list[tuple[int, str]]):
@@ -203,6 +206,37 @@ class TestMigrateContainerMove:
         last_cmd = mock_run.call_args_list[-1][0][0]
         assert "start" in last_cmd
         assert "taos-svc-gitea" in last_cmd
+
+    @pytest.mark.asyncio
+    async def test_upper_case_running_status_detected(self):
+        """Regression: real incus 6.x outputs 'Status: RUNNING' (all caps).
+
+        The status-detection loop must treat RUNNING and Running identically.
+        A container reported as RUNNING must be stopped before move and started
+        on the target afterwards.
+        """
+        responses = [
+            (0, _INFO_RUNNING_UPPER),  # incus info — Status: RUNNING
+            (0, _REMOTE_CSV),          # incus remote list
+            (0, ""),                   # snapshot_create (pre-stop)
+            (0, ""),                   # incus stop
+            (0, ""),                   # incus move
+            (0, ""),                   # incus start on target
+        ]
+        with patch("tinyagentos.containers._run", new_callable=AsyncMock) as mock_run:
+            mock_run.side_effect = responses
+            result = await migrate_container(
+                "taos-svc-gitea-lxc", "fedora-worker", stateless=True, keep_source=False
+            )
+        assert result["success"] is True
+        calls = [c[0][0] for c in mock_run.call_args_list]
+        # stop, move, and start on target must all be present
+        stop_idx = next(i for i, c in enumerate(calls) if "stop" in c)
+        move_idx = next(i for i, c in enumerate(calls) if "move" in c)
+        start_idx = next(
+            i for i, c in enumerate(calls) if "start" in c and "fedora-worker:" in " ".join(c)
+        )
+        assert stop_idx < move_idx < start_idx
 
 
 class TestMigrateContainerCopy:
