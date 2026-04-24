@@ -524,7 +524,7 @@ class TestMigrateServiceRoute:
                 "target_remote": "fedora-worker",
             })
         assert resp.status_code == 500
-        assert "remote not reachable" in resp.json()["error"]
+        assert resp.json()["error"] == "service migration failed"
 
     @pytest.mark.asyncio
     async def test_update_runtime_location_called_after_migrate(self, app, client):
