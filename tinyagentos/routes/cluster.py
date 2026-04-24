@@ -255,6 +255,7 @@ async def incus_enroll(request: Request, name: str, body: IncusEnrollRequest):
     Returns ``{"ok": true}`` on success or ``{"ok": false, "error": "..."}`` on
     failure. 404 when the worker is not yet registered.
     """
+    from urllib.parse import urlparse
     import tinyagentos.containers as containers
 
     cluster = request.app.state.cluster_manager
@@ -262,7 +263,29 @@ async def incus_enroll(request: Request, name: str, body: IncusEnrollRequest):
     if not worker:
         return JSONResponse({"error": f"Worker '{name}' not registered"}, status_code=404)
 
-    result = await containers.remote_add(name, body.incus_url, body.token)
+    # Validate that incus_url's hostname matches the worker's registered address
+    # to prevent a confused/malicious worker from enrolling an arbitrary remote.
+    try:
+        incus_host = urlparse(body.incus_url).hostname or ""
+        worker_host = urlparse(worker.url).hostname or ""
+        if incus_host != worker_host:
+            return JSONResponse(
+                {
+                    "error": (
+                        f"incus_url host {incus_host!r} does not match "
+                        f"registered worker address {worker_host!r}"
+                    )
+                },
+                status_code=400,
+            )
+    except Exception as exc:
+        return JSONResponse({"error": f"invalid incus_url: {exc}"}, status_code=400)
+
+    try:
+        result = await containers.remote_add(name, body.incus_url, body.token)
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+
     if result["success"]:
         return {"ok": True}
     return JSONResponse({"ok": False, "error": result["output"]}, status_code=500)
