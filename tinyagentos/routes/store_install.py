@@ -72,12 +72,25 @@ async def install_app(request: Request):
         elif hasattr(install_block, "get"):
             backend = install_block.get("method", "docker")
 
-    # Override with body-supplied metadata if provided.
+    # Allow metadata to override backend only when manifest did not declare one.
     meta = body.get("metadata") or {}
-    if isinstance(meta, dict) and meta.get("backend"):
-        backend = meta["backend"]
-    if isinstance(meta, dict) and meta.get("method"):
-        backend = meta["method"]
+    manifest_declared_backend = manifest is not None
+    if not manifest_declared_backend:
+        if isinstance(meta, dict) and meta.get("backend"):
+            backend = meta["backend"]
+        if isinstance(meta, dict) and meta.get("method"):
+            backend = meta["method"]
+    elif isinstance(meta, dict) and (meta.get("backend") or meta.get("method")):
+        meta_backend = meta.get("backend") or meta.get("method")
+        if meta_backend != backend:
+            logger.warning(
+                "install_app: ignoring metadata backend %r — manifest declares %r for %s",
+                meta_backend, backend, app_id,
+            )
+            return JSONResponse(
+                {"error": f"backend override {meta_backend!r} contradicts manifest backend {backend!r}"},
+                status_code=400,
+            )
 
     if backend == "lxc":
         # LXC installs require admin_password.
@@ -156,16 +169,23 @@ async def uninstall_app(request: Request):
             if isinstance(install_block, dict):
                 backend = install_block.get("backend", install_block.get("method", "docker"))
     meta = body.get("metadata") or {}
-    if isinstance(meta, dict) and meta.get("backend"):
-        backend = meta["backend"]
-    if isinstance(meta, dict) and meta.get("method"):
-        backend = meta["method"]
+    if manifest is None:
+        if isinstance(meta, dict) and meta.get("backend"):
+            backend = meta["backend"]
+        if isinstance(meta, dict) and meta.get("method"):
+            backend = meta["method"]
 
     container_error: str | None = None
     if backend == "lxc":
         try:
             installer = LXCInstaller()
-            await installer.uninstall(app_id)
+            uninstall_result = await installer.uninstall(app_id)
+            if not uninstall_result.get("success", False):
+                container_error = (
+                    uninstall_result.get("error")
+                    or uninstall_result.get("output")
+                    or "LXC uninstall failed"
+                )
         except Exception as exc:  # noqa: BLE001
             logger.warning("LXC container destroy failed for %s: %s", app_id, exc)
             container_error = str(exc)
