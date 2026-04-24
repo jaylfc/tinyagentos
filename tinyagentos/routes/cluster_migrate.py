@@ -129,7 +129,7 @@ async def migrate_service_route(request: Request, body: MigrateServiceBody):
         if manifest.manifest_dir is not None:
             lxc_manifest_path = manifest.manifest_dir / "manifest-lxc.yaml"
             if lxc_manifest_path.exists():
-                _data = _yaml.safe_load(lxc_manifest_path.read_text())
+                _data = _yaml.safe_load(lxc_manifest_path.read_text()) or {}
                 state_paths = _data.get("state_paths", [])
 
     if not state_paths:
@@ -143,7 +143,7 @@ async def migrate_service_route(request: Request, body: MigrateServiceBody):
         import yaml as _yaml
         lxc_manifest_path = manifest.manifest_dir / "manifest-lxc.yaml"
         if lxc_manifest_path.exists():
-            _data = _yaml.safe_load(lxc_manifest_path.read_text())
+            _data = _yaml.safe_load(lxc_manifest_path.read_text()) or {}
             service_name = _data.get("service_name", body.app_id)
 
     if not service_name:
@@ -159,8 +159,13 @@ async def migrate_service_route(request: Request, body: MigrateServiceBody):
             keep_source=body.keep_source,
             source_remote=body.source_remote,
         )
-    except Exception as exc:
-        return JSONResponse({"error": str(exc)}, status_code=500)
+    except Exception:
+        logger.exception(
+            "migrate-service failed for app_id=%s target_remote=%s",
+            body.app_id,
+            body.target_remote,
+        )
+        return JSONResponse({"error": "service migration failed"}, status_code=500)
 
     if not result["success"]:
         return JSONResponse({"error": result["error"]}, status_code=500)
@@ -172,6 +177,13 @@ async def migrate_service_route(request: Request, body: MigrateServiceBody):
         installed_apps = getattr(request.app.state, "installed_apps", None)
         if installed_apps is not None:
             runtime_host = await _resolve_host(target_remote_norm)
+            if runtime_host is None:
+                logger.warning(
+                    "migrate-service: unresolved runtime host for remote %r; "
+                    "skipping runtime_location update",
+                    target_remote_norm,
+                )
+                return result
             ui_path = manifest.install.get("ui_path", "/") if isinstance(manifest.install, dict) else "/"
             try:
                 await installed_apps.update_runtime_location(
@@ -189,7 +201,7 @@ async def migrate_service_route(request: Request, body: MigrateServiceBody):
     return result
 
 
-async def _resolve_host(target_remote: str | None) -> str:
+async def _resolve_host(target_remote: str | None) -> str | None:
     """Parse the hostname from a registered incus remote's URL.
 
     Falls back to '127.0.0.1' for local (no remote) targets.
@@ -206,4 +218,4 @@ async def _resolve_host(target_remote: str | None) -> str:
                     return parsed.hostname
     except Exception:
         logger.warning("_resolve_host: failed to look up remote %r", target_remote)
-    return target_remote
+    return None

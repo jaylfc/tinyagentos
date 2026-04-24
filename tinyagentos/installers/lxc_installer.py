@@ -64,7 +64,7 @@ def _find_free_port(start: int = 13000, end: int = 14000) -> int:
     for port in range(start, end):
         with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
             try:
-                s.bind(("127.0.0.1", port))
+                s.bind(("0.0.0.0", port))
                 return port
             except OSError:
                 continue
@@ -290,20 +290,31 @@ class LXCInstaller(AppInstaller):
                 raise RuntimeError(f"Failed to start gitea service: {output}")
 
             # Step 8: Add proxy device (host_port → container:3000).
-            host_port = _find_free_port()
-            logger.info(
-                "LXCInstaller: adding proxy device host:%d -> container:3000", host_port
-            )
-            res = await containers.add_proxy_device(
-                incus_name,
-                device_name="gitea-http",
-                listen=f"tcp:0.0.0.0:{host_port}",
-                connect="tcp:127.0.0.1:3000",
-            )
-            if not res.get("success"):
-                raise RuntimeError(
-                    f"Failed to add proxy device: {res.get('output', '')}"
+            # Retry up to 10 times to handle the TOCTOU window between the
+            # port probe and the actual bind by incus.
+            for _attempt in range(10):
+                host_port = _find_free_port()
+                logger.info(
+                    "LXCInstaller: adding proxy device host:%d -> container:3000 (attempt %d)",
+                    host_port, _attempt + 1,
                 )
+                res = await containers.add_proxy_device(
+                    incus_name,
+                    device_name="gitea-http",
+                    listen=f"tcp:0.0.0.0:{host_port}",
+                    connect="tcp:127.0.0.1:3000",
+                )
+                if res.get("success"):
+                    break
+                if "address already in use" not in res.get("output", "").lower():
+                    raise RuntimeError(
+                        f"Failed to add proxy device: {res.get('output', '')}"
+                    )
+                logger.warning(
+                    "LXCInstaller: port %d already in use, retrying", host_port
+                )
+            else:
+                raise RuntimeError("Failed to allocate a free proxy port after 10 attempts")
 
             # Step 9: Record install metadata.
             install_record = {
@@ -324,10 +335,18 @@ class LXCInstaller(AppInstaller):
             await containers.destroy_container(incus_name)
             raise
 
-    async def uninstall(self, app_id: str) -> dict:
-        """Stop and delete the service container."""
+    async def uninstall(self, app_id: str, target_remote: str | None = None) -> dict:
+        """Stop and delete the service container.
+
+        Parameters
+        ----------
+        target_remote:
+            incus remote name. When set, the container is destroyed on the
+            remote host rather than locally.
+        """
         container_name = self._container_name(app_id)
-        result = await containers.destroy_container(container_name)
+        incus_name = f"{target_remote}:{container_name}" if target_remote else container_name
+        result = await containers.destroy_container(incus_name)
         return {"success": result["success"], "app_id": app_id}
 
     async def start(self, app_id: str) -> dict:

@@ -35,9 +35,47 @@ _HOP_BY_HOP = frozenset({
     "host",
 })
 
+# Controller-scoped credentials must never leak to the upstream service
+# container. The taos_session cookie is stripped out of Cookie; everything
+# else in the cookie header passes through unchanged.
+_SENSITIVE_HEADERS = frozenset({"authorization"})
+_STRIPPED_COOKIES = frozenset({"taos_session"})
+
+
+# Module-level HTTP client for proxying — avoids per-request connection churn
+# and allows send(stream=True) with BackgroundTask cleanup.
+_http_client = httpx.AsyncClient(timeout=60.0)
+
+
+def _strip_taos_cookies(cookie_header: str) -> str:
+    """Remove controller-owned cookies from a Cookie header, keep the rest."""
+    if not cookie_header:
+        return ""
+    from http.cookies import SimpleCookie
+    jar = SimpleCookie()
+    try:
+        jar.load(cookie_header)
+    except Exception:
+        return cookie_header
+    for name in _STRIPPED_COOKIES:
+        jar.pop(name, None)
+    return "; ".join(f"{k}={m.value}" for k, m in jar.items())
+
 
 def _filter_headers(headers: dict) -> dict:
-    return {k: v for k, v in headers.items() if k.lower() not in _HOP_BY_HOP}
+    filtered: dict[str, str] = {}
+    for k, v in headers.items():
+        kl = k.lower()
+        if kl in _HOP_BY_HOP or kl in _SENSITIVE_HEADERS:
+            continue
+        if kl == "cookie":
+            stripped = _strip_taos_cookies(v)
+            if not stripped:
+                continue
+            filtered[k] = stripped
+            continue
+        filtered[k] = v
+    return filtered
 
 
 @router.get("/apps/{app_id}", include_in_schema=False)
@@ -68,7 +106,9 @@ async def service_proxy(app_id: str, path: str, request: Request):
             503,
         )
 
-    upstream = f"http://{loc['runtime_host']}:{loc['runtime_port']}/{path}"
+    ui_path = (loc.get("ui_path") or "/").rstrip("/")
+    upstream_path = ui_path + "/" + path if path else ui_path + "/"
+    upstream = f"http://{loc['runtime_host']}:{loc['runtime_port']}{upstream_path}"
     query = request.url.query
     if query:
         upstream = f"{upstream}?{query}"
@@ -80,15 +120,13 @@ async def service_proxy(app_id: str, path: str, request: Request):
             yield chunk
 
     try:
-        client = httpx.AsyncClient(timeout=60.0)
-        async with client:
-            upstream_resp = await client.request(
-                method=request.method,
-                url=upstream,
-                headers=fwd_headers,
-                content=_stream_body(),
-                follow_redirects=False,
-            )
+        req = _http_client.build_request(
+            method=request.method,
+            url=upstream,
+            headers=fwd_headers,
+            content=_stream_body(),
+        )
+        upstream_resp = await _http_client.send(req, stream=True, follow_redirects=False)
     except httpx.ConnectError:
         return _json_error(
             f"Cannot reach {app_id} at {loc['runtime_host']}:{loc['runtime_port']}. "
@@ -103,15 +141,17 @@ async def service_proxy(app_id: str, path: str, request: Request):
     # Rewrite absolute Location headers so redirects stay within /apps/{app_id}/.
     if "location" in upstream_resp.headers:
         loc_header = upstream_resp.headers["location"]
-        upstream_prefix = f"http://{loc['runtime_host']}:{loc['runtime_port']}"
+        upstream_prefix = f"http://{loc['runtime_host']}:{loc['runtime_port']}{ui_path}"
         if loc_header.startswith(upstream_prefix):
             relative = loc_header[len(upstream_prefix):]
             resp_headers["location"] = f"/apps/{app_id}{relative}"
 
+    from starlette.background import BackgroundTask
     return StreamingResponse(
         upstream_resp.aiter_bytes(),
         status_code=upstream_resp.status_code,
         headers=resp_headers,
+        background=BackgroundTask(upstream_resp.aclose),
     )
 
 
