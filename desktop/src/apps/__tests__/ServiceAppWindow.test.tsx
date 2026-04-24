@@ -46,6 +46,11 @@ describe("ServiceAppWindow", () => {
     expect(sandbox).toContain("allow-forms");
     expect(sandbox).toContain("allow-same-origin");
     expect(sandbox).toContain("allow-popups");
+    expect(sandbox).toContain("allow-downloads");
+
+    const allow = iframe.getAttribute("allow") ?? "";
+    expect(allow).toContain("clipboard-write");
+    expect(allow).toContain("fullscreen");
   });
 
   it("renders an error message when URL is missing", () => {
