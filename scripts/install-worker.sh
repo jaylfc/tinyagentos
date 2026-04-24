@@ -417,13 +417,22 @@ install_and_enroll_incus() {
     fi
 
     # ── 6. Detect LAN IP ───────────────────────────────────────────────
+    # Prefer the source address that the kernel would use to reach the
+    # controller, so we don't accidentally pick up docker0 / incusbr0 /
+    # Tailscale addresses that the controller can't reach back on.
     local LAN_IP=""
-    if command -v hostname >/dev/null 2>&1; then
-        # hostname -I returns all IPs space-separated; take the first one
+    local _ctrl_host
+    _ctrl_host="$(printf '%s' "$CONTROLLER_URL" | sed 's|^[^/]*/*/||; s|[:/].*||')"
+    if [[ -n "$_ctrl_host" ]] && command -v ip >/dev/null 2>&1; then
+        LAN_IP="$(ip -4 route get "$_ctrl_host" 2>/dev/null \
+            | awk '/src/{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}')"
+    fi
+    if [[ -z "$LAN_IP" ]]; then
+        # Fallback 1: first token from hostname -I (may include bridge IPs)
         LAN_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
     fi
     if [[ -z "$LAN_IP" ]]; then
-        # Fallback: parse ip addr for first non-loopback inet address
+        # Fallback 2: first non-loopback global IPv4
         LAN_IP="$(ip -4 addr show scope global 2>/dev/null \
             | awk '/inet /{print $2}' | head -1 | cut -d/ -f1)"
     fi
