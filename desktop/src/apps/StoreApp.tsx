@@ -596,6 +596,19 @@ export function StoreApp({ windowId: _windowId }: { windowId: string }) {
   ]);
   const [runtimeHosts, setRuntimeHosts] = useState<Record<string, string | null>>({});
 
+  const refreshInstalled = useCallback(() => {
+    fetch("/api/store/installed-v2", { headers: { Accept: "application/json" } })
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        const hosts: Record<string, string | null> = {};
+        for (const entry of (data?.installed ?? []) as InstalledEntry[]) {
+          hosts[entry.app_id] = entry.runtime_host ?? null;
+        }
+        setRuntimeHosts(hosts);
+      })
+      .catch(() => {});
+  }, []);
+
   const fetchCatalog = useCallback(async () => {
     try {
       const res = await fetch("/api/store/catalog", {
@@ -650,17 +663,8 @@ export function StoreApp({ windowId: _windowId }: { windowId: string }) {
       .then((r) => r.ok ? r.json() : null)
       .then((data) => { if (Array.isArray(data)) setInstallTargets(data); })
       .catch(() => {});
-    fetch("/api/store/installed-v2", { headers: { Accept: "application/json" } })
-      .then((r) => r.ok ? r.json() : null)
-      .then((data) => {
-        const hosts: Record<string, string | null> = {};
-        for (const entry of (data?.installed ?? []) as InstalledEntry[]) {
-          hosts[entry.app_id] = entry.runtime_host ?? null;
-        }
-        setRuntimeHosts(hosts);
-      })
-      .catch(() => {});
-  }, []);
+    refreshInstalled();
+  }, [refreshInstalled]);
 
   const activeCat = CATEGORIES.find((c) => c.id === activeCategory);
 
@@ -677,11 +681,13 @@ export function StoreApp({ windowId: _windowId }: { windowId: string }) {
 
   const handleInstall = useCallback((id: string) => {
     setApps((prev) => prev.map((a) => (a.id === id ? { ...a, installed: true } : a)));
-  }, []);
+    refreshInstalled();
+  }, [refreshInstalled]);
 
   const handleUninstall = useCallback((id: string) => {
     setApps((prev) => prev.map((a) => (a.id === id ? { ...a, installed: false } : a)));
-  }, []);
+    refreshInstalled();
+  }, [refreshInstalled]);
 
   // Count per category
   const counts: Record<string, number> = {};
