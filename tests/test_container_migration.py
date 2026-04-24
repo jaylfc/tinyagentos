@@ -18,31 +18,46 @@ class TestRemoteAdd:
     @pytest.mark.asyncio
     async def test_calls_incus_remote_add_with_token(self):
         with patch("tinyagentos.containers._run", new_callable=AsyncMock) as mock_run:
-            mock_run.return_value = (0, "")
+            # First call is the idempotency list-check; return empty so we fall
+            # through to the real remote add.
+            mock_run.side_effect = [(0, "{}"), (0, "")]
             result = await remote_add(
                 "fedora-worker", "https://192.168.1.50:8443", token="abc123token"
             )
-        mock_run.assert_called_once_with(
-            ["incus", "remote", "add", "fedora-worker", "https://192.168.1.50:8443",
-             "--token", "abc123token", "--accept-certificate"]
-        )
+        # Second call should be the actual `incus remote add` invocation.
+        add_call = mock_run.call_args_list[1]
+        assert add_call.args[0] == [
+            "incus", "remote", "add", "fedora-worker", "https://192.168.1.50:8443",
+            "--token", "abc123token", "--accept-certificate",
+        ]
         assert result["success"] is True
 
     @pytest.mark.asyncio
     async def test_accept_certificate_omitted_when_false(self):
         with patch("tinyagentos.containers._run", new_callable=AsyncMock) as mock_run:
-            mock_run.return_value = (0, "")
+            mock_run.side_effect = [(0, "{}"), (0, "")]
             await remote_add("fw", "https://10.0.0.5:8443", token="tok", accept_certificate=False)
-        cmd = mock_run.call_args[0][0]
+        cmd = mock_run.call_args_list[1].args[0]
         assert "--accept-certificate" not in cmd
         assert "--token" in cmd
 
     @pytest.mark.asyncio
     async def test_returns_failure_on_nonzero_exit(self):
         with patch("tinyagentos.containers._run", new_callable=AsyncMock) as mock_run:
-            mock_run.return_value = (1, "connection refused")
+            mock_run.side_effect = [(0, "{}"), (1, "connection refused")]
             result = await remote_add("bad", "https://10.0.0.99:8443", token="tok")
         assert result["success"] is False
+
+    @pytest.mark.asyncio
+    async def test_idempotent_when_same_url_already_registered(self):
+        existing = '{"fedora-worker": {"Addr": "https://10.0.0.5:8443"}}'
+        with patch("tinyagentos.containers._run", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = (0, existing)
+            result = await remote_add("fedora-worker", "https://10.0.0.5:8443", token="tok")
+        # Only the list call should fire; no actual `incus remote add`.
+        assert mock_run.call_count == 1
+        assert result["success"] is True
+        assert "already enrolled" in result["output"]
 
 
 class TestRemoteGenerateToken:
