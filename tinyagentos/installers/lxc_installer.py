@@ -35,7 +35,7 @@ WantedBy=multi-user.target
 _APP_INI_TEMPLATE = """\
 [server]
 HTTP_PORT = 3000
-ROOT_URL = http://localhost:3000/
+ROOT_URL = {root_url}
 SSH_PORT = 2222
 
 [database]
@@ -52,10 +52,21 @@ DISABLE_REGISTRATION = true
 """
 
 
-def _render_app_ini() -> str:
+def _render_app_ini(app_id: str = "gitea-lxc") -> str:
+    """Render app.ini with proxy-aware ROOT_URL.
+
+    Gitea uses ROOT_URL to build absolute URLs for avatars, clone URLs, and
+    redirect targets. Hardcoding http://localhost:3000/ breaks any request
+    routed through the controller proxy at /apps/{app_id}/ — the browser
+    would be sent back to localhost:3000 which isn't reachable.
+
+    Setting ROOT_URL to /apps/{app_id}/ makes Gitea emit relative-to-root
+    URLs that the controller proxy will correctly re-route to the container.
+    """
     return _APP_INI_TEMPLATE.format(
         secret_key=secrets.token_hex(32),
         internal_token=secrets.token_hex(32),
+        root_url=f"/apps/{app_id}/",
     )
 
 
@@ -238,7 +249,7 @@ class LXCInstaller(AppInstaller):
                 if code != 0:
                     raise RuntimeError(f"Failed to create /etc/gitea: {output}")
 
-                app_ini = _render_app_ini()
+                app_ini = _render_app_ini(app_id=app_id)
                 code, output = await containers.exec_in_container(
                     incus_name,
                     ["bash", "-c",
