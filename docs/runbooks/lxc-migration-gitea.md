@@ -61,7 +61,7 @@ curl -X POST http://localhost:6969/api/store/install-v2 \
     "app_id": "gitea-lxc",
     "admin_password": "<pick-a-strong-password>",
     "taos_username": "jay",
-    "taos_email": "jaylfc25@gmail.com",
+    "taos_email": "user@example.com",
     "metadata": {"backend": "lxc"}
   }'
 ```
