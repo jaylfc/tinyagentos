@@ -1,6 +1,8 @@
 """Tests for the cluster API routes."""
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
 
 
@@ -186,3 +188,62 @@ async def test_kv_quant_options_mixed_cluster(client):
     assert "turboquant-k3v2" in data["options"]
 
 
+# ---------------------------------------------------------------------------
+# incus-enroll endpoint
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_incus_enroll_worker_not_registered(client):
+    """404 when the worker has never registered."""
+    resp = await client.post(
+        "/api/cluster/workers/ghost-worker/incus-enroll",
+        json={"incus_url": "https://10.0.0.5:8443", "token": "abc123"},
+    )
+    assert resp.status_code == 404
+    assert "not registered" in resp.json()["error"]
+
+
+@pytest.mark.asyncio
+async def test_incus_enroll_success(client):
+    """Happy path: worker registered → remote_add called with right args → 200."""
+    await client.post("/api/cluster/workers", json={
+        "name": "pi-worker",
+        "url": "http://10.0.0.5:9000",
+    })
+
+    mock_remote_add = AsyncMock(return_value={"success": True, "output": ""})
+    with patch("tinyagentos.containers.remote_add", mock_remote_add):
+        resp = await client.post(
+            "/api/cluster/workers/pi-worker/incus-enroll",
+            json={"incus_url": "https://10.0.0.5:8443", "token": "tok-xyz"},
+        )
+
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+    mock_remote_add.assert_awaited_once_with(
+        "pi-worker", "https://10.0.0.5:8443", "tok-xyz"
+    )
+
+
+@pytest.mark.asyncio
+async def test_incus_enroll_remote_add_failure(client):
+    """remote_add returns failure → endpoint returns 500 with error text."""
+    await client.post("/api/cluster/workers", json={
+        "name": "flaky-worker",
+        "url": "http://10.0.0.6:9000",
+    })
+
+    mock_remote_add = AsyncMock(return_value={
+        "success": False,
+        "output": "certificate rejected",
+    })
+    with patch("tinyagentos.containers.remote_add", mock_remote_add):
+        resp = await client.post(
+            "/api/cluster/workers/flaky-worker/incus-enroll",
+            json={"incus_url": "https://10.0.0.6:8443", "token": "bad-tok"},
+        )
+
+    assert resp.status_code == 500
+    data = resp.json()
+    assert data["ok"] is False
+    assert "certificate rejected" in data["error"]
