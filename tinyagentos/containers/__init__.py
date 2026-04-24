@@ -339,7 +339,31 @@ async def remote_add(name: str, url: str, token: str) -> dict:
 
     Runs ``incus remote add <name> <url> --token=<token> --accept-certificate``.
     Returns ``{"success": bool, "output": str}``.
+
+    Idempotent: if a remote with *name* already exists and points to *url*,
+    returns success without calling incus again.  Fails only if the existing
+    remote points to a different URL.
     """
+    # Check whether the remote already exists before attempting to add it.
+    list_code, list_out = await _run(["incus", "remote", "list", "--format=json"])
+    if list_code == 0:
+        import json as _json
+        try:
+            remotes = _json.loads(list_out)
+            if name in remotes:
+                existing_url = (remotes[name].get("Addr") or "").rstrip("/")
+                if existing_url == url.rstrip("/"):
+                    return {"success": True, "output": "remote already enrolled"}
+                return {
+                    "success": False,
+                    "output": (
+                        f"remote '{name}' already exists pointing to {existing_url!r}, "
+                        f"expected {url!r}"
+                    ),
+                }
+        except Exception:
+            pass  # If we can't parse the list, fall through and let remote add fail naturally
+
     code, output = await _run([
         "incus", "remote", "add", name, url,
         f"--token={token}",
