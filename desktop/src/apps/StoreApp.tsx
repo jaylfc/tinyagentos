@@ -469,7 +469,7 @@ function AppCard({ app, affected, onInstall, onUninstall, installTargets, runtim
       } else {
         const body: Record<string, unknown> = { app_id: app.id };
         if (isLxc) body.target_remote = selectedTarget;
-        const res = await fetch("/api/store/install", {
+        const res = await fetch("/api/store/install-v2", {
           method: "POST",
           headers: { "Content-Type": "application/json", Accept: "application/json" },
           body: JSON.stringify(body),
