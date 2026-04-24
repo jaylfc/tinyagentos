@@ -40,6 +40,8 @@ install:
   #   display_name – optional override for the UI display name.
   ui_port: 3000
   ui_path: "/"
+  display_name: "Gitea"
+  icon: "/static/app-icons/gitea.svg"
 
 lifecycle:
   health_check: "curl -sf http://localhost:3000/api/healthz"
