@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import pytest
+from unittest.mock import AsyncMock, patch
 
 
 @pytest.mark.asyncio
@@ -186,3 +187,65 @@ async def test_kv_quant_options_mixed_cluster(client):
     assert "turboquant-k3v2" in data["options"]
 
 
+# ---------------------------------------------------------------------------
+# /api/cluster/install-targets
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_install_targets_empty_remotes(client):
+    """When incus has no registered remotes, only the local entry is returned."""
+    with patch("tinyagentos.containers.remote_list", new=AsyncMock(return_value=[])):
+        resp = await client.get("/api/cluster/install-targets")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["name"] == "local"
+    assert data[0]["type"] == "local"
+
+
+@pytest.mark.asyncio
+async def test_install_targets_with_incus_remote(client):
+    """A registered incus remote appears after the local entry."""
+    remotes = [
+        {"name": "fedora-worker", "addr": "https://192.168.6.108:8443", "protocol": "incus"},
+    ]
+    with patch("tinyagentos.containers.remote_list", new=AsyncMock(return_value=remotes)):
+        resp = await client.get("/api/cluster/install-targets")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 2
+    assert data[0]["name"] == "local"
+    assert data[1]["name"] == "fedora-worker"
+    assert data[1]["type"] == "remote"
+    assert data[1]["addr"] == "https://192.168.6.108:8443"
+
+
+@pytest.mark.asyncio
+async def test_install_targets_filters_image_servers(client):
+    """Built-in/read-only remotes (images, ubuntu) are excluded from the list."""
+    remotes = [
+        {"name": "images", "addr": "https://images.linuxcontainers.org", "protocol": "simplestreams"},
+        {"name": "ubuntu", "addr": "https://cloud-images.ubuntu.com/releases", "protocol": "simplestreams"},
+        {"name": "ubuntu-daily", "addr": "https://cloud-images.ubuntu.com/daily", "protocol": "simplestreams"},
+        {"name": "fedora-worker", "addr": "https://192.168.6.108:8443", "protocol": "incus"},
+    ]
+    with patch("tinyagentos.containers.remote_list", new=AsyncMock(return_value=remotes)):
+        resp = await client.get("/api/cluster/install-targets")
+    assert resp.status_code == 200
+    data = resp.json()
+    names = [d["name"] for d in data]
+    assert "images" not in names
+    assert "ubuntu" not in names
+    assert "ubuntu-daily" not in names
+    assert "fedora-worker" in names
+
+
+@pytest.mark.asyncio
+async def test_install_targets_incus_unavailable(client):
+    """If incus is unavailable the endpoint still returns the local entry."""
+    with patch("tinyagentos.containers.remote_list", new=AsyncMock(side_effect=RuntimeError("incus not found"))):
+        resp = await client.get("/api/cluster/install-targets")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["name"] == "local"

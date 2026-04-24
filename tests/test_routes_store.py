@@ -2,6 +2,7 @@ import pytest
 import pytest_asyncio
 import yaml
 from httpx import AsyncClient, ASGITransport
+from unittest.mock import AsyncMock, MagicMock, patch
 from tinyagentos.app import create_app
 
 
@@ -215,3 +216,97 @@ class TestInstallV2UpdatesRuntimeLocation:
         assert ui_path == "/"
 
 
+@pytest.mark.asyncio
+class TestInstallV2TargetRemote:
+    """target_remote validation and passthrough in /api/store/install-v2."""
+
+    def _mock_setup(self, app_with_store):
+        mock_result = {
+            "success": True,
+            "app_id": "gitea-lxc",
+            "backend": "lxc",
+            "container": "taos-svc-gitea-lxc",
+            "host_port": 13001,
+            "gitea_version": "1.22.6",
+            "admin_username": "admin",
+        }
+        mock_manifest = MagicMock()
+        mock_manifest.install = {"method": "lxc", "image": "images:debian/bookworm", "ui_path": "/"}
+        mock_store = MagicMock()
+        mock_store.install = AsyncMock()
+        mock_store.update_runtime_location = AsyncMock()
+        app_with_store.state.installed_apps = mock_store
+        return mock_result, mock_manifest, mock_store
+
+    async def test_empty_target_remote_treated_as_local(self, app_with_store, store_client):
+        mock_result, mock_manifest, mock_store = self._mock_setup(app_with_store)
+        with (
+            patch("tinyagentos.routes.store_install.LXCInstaller") as MockInstaller,
+            patch("tinyagentos.registry.AppRegistry.get", return_value=mock_manifest),
+        ):
+            MockInstaller.return_value.install = AsyncMock(return_value=mock_result)
+            resp = await store_client.post("/api/store/install-v2", json={
+                "app_id": "gitea-lxc",
+                "admin_password": "secret",
+                "target_remote": "",
+            })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["target_remote"] == "local"
+        # installer called with target_remote=None
+        call_kwargs = MockInstaller.return_value.install.call_args.kwargs
+        assert call_kwargs.get("target_remote") is None
+
+    async def test_local_target_remote_treated_as_local(self, app_with_store, store_client):
+        mock_result, mock_manifest, mock_store = self._mock_setup(app_with_store)
+        with (
+            patch("tinyagentos.routes.store_install.LXCInstaller") as MockInstaller,
+            patch("tinyagentos.registry.AppRegistry.get", return_value=mock_manifest),
+        ):
+            MockInstaller.return_value.install = AsyncMock(return_value=mock_result)
+            resp = await store_client.post("/api/store/install-v2", json={
+                "app_id": "gitea-lxc",
+                "admin_password": "secret",
+                "target_remote": "local",
+            })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["target_remote"] == "local"
+        call_kwargs = MockInstaller.return_value.install.call_args.kwargs
+        assert call_kwargs.get("target_remote") is None
+
+    async def test_unknown_remote_rejected(self, app_with_store, store_client):
+        mock_result, mock_manifest, _ = self._mock_setup(app_with_store)
+        with (
+            patch("tinyagentos.routes.store_install.LXCInstaller") as MockInstaller,
+            patch("tinyagentos.registry.AppRegistry.get", return_value=mock_manifest),
+            patch("tinyagentos.containers.remote_list", new=AsyncMock(return_value=[])),
+        ):
+            MockInstaller.return_value.install = AsyncMock(return_value=mock_result)
+            resp = await store_client.post("/api/store/install-v2", json={
+                "app_id": "gitea-lxc",
+                "admin_password": "secret",
+                "target_remote": "ghost-worker",
+            })
+        assert resp.status_code == 400
+        assert "ghost-worker" in resp.json()["error"]
+
+    async def test_known_remote_passed_through(self, app_with_store, store_client):
+        mock_result, mock_manifest, mock_store = self._mock_setup(app_with_store)
+        remotes = [{"name": "fedora-worker", "addr": "https://192.168.6.108:8443", "protocol": "incus"}]
+        with (
+            patch("tinyagentos.routes.store_install.LXCInstaller") as MockInstaller,
+            patch("tinyagentos.registry.AppRegistry.get", return_value=mock_manifest),
+            patch("tinyagentos.containers.remote_list", new=AsyncMock(return_value=remotes)),
+        ):
+            MockInstaller.return_value.install = AsyncMock(return_value=mock_result)
+            resp = await store_client.post("/api/store/install-v2", json={
+                "app_id": "gitea-lxc",
+                "admin_password": "secret",
+                "target_remote": "fedora-worker",
+            })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["target_remote"] == "fedora-worker"
+        call_kwargs = MockInstaller.return_value.install.call_args.kwargs
+        assert call_kwargs.get("target_remote") == "fedora-worker"
