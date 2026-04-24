@@ -164,6 +164,58 @@ If a migration fails mid-way:
 - The state tarball on the controller host is always cleaned up, success
   or failure.
 
+## Stable service URLs via `/apps/{app_id}/`
+
+After install or migration, every service has a stable proxy URL on the
+controller:
+
+```
+http://localhost:6969/apps/gitea-lxc/
+```
+
+The controller reverse-proxies this URL to whatever host:port currently runs
+the service. The runtime location is stored in `InstalledAppsStore`
+(`app_runtime` table) and is updated automatically on install and migration.
+
+### How it works
+
+- **Install**: after the LXC installer returns `host_port`, the install route
+  calls `installed_apps.update_runtime_location(app_id, host, port)`.
+  - Local install → host is `127.0.0.1` (the proxy device listens on 0.0.0.0
+    locally, so 127.0.0.1 always reaches it from the controller).
+  - Remote install → host is parsed from the registered incus remote URL
+    (`https://<host>:8443`).
+- **Migration**: the migrate-service route calls `update_runtime_location`
+  after a successful `migrate_service()`, pointing the entry at the new
+  target host. The URL `/apps/gitea-lxc/` immediately routes to the
+  new location without any manual intervention.
+
+### Checking the current runtime location
+
+```bash
+# After install, inspect the running proxy:
+curl -I http://localhost:6969/apps/gitea-lxc/
+# Should return Gitea's HTTP response regardless of which host it lives on.
+
+# After migration to fedora-worker, the same URL continues to work;
+# the controller routes transparently to the worker's host:port.
+```
+
+### Location header rewriting
+
+If Gitea (or any other service) redirects internally with an absolute
+`Location: http://<host>:<port>/some-path` header, the proxy rewrites it to
+`/apps/gitea-lxc/some-path` so the browser stays within the stable URL
+namespace. Relative `Location` headers pass through unchanged.
+
+### Generality
+
+The `/apps/{app_id}/` proxy is fully generic — it reads `runtime_host` and
+`runtime_port` from the store and proxies any HTTP method. Gitea is the first
+service to use it but every future LXC/Docker service installs into the same
+slot. The `ui_path` field in the manifest's `install` block (`default: "/"`)
+can be set to the sub-path the service actually serves from if needed.
+
 ## What this proves
 
 - The LXC install path works end-to-end (container creation → Gitea
