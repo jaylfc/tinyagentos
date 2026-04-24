@@ -245,14 +245,17 @@ class TestLocationHeaderRewrite:
         assert resp.headers["location"] == "/apps/svc/new-path"
 
     @pytest.mark.asyncio
-    async def test_relative_location_not_rewritten(self, proxy_client):
+    async def test_root_relative_location_rewritten(self, proxy_client):
+        # Path-absolute redirects (e.g. Gitea's "/user/login") hit the
+        # controller root, not the proxied app, unless the proxy prepends
+        # /apps/{app_id}. Verify we do that.
         client, store = proxy_client
         await store.install("svc", "1.0")
         await store.update_runtime_location("svc", host="127.0.0.1", port=13004)
 
         mock_resp = MagicMock()
         mock_resp.status_code = 302
-        mock_resp.headers = {"location": "/relative/path"}
+        mock_resp.headers = {"location": "/user/login"}
 
         async def _iter():
             yield b""
@@ -264,4 +267,27 @@ class TestLocationHeaderRewrite:
         with patch("tinyagentos.routes.service_proxy._http_client", mock_client):
             resp = await client.get("/apps/svc/", follow_redirects=False)
 
-        assert resp.headers["location"] == "/relative/path"
+        assert resp.headers["location"] == "/apps/svc/user/login"
+
+    @pytest.mark.asyncio
+    async def test_scheme_relative_location_passes_through(self, proxy_client):
+        # //cdn.example.com/foo is scheme-relative, not proxy-scoped; leave it.
+        client, store = proxy_client
+        await store.install("svc", "1.0")
+        await store.update_runtime_location("svc", host="127.0.0.1", port=13004)
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 302
+        mock_resp.headers = {"location": "//cdn.example.com/asset.js"}
+
+        async def _iter():
+            yield b""
+
+        mock_resp.aiter_bytes = _iter
+        mock_resp.aclose = AsyncMock()
+        mock_client = _make_mock_client(return_value=mock_resp)
+
+        with patch("tinyagentos.routes.service_proxy._http_client", mock_client):
+            resp = await client.get("/apps/svc/", follow_redirects=False)
+
+        assert resp.headers["location"] == "//cdn.example.com/asset.js"
