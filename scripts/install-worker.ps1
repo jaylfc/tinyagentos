@@ -16,6 +16,7 @@
 #     TAOS_REPO               git remote
 #     TAOS_SKIP_BENCHMARK     if set, skip the on-join benchmark run
 #     TAOS_SERVICE            install as service: auto (default), task, skip
+#     TAOS_SKIP_INCUS         if set, skip incus install and enrollment (set automatically on Windows)
 
 [CmdletBinding()]
 param(
@@ -106,6 +107,108 @@ if (-not (Test-Path (Join-Path $InstallDir '.git'))) {
 }
 
 Set-Location $InstallDir
+
+# --- incus install + controller enrollment --------------------------------
+# incus is Linux-only. Windows workers can still serve non-LXC workloads.
+# Set TAOS_SKIP_INCUS=0 if you are using WSL2 and have incus available via
+# a shim, but this is unsupported and you're on your own.
+
+function Install-AndEnroll-Incus {
+    # Check if incus is available (e.g. via WSL2 shim — uncommon but possible)
+    $incusCmd = Get-Command incus -ErrorAction SilentlyContinue
+    if (-not $incusCmd) {
+        # Try winget install as a best-effort
+        if (Get-Command winget -ErrorAction SilentlyContinue) {
+            Warn "incus not found — attempting winget install Incus.Incus"
+            try {
+                winget install --id Incus.Incus -e --silent `
+                    --accept-source-agreements --accept-package-agreements | Out-Null
+                $incusCmd = Get-Command incus -ErrorAction SilentlyContinue
+            } catch { }
+        }
+    }
+
+    if (-not $incusCmd) {
+        Warn "incus is not available on this Windows host — LXC enrollment skipped"
+        Warn "  Windows workers can still serve non-LXC workloads"
+        Warn "  To enroll manually after installing incus, run:"
+        Warn "    `$TOKEN = (incus config trust add controller-enroll 2>&1 | Select-Object -Last 1)"
+        Warn "    Invoke-RestMethod -Method POST -Uri `"$ControllerUrl/api/cluster/workers/$WorkerName/incus-enroll`" ``"
+        Warn "      -ContentType 'application/json' ``"
+        Warn "      -Body (`"{`"incus_url`":`"https://<LAN_IP>:8443`",`"token`":`"`$TOKEN`"`}`")"
+        return
+    }
+
+    Log "incus found at $($incusCmd.Source)"
+
+    # First-time init
+    $listResult = & incus list 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Log "running incus admin init --minimal (first-time setup)"
+        & incus admin init --minimal
+    } else {
+        Log "incus daemon already initialised"
+    }
+
+    # Enable HTTPS listener
+    $currentAddr = (& incus config get core.https_address 2>&1)
+    if ($currentAddr -eq ':8443') {
+        Log "incus HTTPS listener already set to :8443"
+    } else {
+        Log "enabling incus HTTPS listener on :8443"
+        & incus config set core.https_address :8443
+    }
+
+    # Generate trust token
+    Log "generating incus trust token for controller enrollment"
+    $tokenOutput = (& incus config trust add controller-enroll 2>&1)
+    $TOKEN = ($tokenOutput | Where-Object { $_ -match '\S' } | Select-Object -Last 1)
+    if (-not $TOKEN) {
+        Warn "failed to generate incus trust token — LXC enrollment skipped"
+        return
+    }
+
+    # Detect LAN IP (first non-loopback IPv4)
+    $LAN_IP = $null
+    try {
+        $LAN_IP = (Get-NetIPAddress -AddressFamily IPv4 `
+            | Where-Object { $_.PrefixOrigin -ne 'WellKnown' -and $_.IPAddress -notlike '127.*' } `
+            | Select-Object -First 1 -ExpandProperty IPAddress)
+    } catch { }
+    if (-not $LAN_IP) {
+        Warn "could not detect LAN IP — LXC enrollment skipped"
+        return
+    }
+    Log "LAN IP: $LAN_IP"
+
+    # POST to controller
+    Log "enrolling incus remote with controller at $ControllerUrl"
+    $enrollBody = [ordered]@{ incus_url = "https://${LAN_IP}:8443"; token = $TOKEN } | ConvertTo-Json
+    try {
+        $resp = Invoke-RestMethod -Method POST `
+            -Uri "$ControllerUrl/api/cluster/workers/$WorkerName/incus-enroll" `
+            -ContentType 'application/json' `
+            -Body $enrollBody
+        Log "incus remote enrolled successfully"
+    } catch {
+        Warn "incus enrollment failed: $_"
+        Warn "  To retry manually:"
+        Warn "    `$TOKEN = (incus config trust add controller-enroll 2>&1 | Select-Object -Last 1)"
+        Warn "    Invoke-RestMethod -Method POST -Uri `"$ControllerUrl/api/cluster/workers/$WorkerName/incus-enroll`" ``"
+        Warn "      -ContentType 'application/json' ``"
+        Warn "      -Body (`"{`"incus_url`":`"https://$LAN_IP`:8443`",`"token`":`"`$TOKEN`"`}`")"
+        Warn "  Set `$env:TAOS_SKIP_INCUS = '1' to skip this block on re-runs"
+    }
+}
+
+if ($env:TAOS_SKIP_INCUS -eq '1' -or $env:TAOS_SKIP_INCUS -eq 'true') {
+    Log "TAOS_SKIP_INCUS=1 — skipping incus install and enrollment"
+} else {
+    # incus is Linux-native; Windows support is best-effort only
+    Warn "incus is Linux-native — LXC enrollment skipped on Windows"
+    Warn "  set TAOS_SKIP_INCUS=1 to suppress this warning"
+    Warn "  if you have incus available via WSL2 shim, unset TAOS_SKIP_INCUS and re-run"
+}
 
 # --- venv + deps ---------------------------------------------------------
 
