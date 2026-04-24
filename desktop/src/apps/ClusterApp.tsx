@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { MobileSplitView } from "@/components/mobile/MobileSplitView";
 import {
   Network, RefreshCw, ExternalLink, Copy, Check, Trash2, Wand2,
   Cpu, MemoryStick, HardDrive, CircuitBoard, Zap, Server, Monitor,
@@ -202,10 +203,10 @@ function WorkerDetail({
   return (
     <div className="flex flex-col h-full min-h-0 overflow-hidden">
       {/* Header */}
-      <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-white/5 shrink-0">
-        <div className="min-w-0">
+      <div className="flex flex-wrap items-start justify-between gap-2 px-4 py-3 border-b border-white/5 shrink-0">
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <h2 className="text-sm font-semibold text-shell-text truncate">{worker.name}</h2>
+            <h2 className="text-sm font-semibold text-shell-text">{worker.name}</h2>
             <StatusPill status={status} />
             {worker.tier_id && (
               <span
@@ -216,7 +217,7 @@ function WorkerDetail({
               </span>
             )}
           </div>
-          <p className="text-[11px] text-shell-text-tertiary mt-0.5 truncate">
+          <p className="text-[11px] text-shell-text-tertiary mt-0.5 break-all">
             {worker.url}
             {worker.last_heartbeat
               ? `  \u00b7  last seen ${formatRelativeSeconds(worker.last_heartbeat)}`
@@ -228,7 +229,7 @@ function WorkerDetail({
           href={worker.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="shrink-0 inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-md bg-white/5 border border-white/10 text-shell-text-secondary hover:bg-white/10 transition-colors"
+          className="shrink-0 inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-md bg-white/5 border border-white/10 text-shell-text-secondary hover:bg-white/10 transition-colors min-h-[44px]"
           aria-label={`Open worker ${worker.name} UI in a new tab`}
         >
           <ExternalLink size={12} />
@@ -632,16 +633,16 @@ export function ClusterApp({ windowId: _windowId }: { windowId: string }) {
   return (
     <div className="flex flex-col h-full min-h-0 overflow-hidden bg-shell-bg text-shell-text select-none">
       {/* Toolbar */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/5 shrink-0">
-        <div className="flex items-center gap-2">
-          <Network size={18} className="text-accent" />
-          <h1 className="text-sm font-semibold">Cluster</h1>
-          <span className="text-xs text-shell-text-tertiary">
+      <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-white/5 shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <Network size={18} className="text-accent shrink-0" />
+          <h1 className="text-sm font-semibold shrink-0">Cluster</h1>
+          <span className="text-xs text-shell-text-tertiary truncate">
             {workers.length} worker{workers.length === 1 ? "" : "s"}
           </span>
         </div>
-        <div className="flex items-center gap-2">
-          <label htmlFor="cluster-sort" className="text-[11px] text-shell-text-tertiary">
+        <div className="flex items-center gap-1.5 shrink-0">
+          <label htmlFor="cluster-sort" className="sr-only">
             Sort by
           </label>
           <select
@@ -667,57 +668,60 @@ export function ClusterApp({ windowId: _windowId }: { windowId: string }) {
       </div>
 
       {/* Master-detail */}
-      <div className="flex-1 min-h-0 flex overflow-hidden">
-        {/* List */}
-        <aside
-          className="w-72 shrink-0 border-r border-white/5 overflow-y-auto p-3 space-y-2"
-          aria-label="Cluster worker list"
-        >
-          {loading ? (
-            <div className="text-[11px] text-shell-text-tertiary px-2 py-6 text-center">
-              Loading workers...
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <MobileSplitView
+          listTitle="Cluster"
+          detailTitle={selectedWorker?.name ?? ""}
+          listWidth={288}
+          selectedId={selected}
+          onBack={() => setSelected(null)}
+          list={
+            <div className="p-3 space-y-2" aria-label="Cluster worker list">
+              {loading ? (
+                <div className="text-[11px] text-shell-text-tertiary px-2 py-6 text-center">
+                  Loading workers...
+                </div>
+              ) : sortedWorkers.length === 0 ? (
+                <div className="flex flex-col items-center gap-2 py-6 text-center">
+                  <p className="text-[11px] text-shell-text-tertiary">No workers registered yet.</p>
+                  <a
+                    href="https://github.com/jaylfc/tinyagentos#distributed-compute-cluster"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[11px] px-3 py-1.5 rounded-md bg-white/5 border border-white/10 text-shell-text-secondary hover:bg-white/10 transition-colors"
+                    aria-label="How to add a worker (opens docs in new tab)"
+                  >
+                    How to add a worker
+                  </a>
+                </div>
+              ) : (
+                sortedWorkers.map((w) => (
+                  <WorkerListCard
+                    key={w.name}
+                    worker={w}
+                    selected={selected === w.name}
+                    onSelect={() => setSelected(w.name)}
+                  />
+                ))
+              )}
             </div>
-          ) : sortedWorkers.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 py-6 text-center">
-              <p className="text-[11px] text-shell-text-tertiary">No workers registered yet.</p>
-              <a
-                href="https://github.com/jaylfc/tinyagentos#distributed-compute-cluster"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[11px] px-3 py-1.5 rounded-md bg-white/5 border border-white/10 text-shell-text-secondary hover:bg-white/10 transition-colors"
-                aria-label="How to add a worker (opens docs in new tab)"
-              >
-                How to add a worker
-              </a>
-            </div>
-          ) : (
-            sortedWorkers.map((w) => (
-              <WorkerListCard
-                key={w.name}
-                worker={w}
-                selected={selected === w.name}
-                onSelect={() => setSelected(w.name)}
+          }
+          detail={
+            selectedWorker ? (
+              <WorkerDetail
+                worker={selectedWorker}
+                onRefresh={fetchWorkers}
+                onDeregister={handleDeregister}
+                onOptimise={handleOptimise}
+                busy={busy}
               />
-            ))
-          )}
-        </aside>
-
-        {/* Detail */}
-        <section className="flex-1 min-w-0 min-h-0 overflow-hidden" aria-label="Worker detail">
-          {selectedWorker ? (
-            <WorkerDetail
-              worker={selectedWorker}
-              onRefresh={fetchWorkers}
-              onDeregister={handleDeregister}
-              onOptimise={handleOptimise}
-              busy={busy}
-            />
-          ) : (
-            <div className="flex items-center justify-center h-full text-shell-text-tertiary text-sm">
-              {loading ? "Loading..." : "No worker selected"}
-            </div>
-          )}
-        </section>
+            ) : (
+              <div className="flex items-center justify-center h-full text-shell-text-tertiary text-sm">
+                {loading ? "Loading..." : "No worker selected"}
+              </div>
+            )
+          }
+        />
       </div>
 
       {/* Toast */}
