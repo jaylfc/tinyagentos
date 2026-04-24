@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useIsMobile } from "@/hooks/use-is-mobile";
 import { Bot, Box, Plus, Trash2, ScrollText, Play, Server, X, ChevronRight, ChevronLeft, Check, Wrench, MessageSquare, PauseCircle, RotateCcw, Archive, HardDrive } from "lucide-react";
 import { fetchLatestFrameworks, LatestVersion } from "@/lib/framework-api";
 import { AgentSkillsPanel } from "./AgentSkillsPanel";
@@ -134,12 +135,145 @@ function AgentRow({
   onDelete: (name: string) => void;
   onResume: (name: string) => void;
 }) {
+  const isMobile = useIsMobile();
   const emoji = resolveAgentEmoji(agent.emoji, agent.framework);
   const latestForAgent = agent.framework ? latestByFramework[agent.framework] : undefined;
   const updateAvailable =
     agent.framework_version_sha &&
     latestForAgent &&
     latestForAgent.sha !== agent.framework_version_sha;
+
+  const btnCls = isMobile ? "h-11 w-11" : "h-8 w-8";
+
+  const actionButtons = (
+    <>
+      {agent.paused && (
+        <Button
+          variant="ghost"
+          size="icon"
+          className={`${btnCls} hover:bg-emerald-500/15 hover:text-emerald-400 text-amber-400`}
+          onClick={() => onResume(agent.name)}
+          aria-label={`Resume ${agent.name}`}
+          title="Resume agent"
+        >
+          <RotateCcw size={15} />
+        </Button>
+      )}
+      <Button
+        variant="ghost"
+        size="icon"
+        className={btnCls}
+        onClick={() => onViewLogs(agent.name)}
+        aria-label={`View logs for ${agent.name}`}
+        title="View Logs"
+      >
+        <ScrollText size={15} />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        className={btnCls}
+        onClick={() => onViewSkills(agent.name)}
+        aria-label={`Manage skills for ${agent.name}`}
+        title="Skills"
+      >
+        <Wrench size={15} />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        className={btnCls}
+        onClick={() => onViewMessages(agent.name)}
+        aria-label={`View messages for ${agent.name}`}
+        title="Messages"
+      >
+        <MessageSquare size={15} />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        className={`${btnCls} hover:bg-red-500/15 hover:text-red-400`}
+        onClick={() => onDelete(agent.name)}
+        aria-label={`Delete ${agent.name}`}
+        title="Delete"
+      >
+        <Trash2 size={15} />
+      </Button>
+    </>
+  );
+
+  if (isMobile) {
+    return (
+      <Card className="px-3 py-2.5 hover:bg-shell-surface/50 transition-colors">
+        {/* Row 1: identity + status chip */}
+        <div className="flex items-center gap-2 min-w-0">
+          <span
+            className="w-2 h-2 rounded-full shrink-0"
+            style={{ backgroundColor: agent.color }}
+            aria-label={`Color: ${agent.color}`}
+          />
+          <span className="text-base leading-none shrink-0" aria-hidden="true">
+            {emoji}
+          </span>
+          <span className="font-medium text-sm truncate flex-1 min-w-0">
+            {agent.display_name || agent.name}
+          </span>
+          {updateAvailable && (
+            <span
+              aria-label="framework update available"
+              title="framework update available"
+              className="inline-block w-2 h-2 bg-yellow-400 rounded-full shrink-0"
+            />
+          )}
+          <span
+            className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium capitalize shrink-0 ${STATUS_STYLES[agent.status] ?? STATUS_STYLES.stopped}`}
+            aria-label={`Status: ${agent.status}`}
+          >
+            {agent.status}
+          </span>
+        </div>
+        {/* Row 2: host + vectors + optional chips */}
+        <div className="flex items-center gap-2 mt-1 min-w-0">
+          <Server size={11} className="text-shell-text-tertiary shrink-0" />
+          <span className="text-xs text-shell-text-secondary truncate flex-1 min-w-0">{agent.host}</span>
+          <span className="text-xs text-shell-text-tertiary tabular-nums shrink-0">
+            {agent.vectors.toLocaleString()} vectors
+          </span>
+        </div>
+        {(agent.paused || (diskState && diskState.state !== "ok")) && (
+          <div className="flex flex-wrap gap-1.5 mt-1.5">
+            {agent.paused && (
+              <span
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/20 text-amber-400 border border-amber-500/20"
+                title="This agent is paused due to a worker failure"
+              >
+                <PauseCircle size={10} aria-hidden="true" />
+                paused
+              </span>
+            )}
+            {diskState && diskState.state !== "ok" && (
+              <span
+                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium border ${
+                  diskState.state === "hard"
+                    ? "bg-red-500/20 text-red-400 border-red-500/20"
+                    : "bg-amber-500/20 text-amber-400 border-amber-500/20"
+                }`}
+                aria-label={`Disk usage: ${diskState.used_gib}/${diskState.quota_gib} GiB (${diskState.percent}%)`}
+              >
+                <HardDrive size={10} aria-hidden="true" />
+                {diskState.used_gib}/{diskState.quota_gib} GiB
+              </span>
+            )}
+          </div>
+        )}
+        {/* Row 3: action buttons */}
+        <div className="flex items-center gap-0 mt-1 -ml-1.5">
+          {actionButtons}
+        </div>
+      </Card>
+    );
+  }
+
   return (
     <Card className="flex items-center gap-4 px-4 py-3 hover:bg-shell-surface/50 transition-colors">
       <div className="flex items-center gap-2.5 flex-1 min-w-0">
@@ -204,58 +338,7 @@ function AgentRow({
         {agent.vectors.toLocaleString()}
       </span>
       <div className="flex items-center gap-1">
-        {agent.paused && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 hover:bg-emerald-500/15 hover:text-emerald-400 text-amber-400"
-            onClick={() => onResume(agent.name)}
-            aria-label={`Resume ${agent.name}`}
-            title="Resume agent"
-          >
-            <RotateCcw size={15} />
-          </Button>
-        )}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-          onClick={() => onViewLogs(agent.name)}
-          aria-label={`View logs for ${agent.name}`}
-          title="View Logs"
-        >
-          <ScrollText size={15} />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-          onClick={() => onViewSkills(agent.name)}
-          aria-label={`Manage skills for ${agent.name}`}
-          title="Skills"
-        >
-          <Wrench size={15} />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-          onClick={() => onViewMessages(agent.name)}
-          aria-label={`View messages for ${agent.name}`}
-          title="Messages"
-        >
-          <MessageSquare size={15} />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 hover:bg-red-500/15 hover:text-red-400"
-          onClick={() => onDelete(agent.name)}
-          aria-label={`Delete ${agent.name}`}
-          title="Delete"
-        >
-          <Trash2 size={15} />
-        </Button>
+        {actionButtons}
       </div>
     </Card>
   );
@@ -1800,18 +1883,18 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
   return (
     <div className="flex flex-col h-full min-h-0 overflow-hidden bg-shell-bg text-shell-text select-none relative">
       {/* Toolbar */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
-        <div className="flex items-center gap-2">
-          <Bot size={18} className="text-accent" />
-          <h1 className="text-sm font-semibold">Agents</h1>
-          <span className="text-xs text-shell-text-tertiary">
+      <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-white/5">
+        <div className="flex items-center gap-2 min-w-0">
+          <Bot size={18} className="text-accent shrink-0" />
+          <h1 className="text-sm font-semibold shrink-0">Agents</h1>
+          <span className="text-xs text-shell-text-tertiary truncate">
             {agents.length} deployed
           </span>
         </div>
         <Button
           onClick={() => setWizardOpen(true)}
           size="sm"
-          className="text-white shadow-lg hover:shadow-xl hover:-translate-y-0.5 hover:brightness-110 border-0"
+          className="text-white shadow-lg hover:shadow-xl hover:-translate-y-0.5 hover:brightness-110 border-0 shrink-0"
           style={{ background: "linear-gradient(135deg, #8b92a3, #5b6170)" }}
           aria-label="Deploy new agent"
         >
