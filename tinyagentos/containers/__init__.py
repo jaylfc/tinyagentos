@@ -334,6 +334,20 @@ async def snapshot_delete(name: str, snapshot_name: str) -> None:
         )
 
 
+async def remote_add(name: str, url: str, token: str) -> dict:
+    """Add a remote incus server to the local incus config using a trust token.
+
+    Runs ``incus remote add <name> <url> --token=<token> --accept-certificate``.
+    Returns ``{"success": bool, "output": str}``.
+    """
+    code, output = await _run([
+        "incus", "remote", "add", name, url,
+        f"--token={token}",
+        "--accept-certificate",
+    ])
+    return {"success": code == 0, "output": output}
+
+
 async def set_env(name: str, key: str, value: str) -> dict:
     """Set an environment variable on a container via incus config set.
 
@@ -379,4 +393,5 @@ __all__ = [
     "snapshot_list",
     "snapshot_delete",
     "set_env",
+    "remote_add",
 ]
