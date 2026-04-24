@@ -939,6 +939,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     from tinyagentos.routes.service_proxy import router as service_proxy_router
     app.include_router(service_proxy_router)
 
+    from tinyagentos.routes.apps import router as apps_router
+    app.include_router(apps_router)
+
     from tinyagentos.routes import admin_prompts as admin_prompts_routes
     app.include_router(admin_prompts_routes.router)
 
