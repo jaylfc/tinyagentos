@@ -204,10 +204,10 @@ function Install-AndEnroll-Incus {
 if ($env:TAOS_SKIP_INCUS -eq '1' -or $env:TAOS_SKIP_INCUS -eq 'true') {
     Log "TAOS_SKIP_INCUS=1 — skipping incus install and enrollment"
 } else {
-    # incus is Linux-native; Windows support is best-effort only
-    Warn "incus is Linux-native — LXC enrollment skipped on Windows"
-    Warn "  set TAOS_SKIP_INCUS=1 to suppress this warning"
-    Warn "  if you have incus available via WSL2 shim, unset TAOS_SKIP_INCUS and re-run"
+    # incus is Linux-native but may be available via WSL2 shim.
+    # Install-AndEnroll-Incus handles the best-effort path and prints
+    # manual-retry instructions if incus is unavailable on this host.
+    Install-AndEnroll-Incus
 }
 
 # --- venv + deps ---------------------------------------------------------
