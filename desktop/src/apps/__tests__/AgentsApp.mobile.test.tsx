@@ -15,7 +15,7 @@ vi.mock("@/lib/models", () => ({
   CLOUD_PROVIDER_TYPES: [],
 }));
 vi.mock("@/lib/cluster", () => ({
-  availableKvQuantOptions: async () => ({ k: ["fp16"], v: ["fp16"], boundary: false, flat: ["fp16"] }),
+  availableKvQuantOptions: () => ({ k: ["fp16"], v: ["fp16"], boundary: false, flat: ["fp16"] }),
 }));
 vi.mock("@/lib/agent-emoji", () => ({ resolveAgentEmoji: () => "🤖" }));
 vi.mock("@/components/EmojiPicker", () => ({ EmojiPickerField: () => null }));
