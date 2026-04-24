@@ -54,7 +54,8 @@ on the worker — same flow in reverse.
 ### 1. Install Gitea on the controller (or a worker)
 
 You can install directly to a registered worker by adding `"target_remote"` to
-the request body. Omit it (or set it to `"local"`) to install on the controller.
+the request body. Omit it (or set it to `""` or `"local"`) to install on the
+controller — the API normalizes all three to a local install.
 
 **Install on the controller (default):**
 
@@ -90,8 +91,9 @@ curl -X POST http://localhost:6969/api/store/install-v2 \
 
 `target_remote` must match a remote already registered via
 `POST /api/cluster/remotes`. Use `GET /api/cluster/install-targets` to list
-valid names. In the taOS Store UI, a "Install on" dropdown appears automatically
-on LXC apps when workers are registered.
+valid names. Omitting the field, passing `""`, or passing `"local"` all install
+on the controller. In the taOS Store UI, an "Install on" dropdown appears
+automatically on LXC apps when workers are registered.
 
 Install takes 2-3 minutes (incus launch + apt install + Gitea binary
 download). Response includes `host_port`. Verify:
