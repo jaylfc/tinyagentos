@@ -1663,6 +1663,7 @@ export function AgentsApp({ windowId: _windowId }: { windowId: string }) {
                 kv_cache_quant_v: a.kv_cache_quant_v ? String(a.kv_cache_quant_v) : (a.kv_cache_quant ? String(a.kv_cache_quant) : "fp16"),
                 kv_cache_quant_boundary_layers: typeof a.kv_cache_quant_boundary_layers === "number" ? a.kv_cache_quant_boundary_layers : 0,
                 framework_version_sha: a.framework_version_sha != null ? String(a.framework_version_sha) : null,
+                migrated_to_v2_personas: Boolean(a.migrated_to_v2_personas),
               }))
             );
             setLoading(false);
