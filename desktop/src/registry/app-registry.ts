@@ -66,3 +66,35 @@ export function getAppsByCategory(category: AppManifest["category"]): AppManifes
 export function getAllApps(): AppManifest[] {
   return [...apps].sort((a, b) => a.launchpadOrder - b.launchpadOrder);
 }
+
+/**
+ * Register or return a dynamic app manifest for an installed service.
+ *
+ * Each installed service gets its own appId of the form `service:{app_id}`
+ * so that multiple services can be open simultaneously as independent windows.
+ * The manifest is registered lazily on first call and persists for the session.
+ */
+export function getOrRegisterServiceApp(
+  appId: string,
+  displayName: string,
+): AppManifest {
+  const dynId = `service:${appId}`;
+  const existing = apps.find((a) => a.id === dynId);
+  if (existing) return existing;
+
+  const manifest: AppManifest = {
+    id: dynId,
+    name: displayName,
+    icon: "layout-grid",
+    category: "platform",
+    component: () =>
+      import("@/apps/ServiceAppWindow").then((m) => ({ default: m.ServiceAppWindow })),
+    defaultSize: { w: 1100, h: 750 },
+    minSize: { w: 600, h: 400 },
+    singleton: true,
+    pinned: false,
+    launchpadOrder: 999,
+  };
+  apps.push(manifest);
+  return manifest;
+}
