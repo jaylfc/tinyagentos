@@ -535,7 +535,8 @@ async def migrate_container(
 
     if code != 0:
         # Rollback: restart source if we stopped it.
-        if stateless and was_running and not keep_source:
+        # Source is stopped for all stateless migrations regardless of keep_source.
+        if stateless and was_running:
             restart_result = await start_container(container_name)
             if not restart_result["success"]:
                 logger.error(
@@ -556,6 +557,15 @@ async def migrate_container(
             logger.warning(
                 "migrate_container: container moved but failed to start on %s: %s",
                 target_ref, start_out,
+            )
+
+    # For keep_source copy flows, restore source running state after successful copy.
+    if keep_source and stateless and was_running:
+        restart_result = await start_container(container_name)
+        if not restart_result["success"]:
+            logger.warning(
+                "migrate_container: source restart failed after copy for %s: %s",
+                container_name, restart_result.get("output", ""),
             )
 
     # Clean up pre-stop snapshot on source (only relevant for copy, since move destroys source).
