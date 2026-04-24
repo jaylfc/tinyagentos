@@ -35,14 +35,47 @@ _HOP_BY_HOP = frozenset({
     "host",
 })
 
+# Controller-scoped credentials must never leak to the upstream service
+# container. The taos_session cookie is stripped out of Cookie; everything
+# else in the cookie header passes through unchanged.
+_SENSITIVE_HEADERS = frozenset({"authorization"})
+_STRIPPED_COOKIES = frozenset({"taos_session"})
+
 
 # Module-level HTTP client for proxying — avoids per-request connection churn
 # and allows send(stream=True) with BackgroundTask cleanup.
 _http_client = httpx.AsyncClient(timeout=60.0)
 
 
+def _strip_taos_cookies(cookie_header: str) -> str:
+    """Remove controller-owned cookies from a Cookie header, keep the rest."""
+    if not cookie_header:
+        return ""
+    from http.cookies import SimpleCookie
+    jar = SimpleCookie()
+    try:
+        jar.load(cookie_header)
+    except Exception:
+        return cookie_header
+    for name in _STRIPPED_COOKIES:
+        jar.pop(name, None)
+    return "; ".join(f"{k}={m.value}" for k, m in jar.items())
+
+
 def _filter_headers(headers: dict) -> dict:
-    return {k: v for k, v in headers.items() if k.lower() not in _HOP_BY_HOP}
+    filtered: dict[str, str] = {}
+    for k, v in headers.items():
+        kl = k.lower()
+        if kl in _HOP_BY_HOP or kl in _SENSITIVE_HEADERS:
+            continue
+        if kl == "cookie":
+            stripped = _strip_taos_cookies(v)
+            if not stripped:
+                continue
+            filtered[k] = stripped
+            continue
+        filtered[k] = v
+    return filtered
 
 
 @router.get("/apps/{app_id}", include_in_schema=False)
