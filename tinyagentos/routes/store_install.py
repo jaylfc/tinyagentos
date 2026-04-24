@@ -161,6 +161,7 @@ async def uninstall_app(request: Request):
 
     # Determine backend from manifest or body metadata.
     registry = getattr(request.app.state, "registry", None)
+    manifest = None
     backend = "docker"
     if registry is not None:
         manifest = registry.get(app_id)

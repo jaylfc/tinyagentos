@@ -35,14 +35,47 @@ _HOP_BY_HOP = frozenset({
     "host",
 })
 
+# Controller-scoped credentials must never leak to the upstream service
+# container. The taos_session cookie is stripped out of Cookie; everything
+# else in the cookie header passes through unchanged.
+_SENSITIVE_HEADERS = frozenset({"authorization"})
+_STRIPPED_COOKIES = frozenset({"taos_session"})
+
 
 # Module-level HTTP client for proxying — avoids per-request connection churn
 # and allows send(stream=True) with BackgroundTask cleanup.
 _http_client = httpx.AsyncClient(timeout=60.0)
 
 
+def _strip_taos_cookies(cookie_header: str) -> str:
+    """Remove controller-owned cookies from a Cookie header, keep the rest."""
+    if not cookie_header:
+        return ""
+    from http.cookies import SimpleCookie
+    jar = SimpleCookie()
+    try:
+        jar.load(cookie_header)
+    except Exception:
+        return cookie_header
+    for name in _STRIPPED_COOKIES:
+        jar.pop(name, None)
+    return "; ".join(f"{k}={m.value}" for k, m in jar.items())
+
+
 def _filter_headers(headers: dict) -> dict:
-    return {k: v for k, v in headers.items() if k.lower() not in _HOP_BY_HOP}
+    filtered: dict[str, str] = {}
+    for k, v in headers.items():
+        kl = k.lower()
+        if kl in _HOP_BY_HOP or kl in _SENSITIVE_HEADERS:
+            continue
+        if kl == "cookie":
+            stripped = _strip_taos_cookies(v)
+            if not stripped:
+                continue
+            filtered[k] = stripped
+            continue
+        filtered[k] = v
+    return filtered
 
 
 @router.get("/apps/{app_id}", include_in_schema=False)
@@ -104,25 +137,6 @@ async def service_proxy(app_id: str, path: str, request: Request):
         return _json_error(f"Upstream {app_id} timed out", 504)
 
     resp_headers = _filter_headers(dict(upstream_resp.headers))
-
-    # Strip framing restrictions so the desktop web-app window can embed the
-    # service in an iframe. Services installed via the store are trusted by
-    # the controller; sandboxing is handled at the iframe level.
-    # Remove X-Frame-Options regardless of header name casing.
-    for k in [k for k in resp_headers if k.lower() == "x-frame-options"]:
-        resp_headers.pop(k, None)
-    # Strip frame-ancestors from CSP regardless of header name casing.
-    csp_key = next((k for k in resp_headers if k.lower() == "content-security-policy"), None)
-    if csp_key:
-        csp = resp_headers[csp_key]
-        cleaned = "; ".join(
-            d for d in csp.split(";")
-            if "frame-ancestors" not in d.strip().lower()
-        )
-        if cleaned:
-            resp_headers[csp_key] = cleaned
-        else:
-            resp_headers.pop(csp_key, None)
 
     # Rewrite absolute Location headers so redirects stay within /apps/{app_id}/.
     if "location" in upstream_resp.headers:
