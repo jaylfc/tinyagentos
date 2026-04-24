@@ -1,9 +1,11 @@
 import { useState, useMemo, useRef } from "react";
 import { Search, X } from "lucide-react";
-import { getAllApps, getApp } from "@/registry/app-registry";
+import { getAllApps, getApp, getOrRegisterServiceApp } from "@/registry/app-registry";
 import { useProcessStore } from "@/stores/process-store";
 import { useShortcut } from "@/hooks/use-shortcut-registry";
 import { LaunchpadIcon } from "./LaunchpadIcon";
+import { ServiceIcon } from "./ServiceIcon";
+import { useInstalledServices } from "@/hooks/use-installed-services";
 
 interface Props {
   open: boolean;
@@ -23,6 +25,7 @@ export function Launchpad({ open, onClose, onOpenApp }: Props) {
   const openRef = useRef(open);
   openRef.current = open;
   const { openWindow } = useProcessStore();
+  const installedServices = useInstalledServices();
 
   // Register Escape at overlay priority so it beats any system shortcuts when open
   useShortcut("Escape", () => { if (openRef.current) onClose(); }, "Close launchpad", "overlay");
@@ -53,6 +56,21 @@ export function Launchpad({ open, onClose, onOpenApp }: Props) {
     onClose();
     setQuery("");
   };
+
+  const handleLaunchService = (appId: string, displayName: string, url: string) => {
+    const manifest = getOrRegisterServiceApp(appId, displayName);
+    const wid = openWindow(manifest.id, manifest.defaultSize, { url, displayName });
+    onOpenApp?.(wid);
+    onClose();
+    setQuery("");
+  };
+
+  // Filter services by search query if one is active
+  const filteredServices = useMemo(() => {
+    if (!query.trim()) return installedServices;
+    const q = query.toLowerCase();
+    return installedServices.filter((s) => s.display_name.toLowerCase().includes(q));
+  }, [installedServices, query]);
 
   if (!open) return null;
 
@@ -102,6 +120,23 @@ export function Launchpad({ open, onClose, onOpenApp }: Props) {
               </div>
             </div>
           ))}
+
+          {filteredServices.length > 0 && (
+            <div>
+              <h3 className="text-xs font-medium text-shell-text-tertiary uppercase tracking-wide mb-3 px-1">
+                Services
+              </h3>
+              <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-3">
+                {filteredServices.map((svc) => (
+                  <ServiceIcon
+                    key={svc.app_id}
+                    service={svc}
+                    onClick={() => handleLaunchService(svc.app_id, svc.display_name, svc.url)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
