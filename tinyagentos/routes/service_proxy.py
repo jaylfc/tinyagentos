@@ -108,18 +108,21 @@ async def service_proxy(app_id: str, path: str, request: Request):
     # Strip framing restrictions so the desktop web-app window can embed the
     # service in an iframe. Services installed via the store are trusted by
     # the controller; sandboxing is handled at the iframe level.
-    resp_headers.pop("x-frame-options", None)
-    resp_headers.pop("X-Frame-Options", None)
-    if "content-security-policy" in resp_headers:
-        csp = resp_headers["content-security-policy"]
+    # Remove X-Frame-Options regardless of header name casing.
+    for k in [k for k in resp_headers if k.lower() == "x-frame-options"]:
+        resp_headers.pop(k, None)
+    # Strip frame-ancestors from CSP regardless of header name casing.
+    csp_key = next((k for k in resp_headers if k.lower() == "content-security-policy"), None)
+    if csp_key:
+        csp = resp_headers[csp_key]
         cleaned = "; ".join(
             d for d in csp.split(";")
             if "frame-ancestors" not in d.strip().lower()
         )
         if cleaned:
-            resp_headers["content-security-policy"] = cleaned
+            resp_headers[csp_key] = cleaned
         else:
-            resp_headers.pop("content-security-policy", None)
+            resp_headers.pop(csp_key, None)
 
     # Rewrite absolute Location headers so redirects stay within /apps/{app_id}/.
     if "location" in upstream_resp.headers:
