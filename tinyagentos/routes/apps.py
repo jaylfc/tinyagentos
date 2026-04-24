@@ -79,7 +79,9 @@ async def list_installed_apps(request: Request):
         # Best-effort manifest lookup for display metadata.
         manifest = registry.get(app_id) if registry is not None else None
         if manifest is not None:
-            install_block = manifest.install or {}
+            install_block = getattr(manifest, "install", None) or {}
+            if not isinstance(install_block, dict):
+                install_block = {}
             display_name: str = (
                 install_block.get("display_name")
                 or manifest.name

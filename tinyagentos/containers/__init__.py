@@ -408,13 +408,37 @@ async def remote_generate_token(
     code, output = await _run(cmd)
     if code != 0:
         return {"success": False, "token": "", "output": output}
-    # The token is the last non-empty line of the output.
+    # The token is the last non-empty line of the output. incus formats trust
+    # tokens as base64url-encoded JSON; reject anything that clearly isn't one
+    # so a broken / changed incus output format doesn't silently return "".
     token = ""
     for line in reversed(output.strip().splitlines()):
         line = line.strip()
         if line:
             token = line
             break
+    if not token:
+        return {
+            "success": False,
+            "token": "",
+            "output": (
+                "`incus config trust add` succeeded but produced no token. "
+                f"Raw output: {output!r}"
+            ),
+        }
+    # Real incus trust tokens are long base64url-encoded blobs with no
+    # whitespace. Embedded spaces would mean we grabbed a help/status line
+    # instead of the token payload.
+    if " " in token or "\t" in token:
+        return {
+            "success": False,
+            "token": "",
+            "output": (
+                f"`incus config trust add` returned unexpected output; last "
+                f"line {token!r} does not look like a trust token. "
+                f"Full output: {output!r}"
+            ),
+        }
     return {"success": True, "token": token, "output": output}
 
 

@@ -16,6 +16,21 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _install_dict(manifest) -> dict:
+    """Return manifest.install normalised to a dict.
+
+    AppManifest.install is typed as ``dict`` but older catalog entries, broken
+    YAML, or future manifest shapes could surface it as None, a list, or an
+    object with ``.get`` but no mapping semantics. Calling ``.get(...)`` on
+    those blows up with AttributeError — callers should go through this helper
+    instead of touching ``manifest.install`` directly.
+    """
+    install = getattr(manifest, "install", None)
+    if isinstance(install, dict):
+        return install
+    return {}
+
+
 class RemoteAddBody(BaseModel):
     name: str
     url: str
@@ -122,7 +137,8 @@ async def migrate_service_route(request: Request, body: MigrateServiceBody):
             {"error": f"App '{body.app_id}' not found in catalog"}, status_code=404
         )
 
-    state_paths: list[str] = manifest.install.get("state_paths", [])
+    install = _install_dict(manifest)
+    state_paths: list[str] = install.get("state_paths", [])
     if not state_paths:
         # Fall back to top-level manifest field for manifests that declare it there.
         import yaml as _yaml
@@ -138,7 +154,7 @@ async def migrate_service_route(request: Request, body: MigrateServiceBody):
             status_code=400,
         )
 
-    service_name: str = manifest.install.get("service_name", "")
+    service_name: str = install.get("service_name", "")
     if not service_name and manifest.manifest_dir is not None:
         import yaml as _yaml
         lxc_manifest_path = manifest.manifest_dir / "manifest-lxc.yaml"
@@ -153,7 +169,7 @@ async def migrate_service_route(request: Request, body: MigrateServiceBody):
         result = await migrate_service(
             body.app_id,
             body.target_remote,
-            install_config=manifest.install,
+            install_config=install,
             state_paths=state_paths,
             service_name=service_name,
             keep_source=body.keep_source,
@@ -184,7 +200,7 @@ async def migrate_service_route(request: Request, body: MigrateServiceBody):
                     target_remote_norm,
                 )
                 return result
-            ui_path = manifest.install.get("ui_path", "/") if isinstance(manifest.install, dict) else "/"
+            ui_path = _install_dict(manifest).get("ui_path", "/")
             try:
                 await installed_apps.update_runtime_location(
                     body.app_id,
