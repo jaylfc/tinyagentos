@@ -101,6 +101,26 @@ async def install_app(request: Request):
                 status_code=400,
             )
 
+        # Resolve target_remote: body field takes precedence over manifest.
+        # Normalise empty string / "local" to None (= install on controller).
+        raw_remote = body.get("target_remote") or install_config.get("target_remote") or ""
+        target_remote: str | None = raw_remote if raw_remote and raw_remote != "local" else None
+
+        # Validate that the requested remote is registered.
+        if target_remote:
+            try:
+                import tinyagentos.containers as containers
+                registered = await containers.remote_list()
+                known = {r.get("name") for r in registered}
+                if target_remote not in known:
+                    return JSONResponse(
+                        {"error": f"incus remote '{target_remote}' is not registered. "
+                         f"Register it first via POST /api/cluster/remotes."},
+                        status_code=400,
+                    )
+            except Exception as exc:
+                logger.warning("install-v2: could not verify remote %r: %s", target_remote, exc)
+
         user = _get_current_user(request)
         # Body overrides win so local-token / non-session callers can seed the
         # admin user explicitly. Gitea rejects "admin" as a reserved name, so
@@ -116,6 +136,7 @@ async def install_app(request: Request):
                 admin_password=admin_password,
                 taos_username=taos_username,
                 taos_email=taos_email,
+                target_remote=target_remote,
             )
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
@@ -132,7 +153,6 @@ async def install_app(request: Request):
 
             # Record runtime location so the proxy can reach the service.
             host_port = result.get("host_port")
-            target_remote = install_config.get("target_remote") or body.get("target_remote")
             if host_port:
                 runtime_host = await _resolve_host(target_remote)
                 ui_path = install_config.get("ui_path", "/")
@@ -144,7 +164,9 @@ async def install_app(request: Request):
                     ui_path=ui_path,
                 )
 
-        return JSONResponse({"ok": True, "app_id": app_id, "status": "installed", **result})
+        resp_target = target_remote or "local"
+        return JSONResponse({"ok": True, "app_id": app_id, "status": "installed",
+                             "target_remote": resp_target, **result})
 
     # Default: delegate to InstalledAppsStore (docker/pip/download).
     store = request.app.state.installed_apps
@@ -161,7 +183,6 @@ async def uninstall_app(request: Request):
 
     # Determine backend from manifest or body metadata.
     registry = getattr(request.app.state, "registry", None)
-    manifest = None
     backend = "docker"
     if registry is not None:
         manifest = registry.get(app_id)
@@ -176,11 +197,24 @@ async def uninstall_app(request: Request):
         if isinstance(meta, dict) and meta.get("method"):
             backend = meta["method"]
 
+    # Retrieve the runtime location before touching the store so we know
+    # whether the container lives on a remote host.
+    _store_for_loc = getattr(request.app.state, "installed_apps", None)
+    _runtime_loc = None
+    if _store_for_loc is not None:
+        _runtime_loc = await _store_for_loc.get_runtime_location(app_id)
+
     container_error: str | None = None
     if backend == "lxc":
+        target_remote: str | None = None
+        if _runtime_loc is not None:
+            _runtime_host = _runtime_loc.get("runtime_host", "")
+            # 127.0.0.1 means local; anything else is a remote host name.
+            if _runtime_host and _runtime_host != "127.0.0.1":
+                target_remote = _runtime_host
         try:
             installer = LXCInstaller()
-            uninstall_result = await installer.uninstall(app_id)
+            uninstall_result = await installer.uninstall(app_id, target_remote=target_remote)
             if not uninstall_result.get("success", False):
                 container_error = (
                     uninstall_result.get("error")
@@ -191,12 +225,18 @@ async def uninstall_app(request: Request):
             logger.warning("LXC container destroy failed for %s: %s", app_id, exc)
             container_error = str(exc)
 
+    if container_error is not None:
+        # Container removal failed; do not clear the store record so the
+        # orphaned container can be retried or manually cleaned up.
+        return JSONResponse(
+            {"ok": False, "app_id": app_id, "container_error": container_error},
+            status_code=500,
+        )
+
     store = request.app.state.installed_apps
     removed = await store.uninstall(app_id)
     await store.remove_runtime_location(app_id)
     resp: dict = {"ok": removed, "app_id": app_id, "status": "uninstalled" if removed else "not_installed"}
-    if container_error is not None:
-        resp["container_error"] = container_error
     return JSONResponse(resp)
 
 
@@ -204,4 +244,16 @@ async def uninstall_app(request: Request):
 async def list_installed(request: Request):
     store = request.app.state.installed_apps
     items = await store.list_installed()
+    # Annotate each item with its runtime location so the UI can show which
+    # host each app currently lives on.
+    for item in items:
+        loc = await store.get_runtime_location(item["app_id"])
+        if loc:
+            item["runtime_host"] = loc["runtime_host"]
+            item["runtime_port"] = loc["runtime_port"]
+            item["runtime_backend"] = loc["backend"]
+        else:
+            item["runtime_host"] = None
+            item["runtime_port"] = None
+            item["runtime_backend"] = None
     return JSONResponse({"installed": items})
