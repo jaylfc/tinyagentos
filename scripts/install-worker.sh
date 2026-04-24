@@ -469,14 +469,6 @@ install_and_enroll_incus() {
     fi
 }
 
-if [[ "${TAOS_SKIP_INCUS:-}" == "1" || "${TAOS_SKIP_INCUS:-}" == "true" ]]; then
-    log "TAOS_SKIP_INCUS=1 — skipping incus install and enrollment"
-else
-    if [[ "$os_name" == "Linux" ]]; then
-        install_and_enroll_incus
-    fi
-fi
-
 # --- bundled Ollama backend (TAOS-namespaced) ----------------------------
 #
 # install-worker.sh installs a TAOS-namespaced Ollama by default so a
@@ -675,6 +667,19 @@ if [[ -z "${TAOS_SKIP_BENCHMARK:-}" ]]; then
         --worker-name "$WORKER_NAME" \
         --first-join \
     || warn "benchmark runner not available yet — skipping (worker will run without baseline scores)"
+fi
+
+# --- incus enrollment (after worker registration) ------------------------
+# The controller's /incus-enroll endpoint returns 404 for unknown workers.
+# The benchmark runner above registers the worker, so enrollment must come
+# after it completes.
+
+if [[ "${TAOS_SKIP_INCUS:-}" == "1" || "${TAOS_SKIP_INCUS:-}" == "true" ]]; then
+    log "TAOS_SKIP_INCUS=1 — skipping incus install and enrollment"
+else
+    if [[ "$os_name" == "Linux" ]]; then
+        install_and_enroll_incus
+    fi
 fi
 
 # --- system service install ---------------------------------------------
