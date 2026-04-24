@@ -169,7 +169,7 @@ If a migration fails mid-way:
 After install or migration, every service has a stable proxy URL on the
 controller:
 
-```
+```text
 http://localhost:6969/apps/gitea-lxc/
 ```
 

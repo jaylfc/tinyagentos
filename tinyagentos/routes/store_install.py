@@ -175,11 +175,24 @@ async def uninstall_app(request: Request):
         if isinstance(meta, dict) and meta.get("method"):
             backend = meta["method"]
 
+    # Retrieve the runtime location before touching the store so we know
+    # whether the container lives on a remote host.
+    _store_for_loc = getattr(request.app.state, "installed_apps", None)
+    _runtime_loc = None
+    if _store_for_loc is not None:
+        _runtime_loc = await _store_for_loc.get_runtime_location(app_id)
+
     container_error: str | None = None
     if backend == "lxc":
+        target_remote: str | None = None
+        if _runtime_loc is not None:
+            _runtime_host = _runtime_loc.get("runtime_host", "")
+            # 127.0.0.1 means local; anything else is a remote host name.
+            if _runtime_host and _runtime_host != "127.0.0.1":
+                target_remote = _runtime_host
         try:
             installer = LXCInstaller()
-            uninstall_result = await installer.uninstall(app_id)
+            uninstall_result = await installer.uninstall(app_id, target_remote=target_remote)
             if not uninstall_result.get("success", False):
                 container_error = (
                     uninstall_result.get("error")
@@ -190,12 +203,18 @@ async def uninstall_app(request: Request):
             logger.warning("LXC container destroy failed for %s: %s", app_id, exc)
             container_error = str(exc)
 
+    if container_error is not None:
+        # Container removal failed; do not clear the store record so the
+        # orphaned container can be retried or manually cleaned up.
+        return JSONResponse(
+            {"ok": False, "app_id": app_id, "container_error": container_error},
+            status_code=500,
+        )
+
     store = request.app.state.installed_apps
     removed = await store.uninstall(app_id)
     await store.remove_runtime_location(app_id)
     resp: dict = {"ok": removed, "app_id": app_id, "status": "uninstalled" if removed else "not_installed"}
-    if container_error is not None:
-        resp["container_error"] = container_error
     return JSONResponse(resp)
 
 

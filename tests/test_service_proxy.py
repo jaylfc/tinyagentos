@@ -105,7 +105,31 @@ def _make_fake_upstream(captured: dict):
         yield b""
 
     mock_resp.aiter_bytes = _iter
+    mock_resp.aclose = AsyncMock()
     return mock_resp
+
+
+def _make_mock_client(side_effect=None, return_value=None, capture_url=None):
+    """Build a mock _http_client that supports build_request / send(stream=True).
+
+    When capture_url is a dict, stores the built URL string in capture_url["url"].
+    """
+    mock_client = MagicMock()
+
+    def fake_build(method, url, **kwargs):
+        """Return a lightweight object carrying the URL string."""
+        req = MagicMock()
+        req.url = url  # httpx passes url as a str to build_request
+        if capture_url is not None:
+            capture_url["url"] = str(url)
+        return req
+
+    mock_client.build_request = MagicMock(side_effect=fake_build)
+    if side_effect is not None:
+        mock_client.send = AsyncMock(side_effect=side_effect)
+    else:
+        mock_client.send = AsyncMock(return_value=return_value)
+    return mock_client
 
 
 class TestUpstreamURLConstruction:
@@ -116,17 +140,13 @@ class TestUpstreamURLConstruction:
         await store.update_runtime_location("svc", host="127.0.0.1", port=13000)
 
         captured = {}
-        mock_client = MagicMock()
 
-        async def fake_request(method, url, **kwargs):
-            captured["url"] = str(url)
+        async def fake_send(req, **kwargs):
             return _make_fake_upstream(captured)
 
-        mock_client.request = AsyncMock(side_effect=fake_request)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client = _make_mock_client(side_effect=fake_send, capture_url=captured)
 
-        with patch("tinyagentos.routes.service_proxy.httpx.AsyncClient", return_value=mock_client):
+        with patch("tinyagentos.routes.service_proxy._http_client", mock_client):
             await client.get("/apps/svc/dashboard")
 
         assert captured["url"] == "http://127.0.0.1:13000/dashboard"
@@ -138,17 +158,13 @@ class TestUpstreamURLConstruction:
         await store.update_runtime_location("svc", host="127.0.0.1", port=13001)
 
         captured = {}
-        mock_client = MagicMock()
 
-        async def fake_request(method, url, **kwargs):
-            captured["url"] = str(url)
+        async def fake_send(req, **kwargs):
             return _make_fake_upstream(captured)
 
-        mock_client.request = AsyncMock(side_effect=fake_request)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client = _make_mock_client(side_effect=fake_send, capture_url=captured)
 
-        with patch("tinyagentos.routes.service_proxy.httpx.AsyncClient", return_value=mock_client):
+        with patch("tinyagentos.routes.service_proxy._http_client", mock_client):
             await client.get("/apps/svc/?q=hello&page=2")
 
         assert "q=hello" in captured["url"]
@@ -167,17 +183,23 @@ class TestHopByHopStripping:
         await store.update_runtime_location("svc", host="127.0.0.1", port=13002)
 
         captured_headers = {}
-        mock_client = MagicMock()
+        real_build = None
 
-        async def fake_request(method, url, headers=None, **kwargs):
+        def fake_build_request(method, url, headers=None, **kwargs):
             captured_headers.update(headers or {})
+            req = MagicMock()
+            req.url = url
+            req.headers = headers or {}
+            return req
+
+        async def fake_send(req, **kwargs):
             return _make_fake_upstream(captured_headers)
 
-        mock_client.request = AsyncMock(side_effect=fake_request)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client = MagicMock()
+        mock_client.build_request = MagicMock(side_effect=fake_build_request)
+        mock_client.send = AsyncMock(side_effect=fake_send)
 
-        with patch("tinyagentos.routes.service_proxy.httpx.AsyncClient", return_value=mock_client):
+        with patch("tinyagentos.routes.service_proxy._http_client", mock_client):
             await client.get(
                 "/apps/svc/",
                 headers={
@@ -205,7 +227,6 @@ class TestLocationHeaderRewrite:
         await store.install("svc", "1.0")
         await store.update_runtime_location("svc", host="127.0.0.1", port=13003)
 
-        mock_client = MagicMock()
         mock_resp = MagicMock()
         mock_resp.status_code = 302
         mock_resp.headers = {"location": "http://127.0.0.1:13003/new-path"}
@@ -214,11 +235,10 @@ class TestLocationHeaderRewrite:
             yield b""
 
         mock_resp.aiter_bytes = _iter
-        mock_client.request = AsyncMock(return_value=mock_resp)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_resp.aclose = AsyncMock()
+        mock_client = _make_mock_client(return_value=mock_resp)
 
-        with patch("tinyagentos.routes.service_proxy.httpx.AsyncClient", return_value=mock_client):
+        with patch("tinyagentos.routes.service_proxy._http_client", mock_client):
             resp = await client.get("/apps/svc/old-path", follow_redirects=False)
 
         assert resp.status_code == 302
@@ -230,7 +250,6 @@ class TestLocationHeaderRewrite:
         await store.install("svc", "1.0")
         await store.update_runtime_location("svc", host="127.0.0.1", port=13004)
 
-        mock_client = MagicMock()
         mock_resp = MagicMock()
         mock_resp.status_code = 302
         mock_resp.headers = {"location": "/relative/path"}
@@ -239,11 +258,10 @@ class TestLocationHeaderRewrite:
             yield b""
 
         mock_resp.aiter_bytes = _iter
-        mock_client.request = AsyncMock(return_value=mock_resp)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_resp.aclose = AsyncMock()
+        mock_client = _make_mock_client(return_value=mock_resp)
 
-        with patch("tinyagentos.routes.service_proxy.httpx.AsyncClient", return_value=mock_client):
+        with patch("tinyagentos.routes.service_proxy._http_client", mock_client):
             resp = await client.get("/apps/svc/", follow_redirects=False)
 
         assert resp.headers["location"] == "/relative/path"

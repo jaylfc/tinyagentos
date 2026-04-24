@@ -212,5 +212,6 @@ class TestInstallV2UpdatesRuntimeLocation:
         assert host == "127.0.0.1"  # local install → loopback
         assert port == 13000
         assert backend == "lxc"
+        assert ui_path == "/"
 
 

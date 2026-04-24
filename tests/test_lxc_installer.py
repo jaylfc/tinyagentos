@@ -617,11 +617,10 @@ class TestInstallRouteBackendSelection:
             )
 
         assert resp.status_code == 200
-        instance.uninstall.assert_awaited_once_with("gitea-lxc")
+        instance.uninstall.assert_awaited_once_with("gitea-lxc", target_remote=None)
 
-    async def test_lxc_uninstall_container_error_still_unregisters(self, lxc_client):
-        """If container destroy fails, store uninstall still proceeds and error is surfaced."""
-        # First register the app so store.uninstall returns True.
+    async def test_lxc_uninstall_container_error_blocks_store_removal(self, lxc_client):
+        """If container destroy fails, the route returns 500 and does not clear the store record."""
         with patch(
             "tinyagentos.routes.store_install.LXCInstaller",
         ) as MockInstaller:
@@ -633,7 +632,7 @@ class TestInstallRouteBackendSelection:
                 json={"app_id": "gitea-lxc", "metadata": {"method": "lxc"}},
             )
 
-        assert resp.status_code == 200
+        assert resp.status_code == 500
         data = resp.json()
         assert "container_error" in data
         assert "container gone" in data["container_error"]

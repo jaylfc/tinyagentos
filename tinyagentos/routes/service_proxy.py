@@ -36,6 +36,11 @@ _HOP_BY_HOP = frozenset({
 })
 
 
+# Module-level HTTP client for proxying — avoids per-request connection churn
+# and allows send(stream=True) with BackgroundTask cleanup.
+_http_client = httpx.AsyncClient(timeout=60.0)
+
+
 def _filter_headers(headers: dict) -> dict:
     return {k: v for k, v in headers.items() if k.lower() not in _HOP_BY_HOP}
 
@@ -68,7 +73,9 @@ async def service_proxy(app_id: str, path: str, request: Request):
             503,
         )
 
-    upstream = f"http://{loc['runtime_host']}:{loc['runtime_port']}/{path}"
+    ui_path = (loc.get("ui_path") or "/").rstrip("/")
+    upstream_path = ui_path + "/" + path if path else ui_path + "/"
+    upstream = f"http://{loc['runtime_host']}:{loc['runtime_port']}{upstream_path}"
     query = request.url.query
     if query:
         upstream = f"{upstream}?{query}"
@@ -80,15 +87,13 @@ async def service_proxy(app_id: str, path: str, request: Request):
             yield chunk
 
     try:
-        client = httpx.AsyncClient(timeout=60.0)
-        async with client:
-            upstream_resp = await client.request(
-                method=request.method,
-                url=upstream,
-                headers=fwd_headers,
-                content=_stream_body(),
-                follow_redirects=False,
-            )
+        req = _http_client.build_request(
+            method=request.method,
+            url=upstream,
+            headers=fwd_headers,
+            content=_stream_body(),
+        )
+        upstream_resp = await _http_client.send(req, stream=True, follow_redirects=False)
     except httpx.ConnectError:
         return _json_error(
             f"Cannot reach {app_id} at {loc['runtime_host']}:{loc['runtime_port']}. "
@@ -103,15 +108,17 @@ async def service_proxy(app_id: str, path: str, request: Request):
     # Rewrite absolute Location headers so redirects stay within /apps/{app_id}/.
     if "location" in upstream_resp.headers:
         loc_header = upstream_resp.headers["location"]
-        upstream_prefix = f"http://{loc['runtime_host']}:{loc['runtime_port']}"
+        upstream_prefix = f"http://{loc['runtime_host']}:{loc['runtime_port']}{ui_path}"
         if loc_header.startswith(upstream_prefix):
             relative = loc_header[len(upstream_prefix):]
             resp_headers["location"] = f"/apps/{app_id}{relative}"
 
+    from starlette.background import BackgroundTask
     return StreamingResponse(
         upstream_resp.aiter_bytes(),
         status_code=upstream_resp.status_code,
         headers=resp_headers,
+        background=BackgroundTask(upstream_resp.aclose),
     )
 
 
