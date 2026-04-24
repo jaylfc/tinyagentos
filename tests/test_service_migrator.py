@@ -525,3 +525,60 @@ class TestMigrateServiceRoute:
             })
         assert resp.status_code == 500
         assert "remote not reachable" in resp.json()["error"]
+
+    @pytest.mark.asyncio
+    async def test_update_runtime_location_called_after_migrate(self, app, client):
+        """After a successful migrate-service, update_runtime_location is called."""
+        mock_result = {
+            "success": True,
+            "source": "local:taos-svc-gitea",
+            "target": "fedora-worker:taos-svc-gitea",
+            "duration_s": 5.0,
+            "tarball_size_bytes": 1024,
+            "host_port": 13500,
+            "target_remote": "fedora-worker",
+        }
+        mock_manifest = MagicMock()
+        mock_manifest.install = {
+            "method": "lxc",
+            "state_paths": ["/etc/gitea/", "/home/git/"],
+            "service_name": "gitea",
+            "ui_path": "/",
+        }
+        mock_manifest.manifest_dir = None
+        update_called_with: list = []
+
+        async def fake_update(app_id, host, port, backend="", ui_path="/"):
+            update_called_with.append((app_id, host, port, backend, ui_path))
+
+        installed_apps_mock = MagicMock()
+        installed_apps_mock.update_runtime_location = AsyncMock(side_effect=fake_update)
+        app.state.installed_apps = installed_apps_mock
+
+        with (
+            patch(
+                "tinyagentos.routes.cluster_migrate.migrate_service",
+                new_callable=AsyncMock,
+                return_value=mock_result,
+            ),
+            patch("tinyagentos.registry.AppRegistry.get", return_value=mock_manifest),
+            patch(
+                "tinyagentos.routes.cluster_migrate.remote_list",
+                new_callable=AsyncMock,
+                return_value=[
+                    {"name": "fedora-worker", "addr": "https://192.168.6.108:8443", "protocol": "incus"},
+                ],
+            ),
+        ):
+            resp = await client.post("/api/cluster/migrate-service", json={
+                "app_id": "gitea",
+                "target_remote": "fedora-worker",
+            })
+
+        assert resp.status_code == 200
+        assert len(update_called_with) == 1
+        app_id, host, port, backend, ui_path = update_called_with[0]
+        assert app_id == "gitea"
+        assert host == "192.168.6.108"  # parsed from remote URL
+        assert port == 13500
+        assert backend == "lxc"
