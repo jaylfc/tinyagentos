@@ -101,6 +101,26 @@ async def install_app(request: Request):
                 status_code=400,
             )
 
+        # Resolve target_remote: body field takes precedence over manifest.
+        # Normalise empty string / "local" to None (= install on controller).
+        raw_remote = body.get("target_remote") or install_config.get("target_remote") or ""
+        target_remote: str | None = raw_remote if raw_remote and raw_remote != "local" else None
+
+        # Validate that the requested remote is registered.
+        if target_remote:
+            try:
+                import tinyagentos.containers as containers
+                registered = await containers.remote_list()
+                known = {r.get("name") for r in registered}
+                if target_remote not in known:
+                    return JSONResponse(
+                        {"error": f"incus remote '{target_remote}' is not registered. "
+                         f"Register it first via POST /api/cluster/remotes."},
+                        status_code=400,
+                    )
+            except Exception as exc:
+                logger.warning("install-v2: could not verify remote %r: %s", target_remote, exc)
+
         user = _get_current_user(request)
         # Body overrides win so local-token / non-session callers can seed the
         # admin user explicitly. Gitea rejects "admin" as a reserved name, so
@@ -116,6 +136,7 @@ async def install_app(request: Request):
                 admin_password=admin_password,
                 taos_username=taos_username,
                 taos_email=taos_email,
+                target_remote=target_remote,
             )
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
@@ -132,7 +153,6 @@ async def install_app(request: Request):
 
             # Record runtime location so the proxy can reach the service.
             host_port = result.get("host_port")
-            target_remote = install_config.get("target_remote") or body.get("target_remote")
             if host_port:
                 runtime_host = await _resolve_host(target_remote)
                 ui_path = install_config.get("ui_path", "/")
@@ -144,7 +164,9 @@ async def install_app(request: Request):
                     ui_path=ui_path,
                 )
 
-        return JSONResponse({"ok": True, "app_id": app_id, "status": "installed", **result})
+        resp_target = target_remote or "local"
+        return JSONResponse({"ok": True, "app_id": app_id, "status": "installed",
+                             "target_remote": resp_target, **result})
 
     # Default: delegate to InstalledAppsStore (docker/pip/download).
     store = request.app.state.installed_apps
@@ -222,4 +244,16 @@ async def uninstall_app(request: Request):
 async def list_installed(request: Request):
     store = request.app.state.installed_apps
     items = await store.list_installed()
+    # Annotate each item with its runtime location so the UI can show which
+    # host each app currently lives on.
+    for item in items:
+        loc = await store.get_runtime_location(item["app_id"])
+        if loc:
+            item["runtime_host"] = loc["runtime_host"]
+            item["runtime_port"] = loc["runtime_port"]
+            item["runtime_backend"] = loc["backend"]
+        else:
+            item["runtime_host"] = None
+            item["runtime_port"] = None
+            item["runtime_backend"] = None
     return JSONResponse({"installed": items})

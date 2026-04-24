@@ -68,6 +68,7 @@ async def list_catalog(request: Request, type: str | None = None):
             "version": a.version,
             "description": a.description, "icon": a.icon,
             "requires": a.requires, "hardware_tiers": a.hardware_tiers,
+            "install_method": (a.install.get("method") or a.install.get("backend") or "") if isinstance(a.install, dict) else "",
             "installed": (installation.is_installed(a.id) if installation else registry.is_installed(a.id)),
             "state": (installation.state(a.id) if installation else ("installed" if registry.is_installed(a.id) else "not_installed")),
         }
