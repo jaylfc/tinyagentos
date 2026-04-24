@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import asdict
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 from tinyagentos.cluster.capabilities import potential_capabilities as _potential_capabilities
 from tinyagentos.cluster.optimiser import ClusterOptimiser
@@ -213,6 +216,36 @@ async def optimise_cluster(request: Request):
     cluster = request.app.state.cluster_manager
     optimiser = ClusterOptimiser(cluster)
     return optimiser.analyse()
+
+
+_BUILTIN_REMOTES = {"images", "ubuntu", "ubuntu-daily", "local"}
+
+
+@router.get("/api/cluster/install-targets")
+async def list_install_targets():
+    """Return the ordered list of hosts available for LXC service installs.
+
+    Always includes the controller first ("local"), then any registered incus
+    remotes whose protocol is "incus" (filters out the read-only image servers).
+    """
+    targets: list[dict] = [{"name": "local", "label": "This controller", "type": "local"}]
+    try:
+        import tinyagentos.containers as containers
+        remotes = await containers.remote_list()
+        for r in remotes:
+            name = r.get("name", "")
+            proto = r.get("protocol", "")
+            if not name or name in _BUILTIN_REMOTES or proto != "incus":
+                continue
+            targets.append({
+                "name": name,
+                "label": name,
+                "type": "remote",
+                "addr": r.get("addr", ""),
+            })
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("list_install_targets: remote_list failed: %s", exc)
+    return targets
 
 
 @router.post("/api/cluster/move")

@@ -16,6 +16,21 @@ interface CatalogApp {
   installed: boolean;
   compat: "green" | "yellow" | "red";
   category?: string;
+  install_method?: string;
+}
+
+interface InstallTarget {
+  name: string;
+  label: string;
+  type: "local" | "remote";
+  addr?: string;
+}
+
+interface InstalledEntry {
+  app_id: string;
+  runtime_host: string | null;
+  runtime_port: number | null;
+  runtime_backend: string | null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -418,35 +433,56 @@ function resolveIconUrl(appId: string): string | null {
 /*  AppCard                                                            */
 /* ------------------------------------------------------------------ */
 
-function AppCard({ app, affected, onInstall, onUninstall }: { app: CatalogApp; affected: number; onInstall: (id: string) => void; onUninstall: (id: string) => void }) {
+function AppCard({ app, affected, onInstall, onUninstall, installTargets, runtimeHost }: {
+  app: CatalogApp;
+  affected: number;
+  onInstall: (id: string) => void;
+  onUninstall: (id: string) => void;
+  installTargets: InstallTarget[];
+  runtimeHost: string | null;
+}) {
   const [busy, setBusy] = useState(false);
   const [iconFailed, setIconFailed] = useState(false);
-
+  const [selectedTarget, setSelectedTarget] = useState("local");
   const [error, setError] = useState<string | null>(null);
   const iconUrl = resolveIconUrl(app.id);
+  const isLxc = app.install_method === "lxc";
 
   const handleAction = async () => {
     setBusy(true);
     setError(null);
     try {
-      const url = app.installed ? "/api/store/uninstall" : "/api/store/install";
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ app_id: app.id }),
-      });
-      if (!res.ok) {
-        let msg = `${app.installed ? "Uninstall" : "Install"} failed (${res.status})`;
-        try {
-          const err = await res.json();
-          if (err?.error) msg = String(err.error);
-        } catch { /* ignore */ }
-        setError(msg);
-        setBusy(false);
-        return;
+      if (app.installed) {
+        const res = await fetch("/api/store/uninstall", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ app_id: app.id }),
+        });
+        if (!res.ok) {
+          let msg = `Uninstall failed (${res.status})`;
+          try { const err = await res.json(); if (err?.error) msg = String(err.error); } catch { /* ignore */ }
+          setError(msg);
+          setBusy(false);
+          return;
+        }
+        onUninstall(app.id);
+      } else {
+        const body: Record<string, unknown> = { app_id: app.id };
+        if (isLxc) body.target_remote = selectedTarget;
+        const res = await fetch("/api/store/install-v2", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          let msg = `Install failed (${res.status})`;
+          try { const err = await res.json(); if (err?.error) msg = String(err.error); } catch { /* ignore */ }
+          setError(msg);
+          setBusy(false);
+          return;
+        }
+        onInstall(app.id);
       }
-      if (app.installed) onUninstall(app.id);
-      else onInstall(app.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Network error");
     }
@@ -505,12 +541,37 @@ function AppCard({ app, affected, onInstall, onUninstall }: { app: CatalogApp; a
             {error}
           </div>
         )}
+        {isLxc && !app.installed && installTargets.length > 1 && (
+          <div className="flex items-center gap-2">
+            <label htmlFor={`target-${app.id}`} className="text-[11px] text-shell-text-tertiary whitespace-nowrap">
+              Install on
+            </label>
+            <select
+              id={`target-${app.id}`}
+              value={selectedTarget}
+              onChange={(e) => setSelectedTarget(e.target.value)}
+              className="flex-1 h-7 rounded-md border border-white/10 bg-shell-bg-deep px-2 text-[11px] text-shell-text focus-visible:outline-none focus-visible:border-accent/40 focus-visible:ring-2 focus-visible:ring-accent/20 transition-colors"
+              aria-label="Install target host"
+            >
+              {installTargets.map((t) => (
+                <option key={t.name} value={t.name}>{t.label}</option>
+              ))}
+            </select>
+          </div>
+        )}
+        {app.installed && runtimeHost && (
+          <p className="text-[10px] text-shell-text-tertiary flex items-center gap-1">
+            <Server className="w-3 h-3 shrink-0" />
+            {runtimeHost === "127.0.0.1" ? "on controller" : `on ${runtimeHost}`}
+          </p>
+        )}
         <Button
           variant={app.installed ? "destructive" : "default"}
           size="sm"
           className="w-full"
           onClick={handleAction}
           disabled={busy}
+          aria-label={app.installed ? `Uninstall ${app.name}` : `Install ${app.name}`}
         >
           {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : app.installed ? <><Trash2 className="w-3.5 h-3.5" /> Uninstall</> : <><Download className="w-3.5 h-3.5" /> Install</>}
         </Button>
@@ -530,6 +591,23 @@ export function StoreApp({ windowId: _windowId }: { windowId: string }) {
   const [loading, setLoading] = useState(true);
   const [latest, setLatest] = useState<Record<string, LatestVersion>>({});
   const [agentList, setAgentList] = useState<any[]>([]);
+  const [installTargets, setInstallTargets] = useState<InstallTarget[]>([
+    { name: "local", label: "This controller", type: "local" },
+  ]);
+  const [runtimeHosts, setRuntimeHosts] = useState<Record<string, string | null>>({});
+
+  const refreshInstalled = useCallback(() => {
+    fetch("/api/store/installed-v2", { headers: { Accept: "application/json" } })
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        const hosts: Record<string, string | null> = {};
+        for (const entry of (data?.installed ?? []) as InstalledEntry[]) {
+          hosts[entry.app_id] = entry.runtime_host ?? null;
+        }
+        setRuntimeHosts(hosts);
+      })
+      .catch(() => {});
+  }, []);
 
   const fetchCatalog = useCallback(async () => {
     try {
@@ -549,6 +627,7 @@ export function StoreApp({ windowId: _windowId }: { windowId: string }) {
             description: String(a.description ?? ""),
             installed: Boolean(a.installed),
             compat: (a.compat as CatalogApp["compat"]) ?? "green",
+            install_method: a.install_method ? String(a.install_method) : undefined,
           }));
           setApps(normalized);
           setLoading(false);
@@ -580,7 +659,12 @@ export function StoreApp({ windowId: _windowId }: { windowId: string }) {
       .then((r) => r.ok ? r.json() : [])
       .then((j) => setAgentList(Array.isArray(j) ? j : (j?.agents ?? [])))
       .catch(() => {});
-  }, []);
+    fetch("/api/cluster/install-targets", { headers: { Accept: "application/json" } })
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (Array.isArray(data)) setInstallTargets(data); })
+      .catch(() => {});
+    refreshInstalled();
+  }, [refreshInstalled]);
 
   const activeCat = CATEGORIES.find((c) => c.id === activeCategory);
 
@@ -597,11 +681,13 @@ export function StoreApp({ windowId: _windowId }: { windowId: string }) {
 
   const handleInstall = useCallback((id: string) => {
     setApps((prev) => prev.map((a) => (a.id === id ? { ...a, installed: true } : a)));
-  }, []);
+    refreshInstalled();
+  }, [refreshInstalled]);
 
   const handleUninstall = useCallback((id: string) => {
     setApps((prev) => prev.map((a) => (a.id === id ? { ...a, installed: false } : a)));
-  }, []);
+    refreshInstalled();
+  }, [refreshInstalled]);
 
   // Count per category
   const counts: Record<string, number> = {};
@@ -714,7 +800,15 @@ export function StoreApp({ windowId: _windowId }: { windowId: string }) {
                     ).length
                   : 0;
                 return (
-                  <AppCard key={app.id} app={app} affected={affected} onInstall={handleInstall} onUninstall={handleUninstall} />
+                  <AppCard
+                    key={app.id}
+                    app={app}
+                    affected={affected}
+                    onInstall={handleInstall}
+                    onUninstall={handleUninstall}
+                    installTargets={installTargets}
+                    runtimeHost={runtimeHosts[app.id] ?? null}
+                  />
                 );
               })}
             </div>
