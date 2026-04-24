@@ -215,6 +215,43 @@ async def optimise_cluster(request: Request):
     return optimiser.analyse()
 
 
+_BUILTIN_REMOTES = {"images", "ubuntu", "ubuntu-daily", "local"}
+
+
+@router.get("/api/cluster/install-targets")
+async def list_install_targets():
+    """Return the ordered list of hosts available for LXC service installs.
+
+    Always includes the controller first ("local"), then any registered incus
+    remotes whose protocol is "incus" (filters out the read-only image servers).
+
+    Response shape:
+        [
+          {"name": "local", "label": "This controller", "type": "local"},
+          {"name": "fedora-worker", "label": "fedora-worker",
+           "type": "remote", "addr": "https://192.168.6.108:8443"}
+        ]
+    """
+    targets: list[dict] = [{"name": "local", "label": "This controller", "type": "local"}]
+    try:
+        import tinyagentos.containers as containers
+        remotes = await containers.remote_list()
+        for r in remotes:
+            name = r.get("name", "")
+            proto = r.get("protocol", "")
+            if not name or name in _BUILTIN_REMOTES or proto != "incus":
+                continue
+            targets.append({
+                "name": name,
+                "label": name,
+                "type": "remote",
+                "addr": r.get("addr", ""),
+            })
+    except Exception:
+        pass  # incus not available; return controller-only list
+    return targets
+
+
 @router.post("/api/cluster/move")
 async def move_model(request: Request, body: MoveRequest):
     cluster = request.app.state.cluster_manager
