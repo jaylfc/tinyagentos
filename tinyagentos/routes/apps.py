@@ -72,6 +72,9 @@ async def list_installed_apps(request: Request):
         if loc is None:
             # No runtime location → not accessible via proxy → skip.
             continue
+        if not loc.get("runtime_host") or not loc.get("runtime_port"):
+            # Incomplete runtime record — not proxy-routable yet.
+            continue
 
         # Best-effort manifest lookup for display metadata.
         manifest = registry.get(app_id) if registry is not None else None
