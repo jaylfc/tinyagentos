@@ -138,13 +138,26 @@ async def service_proxy(app_id: str, path: str, request: Request):
 
     resp_headers = _filter_headers(dict(upstream_resp.headers))
 
-    # Rewrite absolute Location headers so redirects stay within /apps/{app_id}/.
+    # Rewrite Location headers so redirects stay within /apps/{app_id}/.
+    # - Absolute upstream URLs (http://<host>:<port>/foo)  → /apps/{app_id}/foo
+    # - Root-relative redirects (/login, /user/sign_in)     → /apps/{app_id}/login
+    # - Scheme-relative and relative paths pass through unchanged.
     if "location" in upstream_resp.headers:
         loc_header = upstream_resp.headers["location"]
         upstream_prefix = f"http://{loc['runtime_host']}:{loc['runtime_port']}{ui_path}"
         if loc_header.startswith(upstream_prefix):
             relative = loc_header[len(upstream_prefix):]
             resp_headers["location"] = f"/apps/{app_id}{relative}"
+        elif loc_header.startswith("/") and not loc_header.startswith("//"):
+            # Root-relative redirect (e.g. "/login"). From the browser's point
+            # of view this lands on the controller root, not the proxied app.
+            # Strip any ui_path prefix the upstream prepended, then nest under
+            # the proxy namespace.
+            if ui_path and ui_path != "/" and loc_header.startswith(ui_path.rstrip("/") + "/"):
+                loc_header = loc_header[len(ui_path.rstrip("/")):]
+            elif ui_path and ui_path != "/" and loc_header == ui_path.rstrip("/"):
+                loc_header = "/"
+            resp_headers["location"] = f"/apps/{app_id}{loc_header}"
 
     from starlette.background import BackgroundTask
     return StreamingResponse(
