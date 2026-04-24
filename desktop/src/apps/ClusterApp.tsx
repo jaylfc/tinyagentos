@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MobileSplitView } from "@/components/mobile/MobileSplitView";
 import {
   Network, RefreshCw, ExternalLink, Copy, Check, Trash2, Wand2,
@@ -532,6 +532,8 @@ export function ClusterApp({ windowId: _windowId }: { windowId: string }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  // True after user explicitly hits "back"; suppresses auto-select on refresh.
+  const userNavigatedBack = useRef(false);
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
@@ -547,6 +549,7 @@ export function ClusterApp({ windowId: _windowId }: { windowId: string }) {
           setWorkers(json as ClusterWorker[]);
           setSelected((cur) => {
             if (cur && json.some((w: ClusterWorker) => w.name === cur)) return cur;
+            if (userNavigatedBack.current) return null;
             return json.length > 0 ? (json[0] as ClusterWorker).name : null;
           });
         }
@@ -674,7 +677,7 @@ export function ClusterApp({ windowId: _windowId }: { windowId: string }) {
           detailTitle={selectedWorker?.name ?? ""}
           listWidth={288}
           selectedId={selected}
-          onBack={() => setSelected(null)}
+          onBack={() => { userNavigatedBack.current = true; setSelected(null); }}
           list={
             <div className="p-3 space-y-2" aria-label="Cluster worker list">
               {loading ? (
@@ -700,7 +703,7 @@ export function ClusterApp({ windowId: _windowId }: { windowId: string }) {
                     key={w.name}
                     worker={w}
                     selected={selected === w.name}
-                    onSelect={() => setSelected(w.name)}
+                    onSelect={() => { userNavigatedBack.current = false; setSelected(w.name); }}
                   />
                 ))
               )}
