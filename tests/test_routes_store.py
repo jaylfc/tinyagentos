@@ -154,3 +154,63 @@ class TestStoreInstallAPI:
         assert resp.status_code == 404
 
 
+@pytest.mark.asyncio
+class TestInstallV2UpdatesRuntimeLocation:
+    """After a successful LXC install, update_runtime_location should be called."""
+
+    async def test_update_runtime_location_called_on_lxc_install(
+        self, app_with_store, store_client
+    ):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        mock_result = {
+            "success": True,
+            "app_id": "gitea-lxc",
+            "backend": "lxc",
+            "container": "taos-svc-gitea-lxc",
+            "host_port": 13000,
+            "gitea_version": "1.22.6",
+            "admin_username": "admin",
+        }
+        update_calls: list = []
+
+        async def fake_update(app_id, host, port, backend="", ui_path="/"):
+            update_calls.append((app_id, host, port, backend, ui_path))
+
+        mock_manifest = MagicMock()
+        mock_manifest.install = {
+            "method": "lxc",
+            "image": "images:debian/bookworm",
+            "ui_path": "/",
+        }
+
+        # Replace the installed_apps store with a mock so we can track calls
+        # without needing the DB initialised in this fixture context.
+        mock_store = MagicMock()
+        mock_store.install = AsyncMock()
+        mock_store.update_runtime_location = AsyncMock(side_effect=fake_update)
+        app_with_store.state.installed_apps = mock_store
+
+        with (
+            patch(
+                "tinyagentos.routes.store_install.LXCInstaller"
+            ) as MockInstaller,
+            patch("tinyagentos.registry.AppRegistry.get", return_value=mock_manifest),
+        ):
+            instance = MockInstaller.return_value
+            instance.install = AsyncMock(return_value=mock_result)
+
+            resp = await store_client.post("/api/store/install-v2", json={
+                "app_id": "gitea-lxc",
+                "admin_password": "secret",
+            })
+
+        assert resp.status_code == 200
+        assert len(update_calls) == 1
+        app_id, host, port, backend, ui_path = update_calls[0]
+        assert app_id == "gitea-lxc"
+        assert host == "127.0.0.1"  # local install → loopback
+        assert port == 13000
+        assert backend == "lxc"
+
+

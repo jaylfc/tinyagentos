@@ -825,6 +825,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     from tinyagentos.routes.cluster import router as cluster_router
     app.include_router(cluster_router)
 
+    from tinyagentos.routes.cluster_migrate import router as cluster_migrate_router
+    app.include_router(cluster_migrate_router)
+
     from tinyagentos.routes.training import router as training_router
     app.include_router(training_router)
 
@@ -932,6 +935,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     from tinyagentos.routes.recycle import router as recycle_router
     app.include_router(recycle_router)
+
+    from tinyagentos.routes.service_proxy import router as service_proxy_router
+    app.include_router(service_proxy_router)
 
     from tinyagentos.routes import admin_prompts as admin_prompts_routes
     app.include_router(admin_prompts_routes.router)
