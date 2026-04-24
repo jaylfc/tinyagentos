@@ -51,7 +51,12 @@ on the worker — same flow in reverse.
 
 ## Procedure
 
-### 1. Install Gitea on the controller
+### 1. Install Gitea on the controller (or a worker)
+
+You can install directly to a registered worker by adding `"target_remote"` to
+the request body. Omit it (or set it to `"local"`) to install on the controller.
+
+**Install on the controller (default):**
 
 ```bash
 curl -X POST http://localhost:6969/api/store/install-v2 \
@@ -65,6 +70,28 @@ curl -X POST http://localhost:6969/api/store/install-v2 \
     "metadata": {"backend": "lxc"}
   }'
 ```
+
+**Install directly on a worker** (skips the migrate step if you know where you
+want it from the start):
+
+```bash
+curl -X POST http://localhost:6969/api/store/install-v2 \
+  -H "Authorization: Bearer $(cat data/.auth_local_token)" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "app_id": "gitea-lxc",
+    "admin_password": "<pick-a-strong-password>",
+    "taos_username": "jay",
+    "taos_email": "jaylfc25@gmail.com",
+    "metadata": {"backend": "lxc"},
+    "target_remote": "fedora-worker"
+  }'
+```
+
+`target_remote` must match a remote already registered via
+`POST /api/cluster/remotes`. Use `GET /api/cluster/install-targets` to list
+valid names. In the taOS Store UI, a "Install on" dropdown appears automatically
+on LXC apps when workers are registered.
 
 Install takes 2-3 minutes (incus launch + apt install + Gitea binary
 download). Response includes `host_port`. Verify:
