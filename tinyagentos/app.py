@@ -799,6 +799,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     from tinyagentos.routes.store import router as store_router
     app.include_router(store_router)
 
+    from tinyagentos.routes import projects as projects_routes
+    app.include_router(projects_routes.router)
+
     from tinyagentos.routes.store_install import router as store_install_router
     app.include_router(store_install_router)
 
