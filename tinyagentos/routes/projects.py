@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import re
 import time as _time
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from tinyagentos.projects.folders import ensure_project_layout, write_project_yaml
 
 router = APIRouter()
+
+_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,62}$")
 
 
 class CreateProjectIn(BaseModel):
@@ -16,6 +19,13 @@ class CreateProjectIn(BaseModel):
     slug: str
     description: str = ""
     settings: dict = Field(default_factory=dict)
+
+    @field_validator("slug")
+    @classmethod
+    def _check_slug(cls, v: str) -> str:
+        if not _SLUG_RE.fullmatch(v):
+            raise ValueError("slug must match ^[a-z0-9][a-z0-9_-]{0,62}$")
+        return v
 
 
 class UpdateProjectIn(BaseModel):

@@ -22,6 +22,13 @@ async def test_create_project_duplicate_slug_returns_409(client):
     assert resp.status_code == 409
 
 
+@pytest.mark.parametrize("bad_slug", ["../escape", "/abs", "with space", "UPPER", "x" * 64, "", "."])
+@pytest.mark.asyncio
+async def test_create_project_rejects_unsafe_slug(client, bad_slug):
+    resp = await client.post("/api/projects", json={"name": "X", "slug": bad_slug})
+    assert resp.status_code == 422
+
+
 @pytest.mark.asyncio
 async def test_get_update_delete_project(client):
     resp = await client.post("/api/projects", json={"name": "A", "slug": "a"})
