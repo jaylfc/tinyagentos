@@ -203,3 +203,89 @@ class ProjectTaskStore(BaseStore):
         )
         await self._db.commit()
         return cursor.rowcount == 1
+
+    async def add_relationship(
+        self,
+        project_id: str,
+        from_task_id: str,
+        to_task_id: str,
+        kind: str,
+        created_by: str,
+    ) -> dict:
+        if kind not in ("blocks", "relates_to", "duplicates", "supersedes"):
+            raise ValueError(f"invalid relationship kind: {kind}")
+        rid = new_id("rel")
+        now = time.time()
+        await self._db.execute(
+            """INSERT INTO task_relationships
+               (id, project_id, from_task_id, to_task_id, kind, created_by, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (rid, project_id, from_task_id, to_task_id, kind, created_by, now),
+        )
+        await self._db.commit()
+        return {
+            "id": rid, "project_id": project_id, "from_task_id": from_task_id,
+            "to_task_id": to_task_id, "kind": kind, "created_by": created_by, "created_at": now,
+        }
+
+    async def remove_relationship(self, relationship_id: str) -> None:
+        await self._db.execute(
+            "DELETE FROM task_relationships WHERE id = ?", (relationship_id,)
+        )
+        await self._db.commit()
+
+    async def list_relationships(
+        self,
+        task_id: str,
+        direction: str = "from",
+    ) -> list[dict]:
+        col = "from_task_id" if direction == "from" else "to_task_id"
+        async with self._db.execute(
+            f"SELECT * FROM task_relationships WHERE {col} = ? ORDER BY created_at ASC",
+            (task_id,),
+        ) as cur:
+            rows = await cur.fetchall()
+            keys = [d[0] for d in cur.description]
+        return [dict(zip(keys, r)) for r in rows]
+
+    async def list_ready_tasks(self, project_id: str, limit: int = 50) -> list[dict]:
+        async with self._db.execute(
+            """SELECT * FROM ready_tasks
+               WHERE project_id = ?
+               ORDER BY priority DESC, created_at ASC
+               LIMIT ?""",
+            (project_id, limit),
+        ) as cur:
+            rows = await cur.fetchall()
+            desc = cur.description
+        return [_row_to_task(r, desc) for r in rows]
+
+    async def add_comment(
+        self,
+        task_id: str,
+        author_id: str,
+        body: str,
+        replies_to_comment_id: str | None = None,
+    ) -> dict:
+        cid = new_id("cmt")
+        now = time.time()
+        await self._db.execute(
+            """INSERT INTO task_comments
+               (id, task_id, author_id, body, replies_to_comment_id, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (cid, task_id, author_id, body, replies_to_comment_id, now),
+        )
+        await self._db.commit()
+        return {
+            "id": cid, "task_id": task_id, "author_id": author_id, "body": body,
+            "replies_to_comment_id": replies_to_comment_id, "created_at": now,
+        }
+
+    async def list_comments(self, task_id: str) -> list[dict]:
+        async with self._db.execute(
+            "SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at ASC",
+            (task_id,),
+        ) as cur:
+            rows = await cur.fetchall()
+            keys = [d[0] for d in cur.description]
+        return [dict(zip(keys, r)) for r in rows]
