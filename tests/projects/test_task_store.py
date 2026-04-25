@@ -40,3 +40,58 @@ async def test_create_subtask(store):
         parent_task_id=parent["id"],
     )
     assert child["parent_task_id"] == parent["id"]
+
+
+@pytest.mark.asyncio
+async def test_list_tasks_filter_by_status(store):
+    a = await store.create_task(project_id="p", title="A", created_by="u")
+    b = await store.create_task(project_id="p", title="B", created_by="u")
+    await store.close_task(b["id"], closed_by="u")
+
+    open_tasks = await store.list_tasks(project_id="p", status="open")
+    closed_tasks = await store.list_tasks(project_id="p", status="closed")
+    assert [t["id"] for t in open_tasks] == [a["id"]]
+    assert [t["id"] for t in closed_tasks] == [b["id"]]
+
+
+@pytest.mark.asyncio
+async def test_atomic_claim_only_one_winner(store):
+    t = await store.create_task(project_id="p", title="A", created_by="u")
+    first = await store.claim_task(t["id"], claimer_id="agent-1")
+    second = await store.claim_task(t["id"], claimer_id="agent-2")
+    assert first is True
+    assert second is False
+    again = await store.get_task(t["id"])
+    assert again["claimed_by"] == "agent-1"
+    assert again["status"] == "claimed"
+
+
+@pytest.mark.asyncio
+async def test_release_task(store):
+    t = await store.create_task(project_id="p", title="A", created_by="u")
+    await store.claim_task(t["id"], claimer_id="agent-1")
+    await store.release_task(t["id"], releaser_id="agent-1")
+    again = await store.get_task(t["id"])
+    assert again["claimed_by"] is None
+    assert again["status"] == "open"
+
+
+@pytest.mark.asyncio
+async def test_release_only_by_claimer(store):
+    t = await store.create_task(project_id="p", title="A", created_by="u")
+    await store.claim_task(t["id"], claimer_id="agent-1")
+    ok = await store.release_task(t["id"], releaser_id="agent-2")
+    assert ok is False
+    again = await store.get_task(t["id"])
+    assert again["claimed_by"] == "agent-1"
+
+
+@pytest.mark.asyncio
+async def test_close_task_records_metadata(store):
+    t = await store.create_task(project_id="p", title="A", created_by="u")
+    await store.close_task(t["id"], closed_by="agent-1", reason="done")
+    again = await store.get_task(t["id"])
+    assert again["status"] == "closed"
+    assert again["closed_by"] == "agent-1"
+    assert again["close_reason"] == "done"
+    assert again["closed_at"] is not None
