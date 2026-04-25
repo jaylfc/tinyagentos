@@ -146,8 +146,9 @@ async def test_notifications_returns_list():
     assert resp.status_code == 200
     data = resp.json()
     assert "notifications" in data
-    assert data["count"] == 1
-    assert data["notifications"][0]["reason"] == "mention"
+    assert data["unread_count"] == 1
+    assert data["notifications"][0]["title"] == "Bug"
+    assert data["notifications"][0]["repo"] == "owner/repo"
 
 
 @pytest.mark.asyncio
