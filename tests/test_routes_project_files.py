@@ -103,6 +103,40 @@ async def test_stats_empty_project(client):
 
 
 @pytest.mark.asyncio
+async def test_upload_to_existing_file_path_returns_400(client):
+    """Uploading with a path= that points to an existing file returns 400."""
+    content = b"i am a file"
+    # First upload creates the file at the root
+    await client.post(
+        "/api/projects/collision-proj/files/upload",
+        files={"file": ("blocker.txt", io.BytesIO(content), "text/plain")},
+    )
+    # Now try to upload into that file as if it were a directory
+    resp = await client.post(
+        "/api/projects/collision-proj/files/upload?path=blocker.txt",
+        files={"file": ("inner.txt", io.BytesIO(b"x"), "text/plain")},
+    )
+    assert resp.status_code == 400
+    assert "conflict" in resp.json()["error"].lower()
+
+
+@pytest.mark.asyncio
+async def test_mkdir_at_existing_file_path_returns_400(client):
+    """mkdir at a path that already holds a file returns 400."""
+    content = b"i am a file"
+    await client.post(
+        "/api/projects/mkdir-collision/files/upload",
+        files={"file": ("blocker.txt", io.BytesIO(content), "text/plain")},
+    )
+    resp = await client.post(
+        "/api/projects/mkdir-collision/mkdir",
+        json={"path": "blocker.txt"},
+    )
+    assert resp.status_code == 400
+    assert "conflict" in resp.json()["error"].lower()
+
+
+@pytest.mark.asyncio
 async def test_stats_after_upload(client):
     """Stats reflect uploaded files."""
     content = b"x" * 100

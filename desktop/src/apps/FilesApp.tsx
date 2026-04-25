@@ -416,7 +416,7 @@ export function FilesApp({
   const [sharedExpanded, setSharedExpanded] = useState(true);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   // null = showing sidebar (list pane); non-null = showing file browser (detail pane)
-  const [selectedLocation, setSelectedLocation] = useState<string | null>(null);
+  const [selectedLocation, setSelectedLocation] = useState<string | null>(rootPath ?? null);
 
   // Recycle bin
   const [recycleItems, setRecycleItems] = useState<RecycleItem[]>([]);

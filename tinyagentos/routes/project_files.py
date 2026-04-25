@@ -63,7 +63,7 @@ def _list_dir(workspace: Path, path: str) -> list[dict] | tuple[int, dict]:
 
 
 def _dir_signature(entries: list[dict]) -> str:
-    parts = [f"{e['name']}:{int(e['modified'])}:{e['size']}" for e in entries]
+    parts = [f"{e['name']}:{e['modified']}:{e['size']}" for e in entries]
     return "|".join(parts)
 
 
@@ -129,6 +129,8 @@ async def api_project_upload_file(request: Request, slug: str, path: str = "", f
         target_dir = _resolve_safe(workspace, path)
         if target_dir is None:
             return JSONResponse({"error": "Invalid path"}, status_code=400)
+        if target_dir.exists() and not target_dir.is_dir():
+            return JSONResponse({"error": "Path conflicts with an existing file"}, status_code=400)
         target_dir.mkdir(parents=True, exist_ok=True)
     else:
         target_dir = workspace
@@ -155,6 +157,8 @@ async def api_project_mkdir(request: Request, slug: str, body: MkdirRequest):
     if target is None:
         return JSONResponse({"error": "Invalid path"}, status_code=400)
 
+    if target.exists() and not target.is_dir():
+        return JSONResponse({"error": "Path conflicts with an existing file"}, status_code=400)
     target.mkdir(parents=True, exist_ok=True)
     rel = target.relative_to(workspace)
     return {"path": str(rel), "status": "created"}
