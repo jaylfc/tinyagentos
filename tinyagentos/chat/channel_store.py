@@ -17,7 +17,8 @@ CREATE TABLE IF NOT EXISTS chat_channels (
     settings TEXT NOT NULL DEFAULT '{}',
     created_by TEXT NOT NULL,
     created_at REAL NOT NULL,
-    last_message_at REAL
+    last_message_at REAL,
+    project_id TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS chat_read_positions (
@@ -78,6 +79,15 @@ def _parse_channel(row: tuple, description) -> dict:
 class ChatChannelStore(BaseStore):
     SCHEMA = CHANNELS_SCHEMA
 
+    async def _post_init(self) -> None:
+        async with self._db.execute("PRAGMA table_info(chat_channels)") as cur:
+            cols = {r[1] for r in await cur.fetchall()}
+        if "project_id" not in cols:
+            await self._db.execute(
+                "ALTER TABLE chat_channels ADD COLUMN project_id TEXT NOT NULL DEFAULT ''"
+            )
+            await self._db.commit()
+
     async def create_channel(
         self,
         name: str,
@@ -87,18 +97,19 @@ class ChatChannelStore(BaseStore):
         description: str = "",
         topic: str = "",
         settings: dict | None = None,
+        project_id: str = "",
     ) -> dict:
         ch_id = uuid.uuid4().hex[:12]
         now = time.time()
         await self._db.execute(
             """INSERT INTO chat_channels
-               (id, name, type, description, topic, members, settings, created_by, created_at, last_message_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)""",
+               (id, name, type, description, topic, members, settings, created_by, created_at, last_message_at, project_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)""",
             (
                 ch_id, name, type, description, topic,
                 json.dumps(members or []),
                 json.dumps(settings or {}),
-                created_by, now,
+                created_by, now, project_id,
             ),
         )
         await self._db.commit()
@@ -117,6 +128,7 @@ class ChatChannelStore(BaseStore):
         self,
         member_id: str | None = None,
         archived: bool | None = None,
+        project_id: str | None = None,
     ) -> list[dict]:
         conditions: list[str] = []
         params: list = []
@@ -124,6 +136,10 @@ class ChatChannelStore(BaseStore):
         if member_id is not None:
             conditions.append("members LIKE ?")
             params.append(f'%"{member_id}"%')
+
+        if project_id is not None:
+            conditions.append("project_id = ?")
+            params.append(project_id)
 
         # archived filter — use JSON text search for speed (settings is stored as
         # a JSON string; the canonical marker is '"archived": true').

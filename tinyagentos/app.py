@@ -199,6 +199,11 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     adapter_manager = AdapterManager(channel_hub_router)
     chat_messages = ChatMessageStore(data_dir / "chat.db")
     chat_channels = ChatChannelStore(data_dir / "chat.db")
+    from tinyagentos.projects.project_store import ProjectStore
+    from tinyagentos.projects.task_store import ProjectTaskStore
+    project_store = ProjectStore(data_dir / "projects.db")
+    project_task_store = ProjectTaskStore(data_dir / "projects.db")
+    projects_root = data_dir / "projects"
     chat_hub = ChatHub()
     canvas_store = CanvasStore(data_dir / "canvas.db")
     desktop_settings = DesktopSettingsStore(data_dir / "desktop.db")
@@ -254,6 +259,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         await expert_agents.init()
         await chat_messages.init()
         await chat_channels.init()
+        await project_store.init()
+        await project_task_store.init()
+        projects_root.mkdir(parents=True, exist_ok=True)
         await canvas_store.init()
         await desktop_settings.init()
         await user_memory.init()
@@ -391,6 +399,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.deploy_tasks = {}
         app.state.chat_messages = chat_messages
         app.state.chat_channels = chat_channels
+        app.state.project_store = project_store
+        app.state.project_task_store = project_task_store
+        app.state.projects_root = projects_root
         app.state.chat_hub = chat_hub
         from tinyagentos.chat.group_policy import GroupPolicy
         app.state.group_policy = GroupPolicy()
@@ -626,6 +637,8 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         await user_memory.close()
         await desktop_settings.close()
         await canvas_store.close()
+        await project_task_store.close()
+        await project_store.close()
         await chat_channels.close()
         await chat_messages.close()
         await expert_agents.close()
@@ -692,6 +705,10 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     app.state.deploy_tasks = {}
     app.state.chat_messages = chat_messages
     app.state.chat_channels = chat_channels
+    app.state.project_store = project_store
+    app.state.project_task_store = project_task_store
+    projects_root.mkdir(parents=True, exist_ok=True)
+    app.state.projects_root = projects_root
     app.state.chat_hub = chat_hub
     from tinyagentos.chat.reactions import WantsReplyRegistry as _WantsReplyRegistry
     app.state.wants_reply = _WantsReplyRegistry()
@@ -782,6 +799,9 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
 
     from tinyagentos.routes.store import router as store_router
     app.include_router(store_router)
+
+    from tinyagentos.routes import projects as projects_routes
+    app.include_router(projects_routes.router)
 
     from tinyagentos.routes.store_install import router as store_install_router
     app.include_router(store_install_router)

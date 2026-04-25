@@ -119,8 +119,26 @@ async def github_notifications(request: Request):
 
     http_client = request.app.state.http_client
     try:
-        notifications = await fetch_notifications(token, http_client)
-        return {"notifications": notifications, "count": len(notifications)}
+        raw_notifications = await fetch_notifications(token, http_client)
+        # Map notification objects to GitHubIssue shape expected by the frontend.
+        # GitHub notifications don't include state/comments/labels, so we use safe defaults.
+        notifications = [
+            {
+                "number": 0,
+                "title": n.get("subject_title", ""),
+                "state": "open",
+                "author": "",
+                "body": "",
+                "labels": [],
+                "comments": [],
+                "created_at": n.get("updated_at", ""),
+                "repo": n.get("repo_full_name", ""),
+                "is_pull_request": n.get("subject_type", "") == "PullRequest",
+            }
+            for n in raw_notifications
+        ]
+        unread_count = sum(1 for n in raw_notifications if n.get("unread", False))
+        return {"notifications": notifications, "unread_count": unread_count}
     except Exception as exc:
         logger.exception("github_notifications failed: %s", exc)
         return JSONResponse({"error": str(exc)}, status_code=500)

@@ -252,3 +252,26 @@ async def test_set_settings_archived_flag_roundtrip(store):
     assert not any(c["id"] == ch["id"] for c in arch_list2)
     live_list = await store.list_channels(archived=False)
     assert any(c["id"] == ch["id"] for c in live_list)
+
+
+@pytest.mark.asyncio
+async def test_create_channel_with_project_id(store):
+    ch = await store.create_channel(
+        name="alpha-room",
+        type="group",
+        created_by="u",
+        project_id="prj-aaa",
+    )
+    assert ch["project_id"] == "prj-aaa"
+
+
+@pytest.mark.asyncio
+async def test_list_channels_filter_by_project_id(store):
+    a = await store.create_channel(name="a", type="group", created_by="u", project_id="prj-1")
+    b = await store.create_channel(name="b", type="group", created_by="u", project_id="prj-2")
+    c = await store.create_channel(name="c", type="group", created_by="u")
+
+    in_p1 = await store.list_channels(project_id="prj-1")
+    rootless = await store.list_channels(project_id="")
+    assert [ch["id"] for ch in in_p1] == [a["id"]]
+    assert [ch["id"] for ch in rootless] == [c["id"]]
