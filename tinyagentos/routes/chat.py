@@ -382,9 +382,10 @@ async def list_channels(
     request: Request,
     member: str | None = None,
     archived: bool | None = None,
+    project_id: str | None = None,
 ):
     ch_store = request.app.state.chat_channels
-    channels = await ch_store.list_channels(member_id=member, archived=archived)
+    channels = await ch_store.list_channels(member_id=member, archived=archived, project_id=project_id)
     return {"channels": channels}
 
 
@@ -399,6 +400,7 @@ async def create_channel(request: Request):
         members=body.get("members"),
         description=body.get("description", ""),
         topic=body.get("topic", ""),
+        project_id=body.get("project_id", ""),
     )
     return channel
 
