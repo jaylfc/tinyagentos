@@ -101,6 +101,8 @@ async def update_project(project_id: str, payload: UpdateProjectIn, request: Req
 @router.post("/api/projects/{project_id}/archive")
 async def archive_project(project_id: str, request: Request):
     store = request.app.state.project_store
+    if await store.get_project(project_id) is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
     await store.set_status(project_id, "archived")
     p = await store.get_project(project_id)
     await store.log_activity(project_id, _user_id(request), "project.archived", {})
@@ -285,6 +287,9 @@ async def get_task(project_id: str, task_id: str, request: Request):
 @router.patch("/api/projects/{project_id}/tasks/{task_id}")
 async def update_task(project_id: str, task_id: str, payload: UpdateTaskIn, request: Request):
     store = request.app.state.project_task_store
+    existing = await store.get_task(task_id)
+    if existing is None or existing["project_id"] != project_id:
+        return JSONResponse({"error": "not found"}, status_code=404)
     await store.update_task(task_id, **payload.model_dump(exclude_none=True))
     return await store.get_task(task_id)
 

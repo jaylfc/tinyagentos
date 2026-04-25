@@ -43,7 +43,7 @@ export type ProjectActivity = {
   id: string;
   project_id: string;
   actor_id: string;
-  action: string;
+  kind: string;
   payload: Record<string, unknown>;
   created_at: number;
 };
