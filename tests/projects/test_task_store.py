@@ -153,3 +153,24 @@ async def test_threaded_comments(store):
 
     comments = await store.list_comments(task_id=t["id"])
     assert [c["id"] for c in comments] == [c1["id"], c2["id"]]
+
+
+@pytest.mark.asyncio
+async def test_closing_blocker_unblocks_ready_view(store):
+    a = await store.create_task(project_id="p", title="A", created_by="u")
+    b = await store.create_task(project_id="p", title="B", created_by="u")
+    c = await store.create_task(project_id="p", title="C", created_by="u")
+    # a is blocked by both b and c
+    await store.add_relationship(project_id="p", from_task_id=a["id"], to_task_id=b["id"], kind="blocks", created_by="u")
+    await store.add_relationship(project_id="p", from_task_id=a["id"], to_task_id=c["id"], kind="blocks", created_by="u")
+
+    ready = await store.list_ready_tasks(project_id="p")
+    assert {t["id"] for t in ready} == {b["id"], c["id"]}
+
+    await store.close_task(b["id"], closed_by="u")
+    ready = await store.list_ready_tasks(project_id="p")
+    assert {t["id"] for t in ready} == {c["id"]}
+
+    await store.close_task(c["id"], closed_by="u")
+    ready = await store.list_ready_tasks(project_id="p")
+    assert {t["id"] for t in ready} == {a["id"]}
