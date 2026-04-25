@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time as _time
+
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -98,10 +100,27 @@ async def archive_project(project_id: str, request: Request):
 @router.delete("/api/projects/{project_id}")
 async def delete_project(project_id: str, request: Request):
     store = request.app.state.project_store
+    project = await store.get_project(project_id)
+    if project is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+
     await store.set_status(project_id, "deleted")
-    p = await store.get_project(project_id)
     await store.log_activity(project_id, _user_id(request), "project.deleted", {})
-    return p
+
+    # Archive scoped chat channels
+    channels = request.app.state.chat_channels
+    for ch in await channels.list_channels(project_id=project_id):
+        await channels.set_settings(ch["id"], {"archived": True})
+
+    # Tombstone the folder rather than deleting on disk (recoverable)
+    root = request.app.state.projects_root
+    src = root / project["slug"]
+    if src.exists():
+        ts = int(_time.time())
+        dest = root / f"{project['slug']}.deleted-{ts}"
+        src.rename(dest)
+
+    return await store.get_project(project_id)
 
 
 class AddMemberIn(BaseModel):

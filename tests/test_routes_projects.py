@@ -226,3 +226,26 @@ async def test_memory_search_route(client, monkeypatch):
     assert resp.json()["items"][0]["path"] == "tasks/tsk-aaa.md"
     assert captured["collection"] == "project-a"
     assert "project:" + pid in captured["tags"]
+
+
+@pytest.mark.asyncio
+async def test_delete_project_tombstones_folder_and_archives_channels(client):
+    resp = await client.post("/api/projects", json={"name": "A", "slug": "a"})
+    pid = resp.json()["id"]
+    slug = "a"
+
+    channels_store = client._transport.app.state.chat_channels
+    await channels_store.create_channel(
+        name="alpha-room", type="group", created_by="u", project_id=pid,
+    )
+
+    resp = await client.delete(f"/api/projects/{pid}")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "deleted"
+
+    root = client._transport.app.state.projects_root
+    survivors = list(root.iterdir())
+    assert any(p.name.startswith(f"{slug}.deleted-") for p in survivors)
+
+    archived_channels = await channels_store.list_channels(archived=True)
+    assert any(ch["project_id"] == pid for ch in archived_channels)
