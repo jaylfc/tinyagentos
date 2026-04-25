@@ -4,8 +4,9 @@ import { ProjectTaskList } from "./ProjectTaskList";
 import { ProjectMembers } from "./ProjectMembers";
 import { ProjectActivity } from "./ProjectActivity";
 import { FilesApp } from "@/apps/FilesApp";
+import { MessagesApp } from "@/apps/MessagesApp";
 
-type Tab = "tasks" | "files" | "members" | "activity";
+type Tab = "tasks" | "files" | "messages" | "members" | "activity";
 
 export function ProjectWorkspace({ project, onChanged }: { project: Project; onChanged: () => void }) {
   const [tab, setTab] = useState<Tab>("tasks");
@@ -16,7 +17,7 @@ export function ProjectWorkspace({ project, onChanged }: { project: Project; onC
         <p className="text-xs text-zinc-500">{project.description}</p>
       </header>
       <nav className="flex border-b border-zinc-800 px-2" role="tablist">
-        {(["tasks", "files", "members", "activity"] as Tab[]).map((t) => (
+        {(["tasks", "files", "messages", "members", "activity"] as Tab[]).map((t) => (
           <button
             key={t}
             type="button"
@@ -38,6 +39,13 @@ export function ProjectWorkspace({ project, onChanged }: { project: Project; onC
             key={project.id}
             windowId={`project-files-${project.id}`}
             rootPath={`project:${project.slug}`}
+          />
+        )}
+        {tab === "messages" && (
+          <MessagesApp
+            key={project.id}
+            windowId={`project-messages-${project.id}`}
+            scope={{ projectId: project.id }}
           />
         )}
         {tab === "members" && <ProjectMembers project={project} onChanged={onChanged} />}

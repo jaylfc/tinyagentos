@@ -58,6 +58,7 @@ import {
   editMessage as apiEditMessage, deleteMessage as apiDeleteMessage,
   markUnread as apiMarkUnread,
 } from "@/lib/chat-messages-api";
+import { projectsApi, type Project } from "@/lib/projects";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -85,6 +86,7 @@ interface Channel {
   created_at?: string;
   last_message_at?: string;
   lastPreview?: string;
+  project_id?: string;
   settings?: {
     archived?: boolean;
     archived_at?: string;
@@ -206,7 +208,15 @@ const EMOJI_PICKER = ["👍", "❤️", "😂", "🎉", "🤔", "👀", "🚀", 
 /*  MessagesApp                                                        */
 /* ------------------------------------------------------------------ */
 
-export function MessagesApp({ windowId: _windowId, title }: { windowId: string; title?: string }) {
+export function MessagesApp({
+  windowId: _windowId,
+  title,
+  scope,
+}: {
+  windowId: string;
+  title?: string;
+  scope?: { projectId?: string };
+}) {
   const isMobile = useIsMobile();
   const { keyboardInset } = useVisualViewport();
 
@@ -266,6 +276,7 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
   const [pinnedPopoverOpen, setPinnedPopoverOpen] = useState(false);
   const [pinnedMessages, setPinnedMessages] = useState<PinnedMessage[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [projects, setProjects] = useState<Project[]>([]);
   const { openThread, openThreadFor, closeThread } = useThreadPanel();
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -281,8 +292,9 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
   /* ---- fetch channels + unread ---- */
   const fetchChannels = useCallback(async () => {
     try {
+      const qs = scope?.projectId ? `?project_id=${encodeURIComponent(scope.projectId)}` : "";
       const [chRes, unRes] = await Promise.all([
-        fetch("/api/chat/channels"),
+        fetch(`/api/chat/channels${qs}`),
         fetch("/api/chat/unread"),
       ]);
       if (chRes.ok) {
@@ -296,12 +308,15 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
     } catch {
       /* offline */
     }
-  }, []);
+  }, [scope?.projectId]);
 
   /* ---- fetch archived channels ---- */
   const fetchArchivedChannels = useCallback(async () => {
     try {
-      const res = await fetch("/api/chat/channels?archived=true");
+      const url = scope?.projectId
+        ? `/api/chat/channels?archived=true&project_id=${encodeURIComponent(scope.projectId)}`
+        : "/api/chat/channels?archived=true";
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         setArchivedChannels(data.channels ?? []);
@@ -309,7 +324,7 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
     } catch {
       /* offline */
     }
-  }, []);
+  }, [scope?.projectId]);
 
   /* ---- fetch agent lists for author resolution ---- */
   const fetchAgentLists = useCallback(async () => {
@@ -509,6 +524,14 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
       }
     };
   }, [fetchChannels, fetchArchivedChannels, fetchAgentLists, connectWs]);
+
+  /* ---- fetch project list for sidebar grouping (standalone mode only) ---- */
+  useEffect(() => {
+    if (scope?.projectId) return;
+    let cancelled = false;
+    projectsApi.list("active").then((p) => { if (!cancelled) setProjects(p); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [scope?.projectId]);
 
   /* ---- fetch current user ---- */
   useEffect(() => {
@@ -839,6 +862,7 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
           name: newChannel.name.trim(),
           type: newChannel.type,
           description: newChannel.description.trim() || undefined,
+          ...(scope?.projectId ? { project_id: scope.projectId } : {}),
         }),
       });
       if (res.ok) {
@@ -971,15 +995,32 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
   };
 
   /* ---- group channels by type ---- */
+  const isRoot = (c: Channel) => !c.project_id;
   const grouped = {
-    dm: channels.filter((c) => c.type === "dm"),
-    topic: channels.filter((c) => c.type === "topic"),
-    group: channels.filter((c) => c.type === "group"),
+    dm: channels.filter((c) => c.type === "dm" && isRoot(c)),
+    topic: channels.filter((c) => c.type === "topic" && isRoot(c)),
+    group: channels.filter((c) => c.type === "group" && isRoot(c)),
   };
 
   const allChannels = [...channels, ...archivedChannels];
   const currentChannel = allChannels.find((c) => c.id === selectedChannel);
   const isCurrentArchived = currentChannel?.settings?.archived === true;
+
+  /* ---- project-grouped channels for sidebar (standalone mode) ---- */
+  const projectGroups = (() => {
+    const projectChannels = channels.filter((c) => c.project_id);
+    if (!projectChannels.length) return [];
+    const byId = new Map<string, { id: string; name: string; channels: Channel[] }>();
+    for (const ch of projectChannels) {
+      const pid = ch.project_id!;
+      if (!byId.has(pid)) {
+        const proj = projects.find((p) => p.id === pid);
+        byId.set(pid, { id: pid, name: proj ? proj.name : pid, channels: [] });
+      }
+      byId.get(pid)!.channels.push(ch);
+    }
+    return Array.from(byId.values());
+  })();
 
   /* ---------------------------------------------------------------- */
   /*  Sections definition (shared between mobile + desktop lists)     */
@@ -1061,6 +1102,53 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
           )}
         </div>
       ))}
+
+      {/* Projects section — mobile (standalone mode only) */}
+      {!scope?.projectId && projectGroups.length > 0 && (
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5, color: "rgba(255,255,255,0.45)", padding: "0 20px 6px", fontWeight: 600 }}>
+            Projects
+          </div>
+          {projectGroups.map((g) => (
+            <div key={g.id} style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", padding: "0 20px 4px", fontWeight: 600 }}>{g.name}</div>
+              <div style={{ margin: "0 12px", borderRadius: 16, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", overflow: "hidden" }}>
+                {g.channels.map((ch, idx, arr) => (
+                  <button
+                    key={ch.id}
+                    type="button"
+                    onClick={() => setSelectedChannel(ch.id)}
+                    aria-label={`Channel ${ch.name}`}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      width: "100%",
+                      padding: "14px 16px",
+                      background: selectedChannel === ch.id ? "rgba(59,130,246,0.15)" : "none",
+                      border: "none",
+                      borderBottom: idx === arr.length - 1 ? "none" : "1px solid rgba(255,255,255,0.06)",
+                      cursor: "pointer",
+                      color: "inherit",
+                      textAlign: "left",
+                    }}
+                  >
+                    <span style={{ flex: 1, fontSize: 15, fontWeight: 400, color: "rgba(255,255,255,0.9)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {ch.name}
+                    </span>
+                    {(unread[ch.id] ?? 0) > 0 && (
+                      <span style={{ background: "#3b82f6", color: "#fff", fontSize: 10, fontWeight: 700, borderRadius: 9999, minWidth: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px" }}>
+                        {unread[ch.id]}
+                      </span>
+                    )}
+                    <ChevronRight size={16} style={{ color: "rgba(255,255,255,0.25)", flexShrink: 0 }} />
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Archived channels section — mobile */}
       {archivedChannels.length > 0 && (
@@ -1172,6 +1260,35 @@ export function MessagesApp({ windowId: _windowId, title }: { windowId: string; 
             ))}
           </div>
         ))}
+
+        {/* Projects section — desktop (standalone mode only) */}
+        {!scope?.projectId && projectGroups.length > 0 && (
+          <details className="px-3 mt-2">
+            <summary className="cursor-pointer text-[10px] font-semibold uppercase tracking-wider text-white/30 py-1">
+              Projects
+            </summary>
+            {projectGroups.map((g) => (
+              <details key={g.id} className="ml-2 mt-1">
+                <summary className="cursor-pointer text-xs text-white/60 py-1">{g.name}</summary>
+                <div className="ml-2 mt-0.5">
+                  {g.channels.map((ch) => (
+                    <button
+                      key={ch.id}
+                      type="button"
+                      onClick={() => setSelectedChannel(ch.id)}
+                      aria-pressed={selectedChannel === ch.id}
+                      className={`w-full text-left text-xs py-1 px-2 rounded ${
+                        selectedChannel === ch.id ? "bg-white/10" : "hover:bg-white/5"
+                      }`}
+                    >
+                      {ch.name}
+                    </button>
+                  ))}
+                </div>
+              </details>
+            ))}
+          </details>
+        )}
 
         {/* Archived channels section — desktop */}
         {archivedChannels.length > 0 && (
