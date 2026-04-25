@@ -19,12 +19,17 @@ export function CreateProjectDialog({
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setError("Name is required.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
       await projectsApi.create({
-        name: name.trim(),
-        slug: slug.trim() || slugify(name),
+        name: trimmedName,
+        slug: slug.trim() || slugify(trimmedName),
         description: description.trim(),
       });
       onCreated();

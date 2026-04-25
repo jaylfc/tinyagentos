@@ -6,9 +6,21 @@ export function ProjectMembers({ project, onChanged }: { project: Project; onCha
   const [members, setMembers] = useState<ProjectMember[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
 
-  const refresh = () => projectsApi.members.list(project.id).then(setMembers);
+  const refresh = () =>
+    projectsApi.members.list(project.id).then(setMembers).catch(() => setMembers([]));
   useEffect(() => {
-    refresh();
+    let cancelled = false;
+    projectsApi.members
+      .list(project.id)
+      .then((rows) => {
+        if (!cancelled) setMembers(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setMembers([]);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [project.id]);
 
   return (

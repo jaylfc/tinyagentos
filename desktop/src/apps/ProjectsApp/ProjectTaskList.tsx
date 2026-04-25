@@ -8,6 +8,21 @@ export function ProjectTaskList({ projectId }: { projectId: string }) {
   const [tasks, setTasks] = useState<ProjectTask[]>([]);
   const [newTitle, setNewTitle] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/auth/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((u) => {
+        if (!cancelled && u?.id) setCurrentUserId(u.id);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const actorId = currentUserId ?? "user";
 
   const refresh = async () => {
     try {
@@ -24,10 +39,16 @@ export function ProjectTaskList({ projectId }: { projectId: string }) {
 
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTitle.trim()) return;
-    await projectsApi.tasks.create(projectId, { title: newTitle.trim() });
-    setNewTitle("");
-    refresh();
+    const title = newTitle.trim();
+    if (!title) return;
+    try {
+      await projectsApi.tasks.create(projectId, { title });
+      setNewTitle("");
+      setError(null);
+      refresh();
+    } catch (err) {
+      setError(String(err));
+    }
   };
 
   // Closed view filters older than 7 days client-side per spec default.
@@ -86,7 +107,7 @@ export function ProjectTaskList({ projectId }: { projectId: string }) {
                 <button
                   type="button"
                   onClick={async () => {
-                    await projectsApi.tasks.claim(projectId, t.id, "user");
+                    await projectsApi.tasks.claim(projectId, t.id, actorId);
                     refresh();
                   }}
                   className="px-2 py-1 bg-zinc-800 rounded"
@@ -99,7 +120,7 @@ export function ProjectTaskList({ projectId }: { projectId: string }) {
                   <button
                     type="button"
                     onClick={async () => {
-                      await projectsApi.tasks.release(projectId, t.id, t.claimed_by ?? "user");
+                      await projectsApi.tasks.release(projectId, t.id, t.claimed_by ?? actorId);
                       refresh();
                     }}
                     className="px-2 py-1 bg-zinc-800 rounded"
@@ -109,7 +130,7 @@ export function ProjectTaskList({ projectId }: { projectId: string }) {
                   <button
                     type="button"
                     onClick={async () => {
-                      await projectsApi.tasks.close(projectId, t.id, t.claimed_by ?? "user");
+                      await projectsApi.tasks.close(projectId, t.id, t.claimed_by ?? actorId);
                       refresh();
                     }}
                     className="px-2 py-1 bg-emerald-700 rounded"

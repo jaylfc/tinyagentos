@@ -12,7 +12,9 @@ export function ProjectsApp({ windowId: _windowId }: { windowId: string }) {
     try {
       const list = await projectsApi.list("active");
       setProjects(list);
-      if (!selectedId && list.length > 0) setSelectedId(list[0]!.id);
+      setError(null);
+      const stillExists = selectedId && list.some((p) => p.id === selectedId);
+      if (!stillExists) setSelectedId(list.length > 0 ? list[0]!.id : null);
     } catch (e) {
       setError(String(e));
     }

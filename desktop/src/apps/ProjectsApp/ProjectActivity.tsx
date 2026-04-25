@@ -5,7 +5,18 @@ export function ProjectActivity({ projectId }: { projectId: string }) {
   const [items, setItems] = useState<ProjectActivity[]>([]);
 
   useEffect(() => {
-    projectsApi.activity(projectId).then(setItems);
+    let cancelled = false;
+    projectsApi
+      .activity(projectId)
+      .then((rows) => {
+        if (!cancelled) setItems(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setItems([]);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [projectId]);
 
   return (
