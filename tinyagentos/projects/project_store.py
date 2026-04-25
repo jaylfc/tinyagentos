@@ -99,3 +99,126 @@ class ProjectStore(BaseStore):
             if row is None:
                 return None
             return _row_to_project(row, cur.description)
+
+    async def list_projects(self, status: str | None = "active") -> list[dict]:
+        if status is None:
+            sql = "SELECT * FROM projects ORDER BY created_at DESC"
+            params: tuple = ()
+        else:
+            sql = "SELECT * FROM projects WHERE status = ? ORDER BY created_at DESC"
+            params = (status,)
+        async with self._db.execute(sql, params) as cur:
+            rows = await cur.fetchall()
+            desc = cur.description
+        return [_row_to_project(r, desc) for r in rows]
+
+    async def update_project(
+        self,
+        project_id: str,
+        name: str | None = None,
+        description: str | None = None,
+        settings: dict | None = None,
+    ) -> None:
+        sets: list[str] = []
+        params: list = []
+        if name is not None:
+            sets.append("name = ?"); params.append(name)
+        if description is not None:
+            sets.append("description = ?"); params.append(description)
+        if settings is not None:
+            sets.append("settings = ?"); params.append(json.dumps(settings))
+        if not sets:
+            return
+        sets.append("updated_at = ?"); params.append(time.time())
+        params.append(project_id)
+        await self._db.execute(
+            f"UPDATE projects SET {', '.join(sets)} WHERE id = ?", params
+        )
+        await self._db.commit()
+
+    async def set_status(self, project_id: str, status: str) -> None:
+        if status not in ("active", "archived", "deleted"):
+            raise ValueError(f"invalid status: {status}")
+        now = time.time()
+        col_map = {"archived": "archived_at", "deleted": "deleted_at"}
+        extra_col = col_map.get(status)
+        if extra_col:
+            await self._db.execute(
+                f"UPDATE projects SET status = ?, updated_at = ?, {extra_col} = ? WHERE id = ?",
+                (status, now, now, project_id),
+            )
+        else:
+            await self._db.execute(
+                "UPDATE projects SET status = ?, updated_at = ? WHERE id = ?",
+                (status, now, project_id),
+            )
+        await self._db.commit()
+
+    async def add_member(
+        self,
+        project_id: str,
+        member_id: str,
+        member_kind: str,
+        role: str = "member",
+        source_agent_id: str | None = None,
+        memory_seed: str = "none",
+    ) -> None:
+        if member_kind not in ("native", "clone"):
+            raise ValueError(f"invalid member_kind: {member_kind}")
+        if memory_seed not in ("none", "snapshot", "empty"):
+            raise ValueError(f"invalid memory_seed: {memory_seed}")
+        await self._db.execute(
+            """INSERT OR REPLACE INTO project_members
+               (project_id, member_id, member_kind, role, source_agent_id, memory_seed, added_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (project_id, member_id, member_kind, role, source_agent_id, memory_seed, time.time()),
+        )
+        await self._db.commit()
+
+    async def remove_member(self, project_id: str, member_id: str) -> None:
+        await self._db.execute(
+            "DELETE FROM project_members WHERE project_id = ? AND member_id = ?",
+            (project_id, member_id),
+        )
+        await self._db.commit()
+
+    async def list_members(self, project_id: str) -> list[dict]:
+        async with self._db.execute(
+            "SELECT * FROM project_members WHERE project_id = ? ORDER BY added_at ASC",
+            (project_id,),
+        ) as cur:
+            rows = await cur.fetchall()
+            keys = [d[0] for d in cur.description]
+        return [dict(zip(keys, r)) for r in rows]
+
+    async def log_activity(
+        self,
+        project_id: str,
+        actor_id: str,
+        kind: str,
+        payload: dict | None = None,
+    ) -> None:
+        await self._db.execute(
+            """INSERT INTO project_activity
+               (project_id, actor_id, kind, payload, created_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (project_id, actor_id, kind, json.dumps(payload or {}), time.time()),
+        )
+        await self._db.commit()
+
+    async def list_activity(self, project_id: str, limit: int = 100) -> list[dict]:
+        async with self._db.execute(
+            """SELECT * FROM project_activity
+               WHERE project_id = ?
+               ORDER BY created_at DESC
+               LIMIT ?""",
+            (project_id, limit),
+        ) as cur:
+            rows = await cur.fetchall()
+            keys = [d[0] for d in cur.description]
+        out: list[dict] = []
+        for r in rows:
+            d = dict(zip(keys, r))
+            d["payload"] = json.loads(d["payload"]) if d["payload"] else {}
+            out.append(d)
+        return out
