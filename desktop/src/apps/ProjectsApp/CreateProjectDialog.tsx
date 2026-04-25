@@ -19,6 +19,7 @@ export function CreateProjectDialog({
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting) return;
     const trimmedName = name.trim();
     if (!trimmedName) {
       setError("Name is required.");

@@ -24,13 +24,12 @@ export function ProjectList({ projects, selectedId, onSelect, onCreated }: Props
           + New
         </button>
       </header>
-      <ul className="flex-1 overflow-auto" role="listbox" aria-label="Projects">
+      <ul className="flex-1 overflow-auto" aria-label="Projects">
         {projects.map((p) => (
           <li key={p.id}>
             <button
               type="button"
-              role="option"
-              aria-selected={p.id === selectedId}
+              aria-pressed={p.id === selectedId}
               onClick={() => onSelect(p.id)}
               className={`w-full text-left px-3 py-2 hover:bg-zinc-800 ${
                 p.id === selectedId ? "bg-zinc-800" : ""

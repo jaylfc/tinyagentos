@@ -14,7 +14,7 @@ export function AddAgentDialog({
   onAdded: () => void;
 }) {
   const [mode, setMode] = useState<Mode>("new");
-  const [agentMode, setAgentMode] = useState<AgentMode>("clone");
+  const [agentMode, setAgentMode] = useState<AgentMode>("native");
   const [agentId, setAgentId] = useState("");
   const [cloneMemory, setCloneMemory] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -27,13 +27,21 @@ export function AddAgentDialog({
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting) return;
+    const normalizedAgentId = agentId.trim();
+    if (!normalizedAgentId) {
+      setError("Agent ID is required.");
+      return;
+    }
+    // mode === "new" forces native; otherwise the user's agentMode choice wins.
+    const useNative = mode === "new" || agentMode === "native";
     setSubmitting(true);
     setError(null);
     try {
-      if (agentMode === "native") {
-        await projectsApi.members.addNative(projectId, agentId.trim());
+      if (useNative) {
+        await projectsApi.members.addNative(projectId, normalizedAgentId);
       } else {
-        await projectsApi.members.addClone(projectId, agentId.trim(), cloneMemory);
+        await projectsApi.members.addClone(projectId, normalizedAgentId, cloneMemory);
       }
       onAdded();
     } catch (err) {
@@ -41,6 +49,11 @@ export function AddAgentDialog({
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleClose = () => {
+    if (submitting) return;
+    onClose();
   };
 
   return (
@@ -112,7 +125,14 @@ export function AddAgentDialog({
 
         {error && <div role="alert" className="text-red-400 text-xs">{error}</div>}
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="px-3 py-1 text-sm">Cancel</button>
+          <button
+            type="button"
+            onClick={handleClose}
+            disabled={submitting}
+            className="px-3 py-1 text-sm disabled:opacity-50"
+          >
+            Cancel
+          </button>
           <button
             type="submit"
             disabled={submitting}
