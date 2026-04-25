@@ -135,6 +135,16 @@ function agentSlug(location: string): string {
   return location.slice(AGENT_LOCATION_PREFIX.length);
 }
 
+const PROJECT_LOCATION_PREFIX = "project:";
+
+function isProjectLocation(loc: string): boolean {
+  return loc.startsWith(PROJECT_LOCATION_PREFIX);
+}
+
+function projectSlug(loc: string): string {
+  return loc.slice(PROJECT_LOCATION_PREFIX.length);
+}
+
 function fileUrl(location: "workspace" | string, path: string): string {
   const encoded = encodeURIComponent(path);
   if (location === "workspace") {
@@ -142,6 +152,9 @@ function fileUrl(location: "workspace" | string, path: string): string {
   }
   if (isAgentLocation(location)) {
     return `/api/agents/${encodeURIComponent(agentSlug(location))}/workspace/files/${encoded}`;
+  }
+  if (isProjectLocation(location)) {
+    return `/api/projects/${encodeURIComponent(projectSlug(location))}/files/${encoded}`;
   }
   return `/api/shared-folders/${encodeURIComponent(location)}/files/${encoded}`;
 }
@@ -159,6 +172,9 @@ function workspaceListUrl(location: "workspace" | string, path: string): string 
   if (isAgentLocation(location)) {
     return `/api/agents/${encodeURIComponent(agentSlug(location))}/workspace/files${qs}`;
   }
+  if (isProjectLocation(location)) {
+    return `/api/projects/${encodeURIComponent(projectSlug(location))}/files${qs}`;
+  }
   return `/api/shared-folders/${encodeURIComponent(location)}/files`;
 }
 
@@ -167,6 +183,9 @@ function workspaceWatchUrl(location: "workspace" | string, path: string): string
   if (location === "workspace") return `/api/workspace/files/watch${qs}`;
   if (isAgentLocation(location)) {
     return `/api/agents/${encodeURIComponent(agentSlug(location))}/workspace/files/watch${qs}`;
+  }
+  if (isProjectLocation(location)) {
+    return `/api/projects/${encodeURIComponent(projectSlug(location))}/files/watch${qs}`;
   }
   return null;
 }
@@ -177,6 +196,9 @@ function workspaceUploadUrl(location: "workspace" | string, path: string): strin
   if (isAgentLocation(location)) {
     return `/api/agents/${encodeURIComponent(agentSlug(location))}/workspace/files/upload${qs}`;
   }
+  if (isProjectLocation(location)) {
+    return `/api/projects/${encodeURIComponent(projectSlug(location))}/files/upload${qs}`;
+  }
   return `/api/shared-folders/${encodeURIComponent(location)}/upload`;
 }
 
@@ -184,6 +206,9 @@ function workspaceMkdirUrl(location: "workspace" | string): string | null {
   if (location === "workspace") return `/api/workspace/mkdir`;
   if (isAgentLocation(location)) {
     return `/api/agents/${encodeURIComponent(agentSlug(location))}/workspace/mkdir`;
+  }
+  if (isProjectLocation(location)) {
+    return `/api/projects/${encodeURIComponent(projectSlug(location))}/mkdir`;
   }
   return null;
 }
@@ -194,6 +219,9 @@ function workspaceDeleteUrl(location: "workspace" | string, path: string): strin
   if (isAgentLocation(location)) {
     return `/api/agents/${encodeURIComponent(agentSlug(location))}/workspace/files/${encoded}`;
   }
+  if (isProjectLocation(location)) {
+    return `/api/projects/${encodeURIComponent(projectSlug(location))}/files/${encoded}`;
+  }
   return null;
 }
 
@@ -201,6 +229,9 @@ function workspaceStatsUrl(location: "workspace" | string): string | null {
   if (location === "workspace") return `/api/workspace/stats`;
   if (isAgentLocation(location)) {
     return `/api/agents/${encodeURIComponent(agentSlug(location))}/workspace/stats`;
+  }
+  if (isProjectLocation(location)) {
+    return `/api/projects/${encodeURIComponent(projectSlug(location))}/stats`;
   }
   return null;
 }
@@ -364,11 +395,14 @@ function FileRow({
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
-export function FilesApp({ windowId: _windowId }: { windowId: string }) {
+export function FilesApp({
+  windowId: _windowId,
+  rootPath,
+}: { windowId: string; rootPath?: string }) {
   const isMobile = useIsMobile();
 
   const [currentPath, setCurrentPath] = useState("");
-  const [location, setLocation] = useState<"workspace" | string>("workspace");
+  const [location, setLocation] = useState<"workspace" | string>(() => rootPath ?? "workspace");
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [sharedFolders, setSharedFolders] = useState<SharedFolder[]>([]);
   const [agents, setAgents] = useState<AgentSummary[] | null>(null);
@@ -382,7 +416,7 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
   const [sharedExpanded, setSharedExpanded] = useState(true);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   // null = showing sidebar (list pane); non-null = showing file browser (detail pane)
-  const [selectedLocation, setSelectedLocation] = useState<string | null>(null);
+  const [selectedLocation, setSelectedLocation] = useState<string | null>(rootPath ?? null);
 
   // Recycle bin
   const [recycleItems, setRecycleItems] = useState<RecycleItem[]>([]);
@@ -393,9 +427,9 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragCounter = useRef(0);
 
-  // Workspace locations (user + per-agent) allow mutations and the stats
+  // Workspace locations (user + per-agent + project) allow mutations and the stats
   // endpoint. Shared folders and the recycle bin are read-only here.
-  const isWritable = location === "workspace" || isAgentLocation(location);
+  const isWritable = location === "workspace" || isAgentLocation(location) || isProjectLocation(location);
   const locationTitle =
     location === "recycle"
       ? "Recycle Bin"
@@ -403,7 +437,9 @@ export function FilesApp({ windowId: _windowId }: { windowId: string }) {
         ? "Workspace"
         : isAgentLocation(location)
           ? agents?.find((a) => a.name === agentSlug(location))?.display_name ?? agentSlug(location)
-          : location;
+          : isProjectLocation(location)
+            ? projectSlug(location)
+            : location;
 
   /* ---- Fetch files ---- */
   const fetchFiles = useCallback(async (path = "") => {
