@@ -288,7 +288,18 @@ async def close_task(project_id: str, task_id: str, payload: CloseIn, request: R
         return JSONResponse({"error": "cannot close"}, status_code=409)
     pstore = request.app.state.project_store
     await pstore.log_activity(project_id, payload.closed_by, "task.closed", {"task_id": task_id})
-    return await store.get_task(task_id)
+    project = await pstore.get_project(project_id)
+    task = await store.get_task(task_id)
+    qmd = getattr(request.app.state, "qmd_client", None)
+    if qmd is not None and project is not None and task is not None:
+        try:
+            from tinyagentos.projects.lifecycle import index_closed_task
+            await index_closed_task(qmd, project, task)
+        except Exception:
+            await pstore.log_activity(
+                project_id, payload.closed_by, "task.qmd_index_failed", {"task_id": task_id}
+            )
+    return task
 
 
 @router.post("/api/projects/{project_id}/tasks/{task_id}/relationships")
