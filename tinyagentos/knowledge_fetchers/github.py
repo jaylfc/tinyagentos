@@ -291,6 +291,7 @@ async def fetch_starred(
             "full_name": r.get("full_name", ""),
             "description": r.get("description") or "",
             "stars": r.get("stargazers_count", 0),
+            "forks": r.get("forks_count", 0),
             "language": r.get("language") or "",
             "updated_at": r.get("updated_at") or "",
             "url": r.get("html_url", ""),
