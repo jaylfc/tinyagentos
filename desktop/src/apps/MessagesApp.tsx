@@ -248,6 +248,8 @@ export function MessagesApp({
   });
   const [archivedChannels, setArchivedChannels] = useState<Channel[]>([]);
   const [archivedExpanded, setArchivedExpanded] = useState(false);
+  const [projectsExpanded, setProjectsExpanded] = useState(true);
+  const [projectChannelExpanded, setProjectChannelExpanded] = useState<Record<string, boolean>>({});
   const [liveAgents, setLiveAgents] = useState<LiveAgent[]>([]);
   const [archivedAgents, setArchivedAgents] = useState<ArchivedAgentEntry[]>([]);
   const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
@@ -1106,47 +1108,70 @@ export function MessagesApp({
       {/* Projects section — mobile (standalone mode only) */}
       {!scope?.projectId && projectGroups.length > 0 && (
         <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5, color: "rgba(255,255,255,0.45)", padding: "0 20px 6px", fontWeight: 600 }}>
-            Projects
-          </div>
-          {projectGroups.map((g) => (
-            <div key={g.id} style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", padding: "0 20px 4px", fontWeight: 600 }}>{g.name}</div>
-              <div style={{ margin: "0 12px", borderRadius: 16, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", overflow: "hidden" }}>
-                {g.channels.map((ch, idx, arr) => (
+          <button
+            type="button"
+            onClick={() => setProjectsExpanded((v) => !v)}
+            aria-expanded={projectsExpanded}
+            aria-controls="projects-section-mobile"
+            style={{ fontSize: 12, textTransform: "uppercase" as const, letterSpacing: 0.5, color: "rgba(255,255,255,0.45)", padding: "0 20px 6px", fontWeight: 600, display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", cursor: "pointer", width: "100%" }}
+          >
+            <ChevronRight size={12} style={{ transition: "transform 0.15s", transform: projectsExpanded ? "rotate(90deg)" : "none", color: "rgba(255,255,255,0.3)" }} aria-hidden="true" />
+            Projects ({projectGroups.length})
+          </button>
+          <div id="projects-section-mobile" style={{ display: projectsExpanded ? "block" : "none" }}>
+            {projectGroups.map((g) => {
+              const isOpen = projectChannelExpanded[g.id] !== false;
+              return (
+                <div key={g.id} style={{ marginBottom: 12 }}>
                   <button
-                    key={ch.id}
                     type="button"
-                    onClick={() => setSelectedChannel(ch.id)}
-                    aria-label={`Channel ${ch.name}`}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10,
-                      width: "100%",
-                      padding: "14px 16px",
-                      background: selectedChannel === ch.id ? "rgba(59,130,246,0.15)" : "none",
-                      border: "none",
-                      borderBottom: idx === arr.length - 1 ? "none" : "1px solid rgba(255,255,255,0.06)",
-                      cursor: "pointer",
-                      color: "inherit",
-                      textAlign: "left",
-                    }}
+                    onClick={() => setProjectChannelExpanded((prev) => ({ ...prev, [g.id]: !isOpen }))}
+                    aria-expanded={isOpen}
+                    aria-controls={`project-section-mobile-${g.id}`}
+                    style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", padding: "0 20px 4px", fontWeight: 600, display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", cursor: "pointer", width: "100%" }}
                   >
-                    <span style={{ flex: 1, fontSize: 15, fontWeight: 400, color: "rgba(255,255,255,0.9)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {ch.name}
-                    </span>
-                    {(unread[ch.id] ?? 0) > 0 && (
-                      <span style={{ background: "#3b82f6", color: "#fff", fontSize: 10, fontWeight: 700, borderRadius: 9999, minWidth: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px" }}>
-                        {unread[ch.id]}
-                      </span>
-                    )}
-                    <ChevronRight size={16} style={{ color: "rgba(255,255,255,0.25)", flexShrink: 0 }} />
+                    <ChevronRight size={10} style={{ transition: "transform 0.15s", transform: isOpen ? "rotate(90deg)" : "none", color: "rgba(255,255,255,0.3)" }} aria-hidden="true" />
+                    {g.name}
                   </button>
-                ))}
-              </div>
-            </div>
-          ))}
+                  <div id={`project-section-mobile-${g.id}`} style={{ display: isOpen ? "block" : "none" }}>
+                    <div style={{ margin: "0 12px", borderRadius: 16, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", overflow: "hidden" }}>
+                      {g.channels.map((ch, idx, arr) => (
+                        <button
+                          key={ch.id}
+                          type="button"
+                          onClick={() => setSelectedChannel(ch.id)}
+                          aria-label={`Channel ${ch.name}`}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                            width: "100%",
+                            padding: "14px 16px",
+                            background: selectedChannel === ch.id ? "rgba(59,130,246,0.15)" : "none",
+                            border: "none",
+                            borderBottom: idx === arr.length - 1 ? "none" : "1px solid rgba(255,255,255,0.06)",
+                            cursor: "pointer",
+                            color: "inherit",
+                            textAlign: "left",
+                          }}
+                        >
+                          <span style={{ flex: 1, fontSize: 15, fontWeight: 400, color: "rgba(255,255,255,0.9)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {ch.name}
+                          </span>
+                          {(unread[ch.id] ?? 0) > 0 && (
+                            <span style={{ background: "#3b82f6", color: "#fff", fontSize: 10, fontWeight: 700, borderRadius: 9999, minWidth: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px" }}>
+                              {unread[ch.id]}
+                            </span>
+                          )}
+                          <ChevronRight size={16} style={{ color: "rgba(255,255,255,0.25)", flexShrink: 0 }} />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -1277,6 +1302,7 @@ export function MessagesApp({
                       type="button"
                       onClick={() => setSelectedChannel(ch.id)}
                       aria-pressed={selectedChannel === ch.id}
+                      aria-label={`Channel ${ch.name}`}
                       className={`w-full text-left text-xs py-1 px-2 rounded ${
                         selectedChannel === ch.id ? "bg-white/10" : "hover:bg-white/5"
                       }`}
