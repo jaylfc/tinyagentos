@@ -319,3 +319,95 @@ async def test_add_comment_rejects_cross_task_reply(client):
         json={"body": "reply", "author_id": "u", "replies_to_comment_id": c1["id"]},
     )
     assert resp.status_code in (400, 422)
+
+
+@pytest.mark.asyncio
+async def test_claim_release_close_reject_cross_project(client):
+    p1 = (await client.post("/api/projects", json={"name": "A", "slug": "a"})).json()["id"]
+    p2 = (await client.post("/api/projects", json={"name": "B", "slug": "b"})).json()["id"]
+    t = (await client.post(f"/api/projects/{p1}/tasks", json={"title": "T"})).json()
+
+    resp = await client.post(
+        f"/api/projects/{p2}/tasks/{t['id']}/claim",
+        json={"claimer_id": "agent-x"},
+    )
+    assert resp.status_code == 404
+
+    resp = await client.post(
+        f"/api/projects/{p2}/tasks/{t['id']}/release",
+        json={"releaser_id": "agent-x"},
+    )
+    assert resp.status_code == 404
+
+    resp = await client.post(
+        f"/api/projects/{p2}/tasks/{t['id']}/close",
+        json={"closed_by": "agent-x"},
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_release_after_close_does_not_reopen(client):
+    pid = (await client.post("/api/projects", json={"name": "A", "slug": "a"})).json()["id"]
+    t = (await client.post(f"/api/projects/{pid}/tasks", json={"title": "T"})).json()
+    await client.post(f"/api/projects/{pid}/tasks/{t['id']}/claim", json={"claimer_id": "agent-1"})
+    resp = await client.post(
+        f"/api/projects/{pid}/tasks/{t['id']}/close",
+        json={"closed_by": "agent-1"},
+    )
+    assert resp.json()["status"] == "closed"
+
+    resp = await client.post(
+        f"/api/projects/{pid}/tasks/{t['id']}/release",
+        json={"releaser_id": "agent-1"},
+    )
+    assert resp.status_code == 409
+
+    resp = await client.get(f"/api/projects/{pid}/tasks/{t['id']}")
+    assert resp.json()["status"] == "closed"
+
+
+@pytest.mark.asyncio
+async def test_comments_and_relationships_reject_wrong_project(client):
+    p1 = (await client.post("/api/projects", json={"name": "A", "slug": "a"})).json()["id"]
+    p2 = (await client.post("/api/projects", json={"name": "B", "slug": "b"})).json()["id"]
+    t = (await client.post(f"/api/projects/{p1}/tasks", json={"title": "T"})).json()
+
+    resp = await client.post(
+        f"/api/projects/{p2}/tasks/{t['id']}/comments",
+        json={"body": "x", "author_id": "u"},
+    )
+    assert resp.status_code == 404
+
+    resp = await client.get(f"/api/projects/{p2}/tasks/{t['id']}/comments")
+    assert resp.status_code == 404
+
+    resp = await client.get(f"/api/projects/{p2}/tasks/{t['id']}/relationships")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_create_task_unknown_project_returns_404(client):
+    resp = await client.post("/api/projects/prj-nope/tasks", json={"title": "T"})
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_create_task_rejects_cross_project_parent(client):
+    p1 = (await client.post("/api/projects", json={"name": "A", "slug": "a"})).json()["id"]
+    p2 = (await client.post("/api/projects", json={"name": "B", "slug": "b"})).json()["id"]
+    parent = (await client.post(f"/api/projects/{p1}/tasks", json={"title": "P"})).json()
+    resp = await client.post(
+        f"/api/projects/{p2}/tasks",
+        json={"title": "child", "parent_task_id": parent["id"]},
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_create_project_duplicate_slug_via_store_concurrent(client):
+    # Simulates the race where two creates pass any pre-check and both reach INSERT.
+    store = client._transport.app.state.project_store
+    await store.create_project(name="A", slug="race", created_by="u")
+    with pytest.raises(ValueError, match="slug already used"):
+        await store.create_project(name="B", slug="race", created_by="u")

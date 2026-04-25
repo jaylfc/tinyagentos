@@ -182,7 +182,7 @@ class ProjectTaskStore(BaseStore):
         cursor = await self._db.execute(
             """UPDATE project_tasks
                SET claimed_by = NULL, claimed_at = NULL, status = 'open', updated_at = ?
-               WHERE id = ? AND claimed_by = ?""",
+               WHERE id = ? AND claimed_by = ? AND status = 'claimed'""",
             (now, task_id, releaser_id),
         )
         await self._db.commit()

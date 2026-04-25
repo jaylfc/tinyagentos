@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import time
 
 from tinyagentos.base_store import BaseStore
@@ -68,18 +69,21 @@ class ProjectStore(BaseStore):
         description: str = "",
         settings: dict | None = None,
     ) -> dict:
-        existing = await self.get_project_by_slug(slug)
-        if existing is not None:
-            raise ValueError(f"slug already used: {slug}")
         pid = new_id("prj")
         now = time.time()
-        await self._db.execute(
-            """INSERT INTO projects
-               (id, name, slug, description, status, created_by, created_at, updated_at, settings)
-               VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?)""",
-            (pid, name, slug, description, created_by, now, now, json.dumps(settings or {})),
-        )
-        await self._db.commit()
+        try:
+            await self._db.execute(
+                """INSERT INTO projects
+                   (id, name, slug, description, status, created_by, created_at, updated_at, settings)
+                   VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?)""",
+                (pid, name, slug, description, created_by, now, now, json.dumps(settings or {})),
+            )
+            await self._db.commit()
+        except sqlite3.IntegrityError as exc:
+            # UNIQUE(slug) is the only uniqueness constraint a caller can trigger.
+            if "slug" in str(exc).lower():
+                raise ValueError(f"slug already used: {slug}") from exc
+            raise
         return await self.get_project(pid)
 
     async def get_project(self, project_id: str) -> dict | None:

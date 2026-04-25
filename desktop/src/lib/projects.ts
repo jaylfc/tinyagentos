@@ -40,7 +40,7 @@ export type ProjectTask = {
 };
 
 export type ProjectActivity = {
-  id: string;
+  id: number;
   project_id: string;
   actor_id: string;
   kind: string;

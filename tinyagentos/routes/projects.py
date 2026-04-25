@@ -264,6 +264,13 @@ class AddRelIn(BaseModel):
 @router.post("/api/projects/{project_id}/tasks")
 async def create_task(project_id: str, payload: CreateTaskIn, request: Request):
     store = request.app.state.project_task_store
+    pstore = request.app.state.project_store
+    if await pstore.get_project(project_id) is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    if payload.parent_task_id is not None:
+        parent = await store.get_task(payload.parent_task_id)
+        if parent is None or parent["project_id"] != project_id:
+            return JSONResponse({"error": "invalid parent_task_id"}, status_code=400)
     t = await store.create_task(
         project_id=project_id,
         title=payload.title,
@@ -274,7 +281,6 @@ async def create_task(project_id: str, payload: CreateTaskIn, request: Request):
         parent_task_id=payload.parent_task_id,
         created_by=_user_id(request),
     )
-    pstore = request.app.state.project_store
     await pstore.log_activity(project_id, _user_id(request), "task.created", {"task_id": t["id"], "title": t["title"]})
     return t
 
@@ -313,6 +319,9 @@ async def update_task(project_id: str, task_id: str, payload: UpdateTaskIn, requ
 @router.post("/api/projects/{project_id}/tasks/{task_id}/claim")
 async def claim_task(project_id: str, task_id: str, payload: ClaimIn, request: Request):
     store = request.app.state.project_task_store
+    existing = await store.get_task(task_id)
+    if existing is None or existing["project_id"] != project_id:
+        return JSONResponse({"error": "not found"}, status_code=404)
     ok = await store.claim_task(task_id, payload.claimer_id)
     if not ok:
         return JSONResponse({"error": "already claimed"}, status_code=409)
@@ -324,6 +333,9 @@ async def claim_task(project_id: str, task_id: str, payload: ClaimIn, request: R
 @router.post("/api/projects/{project_id}/tasks/{task_id}/release")
 async def release_task(project_id: str, task_id: str, payload: ReleaseIn, request: Request):
     store = request.app.state.project_task_store
+    existing = await store.get_task(task_id)
+    if existing is None or existing["project_id"] != project_id:
+        return JSONResponse({"error": "not found"}, status_code=404)
     ok = await store.release_task(task_id, payload.releaser_id)
     if not ok:
         return JSONResponse({"error": "not claimed by releaser"}, status_code=409)
@@ -333,6 +345,9 @@ async def release_task(project_id: str, task_id: str, payload: ReleaseIn, reques
 @router.post("/api/projects/{project_id}/tasks/{task_id}/close")
 async def close_task(project_id: str, task_id: str, payload: CloseIn, request: Request):
     store = request.app.state.project_task_store
+    existing = await store.get_task(task_id)
+    if existing is None or existing["project_id"] != project_id:
+        return JSONResponse({"error": "not found"}, status_code=404)
     ok = await store.close_task(task_id, closed_by=payload.closed_by, reason=payload.reason)
     if not ok:
         return JSONResponse({"error": "cannot close"}, status_code=409)
@@ -352,9 +367,21 @@ async def close_task(project_id: str, task_id: str, payload: CloseIn, request: R
     return task
 
 
+async def _require_task_in_project(
+    store, project_id: str, task_id: str
+) -> dict | JSONResponse:
+    task = await store.get_task(task_id)
+    if task is None or task["project_id"] != project_id:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return task
+
+
 @router.post("/api/projects/{project_id}/tasks/{task_id}/relationships")
 async def add_relationship(project_id: str, task_id: str, payload: AddRelIn, request: Request):
     store = request.app.state.project_task_store
+    guard = await _require_task_in_project(store, project_id, task_id)
+    if isinstance(guard, JSONResponse):
+        return guard
     try:
         rel = await store.add_relationship(
             project_id=project_id,
@@ -377,6 +404,9 @@ class AddCommentIn(BaseModel):
 @router.post("/api/projects/{project_id}/tasks/{task_id}/comments")
 async def add_comment(project_id: str, task_id: str, payload: AddCommentIn, request: Request):
     store = request.app.state.project_task_store
+    guard = await _require_task_in_project(store, project_id, task_id)
+    if isinstance(guard, JSONResponse):
+        return guard
     try:
         return await store.add_comment(
             task_id=task_id,
@@ -391,12 +421,18 @@ async def add_comment(project_id: str, task_id: str, payload: AddCommentIn, requ
 @router.get("/api/projects/{project_id}/tasks/{task_id}/comments")
 async def list_comments(project_id: str, task_id: str, request: Request):
     store = request.app.state.project_task_store
+    guard = await _require_task_in_project(store, project_id, task_id)
+    if isinstance(guard, JSONResponse):
+        return guard
     return {"items": await store.list_comments(task_id)}
 
 
 @router.get("/api/projects/{project_id}/tasks/{task_id}/relationships")
 async def list_relationships(project_id: str, task_id: str, request: Request, direction: str = "from"):
     store = request.app.state.project_task_store
+    guard = await _require_task_in_project(store, project_id, task_id)
+    if isinstance(guard, JSONResponse):
+        return guard
     return {"items": await store.list_relationships(task_id, direction=direction)}
 
 
