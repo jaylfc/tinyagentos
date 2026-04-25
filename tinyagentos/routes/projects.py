@@ -331,3 +331,9 @@ async def list_comments(project_id: str, task_id: str, request: Request):
 async def list_relationships(project_id: str, task_id: str, request: Request, direction: str = "from"):
     store = request.app.state.project_task_store
     return {"items": await store.list_relationships(task_id, direction=direction)}
+
+
+@router.get("/api/projects/{project_id}/activity")
+async def activity_feed(project_id: str, request: Request, limit: int = 100):
+    store = request.app.state.project_store
+    return {"items": await store.list_activity(project_id, limit=limit)}

@@ -189,3 +189,18 @@ async def test_list_relationships_route(client):
     )
     resp = await client.get(f"/api/projects/{pid}/tasks/{a['id']}/relationships")
     assert [r["to_task_id"] for r in resp.json()["items"]] == [b["id"]]
+
+
+@pytest.mark.asyncio
+async def test_activity_feed(client):
+    resp = await client.post("/api/projects", json={"name": "A", "slug": "a"})
+    pid = resp.json()["id"]
+    await client.post(f"/api/projects/{pid}/members", json={"mode": "native", "agent_id": "agent-1"})
+    await client.post(f"/api/projects/{pid}/tasks", json={"title": "T"})
+
+    resp = await client.get(f"/api/projects/{pid}/activity")
+    assert resp.status_code == 200
+    kinds = [item["kind"] for item in resp.json()["items"]]
+    assert "project.created" in kinds
+    assert "member.added" in kinds
+    assert "task.created" in kinds
