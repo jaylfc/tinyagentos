@@ -95,6 +95,15 @@ async def client(app):
     if chat_channels._db is not None:
         await chat_channels.close()
     await chat_channels.init()
+    project_store = app.state.project_store
+    if project_store._db is not None:
+        await project_store.close()
+    await project_store.init()
+    project_task_store = app.state.project_task_store
+    if project_task_store._db is not None:
+        await project_task_store.close()
+    await project_task_store.init()
+    app.state.projects_root.mkdir(parents=True, exist_ok=True)
     canvas_store = app.state.canvas_store
     if canvas_store._db is not None:
         await canvas_store.close()
@@ -113,6 +122,8 @@ async def client(app):
     ) as c:
         yield c
     await canvas_store.close()
+    await project_task_store.close()
+    await project_store.close()
     await chat_channels.close()
     await chat_messages.close()
     await expert_agents.close()
@@ -248,6 +259,15 @@ async def client_with_qmd(app_with_qmd):
     if chat_channels._db is not None:
         await chat_channels.close()
     await chat_channels.init()
+    project_store = app_with_qmd.state.project_store
+    if project_store._db is not None:
+        await project_store.close()
+    await project_store.init()
+    project_task_store = app_with_qmd.state.project_task_store
+    if project_task_store._db is not None:
+        await project_task_store.close()
+    await project_task_store.init()
+    app_with_qmd.state.projects_root.mkdir(parents=True, exist_ok=True)
     canvas_store = app_with_qmd.state.canvas_store
     if canvas_store._db is not None:
         await canvas_store.close()
@@ -264,6 +284,8 @@ async def client_with_qmd(app_with_qmd):
     ) as c:
         yield c
     await canvas_store.close()
+    await project_task_store.close()
+    await project_store.close()
     await chat_channels.close()
     await chat_messages.close()
     await expert_agents.close()
