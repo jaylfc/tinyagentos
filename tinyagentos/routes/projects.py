@@ -102,3 +102,70 @@ async def delete_project(project_id: str, request: Request):
     p = await store.get_project(project_id)
     await store.log_activity(project_id, _user_id(request), "project.deleted", {})
     return p
+
+
+class AddMemberIn(BaseModel):
+    mode: str  # "native" | "clone"
+    agent_id: str | None = None
+    source_agent_id: str | None = None
+    clone_memory: bool = True
+    role: str = "member"
+
+
+@router.post("/api/projects/{project_id}/members")
+async def add_member(project_id: str, payload: AddMemberIn, request: Request):
+    store = request.app.state.project_store
+    project = await store.get_project(project_id)
+    if project is None:
+        return JSONResponse({"error": "project not found"}, status_code=404)
+
+    if payload.mode == "native":
+        if not payload.agent_id:
+            return JSONResponse({"error": "agent_id required"}, status_code=400)
+        member_id = payload.agent_id
+        member_kind = "native"
+        source_agent_id = None
+        memory_seed = "none"
+    elif payload.mode == "clone":
+        if not payload.source_agent_id:
+            return JSONResponse({"error": "source_agent_id required"}, status_code=400)
+        member_id = f"{payload.source_agent_id}-{project['slug']}"
+        member_kind = "clone"
+        source_agent_id = payload.source_agent_id
+        memory_seed = "snapshot" if payload.clone_memory else "empty"
+    else:
+        return JSONResponse({"error": "mode must be native|clone"}, status_code=400)
+
+    await store.add_member(
+        project_id=project_id,
+        member_id=member_id,
+        member_kind=member_kind,
+        role=payload.role,
+        source_agent_id=source_agent_id,
+        memory_seed=memory_seed,
+    )
+    await store.log_activity(
+        project_id, _user_id(request), "member.added",
+        {"member_id": member_id, "kind": member_kind, "memory_seed": memory_seed},
+    )
+    members = await store.list_members(project_id)
+    _mirror(request, {**project, "members": members})
+    return next(m for m in members if m["member_id"] == member_id)
+
+
+@router.get("/api/projects/{project_id}/members")
+async def list_members(project_id: str, request: Request):
+    store = request.app.state.project_store
+    return {"items": await store.list_members(project_id)}
+
+
+@router.delete("/api/projects/{project_id}/members/{member_id}")
+async def remove_member(project_id: str, member_id: str, request: Request):
+    store = request.app.state.project_store
+    await store.remove_member(project_id, member_id)
+    await store.log_activity(project_id, _user_id(request), "member.removed", {"member_id": member_id})
+    project = await store.get_project(project_id)
+    members = await store.list_members(project_id)
+    if project is not None:
+        _mirror(request, {**project, "members": members})
+    return {"ok": True}
