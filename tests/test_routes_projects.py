@@ -154,3 +154,38 @@ async def test_claim_release_close(client):
     )
     assert resp.status_code == 200
     assert resp.json()["status"] == "closed"
+
+
+@pytest.mark.asyncio
+async def test_threaded_comments_route(client):
+    pid = (await client.post("/api/projects", json={"name": "A", "slug": "a"})).json()["id"]
+    t = (await client.post(f"/api/projects/{pid}/tasks", json={"title": "T"})).json()
+
+    resp = await client.post(
+        f"/api/projects/{pid}/tasks/{t['id']}/comments",
+        json={"body": "root", "author_id": "u"},
+    )
+    assert resp.status_code == 200
+    c1 = resp.json()
+
+    resp = await client.post(
+        f"/api/projects/{pid}/tasks/{t['id']}/comments",
+        json={"body": "reply", "author_id": "u2", "replies_to_comment_id": c1["id"]},
+    )
+    assert resp.json()["replies_to_comment_id"] == c1["id"]
+
+    resp = await client.get(f"/api/projects/{pid}/tasks/{t['id']}/comments")
+    assert len(resp.json()["items"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_list_relationships_route(client):
+    pid = (await client.post("/api/projects", json={"name": "A", "slug": "a"})).json()["id"]
+    a = (await client.post(f"/api/projects/{pid}/tasks", json={"title": "A"})).json()
+    b = (await client.post(f"/api/projects/{pid}/tasks", json={"title": "B"})).json()
+    await client.post(
+        f"/api/projects/{pid}/tasks/{a['id']}/relationships",
+        json={"to_task_id": b["id"], "kind": "blocks"},
+    )
+    resp = await client.get(f"/api/projects/{pid}/tasks/{a['id']}/relationships")
+    assert [r["to_task_id"] for r in resp.json()["items"]] == [b["id"]]

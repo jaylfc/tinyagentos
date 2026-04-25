@@ -302,3 +302,32 @@ async def add_relationship(project_id: str, task_id: str, payload: AddRelIn, req
         created_by=_user_id(request),
     )
     return rel
+
+
+class AddCommentIn(BaseModel):
+    body: str
+    author_id: str
+    replies_to_comment_id: str | None = None
+
+
+@router.post("/api/projects/{project_id}/tasks/{task_id}/comments")
+async def add_comment(project_id: str, task_id: str, payload: AddCommentIn, request: Request):
+    store = request.app.state.project_task_store
+    return await store.add_comment(
+        task_id=task_id,
+        author_id=payload.author_id,
+        body=payload.body,
+        replies_to_comment_id=payload.replies_to_comment_id,
+    )
+
+
+@router.get("/api/projects/{project_id}/tasks/{task_id}/comments")
+async def list_comments(project_id: str, task_id: str, request: Request):
+    store = request.app.state.project_task_store
+    return {"items": await store.list_comments(task_id)}
+
+
+@router.get("/api/projects/{project_id}/tasks/{task_id}/relationships")
+async def list_relationships(project_id: str, task_id: str, request: Request, direction: str = "from"):
+    store = request.app.state.project_task_store
+    return {"items": await store.list_relationships(task_id, direction=direction)}
