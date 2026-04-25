@@ -201,7 +201,11 @@ Features unlock automatically based on your hardware and cluster. Solo Pi sees c
 - **Deployment.** Auto-converts and deploys to all backends in the cluster
 
 ### Agent Memory System ([taOSmd](https://github.com/jaylfc/taosmd))
-taOSmd is a standalone memory library installed as a dependency — 97.0% Recall@5 on LongMemEval-S, beating MemPalace (96.6%) and agentmemory (95.2%). It provides a temporal knowledge graph, hybrid vector search (semantic + keyword), zero-loss archive, session catalog with timeline browsing, automatic fact extraction, cross-encoder reranking, and intent-aware retrieval with parallel fan-out across all memory layers. taOS wraps taOSmd with platform-specific scheduling (job queue, resource manager, worker heartbeat, gaming detection) for multi-agent coordination on resource-constrained devices. QMD (`qmd.service`, port 7832) remains as the NPU-accelerated embedding/reranking backend. Per-tenant isolation is handled by `dbPath` routing: each agent's index lives at `data/agent-memory/{name}/index.sqlite`.
+taOSmd is a standalone memory library installed as a dependency — **97.0% end-to-end Judge accuracy** on LongMemEval-S (retrieve → generate → LLM-grade against the reference answer). The most-cited open comparators (MemPalace 96.6%, agentmemory 95.2%) publish **Recall@5** retrieval scores on the same dataset — only "did the right session land in the top-5", no generation, no judge — so the numbers aren't apples-to-apples until one of us re-runs end-to-end; ours is the stricter measurement. The Librarian layer's LLM-assisted query expansion adds a measured **+15.4% on the vocabulary-gap axis** (45% recall@lag25 with full pipeline + Librarian, vs 30% without) on long-horizon sessions where the cross-encoder alone isn't enough.
+
+Memory layers: temporal knowledge graph with validity windows + contradiction detection, hybrid semantic+keyword vector search (ONNX MiniLM or Nomic), zero-loss append-only archive with FTS5, session catalog over the archive, and a crystal store of compressed session digests with extracted lessons. Processing: regex + LLM fact extraction (qwen3:4b), 30-min-gap session splitter, tiered enricher (heuristic / 4B / 9B+), session crystallizer, **secret filtering with 17 regex patterns auto-redacting on every ingest**, and Ebbinghaus retention scoring with hot/warm/cold tiers. Retrieval: parallel fan-out across all layers, query expansion, intent classifier that weights an RRF merge, ms-marco-MiniLM cross-encoder reranking, BFS graph expansion, and a token-budgeted L0–L3 context assembler.
+
+taOS wraps taOSmd with platform-specific scheduling (job queue, resource manager, worker heartbeat, gaming detection) for multi-agent coordination on resource-constrained devices. QMD (`qmd.service`, port 7832) remains as the NPU-accelerated embedding / rerank / query-expansion backend. Per-tenant isolation is handled by `dbPath` routing: each agent's index lives at `data/agent-memory/{name}/index.sqlite`.
 
 - **Document ingestion.** Drag-and-drop files into agent memory via the web UI or API. Supports text, markdown, PDFs, code.
 - **Automatic embedding.** Documents are chunked and embedded using your local inference backend (NPU, GPU, or CPU). No external API calls.
@@ -334,7 +338,7 @@ TinyAgentOS Controller (FastAPI + htmx + React Desktop Shell)
 ├── App Store + Registry (87 apps + 43 MCP plugins, manifest-based)
 ├── Live Model Browser (HuggingFace + Ollama search)
 ├── Container Manager (LXC or Docker, auto-detected)
-├── Agent Memory (taOSmd — temporal KG + vector search + zero-loss archive)
+├── Agent Memory (taOSmd — temporal KG, hybrid vector search, zero-loss archive, session catalog, crystal store, librarian)
 ├── Health Monitor + Notifications
 ├── Secrets Manager (encrypted, per-agent access)
 ├── Task Scheduler (cron with presets)
