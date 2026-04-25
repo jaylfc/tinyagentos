@@ -348,3 +348,21 @@ async def list_relationships(project_id: str, task_id: str, request: Request, di
 async def activity_feed(project_id: str, request: Request, limit: int = 100):
     store = request.app.state.project_store
     return {"items": await store.list_activity(project_id, limit=limit)}
+
+
+@router.get("/api/projects/{project_id}/memory/search")
+async def memory_search(project_id: str, request: Request, q: str, limit: int = 10):
+    store = request.app.state.project_store
+    project = await store.get_project(project_id)
+    if project is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    qmd = getattr(request.app.state, "qmd_client", None)
+    if qmd is None:
+        return {"items": []}
+    items = await qmd.search(
+        q,
+        collection=f"project-{project['slug']}",
+        tags=[f"project:{project_id}"],
+        limit=limit,
+    )
+    return {"items": items}

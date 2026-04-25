@@ -204,3 +204,25 @@ async def test_activity_feed(client):
     assert "project.created" in kinds
     assert "member.added" in kinds
     assert "task.created" in kinds
+
+
+@pytest.mark.asyncio
+async def test_memory_search_route(client, monkeypatch):
+    pid = (await client.post("/api/projects", json={"name": "A", "slug": "a"})).json()["id"]
+
+    captured = {}
+
+    async def fake_search(self, query, collection=None, tags=None, limit=10):
+        captured["query"] = query
+        captured["collection"] = collection
+        captured["tags"] = tags
+        return [{"path": "tasks/tsk-aaa.md", "score": 0.9, "title": "Draft"}]
+
+    from tinyagentos.qmd_client import QmdClient
+    monkeypatch.setattr(QmdClient, "search", fake_search, raising=False)
+
+    resp = await client.get(f"/api/projects/{pid}/memory/search?q=draft")
+    assert resp.status_code == 200
+    assert resp.json()["items"][0]["path"] == "tasks/tsk-aaa.md"
+    assert captured["collection"] == "project-a"
+    assert "project:" + pid in captured["tags"]

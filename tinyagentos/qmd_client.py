@@ -34,6 +34,30 @@ class QmdClient:
         resp = await with_retry(_call)
         return resp.json()["embedding"]
 
+    async def search(
+        self,
+        query: str,
+        collection: str | None = None,
+        tags: list[str] | None = None,
+        limit: int = 10,
+    ) -> list[dict]:
+        """Search documents via qmd serve /search."""
+        url = f"{self.base_url}/search"
+        client = self._client
+        payload: dict = {"query": query, "limit": limit}
+        if collection is not None:
+            payload["collection"] = collection
+        if tags is not None:
+            payload["tags"] = tags
+
+        async def _call():
+            resp = await client.post(url, json=payload)
+            resp.raise_for_status()
+            return resp
+
+        resp = await with_retry(_call)
+        return resp.json().get("items", [])
+
     async def health(self) -> dict:
         """Check qmd serve health."""
         start = time.monotonic()
