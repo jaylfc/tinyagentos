@@ -101,3 +101,56 @@ async def test_remove_member(client):
 
     resp = await client.get(f"/api/projects/{pid}/members")
     assert resp.json()["items"] == []
+
+
+@pytest.mark.asyncio
+async def test_create_and_list_tasks(client):
+    pid = (await client.post("/api/projects", json={"name": "A", "slug": "a"})).json()["id"]
+
+    resp = await client.post(
+        f"/api/projects/{pid}/tasks",
+        json={"title": "T1", "body": "do it", "priority": 2},
+    )
+    assert resp.status_code == 200
+    t = resp.json()
+    assert t["id"].startswith("tsk-")
+
+    resp = await client.get(f"/api/projects/{pid}/tasks")
+    assert [x["id"] for x in resp.json()["items"]] == [t["id"]]
+
+
+@pytest.mark.asyncio
+async def test_ready_endpoint(client):
+    pid = (await client.post("/api/projects", json={"name": "A", "slug": "a"})).json()["id"]
+    a = (await client.post(f"/api/projects/{pid}/tasks", json={"title": "A"})).json()
+    b = (await client.post(f"/api/projects/{pid}/tasks", json={"title": "B"})).json()
+    await client.post(
+        f"/api/projects/{pid}/tasks/{a['id']}/relationships",
+        json={"to_task_id": b["id"], "kind": "blocks"},
+    )
+    resp = await client.get(f"/api/projects/{pid}/tasks/ready")
+    assert [t["id"] for t in resp.json()["items"]] == [b["id"]]
+
+
+@pytest.mark.asyncio
+async def test_claim_release_close(client):
+    pid = (await client.post("/api/projects", json={"name": "A", "slug": "a"})).json()["id"]
+    t = (await client.post(f"/api/projects/{pid}/tasks", json={"title": "A"})).json()
+
+    resp = await client.post(f"/api/projects/{pid}/tasks/{t['id']}/claim", json={"claimer_id": "agent-1"})
+    assert resp.status_code == 200
+    assert resp.json()["claimed_by"] == "agent-1"
+
+    resp = await client.post(f"/api/projects/{pid}/tasks/{t['id']}/claim", json={"claimer_id": "agent-2"})
+    assert resp.status_code == 409
+
+    resp = await client.post(f"/api/projects/{pid}/tasks/{t['id']}/release", json={"releaser_id": "agent-1"})
+    assert resp.status_code == 200
+
+    await client.post(f"/api/projects/{pid}/tasks/{t['id']}/claim", json={"claimer_id": "agent-1"})
+    resp = await client.post(
+        f"/api/projects/{pid}/tasks/{t['id']}/close",
+        json={"closed_by": "agent-1", "reason": "done"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "closed"
