@@ -256,3 +256,66 @@ async def test_delete_project_tombstones_folder_and_archives_channels(client):
 
     archived_channels = await channels_store.list_channels(archived=True)
     assert any(ch["project_id"] == pid for ch in archived_channels)
+
+
+@pytest.mark.asyncio
+async def test_add_member_idempotent_preserves_added_at(client):
+    pid = (await client.post("/api/projects", json={"name": "A", "slug": "a"})).json()["id"]
+    first = (await client.post(
+        f"/api/projects/{pid}/members",
+        json={"mode": "native", "agent_id": "agent-1"},
+    )).json()
+    await client.post(
+        f"/api/projects/{pid}/members",
+        json={"mode": "native", "agent_id": "agent-1"},
+    )
+    members = (await client.get(f"/api/projects/{pid}/members")).json()["items"]
+    me = next(m for m in members if m["member_id"] == "agent-1")
+    assert me["added_at"] == first["added_at"]
+
+
+@pytest.mark.asyncio
+async def test_archive_project_unknown_returns_404(client):
+    resp = await client.post("/api/projects/prj-nope/archive")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_update_task_cross_project_returns_404(client):
+    p1 = (await client.post("/api/projects", json={"name": "A", "slug": "a"})).json()["id"]
+    p2 = (await client.post("/api/projects", json={"name": "B", "slug": "b"})).json()["id"]
+    t = (await client.post(f"/api/projects/{p1}/tasks", json={"title": "T"})).json()
+    resp = await client.patch(
+        f"/api/projects/{p2}/tasks/{t['id']}",
+        json={"title": "hijacked"},
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_add_relationship_rejects_other_project_task(client):
+    p1 = (await client.post("/api/projects", json={"name": "A", "slug": "a"})).json()["id"]
+    p2 = (await client.post("/api/projects", json={"name": "B", "slug": "b"})).json()["id"]
+    a = (await client.post(f"/api/projects/{p1}/tasks", json={"title": "A"})).json()
+    b = (await client.post(f"/api/projects/{p2}/tasks", json={"title": "B"})).json()
+    resp = await client.post(
+        f"/api/projects/{p1}/tasks/{a['id']}/relationships",
+        json={"to_task_id": b["id"], "kind": "blocks"},
+    )
+    assert resp.status_code in (400, 422)
+
+
+@pytest.mark.asyncio
+async def test_add_comment_rejects_cross_task_reply(client):
+    pid = (await client.post("/api/projects", json={"name": "A", "slug": "a"})).json()["id"]
+    t1 = (await client.post(f"/api/projects/{pid}/tasks", json={"title": "T1"})).json()
+    t2 = (await client.post(f"/api/projects/{pid}/tasks", json={"title": "T2"})).json()
+    c1 = (await client.post(
+        f"/api/projects/{pid}/tasks/{t1['id']}/comments",
+        json={"body": "root", "author_id": "u"},
+    )).json()
+    resp = await client.post(
+        f"/api/projects/{pid}/tasks/{t2['id']}/comments",
+        json={"body": "reply", "author_id": "u", "replies_to_comment_id": c1["id"]},
+    )
+    assert resp.status_code in (400, 422)

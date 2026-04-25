@@ -168,9 +168,10 @@ class ProjectStore(BaseStore):
         if memory_seed not in ("none", "snapshot", "empty"):
             raise ValueError(f"invalid memory_seed: {memory_seed}")
         await self._db.execute(
-            """INSERT OR REPLACE INTO project_members
+            """INSERT INTO project_members
                (project_id, member_id, member_kind, role, source_agent_id, memory_seed, added_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(project_id, member_id) DO NOTHING""",
             (project_id, member_id, member_kind, role, source_agent_id, memory_seed, time.time()),
         )
         await self._db.commit()
@@ -207,6 +208,7 @@ class ProjectStore(BaseStore):
         await self._db.commit()
 
     async def list_activity(self, project_id: str, limit: int = 100) -> list[dict]:
+        limit = max(1, min(limit, 500))
         async with self._db.execute(
             """SELECT * FROM project_activity
                WHERE project_id = ?

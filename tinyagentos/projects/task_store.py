@@ -214,6 +214,10 @@ class ProjectTaskStore(BaseStore):
     ) -> dict:
         if kind not in ("blocks", "relates_to", "duplicates", "supersedes"):
             raise ValueError(f"invalid relationship kind: {kind}")
+        for tid in (from_task_id, to_task_id):
+            t = await self.get_task(tid)
+            if t is None or t["project_id"] != project_id:
+                raise ValueError(f"task not in project: {tid}")
         rid = new_id("rel")
         now = time.time()
         await self._db.execute(
@@ -239,6 +243,8 @@ class ProjectTaskStore(BaseStore):
         task_id: str,
         direction: str = "from",
     ) -> list[dict]:
+        if direction not in ("from", "to"):
+            raise ValueError(f"invalid direction: {direction}")
         col = "from_task_id" if direction == "from" else "to_task_id"
         async with self._db.execute(
             f"SELECT * FROM task_relationships WHERE {col} = ? ORDER BY created_at ASC",
@@ -249,6 +255,7 @@ class ProjectTaskStore(BaseStore):
         return [dict(zip(keys, r)) for r in rows]
 
     async def list_ready_tasks(self, project_id: str, limit: int = 50) -> list[dict]:
+        limit = max(1, min(limit, 200))
         async with self._db.execute(
             """SELECT * FROM ready_tasks
                WHERE project_id = ?
@@ -267,6 +274,14 @@ class ProjectTaskStore(BaseStore):
         body: str,
         replies_to_comment_id: str | None = None,
     ) -> dict:
+        if replies_to_comment_id is not None:
+            async with self._db.execute(
+                "SELECT task_id FROM task_comments WHERE id = ?",
+                (replies_to_comment_id,),
+            ) as cur:
+                row = await cur.fetchone()
+            if row is None or row[0] != task_id:
+                raise ValueError("replies_to_comment_id not in this task")
         cid = new_id("cmt")
         now = time.time()
         await self._db.execute(

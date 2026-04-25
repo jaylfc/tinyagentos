@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 import time as _time
 
@@ -9,6 +10,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from tinyagentos.projects.folders import ensure_project_layout, write_project_yaml
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,62}$")
@@ -42,9 +44,17 @@ def _user_id(request: Request) -> str:
 
 
 def _mirror(request: Request, project: dict) -> None:
-    root = request.app.state.projects_root
-    ensure_project_layout(root, project["slug"], project["name"])
-    write_project_yaml(root, project["slug"], project)
+    # Folder mirror is best-effort: if the disk write fails (permissions, full
+    # filesystem, transient I/O), the DB row is still authoritative and the
+    # request should succeed. Failures are logged for operator visibility.
+    try:
+        root = request.app.state.projects_root
+        ensure_project_layout(root, project["slug"], project["name"])
+        write_project_yaml(root, project["slug"], project)
+    except Exception as exc:
+        logger.warning(
+            "project folder mirror failed for slug=%s: %s", project.get("slug"), exc
+        )
 
 
 @router.post("/api/projects")
@@ -124,13 +134,19 @@ async def delete_project(project_id: str, request: Request):
     for ch in await channels.list_channels(project_id=project_id):
         await channels.set_settings(ch["id"], {"archived": True})
 
-    # Tombstone the folder rather than deleting on disk (recoverable)
-    root = request.app.state.projects_root
-    src = root / project["slug"]
-    if src.exists():
-        ts = int(_time.time())
-        dest = root / f"{project['slug']}.deleted-{ts}"
-        src.rename(dest)
+    # Tombstone the folder rather than deleting on disk (recoverable). Disk
+    # rename is best-effort; failure shouldn't block the DB tombstone.
+    try:
+        root = request.app.state.projects_root
+        src = root / project["slug"]
+        if src.exists():
+            ts = int(_time.time())
+            dest = root / f"{project['slug']}.deleted-{ts}"
+            src.rename(dest)
+    except Exception as exc:
+        logger.warning(
+            "project folder tombstone failed for slug=%s: %s", project.get("slug"), exc
+        )
 
     return await store.get_project(project_id)
 
@@ -339,13 +355,16 @@ async def close_task(project_id: str, task_id: str, payload: CloseIn, request: R
 @router.post("/api/projects/{project_id}/tasks/{task_id}/relationships")
 async def add_relationship(project_id: str, task_id: str, payload: AddRelIn, request: Request):
     store = request.app.state.project_task_store
-    rel = await store.add_relationship(
-        project_id=project_id,
-        from_task_id=task_id,
-        to_task_id=payload.to_task_id,
-        kind=payload.kind,
-        created_by=_user_id(request),
-    )
+    try:
+        rel = await store.add_relationship(
+            project_id=project_id,
+            from_task_id=task_id,
+            to_task_id=payload.to_task_id,
+            kind=payload.kind,
+            created_by=_user_id(request),
+        )
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
     return rel
 
 
@@ -358,12 +377,15 @@ class AddCommentIn(BaseModel):
 @router.post("/api/projects/{project_id}/tasks/{task_id}/comments")
 async def add_comment(project_id: str, task_id: str, payload: AddCommentIn, request: Request):
     store = request.app.state.project_task_store
-    return await store.add_comment(
-        task_id=task_id,
-        author_id=payload.author_id,
-        body=payload.body,
-        replies_to_comment_id=payload.replies_to_comment_id,
-    )
+    try:
+        return await store.add_comment(
+            task_id=task_id,
+            author_id=payload.author_id,
+            body=payload.body,
+            replies_to_comment_id=payload.replies_to_comment_id,
+        )
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
 
 
 @router.get("/api/projects/{project_id}/tasks/{task_id}/comments")

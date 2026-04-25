@@ -707,6 +707,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     app.state.chat_channels = chat_channels
     app.state.project_store = project_store
     app.state.project_task_store = project_task_store
+    projects_root.mkdir(parents=True, exist_ok=True)
     app.state.projects_root = projects_root
     app.state.chat_hub = chat_hub
     from tinyagentos.chat.reactions import WantsReplyRegistry as _WantsReplyRegistry
