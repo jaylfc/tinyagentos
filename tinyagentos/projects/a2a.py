@@ -25,16 +25,18 @@ A2A_KIND = "a2a"
 _A2A_LOCKS: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 
 
-async def _find_a2a_channel(channel_store, project_id: str) -> dict | None:
-    """Return the project's A2A channel row, or None.
+async def _find_a2a_channels(channel_store, project_id: str) -> list[dict]:
+    """Return all of the project's A2A channel rows, oldest-first.
 
     Identification: project_id matches AND settings.kind == "a2a".
+    The store already returns rows ordered by created_at ASC, so the first
+    element of the returned list is the canonical A2A channel.
     """
     channels = await channel_store.list_channels(project_id=project_id)
-    for ch in channels:
-        if (ch.get("settings") or {}).get("kind") == A2A_KIND:
-            return ch
-    return None
+    return [
+        ch for ch in channels
+        if (ch.get("settings") or {}).get("kind") == A2A_KIND
+    ]
 
 
 async def ensure_a2a_channel(channel_store, project_store, project_id: str) -> dict:
@@ -48,8 +50,8 @@ async def ensure_a2a_channel(channel_store, project_store, project_id: str) -> d
         project_members = await project_store.list_members(project_id)
         expected = {m["member_id"] for m in project_members}
 
-        existing = await _find_a2a_channel(channel_store, project_id)
-        if existing is None:
+        matches = await _find_a2a_channels(channel_store, project_id)
+        if not matches:
             project = await project_store.get_project(project_id)
             created_by = project.get("created_by", "system") if project else "system"
             return await channel_store.create_channel(
@@ -61,6 +63,17 @@ async def ensure_a2a_channel(channel_store, project_store, project_id: str) -> d
                 settings={"kind": A2A_KIND},
                 project_id=project_id,
             )
+
+        # Reconcile duplicates: oldest is canonical, archive the rest.
+        # Defensive: pre-lock data, manual DB tampering, or migrations could
+        # have produced more than one A2A channel for a project.
+        existing = matches[0]
+        for dup in matches[1:]:
+            logger.warning(
+                "a2a duplicate channel %s for project %s — archiving",
+                dup.get("id"), project_id,
+            )
+            await channel_store.set_settings(dup["id"], {"archived": True})
 
         current = set(existing.get("members") or [])
         if current == expected:

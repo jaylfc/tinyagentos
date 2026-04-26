@@ -124,3 +124,31 @@ async def test_backfill_is_idempotent(stores):
     chans = await channel_store.list_channels(project_id=p["id"])
     a2a = [c for c in chans if (c.get("settings") or {}).get("kind") == "a2a"]
     assert len(a2a) == 1
+
+
+@pytest.mark.asyncio
+async def test_ensure_archives_duplicate_a2a_channels(stores):
+    """Defensive: if duplicate A2A channels exist (race / migration / manual
+    insert), the oldest is canonical and the rest are archived."""
+    project_store, channel_store = stores
+    p = await project_store.create_project(name="P", slug="dup", created_by="u1")
+
+    canonical = await ensure_a2a_channel(channel_store, project_store, p["id"])
+    duplicate = await channel_store.create_channel(
+        name=A2A_NAME,
+        type=A2A_TYPE,
+        created_by="u1",
+        members=[],
+        settings={"kind": A2A_KIND},
+        project_id=p["id"],
+    )
+
+    result = await ensure_a2a_channel(channel_store, project_store, p["id"])
+
+    assert result["id"] == canonical["id"]
+    dup_after = await channel_store.get_channel(duplicate["id"])
+    assert (dup_after.get("settings") or {}).get("archived") is True
+    active = await channel_store.list_channels(project_id=p["id"], archived=False)
+    a2a_active = [c for c in active if (c.get("settings") or {}).get("kind") == "a2a"]
+    assert len(a2a_active) == 1
+    assert a2a_active[0]["id"] == canonical["id"]
