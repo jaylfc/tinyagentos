@@ -48,6 +48,31 @@ export type ProjectActivity = {
   created_at: number;
 };
 
+export type ProjectComment = {
+  id: string;
+  task_id: string;
+  author_id: string;
+  body: string;
+  replies_to_comment_id: string | null;
+  created_at: number;
+};
+
+export type ProjectRelationship = {
+  id: string;
+  project_id: string;
+  from_task_id: string;
+  to_task_id: string;
+  kind: string;
+  created_by: string;
+  created_at: number;
+};
+
+export type ProjectEvent = {
+  kind: string;
+  payload: Record<string, unknown>;
+  ts: number;
+};
+
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
   const r = await fetch(path, {
     credentials: "include",
@@ -118,8 +143,45 @@ export const projectsApi = {
         method: "POST",
         body: JSON.stringify({ closed_by, reason }),
       }),
+    update: (pid: string, tid: string, patch: Partial<ProjectTask>) =>
+      http<ProjectTask>(`/api/projects/${pid}/tasks/${tid}`, {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      }),
+    listComments: (pid: string, tid: string) =>
+      http<{ items: ProjectComment[] }>(`/api/projects/${pid}/tasks/${tid}/comments`).then((r) => r.items),
+    addComment: (
+      pid: string,
+      tid: string,
+      input: { body: string; author_id: string; replies_to_comment_id?: string },
+    ) =>
+      http<ProjectComment>(`/api/projects/${pid}/tasks/${tid}/comments`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    listRelationships: (pid: string, tid: string, direction: "from" | "to" = "from") =>
+      http<{ items: ProjectRelationship[] }>(
+        `/api/projects/${pid}/tasks/${tid}/relationships?direction=${direction}`,
+      ).then((r) => r.items),
+    addRelationship: (
+      pid: string,
+      tid: string,
+      input: { to_task_id: string; kind: string; created_by: string },
+    ) =>
+      http<ProjectRelationship>(`/api/projects/${pid}/tasks/${tid}/relationships`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
   },
 
   activity: (pid: string) =>
     http<{ items: ProjectActivity[] }>(`/api/projects/${pid}/activity`).then((r) => r.items),
+
+  subscribeEvents(projectId: string, onEvent: (ev: ProjectEvent) => void): () => void {
+    const es = new EventSource(`/api/projects/${projectId}/events`);
+    es.onmessage = (e) => {
+      try { onEvent(JSON.parse(e.data) as ProjectEvent); } catch { /* heartbeat / malformed — skip */ }
+    };
+    return () => es.close();
+  },
 };
