@@ -75,6 +75,15 @@ async def create_project(payload: CreateProjectIn, request: Request):
         return JSONResponse({"error": str(e)}, status_code=409)
     await store.log_activity(p["id"], _user_id(request), "project.created", {"slug": p["slug"]})
     _mirror(request, p)
+    try:
+        from tinyagentos.projects.a2a import ensure_a2a_channel
+        await ensure_a2a_channel(
+            request.app.state.chat_channels,
+            request.app.state.project_store,
+            p["id"],
+        )
+    except Exception:
+        logger.warning("a2a ensure failed for new project %s", p.get("id"), exc_info=True)
     return p
 
 
