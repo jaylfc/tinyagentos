@@ -59,6 +59,11 @@ import {
   markUnread as apiMarkUnread,
 } from "@/lib/chat-messages-api";
 import { projectsApi, type Project } from "@/lib/projects";
+import {
+  findA2aChannelId,
+  readLastChannel,
+  writeLastChannel,
+} from "./MessagesApp.a2aSelection";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -93,6 +98,7 @@ interface Channel {
     archived_agent_id?: string;
     archived_agent_slug?: string;
     muted?: string[];
+    kind?: string;
   };
 }
 
@@ -527,6 +533,22 @@ export function MessagesApp({
     };
   }, [fetchChannels, fetchArchivedChannels, fetchAgentLists, connectWs]);
 
+  /* ---- default-select A2A channel on first project visit ---- */
+  useEffect(() => {
+    if (!scope?.projectId) return;
+    if (selectedChannel) return;
+    if (channels.length === 0) return;
+    const remembered = readLastChannel(scope.projectId);
+    if (remembered && channels.some((c) => c.id === remembered)) {
+      setSelectedChannel(remembered);
+      return;
+    }
+    const a2aId = findA2aChannelId(channels);
+    if (a2aId) {
+      setSelectedChannel(a2aId);
+    }
+  }, [scope?.projectId, channels, selectedChannel]);
+
   /* ---- fetch project list for sidebar grouping (standalone mode only) ---- */
   useEffect(() => {
     if (scope?.projectId) return;
@@ -608,9 +630,12 @@ export function MessagesApp({
     }
     fetchMessages(selectedChannel);
     markRead(selectedChannel);
+    if (scope?.projectId && selectedChannel) {
+      writeLastChannel(scope.projectId, selectedChannel);
+    }
     setTypingHumans([]);
     setTypingAgents([]);
-  }, [selectedChannel, fetchMessages, markRead]);
+  }, [selectedChannel, fetchMessages, markRead, scope?.projectId]);
 
   /* ---- deep-link scroll on ?msg=<id> — latch so it fires once per URL ---- */
   const deepLinkSeenRef = useRef<string | null>(null);
