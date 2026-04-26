@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import styles from "./TaskModal.module.css";
 import { Hero } from "./modal/Hero";
+import { MetadataPane } from "./modal/MetadataPane";
 import { SubTasks } from "./modal/SubTasks";
 import { Relationships } from "./modal/Relationships";
 import { Activity } from "./modal/Activity";
@@ -57,13 +58,23 @@ export function TaskModal({ projectId, taskId, currentUserId, onClose, onPrev, o
         {task && <Hero task={task} />}
         <div className={styles.body}>
           {task ? (
-            <>
-              <h1 className={styles.title}>{task.title}</h1>
-              {task.body && <p className={styles.bodyText}>{task.body}</p>}
-              <SubTasks all={allTasks} parentId={task.id} />
-              <Relationships projectId={projectId} taskId={task.id} />
-              <Activity projectId={projectId} taskId={task.id} currentUserId={currentUserId} />
-            </>
+            <div className={styles.layout}>
+              <main className={styles.main}>
+                <h1 className={styles.title}>{task.title}</h1>
+                {task.body && <p className={styles.bodyText}>{task.body}</p>}
+                <SubTasks all={allTasks} parentId={task.id} />
+                <Relationships projectId={projectId} taskId={task.id} />
+                <Activity projectId={projectId} taskId={task.id} currentUserId={currentUserId} />
+              </main>
+              <MetadataPane
+                projectId={projectId}
+                task={task}
+                onUpdated={(t) => {
+                  setTask(t);
+                  setAllTasks(prev => prev.map(x => x.id === t.id ? t : x));
+                }}
+              />
+            </div>
           ) : <p className={styles.loading}>Loading…</p>}
         </div>
       </div>
