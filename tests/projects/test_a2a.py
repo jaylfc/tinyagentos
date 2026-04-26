@@ -88,3 +88,24 @@ async def test_ensure_no_op_when_members_match(stores):
     ch1 = await ensure_a2a_channel(channel_store, project_store, p["id"])
     ch2 = await ensure_a2a_channel(channel_store, project_store, p["id"])
     assert ch1["members"] == ch2["members"] == ["agentA"]
+
+
+@pytest.mark.asyncio
+async def test_backfill_creates_channels_for_all_active_projects(stores):
+    project_store, channel_store = stores
+    p1 = await project_store.create_project(name="P1", slug="bf1", created_by="u1")
+    p2 = await project_store.create_project(name="P2", slug="bf2", created_by="u1")
+    p3 = await project_store.create_project(name="P3", slug="bf3", created_by="u1")
+    await project_store.set_status(p3["id"], "archived")
+
+    count = await backfill_all(channel_store, project_store)
+
+    assert count == 2
+    assert await _has_a2a(channel_store, p1["id"])
+    assert await _has_a2a(channel_store, p2["id"])
+    assert not await _has_a2a(channel_store, p3["id"])
+
+
+async def _has_a2a(channel_store, project_id: str) -> bool:
+    chans = await channel_store.list_channels(project_id=project_id)
+    return any((c.get("settings") or {}).get("kind") == "a2a" for c in chans)

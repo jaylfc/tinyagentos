@@ -66,5 +66,16 @@ async def ensure_a2a_channel(channel_store, project_store, project_id: str) -> d
 
 
 async def backfill_all(channel_store, project_store) -> int:
-    """Stub — implemented in Task 4."""
-    return 0
+    """Call ensure_a2a_channel for every active project. Returns count synced.
+
+    Per-project failures are logged and do not stop the loop.
+    """
+    projects = await project_store.list_projects(status="active")
+    count = 0
+    for p in projects:
+        try:
+            await ensure_a2a_channel(channel_store, project_store, p["id"])
+            count += 1
+        except Exception:
+            logger.exception("a2a backfill failed for project %s", p.get("id"))
+    return count
