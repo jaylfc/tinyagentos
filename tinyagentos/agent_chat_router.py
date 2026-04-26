@@ -78,7 +78,7 @@ class AgentChatRouter:
                     force_by_slug[m] = True
                 recipients = list(candidates)
             elif mentions.explicit:
-                recipients = [m for m in candidates if m in mentions.explicit]
+                recipients = [m for m in candidates if m.lower() in mentions.explicit]
                 for m in recipients:
                     force_by_slug[m] = True
             elif channel_type == "dm":
