@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import styles from "./TaskModal.module.css";
 import { Hero } from "./modal/Hero";
+import { SubTasks } from "./modal/SubTasks";
+import { Relationships } from "./modal/Relationships";
 import { projectsApi } from "../../../lib/projects";
 import type { Task } from "./types";
 
@@ -13,15 +15,17 @@ export interface TaskModalProps {
 }
 
 export function TaskModal({ projectId, taskId, onClose, onPrev, onNext }: TaskModalProps) {
+  const [allTasks, setAllTasks] = useState<Task[]>([]);
   const [task, setTask] = useState<Task | null>(null);
 
   useEffect(() => {
     if (!taskId) { setTask(null); return; }
     let cancelled = false;
     (async () => {
-      const all = await projectsApi.tasks.list(projectId);
-      const found = all.find(t => t.id === taskId);
-      if (!cancelled) setTask((found ?? null) as unknown as Task | null);
+      const all = (await projectsApi.tasks.list(projectId)) as unknown as Task[];
+      if (cancelled) return;
+      setAllTasks(all);
+      setTask(all.find(t => t.id === taskId) ?? null);
     })();
     return () => { cancelled = true; };
   }, [projectId, taskId]);
@@ -54,6 +58,8 @@ export function TaskModal({ projectId, taskId, onClose, onPrev, onNext }: TaskMo
             <>
               <h1 className={styles.title}>{task.title}</h1>
               {task.body && <p className={styles.bodyText}>{task.body}</p>}
+              <SubTasks all={allTasks} parentId={task.id} />
+              <Relationships projectId={projectId} taskId={task.id} />
             </>
           ) : <p className={styles.loading}>Loading…</p>}
         </div>

@@ -14,6 +14,7 @@ const sampleTask: ProjectTask = {
 
 beforeEach(() => {
   vi.spyOn(projectsApi.tasks, "list").mockResolvedValue([]);
+  vi.spyOn(projectsApi.tasks, "listRelationships").mockResolvedValue([]);
 });
 
 describe("TaskModal", () => {
