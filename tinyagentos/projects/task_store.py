@@ -160,32 +160,26 @@ class ProjectTaskStore(BaseStore):
         priority: int | None = None,
         labels: list[str] | None = None,
         assignee_id: str | None = None,
+        parent_task_id: str | None = None,
     ) -> None:
+        candidates = [
+            ("title", title, title),
+            ("body", body, body),
+            ("priority", priority, priority),
+            ("labels", labels, json.dumps(labels) if labels is not None else None),
+            ("assignee_id", assignee_id, assignee_id),
+            ("parent_task_id", parent_task_id, parent_task_id),
+        ]
         sets: list[str] = []
         params: list = []
-        if title is not None:
-            sets.append("title = ?"); params.append(title)
-        if body is not None:
-            sets.append("body = ?"); params.append(body)
-        if priority is not None:
-            sets.append("priority = ?"); params.append(priority)
-        if labels is not None:
-            sets.append("labels = ?"); params.append(json.dumps(labels))
-        if assignee_id is not None:
-            sets.append("assignee_id = ?"); params.append(assignee_id)
+        patch: dict = {}
+        for col, raw, serialised in candidates:
+            if raw is not None:
+                sets.append(f"{col} = ?")
+                params.append(serialised)
+                patch[col] = raw
         if not sets:
             return
-        patch: dict = {}
-        if title is not None:
-            patch["title"] = title
-        if body is not None:
-            patch["body"] = body
-        if priority is not None:
-            patch["priority"] = priority
-        if labels is not None:
-            patch["labels"] = labels
-        if assignee_id is not None:
-            patch["assignee_id"] = assignee_id
         sets.append("updated_at = ?"); params.append(time.time())
         params.append(task_id)
         await self._db.execute(
