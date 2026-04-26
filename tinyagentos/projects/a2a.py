@@ -30,24 +30,39 @@ async def _find_a2a_channel(channel_store, project_id: str) -> dict | None:
 
 
 async def ensure_a2a_channel(channel_store, project_store, project_id: str) -> dict:
-    """Create the A2A channel for project_id if missing.
+    """Create the A2A channel for project_id if missing, sync its members
+    to the project's current native+clone members, return the channel row.
 
-    Idempotent: safe to call repeatedly. (Member sync added in Task 3.)
+    Idempotent.
     """
+    project_members = await project_store.list_members(project_id)
+    expected = {m["member_id"] for m in project_members}
+
     existing = await _find_a2a_channel(channel_store, project_id)
-    if existing is not None:
+    if existing is None:
+        project = await project_store.get_project(project_id)
+        created_by = project.get("created_by", "system") if project else "system"
+        return await channel_store.create_channel(
+            name=A2A_NAME,
+            type=A2A_TYPE,
+            created_by=created_by,
+            members=sorted(expected),
+            description="Agent coordination channel.",
+            settings={"kind": A2A_KIND},
+            project_id=project_id,
+        )
+
+    current = set(existing.get("members") or [])
+    if current == expected:
         return existing
-    project = await project_store.get_project(project_id)
-    created_by = project.get("created_by", "system") if project else "system"
-    return await channel_store.create_channel(
-        name=A2A_NAME,
-        type=A2A_TYPE,
-        created_by=created_by,
-        members=[],
-        description="Agent coordination channel.",
-        settings={"kind": A2A_KIND},
-        project_id=project_id,
-    )
+
+    to_add = expected - current
+    to_remove = current - expected
+    for slug in sorted(to_add):
+        await channel_store.add_member(existing["id"], slug)
+    for slug in sorted(to_remove):
+        await channel_store.remove_member(existing["id"], slug)
+    return await channel_store.get_channel(existing["id"])
 
 
 async def backfill_all(channel_store, project_store) -> int:

@@ -51,3 +51,40 @@ async def test_ensure_is_idempotent(stores):
     all_channels = await channel_store.list_channels(project_id=p["id"])
     a2a = [c for c in all_channels if (c.get("settings") or {}).get("kind") == "a2a"]
     assert len(a2a) == 1
+
+
+@pytest.mark.asyncio
+async def test_ensure_syncs_members_added_after_creation(stores):
+    project_store, channel_store = stores
+    p = await project_store.create_project(name="P", slug="sync-add", created_by="u1")
+    await ensure_a2a_channel(channel_store, project_store, p["id"])
+
+    await project_store.add_member(p["id"], "agentA", member_kind="native")
+    await project_store.add_member(p["id"], "agentB", member_kind="native")
+    ch = await ensure_a2a_channel(channel_store, project_store, p["id"])
+
+    assert sorted(ch["members"]) == ["agentA", "agentB"]
+
+
+@pytest.mark.asyncio
+async def test_ensure_syncs_members_on_remove(stores):
+    project_store, channel_store = stores
+    p = await project_store.create_project(name="P", slug="sync-rm", created_by="u1")
+    await project_store.add_member(p["id"], "agentA", member_kind="native")
+    await project_store.add_member(p["id"], "agentB", member_kind="native")
+    await ensure_a2a_channel(channel_store, project_store, p["id"])
+
+    await project_store.remove_member(p["id"], "agentA")
+    ch = await ensure_a2a_channel(channel_store, project_store, p["id"])
+
+    assert ch["members"] == ["agentB"]
+
+
+@pytest.mark.asyncio
+async def test_ensure_no_op_when_members_match(stores):
+    project_store, channel_store = stores
+    p = await project_store.create_project(name="P", slug="sync-same", created_by="u1")
+    await project_store.add_member(p["id"], "agentA", member_kind="native")
+    ch1 = await ensure_a2a_channel(channel_store, project_store, p["id"])
+    ch2 = await ensure_a2a_channel(channel_store, project_store, p["id"])
+    assert ch1["members"] == ch2["members"] == ["agentA"]
