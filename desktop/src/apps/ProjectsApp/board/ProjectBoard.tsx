@@ -29,6 +29,8 @@ export function ProjectBoard({ projectId, currentUserId, onOpenTask }: ProjectBo
   const [groupBy, setGroupBy] = useState<GroupBy>("assignee");
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [justClaimed, setJustClaimed] = useState<string | null>(null);
+  const [movePopover, setMovePopover] = useState<string | null>(null);
+  const [announcement, setAnnouncement] = useState("");
 
   useEffect(() => {
     try {
@@ -104,6 +106,8 @@ export function ProjectBoard({ projectId, currentUserId, onOpenTask }: ProjectBo
         return;
       }
     }
+    const moved = tasks.find(t => t.id === taskId);
+    if (moved) setAnnouncement(`Moved ${moved.title} to ${columnStatus}`);
   };
 
   const renderCard = (t: Task, drag = true) => (
@@ -111,6 +115,7 @@ export function ProjectBoard({ projectId, currentUserId, onOpenTask }: ProjectBo
       key={t.id}
       task={t}
       onOpen={(id) => onOpenTask?.(id)}
+      onMove={(id) => setMovePopover(id)}
       justClaimed={justClaimed === t.id}
       draggable={drag}
       onDragStart={drag ? onCardDragStart : undefined}
@@ -119,6 +124,7 @@ export function ProjectBoard({ projectId, currentUserId, onOpenTask }: ProjectBo
 
   return (
     <div className={styles.frame}>
+      <div role="status" aria-live="polite" className={styles.sr}>{announcement}</div>
       <BoardToolbar
         viewMode={viewMode}
         groupBy={groupBy}
@@ -160,6 +166,25 @@ export function ProjectBoard({ projectId, currentUserId, onOpenTask }: ProjectBo
               onDropTask={(id, status, laneKey) => dispatchDnd(id, status, laneKey)}
             />
           ))}
+        </div>
+      )}
+      {movePopover && (
+        <div role="dialog" aria-label="Move task" className={styles.movePop}>
+          <p>Move to:</p>
+          {(["ready", "claimed", "closed"] as ColStatus[]).map(s => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => {
+                const id = movePopover;
+                setMovePopover(null);
+                void dispatchDnd(id, s);
+              }}
+            >
+              {s}
+            </button>
+          ))}
+          <button type="button" onClick={() => setMovePopover(null)}>Cancel</button>
         </div>
       )}
     </div>

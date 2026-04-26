@@ -1,4 +1,4 @@
-import type { DragEvent } from "react";
+import type { DragEvent, KeyboardEvent } from "react";
 import styles from "./TaskCard.module.css";
 import { TaskCardCover, inferCoverKind } from "./TaskCardCover";
 import type { Task } from "./types";
@@ -6,20 +6,31 @@ import type { Task } from "./types";
 export interface TaskCardProps {
   task: Task;
   onOpen: (id: string) => void;
+  onMove?: (id: string) => void;
   justClaimed?: boolean;
   draggable?: boolean;
   onDragStart?: (e: DragEvent<HTMLButtonElement>, t: Task) => void;
 }
 
-export function TaskCard({ task, onOpen, justClaimed, draggable, onDragStart }: TaskCardProps) {
+export function TaskCard({ task, onOpen, onMove, justClaimed, draggable, onDragStart }: TaskCardProps) {
   const cover = inferCoverKind(task);
   const pri = task.priority === 0 ? "p0" : task.priority === 1 ? "p1" : "p2";
+  const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      onOpen(task.id);
+    } else if ((e.key === "m" || e.key === "M") && onMove) {
+      e.preventDefault();
+      onMove(task.id);
+    }
+  };
   return (
     <button
       data-testid="task-card"
       type="button"
       className={`${styles.card} ${styles[pri as keyof typeof styles] ?? ""} ${justClaimed ? styles.justClaimed : ""}`}
       onClick={() => onOpen(task.id)}
+      onKeyDown={onKeyDown}
       draggable={draggable}
       onDragStart={(e) => onDragStart?.(e, task)}
       aria-label={task.title}

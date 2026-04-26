@@ -29,4 +29,13 @@ describe("TaskCard", () => {
     render(<TaskCard task={t} onOpen={() => {}} justClaimed />);
     expect(screen.getByTestId("task-card")).toHaveClass(/just-?claimed/i);
   });
+
+  it("calls onMove when M is pressed while focused", () => {
+    const move = vi.fn();
+    render(<TaskCard task={t} onOpen={() => {}} onMove={move} />);
+    const card = screen.getByRole("button");
+    card.focus();
+    fireEvent.keyDown(card, { key: "M" });
+    expect(move).toHaveBeenCalledWith("t1");
+  });
 });
