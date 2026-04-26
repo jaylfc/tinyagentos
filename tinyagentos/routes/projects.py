@@ -4,8 +4,11 @@ import logging
 import re
 import time as _time
 
+import asyncio as _asyncio
+import json as _json
+
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
 from tinyagentos.projects.folders import ensure_project_layout, write_project_yaml
@@ -237,6 +240,7 @@ class UpdateTaskIn(BaseModel):
     priority: int | None = None
     labels: list[str] | None = None
     assignee_id: str | None = None
+    parent_task_id: str | None = None
 
 
 class ClaimIn(BaseModel):
@@ -312,6 +316,22 @@ async def update_task(project_id: str, task_id: str, payload: UpdateTaskIn, requ
     existing = await store.get_task(task_id)
     if existing is None or existing["project_id"] != project_id:
         return JSONResponse({"error": "not found"}, status_code=404)
+
+    if payload.parent_task_id is not None:
+        if payload.parent_task_id == task_id:
+            return JSONResponse({"error": "cycle: cannot self-parent"}, status_code=400)
+        parent = await store.get_task(payload.parent_task_id)
+        if parent is None or parent["project_id"] != project_id:
+            return JSONResponse({"error": "parent not in this project"}, status_code=400)
+        # walk ancestors to detect indirect cycles (parent's chain must not reach task_id)
+        seen = {task_id, parent["id"]}
+        cur = parent
+        while cur is not None and cur.get("parent_task_id"):
+            if cur["parent_task_id"] in seen:
+                return JSONResponse({"error": "cycle in parent chain"}, status_code=400)
+            seen.add(cur["parent_task_id"])
+            cur = await store.get_task(cur["parent_task_id"])
+
     await store.update_task(task_id, **payload.model_dump(exclude_none=True))
     return await store.get_task(task_id)
 
@@ -458,3 +478,29 @@ async def memory_search(project_id: str, request: Request, q: str, limit: int = 
         limit=limit,
     )
     return {"items": items}
+
+
+@router.get("/api/projects/{project_id}/events")
+async def project_events(project_id: str, request: Request):
+    broker = request.app.state.project_event_broker
+    queue = await broker.subscribe(project_id)
+
+    async def event_stream():
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    ev = await _asyncio.wait_for(queue.get(), timeout=15.0)
+                    payload = {"kind": ev.kind, "payload": ev.payload, "ts": ev.ts}
+                    yield f"data: {_json.dumps(payload)}\n\n"
+                except _asyncio.TimeoutError:
+                    yield ": heartbeat\n\n"
+        finally:
+            await broker.unsubscribe(project_id, queue)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

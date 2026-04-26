@@ -201,8 +201,10 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     chat_channels = ChatChannelStore(data_dir / "chat.db")
     from tinyagentos.projects.project_store import ProjectStore
     from tinyagentos.projects.task_store import ProjectTaskStore
+    from tinyagentos.projects.events import ProjectEventBroker
     project_store = ProjectStore(data_dir / "projects.db")
-    project_task_store = ProjectTaskStore(data_dir / "projects.db")
+    project_event_broker = ProjectEventBroker()
+    project_task_store = ProjectTaskStore(data_dir / "projects.db", broker=project_event_broker)
     projects_root = data_dir / "projects"
     chat_hub = ChatHub()
     canvas_store = CanvasStore(data_dir / "canvas.db")
@@ -401,6 +403,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
         app.state.chat_channels = chat_channels
         app.state.project_store = project_store
         app.state.project_task_store = project_task_store
+        app.state.project_event_broker = project_event_broker
         app.state.projects_root = projects_root
         app.state.chat_hub = chat_hub
         from tinyagentos.chat.group_policy import GroupPolicy
@@ -707,6 +710,7 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
     app.state.chat_channels = chat_channels
     app.state.project_store = project_store
     app.state.project_task_store = project_task_store
+    app.state.project_event_broker = project_event_broker
     projects_root.mkdir(parents=True, exist_ok=True)
     app.state.projects_root = projects_root
     app.state.chat_hub = chat_hub

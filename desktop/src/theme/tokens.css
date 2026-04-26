@@ -91,3 +91,19 @@
   outline-offset: 2px;
   transition: outline 0.2s ease-out;
 }
+
+/* Projects board — Apple-grade chrome (Pass B Kanban) */
+:root {
+  --board-accent-violet: #a78bfa;
+  --board-accent-violet-soft: rgba(167, 139, 250, 0.14);
+  --board-hair: rgba(255, 255, 255, 0.07);
+  --board-hair-strong: rgba(255, 255, 255, 0.12);
+  --board-card-bg: linear-gradient(180deg, #26262b, #1f1f22);
+  --board-bg: linear-gradient(180deg, #1a1a1c, #131316);
+  --board-p0: #ff453a;
+  --board-p1: #ffb340;
+  --board-p2: #8e8e93;
+  --board-status-ready: #64d2ff;
+  --board-status-claimed: #ffb340;
+  --board-status-closed: #30d158;
+}

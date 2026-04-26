@@ -3,8 +3,13 @@ from __future__ import annotations
 import json
 import time
 
+from typing import TYPE_CHECKING
+
 from tinyagentos.base_store import BaseStore
 from tinyagentos.projects.ids import new_id
+
+if TYPE_CHECKING:
+    from tinyagentos.projects.events import ProjectEventBroker
 
 TASK_SCHEMA = """
 CREATE TABLE IF NOT EXISTS project_tasks (
@@ -81,6 +86,15 @@ def _row_to_task(row, description) -> dict:
 class ProjectTaskStore(BaseStore):
     SCHEMA = TASK_SCHEMA
 
+    def __init__(self, db_path, *, broker: "ProjectEventBroker | None" = None) -> None:
+        super().__init__(db_path)
+        self._broker = broker
+
+    async def _publish(self, project_id: str, kind: str, payload: dict) -> None:
+        if self._broker is not None:
+            from tinyagentos.projects.events import ProjectEvent
+            await self._broker.publish(project_id, ProjectEvent(kind=kind, payload=payload))
+
     async def create_task(
         self,
         project_id: str,
@@ -105,7 +119,9 @@ class ProjectTaskStore(BaseStore):
             ),
         )
         await self._db.commit()
-        return await self.get_task(tid)
+        new_task = await self.get_task(tid)
+        await self._publish(project_id, "task.created", {"id": new_task["id"], "task": new_task})
+        return new_task
 
     async def get_task(self, task_id: str) -> dict | None:
         async with self._db.execute(
@@ -144,19 +160,24 @@ class ProjectTaskStore(BaseStore):
         priority: int | None = None,
         labels: list[str] | None = None,
         assignee_id: str | None = None,
+        parent_task_id: str | None = None,
     ) -> None:
+        candidates = [
+            ("title", title, title),
+            ("body", body, body),
+            ("priority", priority, priority),
+            ("labels", labels, json.dumps(labels) if labels is not None else None),
+            ("assignee_id", assignee_id, assignee_id),
+            ("parent_task_id", parent_task_id, parent_task_id),
+        ]
         sets: list[str] = []
         params: list = []
-        if title is not None:
-            sets.append("title = ?"); params.append(title)
-        if body is not None:
-            sets.append("body = ?"); params.append(body)
-        if priority is not None:
-            sets.append("priority = ?"); params.append(priority)
-        if labels is not None:
-            sets.append("labels = ?"); params.append(json.dumps(labels))
-        if assignee_id is not None:
-            sets.append("assignee_id = ?"); params.append(assignee_id)
+        patch: dict = {}
+        for col, raw, serialised in candidates:
+            if raw is not None:
+                sets.append(f"{col} = ?")
+                params.append(serialised)
+                patch[col] = raw
         if not sets:
             return
         sets.append("updated_at = ?"); params.append(time.time())
@@ -165,6 +186,9 @@ class ProjectTaskStore(BaseStore):
             f"UPDATE project_tasks SET {', '.join(sets)} WHERE id = ?", params
         )
         await self._db.commit()
+        existing = await self.get_task(task_id)
+        if existing is not None:
+            await self._publish(existing["project_id"], "task.updated", {"id": task_id, "patch": patch})
 
     async def claim_task(self, task_id: str, claimer_id: str) -> bool:
         now = time.time()
@@ -175,7 +199,12 @@ class ProjectTaskStore(BaseStore):
             (claimer_id, now, now, task_id),
         )
         await self._db.commit()
-        return cursor.rowcount == 1
+        changed = cursor.rowcount == 1
+        if changed:
+            existing = await self.get_task(task_id)
+            if existing is not None:
+                await self._publish(existing["project_id"], "task.claimed", {"id": task_id, "claimed_by": claimer_id})
+        return changed
 
     async def release_task(self, task_id: str, releaser_id: str) -> bool:
         now = time.time()
@@ -186,7 +215,12 @@ class ProjectTaskStore(BaseStore):
             (now, task_id, releaser_id),
         )
         await self._db.commit()
-        return cursor.rowcount == 1
+        changed = cursor.rowcount == 1
+        if changed:
+            existing = await self.get_task(task_id)
+            if existing is not None:
+                await self._publish(existing["project_id"], "task.released", {"id": task_id})
+        return changed
 
     async def close_task(
         self,
@@ -202,7 +236,12 @@ class ProjectTaskStore(BaseStore):
             (closed_by, now, reason, now, task_id),
         )
         await self._db.commit()
-        return cursor.rowcount == 1
+        changed = cursor.rowcount == 1
+        if changed:
+            existing = await self.get_task(task_id)
+            if existing is not None:
+                await self._publish(existing["project_id"], "task.closed", {"id": task_id, "closed_by": closed_by})
+        return changed
 
     async def add_relationship(
         self,
@@ -227,6 +266,7 @@ class ProjectTaskStore(BaseStore):
             (rid, project_id, from_task_id, to_task_id, kind, created_by, now),
         )
         await self._db.commit()
+        await self._publish(project_id, "relationship.added", {"from": from_task_id, "to": to_task_id, "kind": kind})
         return {
             "id": rid, "project_id": project_id, "from_task_id": from_task_id,
             "to_task_id": to_task_id, "kind": kind, "created_by": created_by, "created_at": now,
@@ -291,10 +331,14 @@ class ProjectTaskStore(BaseStore):
             (cid, task_id, author_id, body, replies_to_comment_id, now),
         )
         await self._db.commit()
-        return {
+        new_comment = {
             "id": cid, "task_id": task_id, "author_id": author_id, "body": body,
             "replies_to_comment_id": replies_to_comment_id, "created_at": now,
         }
+        existing = await self.get_task(task_id)
+        if existing is not None:
+            await self._publish(existing["project_id"], "comment.added", {"task_id": task_id, "comment": new_comment})
+        return new_comment
 
     async def list_comments(self, task_id: str) -> list[dict]:
         async with self._db.execute(
