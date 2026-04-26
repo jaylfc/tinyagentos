@@ -321,7 +321,7 @@ async def update_task(project_id: str, task_id: str, payload: UpdateTaskIn, requ
         if parent is None or parent["project_id"] != project_id:
             return JSONResponse({"error": "parent not in this project"}, status_code=400)
         # walk ancestors to detect indirect cycles (parent's chain must not reach task_id)
-        seen = {task_id}
+        seen = {task_id, parent["id"]}
         cur = parent
         while cur is not None and cur.get("parent_task_id"):
             if cur["parent_task_id"] in seen:
