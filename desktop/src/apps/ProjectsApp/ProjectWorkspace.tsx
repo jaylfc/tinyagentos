@@ -1,15 +1,52 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Project } from "@/lib/projects";
 import { ProjectTaskList } from "./ProjectTaskList";
 import { ProjectMembers } from "./ProjectMembers";
 import { ProjectActivity } from "./ProjectActivity";
+import { ProjectBoard } from "./board/ProjectBoard";
+import { TaskModal } from "./board/TaskModal";
 import { FilesApp } from "@/apps/FilesApp";
 import { MessagesApp } from "@/apps/MessagesApp";
 
-type Tab = "tasks" | "files" | "messages" | "members" | "activity";
+type Tab = "board" | "tasks" | "files" | "messages" | "members" | "activity";
+const TABS: Tab[] = ["board", "tasks", "files", "messages", "members", "activity"];
+
+function readTaskParam(): string | null {
+  if (typeof window === "undefined") return null;
+  return new URLSearchParams(window.location.search).get("task");
+}
+
+function setTaskParam(taskId: string | null) {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  if (taskId) url.searchParams.set("task", taskId);
+  else url.searchParams.delete("task");
+  window.history.pushState({}, "", url);
+}
 
 export function ProjectWorkspace({ project, onChanged }: { project: Project; onChanged: () => void }) {
   const [tab, setTab] = useState<Tab>("tasks");
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [openTaskId, setOpenTaskId] = useState<string | null>(() => readTaskParam());
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/auth/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((u) => { if (!cancelled && u?.id) setCurrentUserId(u.id); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    const onPop = () => setOpenTaskId(readTaskParam());
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  const openTask = (id: string) => { setTaskParam(id); setOpenTaskId(id); };
+  const closeTask = () => { setTaskParam(null); setOpenTaskId(null); };
+
   return (
     <div className="flex flex-col h-full">
       <header className="px-4 py-3 border-b border-zinc-800">
@@ -17,7 +54,7 @@ export function ProjectWorkspace({ project, onChanged }: { project: Project; onC
         <p className="text-xs text-zinc-500">{project.description}</p>
       </header>
       <nav className="flex border-b border-zinc-800 px-2" role="tablist">
-        {(["tasks", "files", "messages", "members", "activity"] as Tab[]).map((t) => (
+        {TABS.map((t) => (
           <button
             key={t}
             type="button"
@@ -33,6 +70,25 @@ export function ProjectWorkspace({ project, onChanged }: { project: Project; onC
         ))}
       </nav>
       <div className="flex-1 min-h-0 overflow-auto p-4">
+        {tab === "board" && (
+          <>
+            {currentUserId ? (
+              <ProjectBoard
+                projectId={project.id}
+                currentUserId={currentUserId}
+                onOpenTask={openTask}
+              />
+            ) : (
+              <div className="text-sm text-zinc-500">Loading board…</div>
+            )}
+            <TaskModal
+              projectId={project.id}
+              taskId={openTaskId}
+              currentUserId={currentUserId ?? ""}
+              onClose={closeTask}
+            />
+          </>
+        )}
         {tab === "tasks" && <ProjectTaskList projectId={project.id} />}
         {tab === "files" && (
           <FilesApp
