@@ -61,3 +61,19 @@ async def test_remove_member_removes_from_a2a_channel(client):
     a2a = _a2a(channels)
     assert a2a is not None
     assert "agentA" not in a2a["members"]
+
+
+@pytest.mark.asyncio
+async def test_a2a_failure_does_not_break_project_create(client, monkeypatch, caplog):
+    import tinyagentos.projects.a2a as a2a_mod
+
+    async def boom(*args, **kwargs):
+        raise RuntimeError("simulated a2a failure")
+
+    monkeypatch.setattr(a2a_mod, "ensure_a2a_channel", boom)
+
+    with caplog.at_level("WARNING"):
+        res = await client.post("/api/projects", json={"name": "P", "slug": "ra2a-fail"})
+    assert res.status_code == 200
+    assert res.json()["slug"] == "ra2a-fail"
+    assert any("a2a ensure failed" in rec.message for rec in caplog.records)
