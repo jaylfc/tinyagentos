@@ -77,3 +77,20 @@ async def test_a2a_failure_does_not_break_project_create(client, monkeypatch, ca
     assert res.status_code == 200
     assert res.json()["slug"] == "ra2a-fail"
     assert any("a2a ensure failed" in rec.message for rec in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_project_delete_archives_a2a_channel(client):
+    pid = (await client.post("/api/projects", json={"name": "P", "slug": "ra2a-del"})).json()["id"]
+
+    pre = _a2a(await _list_channels(client, pid))
+    assert pre is not None and pre["settings"].get("archived") is not True
+
+    res = await client.delete(f"/api/projects/{pid}")
+    assert res.status_code == 200
+
+    archived_res = await client.get(
+        f"/api/chat/channels?archived=true&project_id={pid}"
+    )
+    archived = archived_res.json().get("channels", [])
+    assert _a2a(archived) is not None
