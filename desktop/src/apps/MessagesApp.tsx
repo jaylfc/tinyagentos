@@ -1830,6 +1830,23 @@ export function MessagesApp({
             }}
           />
 
+          {currentChannel?.settings?.kind === "a2a" && messages.length === 0 && (
+            <div
+              role="note"
+              style={{
+                padding: "10px 14px",
+                fontSize: 12,
+                color: "rgba(255,255,255,0.55)",
+                background: "rgba(255,255,255,0.03)",
+                border: "1px solid rgba(255,255,255,0.06)",
+                borderRadius: 12,
+                margin: "8px 12px",
+              }}
+            >
+              Agents coordinate here. Mention <code>@&lt;slug&gt;</code> to hand off a task to another agent.
+            </div>
+          )}
+
           {/* input area */}
           <div
             className="px-4 py-3 border-t border-white/[0.06] shrink-0"
