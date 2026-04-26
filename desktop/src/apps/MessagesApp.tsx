@@ -1100,6 +1100,7 @@ export function MessagesApp({
                   type="button"
                   onClick={() => setSelectedChannel(ch.id)}
                   aria-label={`Channel ${ch.name}`}
+                  title={ch.settings?.kind === "a2a" ? "Agent coordination — mention @<slug> to hand off." : undefined}
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -1114,6 +1115,13 @@ export function MessagesApp({
                     textAlign: "left",
                   }}
                 >
+                  {ch.settings?.kind === "a2a" && (
+                    <Bot
+                      size={14}
+                      aria-hidden
+                      style={{ color: "rgba(255,255,255,0.6)", flexShrink: 0 }}
+                    />
+                  )}
                   <span style={{ flex: 1, fontSize: 15, fontWeight: 400, color: "rgba(255,255,255,0.9)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {ch.name}
                   </span>
@@ -1166,6 +1174,7 @@ export function MessagesApp({
                           type="button"
                           onClick={() => setSelectedChannel(ch.id)}
                           aria-label={`Channel ${ch.name}`}
+                          title={ch.settings?.kind === "a2a" ? "Agent coordination — mention @<slug> to hand off." : undefined}
                           style={{
                             display: "flex",
                             alignItems: "center",
@@ -1180,6 +1189,13 @@ export function MessagesApp({
                             textAlign: "left",
                           }}
                         >
+                          {ch.settings?.kind === "a2a" && (
+                            <Bot
+                              size={14}
+                              aria-hidden
+                              style={{ color: "rgba(255,255,255,0.6)", flexShrink: 0 }}
+                            />
+                          )}
                           <span style={{ flex: 1, fontSize: 15, fontWeight: 400, color: "rgba(255,255,255,0.9)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {ch.name}
                           </span>
@@ -1299,7 +1315,15 @@ export function MessagesApp({
                 onClick={() => setSelectedChannel(ch.id)}
                 className="w-full justify-start h-auto py-1.5 px-3 text-[13px] rounded-none font-normal"
                 aria-label={`Channel ${ch.name}`}
+                title={ch.settings?.kind === "a2a" ? "Agent coordination — mention @<slug> to hand off." : undefined}
               >
+                {ch.settings?.kind === "a2a" && (
+                  <Bot
+                    size={14}
+                    aria-hidden
+                    style={{ color: "rgba(255,255,255,0.6)", flexShrink: 0 }}
+                  />
+                )}
                 <span className="truncate flex-1 text-left">{ch.name}</span>
                 {(unread[ch.id] ?? 0) > 0 && (
                   <span className="shrink-0 bg-blue-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
@@ -1328,10 +1352,18 @@ export function MessagesApp({
                       onClick={() => setSelectedChannel(ch.id)}
                       aria-pressed={selectedChannel === ch.id}
                       aria-label={`Channel ${ch.name}`}
-                      className={`w-full text-left text-xs py-1 px-2 rounded ${
+                      title={ch.settings?.kind === "a2a" ? "Agent coordination — mention @<slug> to hand off." : undefined}
+                      className={`w-full text-left text-xs py-1 px-2 rounded flex items-center gap-1.5 ${
                         selectedChannel === ch.id ? "bg-white/10" : "hover:bg-white/5"
                       }`}
                     >
+                      {ch.settings?.kind === "a2a" && (
+                        <Bot
+                          size={12}
+                          aria-hidden
+                          style={{ color: "rgba(255,255,255,0.6)", flexShrink: 0 }}
+                        />
+                      )}
                       {ch.name}
                     </button>
                   ))}
