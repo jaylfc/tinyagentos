@@ -152,3 +152,21 @@ async def test_ensure_archives_duplicate_a2a_channels(stores):
     a2a_active = [c for c in active if (c.get("settings") or {}).get("kind") == "a2a"]
     assert len(a2a_active) == 1
     assert a2a_active[0]["id"] == canonical["id"]
+
+
+@pytest.mark.asyncio
+async def test_ensure_provisions_new_when_only_archived_exists(stores):
+    """If the only A2A channel for a project is archived, ensure must
+    provision a fresh active one rather than re-electing the archived row."""
+    project_store, channel_store = stores
+    p = await project_store.create_project(name="P", slug="archived-only", created_by="u1")
+
+    first = await ensure_a2a_channel(channel_store, project_store, p["id"])
+    await channel_store.set_settings(first["id"], {"archived": True})
+
+    fresh = await ensure_a2a_channel(channel_store, project_store, p["id"])
+
+    assert fresh["id"] != first["id"]
+    assert (fresh.get("settings") or {}).get("archived") is not True
+    archived = await channel_store.get_channel(first["id"])
+    assert (archived.get("settings") or {}).get("archived") is True

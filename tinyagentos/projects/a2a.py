@@ -26,16 +26,28 @@ _A2A_LOCKS: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 
 
 async def _find_a2a_channels(channel_store, project_id: str) -> list[dict]:
-    """Return all of the project's A2A channel rows, oldest-first.
+    """Return active, fully-identified A2A channel rows for a project, oldest-first.
 
-    Identification: project_id matches AND settings.kind == "a2a".
+    Identification requires all four conditions:
+    - project_id matches
+    - not archived
+    - name == A2A_NAME
+    - type == A2A_TYPE
+    - settings.kind == A2A_KIND
+
     The store already returns rows ordered by created_at ASC, so the first
-    element of the returned list is the canonical A2A channel.
+    element of the returned list is the canonical A2A channel. Archived rows
+    are excluded so a previously-archived duplicate can never be re-elected
+    as canonical.
     """
-    channels = await channel_store.list_channels(project_id=project_id)
+    channels = await channel_store.list_channels(
+        project_id=project_id, archived=False,
+    )
     return [
         ch for ch in channels
-        if (ch.get("settings") or {}).get("kind") == A2A_KIND
+        if ch.get("name") == A2A_NAME
+        and ch.get("type") == A2A_TYPE
+        and (ch.get("settings") or {}).get("kind") == A2A_KIND
     ]
 
 
