@@ -22,7 +22,9 @@ export interface ProjectBoardProps {
 }
 
 const PERSIST_KEY = (pid: string) => `taos.projects.${pid}.board`;
-const VALID_VIEWS: ViewMode[] = ["lanes", "kanban", "timeline"];
+// "timeline" is reserved in the toolbar but not implemented; only persist
+// modes that actually render to avoid `lanes!` blowing up on rehydrate.
+const VALID_VIEWS: ViewMode[] = ["lanes", "kanban"];
 const VALID_GROUPS: GroupBy[] = ["assignee", "parent", "label", "priority"];
 type ColStatus = "ready" | "claimed" | "closed";
 

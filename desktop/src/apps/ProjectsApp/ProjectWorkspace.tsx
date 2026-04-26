@@ -34,7 +34,7 @@ export function ProjectWorkspace({ project, onChanged }: { project: Project; onC
     let cancelled = false;
     fetch("/api/auth/me")
       .then((r) => (r.ok ? r.json() : null))
-      .then((u) => { if (!cancelled) { if (u?.id) setCurrentUserId(u.id); setAuthResolved(true); } })
+      .then((u) => { if (!cancelled) { if (u?.user?.id) setCurrentUserId(u.user.id); setAuthResolved(true); } })
       .catch(() => { if (!cancelled) setAuthResolved(true); });
     return () => { cancelled = true; };
   }, []);
