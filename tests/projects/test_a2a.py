@@ -109,3 +109,18 @@ async def test_backfill_creates_channels_for_all_active_projects(stores):
 async def _has_a2a(channel_store, project_id: str) -> bool:
     chans = await channel_store.list_channels(project_id=project_id)
     return any((c.get("settings") or {}).get("kind") == "a2a" for c in chans)
+
+
+@pytest.mark.asyncio
+async def test_backfill_is_idempotent(stores):
+    """Calling backfill twice is a no-op the second time."""
+    project_store, channel_store = stores
+    p = await project_store.create_project(name="P", slug="bf-idem", created_by="u1")
+
+    n1 = await backfill_all(channel_store, project_store)
+    n2 = await backfill_all(channel_store, project_store)
+
+    assert n1 == 1 and n2 == 1
+    chans = await channel_store.list_channels(project_id=p["id"])
+    a2a = [c for c in chans if (c.get("settings") or {}).get("kind") == "a2a"]
+    assert len(a2a) == 1
