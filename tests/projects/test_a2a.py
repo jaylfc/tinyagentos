@@ -37,3 +37,17 @@ async def test_ensure_creates_channel_when_missing(stores):
     assert ch["project_id"] == p["id"]
     assert ch["settings"].get("kind") == A2A_KIND
     assert ch["members"] == []
+
+
+@pytest.mark.asyncio
+async def test_ensure_is_idempotent(stores):
+    project_store, channel_store = stores
+    p = await project_store.create_project(name="Acme", slug="acme2", created_by="u1")
+
+    ch1 = await ensure_a2a_channel(channel_store, project_store, p["id"])
+    ch2 = await ensure_a2a_channel(channel_store, project_store, p["id"])
+
+    assert ch1["id"] == ch2["id"]
+    all_channels = await channel_store.list_channels(project_id=p["id"])
+    a2a = [c for c in all_channels if (c.get("settings") or {}).get("kind") == "a2a"]
+    assert len(a2a) == 1
