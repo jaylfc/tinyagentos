@@ -533,21 +533,37 @@ export function MessagesApp({
     };
   }, [fetchChannels, fetchArchivedChannels, fetchAgentLists, connectWs]);
 
-  /* ---- default-select A2A channel on first project visit ---- */
+  /* ---- default-select A2A channel on first project visit ----
+   * Also runs when the project switches: if the previously selected channel
+   * is not in the new project's channel list, it's stale — fall back to
+   * the remembered/A2A channel for the new project, or clear the selection.
+   */
   useEffect(() => {
     if (!scope?.projectId) return;
-    if (selectedChannel) return;
     if (channels.length === 0) return;
+    const selectedStillVisible =
+      !!selectedChannel && channels.some((c) => c.id === selectedChannel);
+    if (selectedStillVisible) return;
     const remembered = readLastChannel(scope.projectId);
     if (remembered && channels.some((c) => c.id === remembered)) {
       setSelectedChannel(remembered);
       return;
     }
     const a2aId = findA2aChannelId(channels);
-    if (a2aId) {
-      setSelectedChannel(a2aId);
-    }
+    setSelectedChannel(a2aId ?? null);
   }, [scope?.projectId, channels, selectedChannel]);
+
+  /* ---- persist last-selected channel per project ----
+   * Split from the channel-join effect so we only write when we know the
+   * current selection actually belongs to the current project — prevents
+   * cross-project leakage when the user switches projects mid-flight.
+   */
+  useEffect(() => {
+    if (!scope?.projectId) return;
+    if (!selectedChannel) return;
+    if (!channels.some((c) => c.id === selectedChannel)) return;
+    writeLastChannel(scope.projectId, selectedChannel);
+  }, [scope?.projectId, selectedChannel, channels]);
 
   /* ---- fetch project list for sidebar grouping (standalone mode only) ---- */
   useEffect(() => {
@@ -630,12 +646,9 @@ export function MessagesApp({
     }
     fetchMessages(selectedChannel);
     markRead(selectedChannel);
-    if (scope?.projectId && selectedChannel) {
-      writeLastChannel(scope.projectId, selectedChannel);
-    }
     setTypingHumans([]);
     setTypingAgents([]);
-  }, [selectedChannel, fetchMessages, markRead, scope?.projectId]);
+  }, [selectedChannel, fetchMessages, markRead]);
 
   /* ---- deep-link scroll on ?msg=<id> — latch so it fires once per URL ---- */
   const deepLinkSeenRef = useRef<string | null>(null);
