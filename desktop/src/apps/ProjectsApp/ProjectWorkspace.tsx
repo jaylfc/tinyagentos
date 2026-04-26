@@ -27,14 +27,15 @@ function setTaskParam(taskId: string | null) {
 export function ProjectWorkspace({ project, onChanged }: { project: Project; onChanged: () => void }) {
   const [tab, setTab] = useState<Tab>("tasks");
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [authResolved, setAuthResolved] = useState(false);
   const [openTaskId, setOpenTaskId] = useState<string | null>(() => readTaskParam());
 
   useEffect(() => {
     let cancelled = false;
     fetch("/api/auth/me")
       .then((r) => (r.ok ? r.json() : null))
-      .then((u) => { if (!cancelled && u?.id) setCurrentUserId(u.id); })
-      .catch(() => {});
+      .then((u) => { if (!cancelled) { if (u?.id) setCurrentUserId(u.id); setAuthResolved(true); } })
+      .catch(() => { if (!cancelled) setAuthResolved(true); });
     return () => { cancelled = true; };
   }, []);
 
@@ -72,21 +73,25 @@ export function ProjectWorkspace({ project, onChanged }: { project: Project; onC
       <div className="flex-1 min-h-0 overflow-auto p-4">
         {tab === "board" && (
           <>
-            {currentUserId ? (
+            {!authResolved ? (
+              <div className="text-sm text-zinc-500">Loading board…</div>
+            ) : currentUserId ? (
               <ProjectBoard
                 projectId={project.id}
                 currentUserId={currentUserId}
                 onOpenTask={openTask}
               />
             ) : (
-              <div className="text-sm text-zinc-500">Loading board…</div>
+              <div className="text-sm text-zinc-500">Sign in required to view the board.</div>
             )}
-            <TaskModal
-              projectId={project.id}
-              taskId={openTaskId}
-              currentUserId={currentUserId ?? ""}
-              onClose={closeTask}
-            />
+            {currentUserId && (
+              <TaskModal
+                projectId={project.id}
+                taskId={openTaskId}
+                currentUserId={currentUserId}
+                onClose={closeTask}
+              />
+            )}
           </>
         )}
         {tab === "tasks" && <ProjectTaskList projectId={project.id} />}

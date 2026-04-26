@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { projectsApi } from "../../../../lib/projects";
 import type { ProjectTask } from "../../../../lib/projects";
 import type { Task } from "../types";
@@ -29,7 +29,11 @@ export function MetadataPane({ projectId, task, onUpdated }: MetadataPaneProps) 
         editing={editing === "priority"}
         onEdit={() => setEditing("priority")}
         onCancel={() => setEditing(null)}
-        onSave={(v) => save({ priority: Number(v) })}
+        onSave={(v) => {
+          const n = Number(v);
+          if (!Number.isFinite(n) || n < 0 || n > 3) { setEditing(null); return; }
+          void save({ priority: n });
+        }}
       />
       <Field
         label="Assignee"
@@ -62,6 +66,9 @@ interface FieldProps {
 
 function Field({ label, value, editing, onEdit, onCancel, onSave }: FieldProps) {
   const [draft, setDraft] = useState(value);
+  const committedRef = useRef(false);
+  useEffect(() => { setDraft(value); }, [value]);
+  useEffect(() => { if (editing) committedRef.current = false; }, [editing]);
   return (
     <div>
       <h4>{label}</h4>
@@ -70,10 +77,10 @@ function Field({ label, value, editing, onEdit, onCancel, onSave }: FieldProps) 
           autoFocus
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          onBlur={() => onSave?.(draft)}
+          onBlur={() => { if (committedRef.current) return; committedRef.current = true; onSave?.(draft); }}
           onKeyDown={(e) => {
-            if (e.key === "Enter") onSave?.(draft);
-            else if (e.key === "Escape") { setDraft(value); onCancel?.(); }
+            if (e.key === "Enter") { committedRef.current = true; onSave?.(draft); }
+            else if (e.key === "Escape") { committedRef.current = true; setDraft(value); onCancel?.(); }
           }}
           aria-label={label}
         />

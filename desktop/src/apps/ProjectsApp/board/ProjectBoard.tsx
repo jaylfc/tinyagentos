@@ -22,6 +22,8 @@ export interface ProjectBoardProps {
 }
 
 const PERSIST_KEY = (pid: string) => `taos.projects.${pid}.board`;
+const VALID_VIEWS: ViewMode[] = ["lanes", "kanban", "timeline"];
+const VALID_GROUPS: GroupBy[] = ["assignee", "parent", "label", "priority"];
 type ColStatus = "ready" | "claimed" | "closed";
 
 export function ProjectBoard({ projectId, currentUserId, onOpenTask }: ProjectBoardProps) {
@@ -36,9 +38,9 @@ export function ProjectBoard({ projectId, currentUserId, onOpenTask }: ProjectBo
     try {
       const raw = localStorage.getItem(PERSIST_KEY(projectId));
       if (raw) {
-        const p = JSON.parse(raw) as { viewMode?: ViewMode; groupBy?: GroupBy };
-        if (p.viewMode) setViewMode(p.viewMode);
-        if (p.groupBy) setGroupBy(p.groupBy);
+        const p = JSON.parse(raw) as { viewMode?: string; groupBy?: string };
+        if (p.viewMode && VALID_VIEWS.includes(p.viewMode as ViewMode)) setViewMode(p.viewMode as ViewMode);
+        if (p.groupBy && VALID_GROUPS.includes(p.groupBy as GroupBy)) setGroupBy(p.groupBy as GroupBy);
       }
     } catch { /* ignore */ }
   }, [projectId]);

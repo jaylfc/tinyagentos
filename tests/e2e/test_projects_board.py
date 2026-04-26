@@ -14,6 +14,8 @@ dev environment having an authenticated session. They will fail loudly if
 the server is unauthenticated; that is expected — run them locally only.
 """
 import os
+import re
+import uuid
 import pytest
 from playwright.sync_api import Page, BrowserContext, expect
 
@@ -26,6 +28,10 @@ pytestmark = [
 ]
 
 _URL = os.environ.get("TAOS_E2E_URL", "")
+
+
+def _uniq(prefix: str) -> str:
+    return f"{prefix}-{uuid.uuid4().hex[:8]}"
 
 
 def _create_project_and_tasks(page: Page, slug: str, n_tasks: int = 0) -> str:
@@ -80,16 +86,16 @@ def _open_board(page: Page, pid: str) -> None:
 
 
 def test_board_renders_three_columns_in_kanban(page: Page):
-    pid = _create_project_and_tasks(page, "board-e2e-1")
+    pid = _create_project_and_tasks(page, _uniq("board-e2e"))
     _open_board(page, pid)
     page.get_by_role("tab", name="Kanban").click()
     expect(page.get_by_role("region", name="Ready")).to_be_visible()
     expect(page.get_by_role("region", name="Claimed")).to_be_visible()
-    expect(page.get_by_role("region", name=lambda n: "Closed" in (n or ""))).to_be_visible()
+    expect(page.get_by_role("region", name=re.compile("Closed"))).to_be_visible()
 
 
 def test_drag_card_ready_to_claimed(page: Page):
-    pid = _create_project_and_tasks(page, "board-e2e-2", n_tasks=1)
+    pid = _create_project_and_tasks(page, _uniq("board-e2e"), n_tasks=1)
     _open_board(page, pid)
     page.get_by_role("tab", name="Kanban").click()
 
@@ -101,7 +107,7 @@ def test_drag_card_ready_to_claimed(page: Page):
 
 
 def test_modal_open_via_card_click_and_keyboard_nav(page: Page):
-    pid = _create_project_and_tasks(page, "board-e2e-4", n_tasks=3)
+    pid = _create_project_and_tasks(page, _uniq("board-e2e"), n_tasks=3)
     _open_board(page, pid)
 
     page.get_by_role("button", name="Test card 1").click()
@@ -119,7 +125,7 @@ def test_sse_live_update_across_contexts(browser):
     try:
         page_a = ctx_a.new_page()
         page_b = ctx_b.new_page()
-        pid = _create_project_and_tasks(page_a, "board-e2e-3", n_tasks=1)
+        pid = _create_project_and_tasks(page_a, _uniq("board-e2e"), n_tasks=1)
         _open_board(page_a, pid)
         _open_board(page_b, pid)
         page_a.get_by_role("tab", name="Kanban").click()

@@ -23,7 +23,7 @@ export function Activity({ projectId, taskId, currentUserId }: ActivityProps) {
 
   const submit = async () => {
     const body = draft.trim();
-    if (!body) return;
+    if (!body || !currentUserId) return;
     const c = await projectsApi.tasks.addComment(projectId, taskId, { body, author_id: currentUserId });
     setComments(prev => [...prev, c]);
     setDraft("");
@@ -44,7 +44,7 @@ export function Activity({ projectId, taskId, currentUserId }: ActivityProps) {
           placeholder="Comment…"
           aria-label="Comment composer"
         />
-        <button type="submit">↵ Send</button>
+        <button type="submit" disabled={!currentUserId || !draft.trim()}>↵ Send</button>
       </form>
     </section>
   );

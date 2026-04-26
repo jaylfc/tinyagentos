@@ -51,6 +51,12 @@ function mapStatus(s: TaskStatus): "ready" | "claimed" | "closed" {
   return s === "open" ? "ready" : s === "claimed" ? "claimed" : "closed";
 }
 
+function sameMembers(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const sa = new Set(a);
+  return b.every(x => sa.has(x));
+}
+
 function lanePatch(task: Task, laneKey: string, groupBy: GroupBy): Partial<Task> | null {
   switch (groupBy) {
     case "assignee":
@@ -67,9 +73,12 @@ function lanePatch(task: Task, laneKey: string, groupBy: GroupBy): Partial<Task>
       return { priority: p };
     }
     case "label": {
+      // Replace category labels with target; preserve cover:* markers.
+      // __unlabeled__ removes all category labels but keeps cover:* labels.
+      const covers = task.labels.filter(l => l.startsWith("cover:"));
       const targetLbl = laneKey === "__unlabeled__" ? null : laneKey;
-      if (targetLbl && task.labels.includes(targetLbl)) return null;
-      const next = targetLbl ? [...task.labels, targetLbl] : [];
+      const next = targetLbl ? [...covers, targetLbl] : covers;
+      if (sameMembers(task.labels, next)) return null;
       return { labels: next };
     }
   }

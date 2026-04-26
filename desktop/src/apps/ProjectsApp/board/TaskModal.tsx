@@ -36,9 +36,12 @@ export function TaskModal({ projectId, taskId, currentUserId, onClose, onPrev, o
   useEffect(() => {
     if (!taskId) return;
     const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName;
+      const editable = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el?.isContentEditable === true;
       if (e.key === "Escape") onClose();
-      else if (e.key === "ArrowDown") onNext?.();
-      else if (e.key === "ArrowUp") onPrev?.();
+      else if (!editable && e.key === "ArrowDown") onNext?.();
+      else if (!editable && e.key === "ArrowUp") onPrev?.();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
