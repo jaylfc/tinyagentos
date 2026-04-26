@@ -1,0 +1,4 @@
+.frame { background: var(--board-bg); border-radius: 14px; border: 1px solid var(--board-hair); overflow: hidden; }
+.cols { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; padding: 16px; }
+.lanes { padding: 0 16px 16px; }
+.colsHeader { display: grid; grid-template-columns: 200px 1fr 1fr 1fr; padding: 10px 4px; color: #86868b; font: 600 10.5px -apple-system; text-transform: uppercase; letter-spacing: .5px; }
