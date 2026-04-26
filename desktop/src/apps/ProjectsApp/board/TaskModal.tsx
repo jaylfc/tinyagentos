@@ -3,18 +3,20 @@ import styles from "./TaskModal.module.css";
 import { Hero } from "./modal/Hero";
 import { SubTasks } from "./modal/SubTasks";
 import { Relationships } from "./modal/Relationships";
+import { Activity } from "./modal/Activity";
 import { projectsApi } from "../../../lib/projects";
 import type { Task } from "./types";
 
 export interface TaskModalProps {
   projectId: string;
   taskId: string | null;
+  currentUserId: string;
   onClose: () => void;
   onPrev?: () => void;
   onNext?: () => void;
 }
 
-export function TaskModal({ projectId, taskId, onClose, onPrev, onNext }: TaskModalProps) {
+export function TaskModal({ projectId, taskId, currentUserId, onClose, onPrev, onNext }: TaskModalProps) {
   const [allTasks, setAllTasks] = useState<Task[]>([]);
   const [task, setTask] = useState<Task | null>(null);
 
@@ -60,6 +62,7 @@ export function TaskModal({ projectId, taskId, onClose, onPrev, onNext }: TaskMo
               {task.body && <p className={styles.bodyText}>{task.body}</p>}
               <SubTasks all={allTasks} parentId={task.id} />
               <Relationships projectId={projectId} taskId={task.id} />
+              <Activity projectId={projectId} taskId={task.id} currentUserId={currentUserId} />
             </>
           ) : <p className={styles.loading}>Loading…</p>}
         </div>

@@ -15,17 +15,18 @@ const sampleTask: ProjectTask = {
 beforeEach(() => {
   vi.spyOn(projectsApi.tasks, "list").mockResolvedValue([]);
   vi.spyOn(projectsApi.tasks, "listRelationships").mockResolvedValue([]);
+  vi.spyOn(projectsApi.tasks, "listComments").mockResolvedValue([]);
 });
 
 describe("TaskModal", () => {
   it("renders nothing when taskId is null", () => {
-    const { container } = render(<TaskModal projectId="p1" taskId={null} onClose={() => {}} />);
+    const { container } = render(<TaskModal projectId="p1" taskId={null} currentUserId="u1" onClose={() => {}} />);
     expect(container.firstChild).toBeNull();
   });
 
   it("renders title + close button when taskId is set", async () => {
     vi.spyOn(projectsApi.tasks, "list").mockResolvedValue([sampleTask]);
-    render(<TaskModal projectId="p1" taskId="t1" onClose={() => {}} />);
+    render(<TaskModal projectId="p1" taskId="t1" currentUserId="u1" onClose={() => {}} />);
     await waitFor(() => expect(screen.getByText("Spec the kanban")).toBeInTheDocument());
     expect(screen.getByRole("button", { name: /Close/i })).toBeInTheDocument();
   });
@@ -33,7 +34,7 @@ describe("TaskModal", () => {
   it("calls onClose when Escape is pressed", async () => {
     const onClose = vi.fn();
     vi.spyOn(projectsApi.tasks, "list").mockResolvedValue([sampleTask]);
-    render(<TaskModal projectId="p1" taskId="t1" onClose={onClose} />);
+    render(<TaskModal projectId="p1" taskId="t1" currentUserId="u1" onClose={onClose} />);
     await waitFor(() => expect(screen.getByText("Spec the kanban")).toBeInTheDocument());
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     expect(onClose).toHaveBeenCalled();
