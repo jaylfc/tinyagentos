@@ -28,3 +28,36 @@ async def test_create_project_creates_a2a_channel(client):
     assert a2a["name"] == "a2a"
     assert a2a["type"] == "group"
     assert a2a["members"] == []
+
+
+@pytest.mark.asyncio
+async def test_add_member_adds_to_a2a_channel(client):
+    pid = (await client.post("/api/projects", json={"name": "P", "slug": "ra2a-2"})).json()["id"]
+
+    res = await client.post(
+        f"/api/projects/{pid}/members",
+        json={"mode": "native", "agent_id": "agentA"},
+    )
+    assert res.status_code == 200
+
+    channels = await _list_channels(client, pid)
+    a2a = _a2a(channels)
+    assert a2a is not None
+    assert "agentA" in a2a["members"]
+
+
+@pytest.mark.asyncio
+async def test_remove_member_removes_from_a2a_channel(client):
+    pid = (await client.post("/api/projects", json={"name": "P", "slug": "ra2a-3"})).json()["id"]
+    await client.post(
+        f"/api/projects/{pid}/members",
+        json={"mode": "native", "agent_id": "agentA"},
+    )
+
+    res = await client.delete(f"/api/projects/{pid}/members/agentA")
+    assert res.status_code == 200
+
+    channels = await _list_channels(client, pid)
+    a2a = _a2a(channels)
+    assert a2a is not None
+    assert "agentA" not in a2a["members"]
