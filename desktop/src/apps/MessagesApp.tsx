@@ -59,6 +59,11 @@ import {
   markUnread as apiMarkUnread,
 } from "@/lib/chat-messages-api";
 import { projectsApi, type Project } from "@/lib/projects";
+import {
+  findA2aChannelId,
+  readLastChannel,
+  writeLastChannel,
+} from "./MessagesApp.a2aSelection";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -93,6 +98,7 @@ interface Channel {
     archived_agent_id?: string;
     archived_agent_slug?: string;
     muted?: string[];
+    kind?: string;
   };
 }
 
@@ -526,6 +532,38 @@ export function MessagesApp({
       }
     };
   }, [fetchChannels, fetchArchivedChannels, fetchAgentLists, connectWs]);
+
+  /* ---- default-select A2A channel on first project visit ----
+   * Also runs when the project switches: if the previously selected channel
+   * is not in the new project's channel list, it's stale — fall back to
+   * the remembered/A2A channel for the new project, or clear the selection.
+   */
+  useEffect(() => {
+    if (!scope?.projectId) return;
+    if (channels.length === 0) return;
+    const selectedStillVisible =
+      !!selectedChannel && channels.some((c) => c.id === selectedChannel);
+    if (selectedStillVisible) return;
+    const remembered = readLastChannel(scope.projectId);
+    if (remembered && channels.some((c) => c.id === remembered)) {
+      setSelectedChannel(remembered);
+      return;
+    }
+    const a2aId = findA2aChannelId(channels);
+    setSelectedChannel(a2aId ?? null);
+  }, [scope?.projectId, channels, selectedChannel]);
+
+  /* ---- persist last-selected channel per project ----
+   * Split from the channel-join effect so we only write when we know the
+   * current selection actually belongs to the current project — prevents
+   * cross-project leakage when the user switches projects mid-flight.
+   */
+  useEffect(() => {
+    if (!scope?.projectId) return;
+    if (!selectedChannel) return;
+    if (!channels.some((c) => c.id === selectedChannel)) return;
+    writeLastChannel(scope.projectId, selectedChannel);
+  }, [scope?.projectId, selectedChannel, channels]);
 
   /* ---- fetch project list for sidebar grouping (standalone mode only) ---- */
   useEffect(() => {
@@ -1075,6 +1113,7 @@ export function MessagesApp({
                   type="button"
                   onClick={() => setSelectedChannel(ch.id)}
                   aria-label={`Channel ${ch.name}`}
+                  title={ch.settings?.kind === "a2a" ? "Agent coordination — mention @<slug> to hand off." : undefined}
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -1089,6 +1128,13 @@ export function MessagesApp({
                     textAlign: "left",
                   }}
                 >
+                  {ch.settings?.kind === "a2a" && (
+                    <Bot
+                      size={14}
+                      aria-hidden
+                      style={{ color: "rgba(255,255,255,0.6)", flexShrink: 0 }}
+                    />
+                  )}
                   <span style={{ flex: 1, fontSize: 15, fontWeight: 400, color: "rgba(255,255,255,0.9)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {ch.name}
                   </span>
@@ -1141,6 +1187,7 @@ export function MessagesApp({
                           type="button"
                           onClick={() => setSelectedChannel(ch.id)}
                           aria-label={`Channel ${ch.name}`}
+                          title={ch.settings?.kind === "a2a" ? "Agent coordination — mention @<slug> to hand off." : undefined}
                           style={{
                             display: "flex",
                             alignItems: "center",
@@ -1155,6 +1202,13 @@ export function MessagesApp({
                             textAlign: "left",
                           }}
                         >
+                          {ch.settings?.kind === "a2a" && (
+                            <Bot
+                              size={14}
+                              aria-hidden
+                              style={{ color: "rgba(255,255,255,0.6)", flexShrink: 0 }}
+                            />
+                          )}
                           <span style={{ flex: 1, fontSize: 15, fontWeight: 400, color: "rgba(255,255,255,0.9)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {ch.name}
                           </span>
@@ -1274,7 +1328,15 @@ export function MessagesApp({
                 onClick={() => setSelectedChannel(ch.id)}
                 className="w-full justify-start h-auto py-1.5 px-3 text-[13px] rounded-none font-normal"
                 aria-label={`Channel ${ch.name}`}
+                title={ch.settings?.kind === "a2a" ? "Agent coordination — mention @<slug> to hand off." : undefined}
               >
+                {ch.settings?.kind === "a2a" && (
+                  <Bot
+                    size={14}
+                    aria-hidden
+                    style={{ color: "rgba(255,255,255,0.6)", flexShrink: 0 }}
+                  />
+                )}
                 <span className="truncate flex-1 text-left">{ch.name}</span>
                 {(unread[ch.id] ?? 0) > 0 && (
                   <span className="shrink-0 bg-blue-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
@@ -1303,10 +1365,18 @@ export function MessagesApp({
                       onClick={() => setSelectedChannel(ch.id)}
                       aria-pressed={selectedChannel === ch.id}
                       aria-label={`Channel ${ch.name}`}
-                      className={`w-full text-left text-xs py-1 px-2 rounded ${
+                      title={ch.settings?.kind === "a2a" ? "Agent coordination — mention @<slug> to hand off." : undefined}
+                      className={`w-full text-left text-xs py-1 px-2 rounded flex items-center gap-1.5 ${
                         selectedChannel === ch.id ? "bg-white/10" : "hover:bg-white/5"
                       }`}
                     >
+                      {ch.settings?.kind === "a2a" && (
+                        <Bot
+                          size={12}
+                          aria-hidden
+                          style={{ color: "rgba(255,255,255,0.6)", flexShrink: 0 }}
+                        />
+                      )}
                       {ch.name}
                     </button>
                   ))}
@@ -1772,6 +1842,23 @@ export function MessagesApp({
               setPendingAttachments((p) => p.map((x) => x.id === id ? { ...x, uploading: false, error: "retry not yet supported — remove and re-add" } : x));
             }}
           />
+
+          {currentChannel?.settings?.kind === "a2a" && messages.length === 0 && (
+            <div
+              role="note"
+              style={{
+                padding: "10px 14px",
+                fontSize: 12,
+                color: "rgba(255,255,255,0.55)",
+                background: "rgba(255,255,255,0.03)",
+                border: "1px solid rgba(255,255,255,0.06)",
+                borderRadius: 12,
+                margin: "8px 12px",
+              }}
+            >
+              Agents coordinate here. Mention <code>@&lt;slug&gt;</code> to hand off a task to another agent.
+            </div>
+          )}
 
           {/* input area */}
           <div

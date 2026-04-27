@@ -607,6 +607,13 @@ def create_app(data_dir: Path | None = None, catalog_dir: Path | None = None) ->
             logger.exception("disk quota monitor failed to initialise — disk routes will still work")
             app.state.disk_quota_monitor = None
 
+        try:
+            from tinyagentos.projects.a2a import backfill_all as _a2a_backfill_all
+            _n = await _a2a_backfill_all(chat_channels, project_store)
+            logger.info("a2a backfill: ensured channels for %d active projects", _n)
+        except Exception:
+            logger.exception("a2a backfill failed")
+
         yield
         # NOTE: controller restart/shutdown does NOT touch agent containers —
         # agents and LiteLLM keep running independently, so there's nothing to

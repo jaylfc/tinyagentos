@@ -75,6 +75,15 @@ async def create_project(payload: CreateProjectIn, request: Request):
         return JSONResponse({"error": str(e)}, status_code=409)
     await store.log_activity(p["id"], _user_id(request), "project.created", {"slug": p["slug"]})
     _mirror(request, p)
+    try:
+        from tinyagentos.projects.a2a import ensure_a2a_channel
+        await ensure_a2a_channel(
+            request.app.state.chat_channels,
+            request.app.state.project_store,
+            p["id"],
+        )
+    except Exception:
+        logger.warning("a2a ensure failed for new project %s", p.get("id"), exc_info=True)
     return p
 
 
@@ -200,6 +209,15 @@ async def add_member(project_id: str, payload: AddMemberIn, request: Request):
     )
     members = await store.list_members(project_id)
     _mirror(request, {**project, "members": members})
+    try:
+        from tinyagentos.projects.a2a import ensure_a2a_channel
+        await ensure_a2a_channel(
+            request.app.state.chat_channels,
+            request.app.state.project_store,
+            project_id,
+        )
+    except Exception:
+        logger.warning("a2a ensure failed for project %s on add_member", project_id, exc_info=True)
     return next(m for m in members if m["member_id"] == member_id)
 
 
@@ -218,6 +236,15 @@ async def remove_member(project_id: str, member_id: str, request: Request):
     members = await store.list_members(project_id)
     if project is not None:
         _mirror(request, {**project, "members": members})
+    try:
+        from tinyagentos.projects.a2a import ensure_a2a_channel
+        await ensure_a2a_channel(
+            request.app.state.chat_channels,
+            request.app.state.project_store,
+            project_id,
+        )
+    except Exception:
+        logger.warning("a2a ensure failed for project %s on remove_member", project_id, exc_info=True)
     return {"ok": True}
 
 
