@@ -286,3 +286,151 @@ async def test_fetch_article_rejects_non_text_content_type(store):
     assert new_content == ""
     assert changed is False
     assert resp.bytes_read == 0, "Non-text response should not be buffered at all"
+
+
+# ------------------------------------------------------------------
+# R2-12: FIRST POLL BUGS: polling limit, raw HTML overwrite, baseline on fail, stop_after_days
+# ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_monitor_polls_all_ready_items(store):
+    """R2-12 first bug: MonitorService.get_due_items uses limit=50, missing items beyond 50.
+
+    list_items(status="ready") defaults to limit=50, so items 51+ never polled.
+    """
+    # Create 60 items with identical monitor configs so all become due at once
+    item_count = 60
+    item_ids = []
+    now = time.time()
+    for i in range(item_count):
+        item_id = await store.add_item(
+            source_type="article",
+            source_url=f"https://example.com/article{i}",
+            title=f"Article {i}",
+            author="",
+            content=f"Original content {i}",
+            summary="summary",
+            categories=[],
+            tags=[],
+            metadata={},
+            status="ready",
+            monitor={
+                "frequency": 3600,
+                "decay_rate": 1.5,
+                "stop_after_days": 14,
+                "pinned": False,
+                "last_poll": 0,
+                "current_interval": 3600,
+                "last_hash": "",
+            },
+        )
+        item_ids.append(item_id)
+
+    svc = MonitorService(store=store, http_client=AsyncMock())
+    due = await svc.get_due_items()
+
+    # With bug: due contains at most 50 items (list_items default limit)
+    # After fix: due should contain all 60 items
+    assert len(due) == item_count, f"Expected {item_count} due items, got {len(due)}"
+
+
+@pytest.mark.asyncio
+async def test_monitor_does_not_overwrite_text_with_raw_html(store):
+    """R2-12 second bug: First poll stores raw HTML over extracted text.
+
+    _fetch_article returns (new_content, changed), but line 139-140 writes new_content
+    (raw HTML) into item content, not the extracted text from the ingest extractor.
+    """
+    item_id = await store.add_item(
+        source_type="article",
+        source_url="https://example.com/article",
+        title="Test Article",
+        author="",
+        content="original content",
+        summary="summary",
+        categories=[],
+        tags=[],
+        metadata={},
+        status="ready",
+        monitor={
+            "frequency": 86400,
+            "decay_rate": 2.0,
+            "stop_after_days": 14,
+            "pinned": False,
+            "last_poll": 0,
+            "current_interval": 86400,
+            "last_hash": "",
+        },
+    )
+    # Mock the HTTP client to return raw HTML that differs from original
+    raw_html = "<html><body>Raw HTML content</body></html>"
+    
+    response = AsyncMock()
+    response.status_code = 200
+    response.headers = {"content-type": "text/html"}
+    response.encoding = "utf-8"
+    
+    async def mock_aiter_bytes(chunk_size=8192):
+        yield raw_html.encode("utf-8")
+    
+    response.aiter_bytes = mock_aiter_bytes
+    response.raise_for_status = lambda: None
+    
+    mock_http = AsyncMock()
+    mock_http.get = AsyncMock(return_value=response)
+
+    svc = MonitorService(store=store, http_client=mock_http)
+
+    # First poll: _fetch_article returns raw HTML
+    await svc.poll_item(item_id)
+
+    item = await store.get_item(item_id)
+    # Bug: content becomes raw HTML
+    # After fix: content should remain "original content" (not overwritten with raw HTML)
+    # The fix ensures content stays as the original (not overwritten with raw HTML)
+    assert item["content"] == "original content", f"Content should not be overwritten with raw HTML, got: {item['content']}"
+    assert item["content"] != raw_html, "Content should not be raw HTML"
+
+
+@pytest.mark.asyncio
+async def test_monitor_does_not_update_baseline_on_failed_fetch(store):
+    """R2-12 third bug: Failed fetch sets baseline hash to sha256(\"").
+
+    _fetch_article returns ("", False) on failure. This results in
+    content_hash = sha256("") being stored at line 128 and line 153.
+    """
+    item_id = await store.add_item(
+        source_type="article",
+        source_url="https://example.com/article",
+        title="Test Article",
+        author="",
+        content="original content",
+        summary="summary",
+        categories=[],
+        tags=[],
+        metadata={},
+        status="ready",
+        monitor={
+            "frequency": 86400,
+            "decay_rate": 2.0,
+            "stop_after_days": 14,
+            "pinned": False,
+            "last_poll": 0,
+            "current_interval": 86400,
+            "last_hash": "a" * 64,  # sha256 of "a" * 64
+        },
+    )
+    # Mock a failed fetch
+    response = AsyncMock()
+    response.raise_for_status = AsyncMock(side_effect=Exception("Network error"))
+    mock_http = AsyncMock()
+    mock_http.get = AsyncMock(return_value=response)
+
+    svc = MonitorService(store=store, http_client=mock_http)
+    await svc.poll_item(item_id)
+
+    item = await store.get_item(item_id)
+    # Bug: last_hash becomes sha256("")
+    # After fix: last_hash should remain unchanged (skip baseline update)
+    assert item["monitor"]["last_hash"] == "a" * 64, "Baseline hash should not change on failure"
