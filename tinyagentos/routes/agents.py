@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import math
+import secrets
 import time
 from collections import OrderedDict
 
@@ -208,7 +209,14 @@ def _resolve_agent_by_bearer(request: Request) -> dict | None:
     if not token:
         return None
     config = request.app.state.config
-    return next((a for a in config.agents if a.get("llm_key") == token), None)
+    return next(
+        (
+            a for a in config.agents
+            if a.get("llm_key") is not None
+            and secrets.compare_digest(a["llm_key"], token)
+        ),
+        None,
+    )
 
 
 @router.get("/api/agents/me/models")
