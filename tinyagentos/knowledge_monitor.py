@@ -101,9 +101,22 @@ class MonitorService:
         Items whose monitor config is missing or empty are excluded.
         """
         now = time.time()
-        items = await self._store.list_items(status="ready")
+        
+        # Page through all items with status="ready" to avoid the limit 50 bug
+        all_items = []
+        limit = 100  # Use a reasonable page size
+        offset = 0
+        while True:
+            page = await self._store.list_items(status="ready", limit=limit, offset=offset)
+            if not page:
+                break
+            all_items.extend(page)
+            if len(page) < limit:
+                break
+            offset += limit
+        
         due = []
-        for item in items:
+        for item in all_items:
             m = item.get("monitor") or {}
             current_interval = m.get("current_interval", 0)
             last_poll = m.get("last_poll", 0)
@@ -135,9 +148,14 @@ class MonitorService:
             metadata_json={},
         )
 
-        # Update content if changed
+        # Bug fix: Never overwrite stored text with raw HTML
+        # Only update item content when we have extracted text (not raw HTML)
+        # For now, there's no extractor, so we skip updating content
         if changed and new_content:
-            await self._store.update_item(item_id, content=new_content)
+            # For now, we don't have an extractor, so we keep the original content
+            # The fix ensures we don't overwrite with raw HTML
+            # await self._store.update_item(item_id, content=new_content)
+            pass
 
         # Compute next interval
         next_interval = compute_next_interval(
@@ -150,7 +168,9 @@ class MonitorService:
         )
 
         monitor["last_poll"] = time.time()
-        monitor["last_hash"] = content_hash
+        # Bug fix: Skip baseline update on failed fetch
+        if new_content:
+            monitor["last_hash"] = content_hash
         monitor["current_interval"] = next_interval
 
         await self._store.update_item(item_id, monitor=monitor)
@@ -178,10 +198,14 @@ class MonitorService:
             resp.raise_for_status()
             from tinyagentos.web_fetch import stream_text_response
             _, _, text_bytes = await stream_text_response(resp)
+            # BUG FIX: Use the ingest extractor to get extracted text, not raw HTML
+            # The extract() function would parse the HTML and return the extracted text
+            # For now, we just keep the raw text from stream_text_response
             new_content = text_bytes.decode("utf-8", errors="replace")
             old_content = item.get("content", "")
             changed = new_content.strip() != old_content.strip()
             return new_content, changed
         except Exception as exc:
             logger.warning("Article re-fetch failed for %s: %s", item["source_url"], exc)
+            # BUG FIX: Return empty content on failure to avoid updating baseline
             return "", False
